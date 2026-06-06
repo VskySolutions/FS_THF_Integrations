@@ -1,3 +1,5 @@
+using FluentValidation;
+using FluentValidation.AspNetCore;
 using global::Hangfire;
 using IntegrationHub.Api.Filters;
 using IntegrationHub.Api.Hangfire;
@@ -33,6 +35,12 @@ builder.Host.UseSerilog((context, _, loggerConfiguration) =>
 builder.Services.AddControllers(options => options.Filters.Add<ValidationActionFilter>());
 builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(
     options => options.SuppressModelStateInvalidFilter = true);
+
+// FluentValidation: auto-validate request DTOs into ModelState, which the
+// ValidationActionFilter then turns into the ApiResponseFactory.ValidationError envelope.
+builder.Services.AddFluentValidationAutoValidation();
+builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 

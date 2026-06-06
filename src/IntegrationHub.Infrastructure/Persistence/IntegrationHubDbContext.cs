@@ -43,6 +43,10 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
 
     public DbSet<JobScheduleConfiguration> JobScheduleConfigurations => Set<JobScheduleConfiguration>();
 
+    public DbSet<User> Users => Set<User>();
+
+    public DbSet<UserTenantRole> UserTenantRoles => Set<UserTenantRole>();
+
     /// <summary>Data Protection key ring storage (Multi-Tenancy ADR-002).</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 

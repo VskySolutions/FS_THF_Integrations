@@ -1,11 +1,14 @@
 using IntegrationHub.Api.Hangfire;
+using IntegrationHub.Api.HealthChecks;
 using IntegrationHub.Api.Logging;
 using IntegrationHub.Api.Middleware;
 using IntegrationHub.Api.Security;
 using IntegrationHub.Application;
 using IntegrationHub.Infrastructure;
+using IntegrationHub.Infrastructure.HealthChecks;
 using IntegrationHub.Infrastructure.Logging;
 using IntegrationHub.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 
@@ -28,6 +31,9 @@ builder.Services.AddIntegrationHubAuthentication(builder.Configuration);
 
 // Hangfire storage so the API can host the monitoring dashboard (jobs run in the Worker).
 builder.Services.AddIntegrationHubHangfireDashboard(builder.Configuration);
+
+// Health checks: SQL Server + external system connectivity.
+builder.Services.AddIntegrationHubHealthChecks();
 
 // Clean Architecture composition root.
 builder.Services.AddApplication();
@@ -60,5 +66,25 @@ app.UseAuthorization();
 
 // Hangfire dashboard at /hangfire, gated by the TenantAdminOrAbove policy.
 app.UseIntegrationHubHangfireDashboard(builder.Configuration);
+
+// Health endpoints, all anonymous (exempt from authentication).
+// /health: aggregate with per-component detail. /health/live: process liveness only.
+// /health/ready: all dependency probes must be healthy.
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    ResponseWriter = HealthCheckResponseWriter.WriteAsync,
+}).AllowAnonymous();
+
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false,
+    ResponseWriter = HealthCheckResponseWriter.WriteAsync,
+}).AllowAnonymous();
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains(IntegrationHubHealthCheckExtensions.ReadyTag),
+    ResponseWriter = HealthCheckResponseWriter.WriteAsync,
+}).AllowAnonymous();
 
 app.Run();

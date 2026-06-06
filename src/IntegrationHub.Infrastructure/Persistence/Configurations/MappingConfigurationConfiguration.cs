@@ -13,7 +13,6 @@ internal sealed class MappingConfigurationConfiguration : IEntityTypeConfigurati
         builder.HasKey(m => m.Id);
 
         builder.Property(m => m.InterfaceName)
-            .IsRequired()
             .HasMaxLength(200);
 
         builder.Property(m => m.SourceSystem)
@@ -26,9 +25,20 @@ internal sealed class MappingConfigurationConfiguration : IEntityTypeConfigurati
             .HasConversion<string>()
             .HasMaxLength(50);
 
-        // Mapping rule set can be large; map to nvarchar(max).
-        builder.Property(m => m.MappingJson)
-            .IsRequired();
+        builder.Property(m => m.SourceField)
+            .IsRequired()
+            .HasMaxLength(200);
+
+        builder.Property(m => m.DestinationField)
+            .IsRequired()
+            .HasMaxLength(200);
+
+        // Rule expression; bounded but generous.
+        builder.Property(m => m.TransformationRule)
+            .HasMaxLength(2000);
+
+        // Optional auxiliary metadata; nvarchar(max).
+        builder.Property(m => m.MappingJson);
 
         builder.Property(m => m.IsActive)
             .IsRequired();
@@ -39,6 +49,8 @@ internal sealed class MappingConfigurationConfiguration : IEntityTypeConfigurati
         builder.Property(m => m.CreatedAtUtc)
             .IsRequired();
 
+        // Transformer reads active rules for a (source, destination) system pair.
+        builder.HasIndex(m => new { m.SourceSystem, m.TargetSystem, m.IsActive });
         builder.HasIndex(m => new { m.InterfaceName, m.IsActive });
     }
 }

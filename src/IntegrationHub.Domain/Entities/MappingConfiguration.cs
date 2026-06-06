@@ -11,17 +11,26 @@ public class MappingConfiguration
     /// <summary>Primary key.</summary>
     public Guid Id { get; set; }
 
-    /// <summary>Interface/flow this mapping applies to.</summary>
+    /// <summary>Interface/flow this mapping applies to (optional).</summary>
     public string InterfaceName { get; set; } = string.Empty;
 
-    /// <summary>System the source fields originate from.</summary>
+    /// <summary>System the source field originates from.</summary>
     public SystemName SourceSystem { get; set; }
 
-    /// <summary>System the target fields belong to.</summary>
+    /// <summary>System the destination field belongs to.</summary>
     public SystemName TargetSystem { get; set; }
 
-    /// <summary>Serialized mapping rule set (JSON).</summary>
-    public string MappingJson { get; set; } = string.Empty;
+    /// <summary>Source field name.</summary>
+    public string SourceField { get; set; } = string.Empty;
+
+    /// <summary>Destination field name the source value maps to.</summary>
+    public string DestinationField { get; set; } = string.Empty;
+
+    /// <summary>Optional transformation rule expression applied to the source value.</summary>
+    public string? TransformationRule { get; set; }
+
+    /// <summary>Optional serialized mapping metadata (legacy/auxiliary).</summary>
+    public string? MappingJson { get; set; }
 
     /// <summary>Whether this configuration version is currently active.</summary>
     public bool IsActive { get; set; } = true;

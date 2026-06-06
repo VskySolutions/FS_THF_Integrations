@@ -1,5 +1,6 @@
 using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Domain.Entities;
+using IntegrationHub.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace IntegrationHub.Infrastructure.Persistence.Repositories;
@@ -21,6 +22,15 @@ internal sealed class MappingConfigurationRepository : IMappingConfigurationRepo
             .Where(m => m.InterfaceName == interfaceName && m.IsActive)
             .OrderByDescending(m => m.Version)
             .FirstOrDefaultAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<MappingConfiguration>> GetActiveByPairAsync(
+        SystemName sourceSystem,
+        SystemName destinationSystem,
+        CancellationToken cancellationToken = default)
+        => await _dbContext.MappingConfigurations
+            .Where(m => m.IsActive && m.SourceSystem == sourceSystem && m.TargetSystem == destinationSystem)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
 
     public async Task<IReadOnlyList<MappingConfiguration>> ListAsync(CancellationToken cancellationToken = default)
         => await _dbContext.MappingConfigurations

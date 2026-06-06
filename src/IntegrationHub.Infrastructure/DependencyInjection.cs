@@ -1,4 +1,5 @@
 using IntegrationHub.Application.Abstractions.Auditing;
+using IntegrationHub.Application.Abstractions.Connectors;
 using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Application.Abstractions.Retry;
 using IntegrationHub.Application.Abstractions.Security;
@@ -69,6 +70,7 @@ public static class DependencyInjection
         services.AddScoped<ITenantRepository, TenantRepository>();
         services.AddScoped<ITenantApiConfigurationRepository, TenantApiConfigurationRepository>();
         services.AddScoped<IJobScheduleConfigurationRepository, JobScheduleConfigurationRepository>();
+        services.AddSingleton<ITransformationRuleEvaluator, Connectors.TransformationRuleEvaluator>();
         return services;
     }
 

@@ -52,18 +52,6 @@ internal abstract class ExternalApiHealthCheck : IHealthCheck
     }
 }
 
-internal sealed class PaycorApiHealthCheck : ExternalApiHealthCheck
-{
-    public const string Name = "paycor";
-    private readonly PaycorOptions _options;
-
-    public PaycorApiHealthCheck(IHttpClientFactory httpClientFactory, IOptions<PaycorOptions> options)
-        : base(httpClientFactory) => _options = options.Value;
-
-    protected override string SystemName => "Paycor";
-    protected override string BaseUrl => _options.BaseUrl;
-}
-
 internal sealed class ConcurApiHealthCheck : ExternalApiHealthCheck
 {
     public const string Name = "concur";

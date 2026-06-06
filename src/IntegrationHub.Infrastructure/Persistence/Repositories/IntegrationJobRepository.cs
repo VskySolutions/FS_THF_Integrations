@@ -28,4 +28,9 @@ internal sealed class IntegrationJobRepository : IIntegrationJobRepository
 
     public void Update(IntegrationJob job)
         => _dbContext.IntegrationJobs.Update(job);
+
+    public Task<bool> HasActiveJobsAsync(Guid tenantId, CancellationToken cancellationToken = default)
+        => _dbContext.IntegrationJobs.IgnoreQueryFilters()
+            .AnyAsync(j => j.TenantId == tenantId
+                && (j.Status == IntegrationJobStatus.Created || j.Status == IntegrationJobStatus.Running), cancellationToken);
 }

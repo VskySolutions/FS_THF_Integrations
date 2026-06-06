@@ -63,6 +63,7 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
         modelBuilder.Entity<IntegrationLog>().HasQueryFilter(e => !_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId);
         modelBuilder.Entity<RetryQueueEntry>().HasQueryFilter(e => !_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId);
         modelBuilder.Entity<AuditTrailEntry>().HasQueryFilter(e => !_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId);
+        modelBuilder.Entity<MappingConfiguration>().HasQueryFilter(e => !_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId);
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
@@ -105,6 +106,9 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
                     break;
                 case AuditTrailEntry audit when audit.TenantId == Guid.Empty:
                     audit.TenantId = _tenantContext.TenantId;
+                    break;
+                case MappingConfiguration mapping when mapping.TenantId == Guid.Empty:
+                    mapping.TenantId = _tenantContext.TenantId;
                     break;
             }
         }

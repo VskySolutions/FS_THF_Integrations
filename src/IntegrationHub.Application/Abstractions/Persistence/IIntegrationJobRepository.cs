@@ -16,4 +16,7 @@ public interface IIntegrationJobRepository
     Task AddAsync(IntegrationJob job, CancellationToken cancellationToken = default);
 
     void Update(IntegrationJob job);
+
+    /// <summary>True if the tenant has any Created/Running jobs (blocks tenant archive).</summary>
+    Task<bool> HasActiveJobsAsync(Guid tenantId, CancellationToken cancellationToken = default);
 }

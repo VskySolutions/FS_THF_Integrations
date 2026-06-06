@@ -38,9 +38,38 @@ internal sealed class MappingConfigurationRepository : IMappingConfigurationRepo
             .ThenByDescending(m => m.Version)
             .ToListAsync(cancellationToken);
 
+    public async Task<(IReadOnlyList<MappingConfiguration> Items, int Total)> ListByTenantAsync(
+        Guid tenantId, int page, int limit, CancellationToken cancellationToken = default)
+    {
+        var query = _dbContext.MappingConfigurations.IgnoreQueryFilters().Where(m => m.TenantId == tenantId);
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderBy(m => m.SourceField)
+            .Skip((page - 1) * limit)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+        return (items, total);
+    }
+
+    public Task<MappingConfiguration?> GetByIdForTenantAsync(Guid id, Guid tenantId, CancellationToken cancellationToken = default)
+        => _dbContext.MappingConfigurations.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(m => m.Id == id && m.TenantId == tenantId, cancellationToken);
+
+    public Task<MappingConfiguration?> GetActiveForFieldAsync(
+        Guid tenantId, SystemName sourceSystem, SystemName destinationSystem, string sourceField, CancellationToken cancellationToken = default)
+        => _dbContext.MappingConfigurations.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(m => m.TenantId == tenantId
+                && m.IsActive
+                && m.SourceSystem == sourceSystem
+                && m.TargetSystem == destinationSystem
+                && m.SourceField == sourceField, cancellationToken);
+
     public async Task AddAsync(MappingConfiguration configuration, CancellationToken cancellationToken = default)
         => await _dbContext.MappingConfigurations.AddAsync(configuration, cancellationToken);
 
     public void Update(MappingConfiguration configuration)
         => _dbContext.MappingConfigurations.Update(configuration);
+
+    public void Remove(MappingConfiguration configuration)
+        => _dbContext.MappingConfigurations.Remove(configuration);
 }

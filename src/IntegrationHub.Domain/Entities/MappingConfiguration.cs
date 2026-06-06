@@ -11,6 +11,9 @@ public class MappingConfiguration
     /// <summary>Primary key.</summary>
     public Guid Id { get; set; }
 
+    /// <summary>Owning tenant (tenant-scoped mapping rules).</summary>
+    public Guid TenantId { get; set; }
+
     /// <summary>Interface/flow this mapping applies to (optional).</summary>
     public string InterfaceName { get; set; } = string.Empty;
 

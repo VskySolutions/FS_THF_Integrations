@@ -52,5 +52,11 @@ internal sealed class MappingConfigurationConfiguration : IEntityTypeConfigurati
         // Transformer reads active rules for a (source, destination) system pair.
         builder.HasIndex(m => new { m.SourceSystem, m.TargetSystem, m.IsActive });
         builder.HasIndex(m => new { m.InterfaceName, m.IsActive });
+        builder.HasIndex(m => m.TenantId);
+
+        builder.HasOne<Tenant>()
+            .WithMany()
+            .HasForeignKey(m => m.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

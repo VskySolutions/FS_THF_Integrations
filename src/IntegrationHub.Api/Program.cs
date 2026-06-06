@@ -128,3 +128,6 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 app.MapControllers();
 
 app.Run();
+
+/// <summary>Exposed so the integration test host (WebApplicationFactory&lt;Program&gt;) can bootstrap the app.</summary>
+public partial class Program;

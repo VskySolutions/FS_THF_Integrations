@@ -1,2 +1,231 @@
-# FS_THF_Integrations
-# Sample
+# IntegrationHub
+
+A multi-tenant integration platform that automates the import of financial data from **Concur** into **Maconomy** (expense reports, vendor invoices, vendor payments). It exposes a REST API for triggering and administering integration flows, runs the flows asynchronously on a background worker via Hangfire, and isolates every tenant's data and credentials.
+
+Built on **.NET 9** following **Clean Architecture**.
+
+---
+
+## Table of contents
+
+- [Architecture](#architecture)
+- [Technology stack](#technology-stack)
+- [Solution structure](#solution-structure)
+- [Getting started](#getting-started)
+- [Configuration](#configuration)
+- [Running the platform](#running-the-platform)
+- [API surface](#api-surface)
+- [Authentication & roles](#authentication--roles)
+- [Database & migrations](#database--migrations)
+- [Background jobs](#background-jobs)
+- [Testing](#testing)
+- [Further reading](#further-reading)
+
+---
+
+## Architecture
+
+The platform is three deployable containers sharing one SQL Server database:
+
+| Container | Project | Responsibility |
+|-----------|---------|----------------|
+| **Integration API** | `IntegrationHub.Api` | HTTP entry point. Authenticates requests, triggers flows (enqueues Hangfire jobs), serves admin/tenant/user/auth endpoints, owns EF Core migrations. Never calls external systems directly. |
+| **Background Worker** | `IntegrationHub.Workers` | Runs the Hangfire server. Executes recurring and enqueued integration jobs; the only container that calls Concur and Maconomy. |
+| **MCP Server** | `IntegrationHub.McpServer` | Host placeholder for the Model Context Protocol surface (AI-agent access). |
+
+Layering follows Clean Architecture — dependencies point inward:
+
+```
+Domain  ←  Application  ←  Infrastructure  ←  Api / Workers / McpServer
+                                   ▲
+                Shared  ───────────┘   (referenced by every project)
+```
+
+- **Domain** — entities and enums. No dependencies except `Shared`.
+- **Application** — use cases, abstractions (interfaces), MediatR command/handlers, transformers, validators. Depends only on `Domain` + `Shared`.
+- **Infrastructure** — EF Core, repositories, connectors, Hangfire, Serilog, security, Data Protection. Implements the Application abstractions.
+- **Shared** — cross-cutting contracts: configuration option types, API response envelopes, security constants, connector result types.
+- **Api / Workers / McpServer** — composition roots that wire everything via `AddApplication()` + `AddInfrastructure()`.
+
+---
+
+## Technology stack
+
+| Concern | Technology |
+|---------|------------|
+| Runtime | .NET 9 |
+| Web API | ASP.NET Core 9 (controllers) |
+| Persistence | Entity Framework Core 9, SQL Server |
+| Background jobs | Hangfire (SQL Server storage) |
+| Mediation | MediatR |
+| Validation | FluentValidation (auto-validation) |
+| Logging | Serilog → SQL Server sink + console |
+| Auth | Platform-issued JWT (RS256) + API Key (PBKDF2); RBAC policies |
+| Secrets at rest | .NET Data Protection (SQL-persisted key ring) |
+| API docs | Native OpenAPI (`Microsoft.AspNetCore.OpenApi`) + Scalar UI |
+| Tests | xUnit, Moq, FluentAssertions; `WebApplicationFactory` for integration |
+
+---
+
+## Solution structure
+
+```
+IntegrationHub.sln
+├── src/
+│   ├── IntegrationHub.Domain          # entities, enums
+│   ├── IntegrationHub.Shared          # contracts, config options, security constants
+│   ├── IntegrationHub.Application      # abstractions, MediatR flows, transformers, validators
+│   ├── IntegrationHub.Infrastructure   # EF Core, repos, connectors, Hangfire, security, logging
+│   ├── IntegrationHub.Api              # ASP.NET Core host (controllers, middleware, auth, OpenAPI)
+│   ├── IntegrationHub.Workers          # Hangfire worker + DB-driven scheduler
+│   └── IntegrationHub.McpServer        # console host (MCP placeholder)
+└── tests/
+    ├── IntegrationHub.UnitTests        # xUnit/Moq unit tests
+    └── IntegrationHub.IntegrationTests # WebApplicationFactory + real SQL
+```
+
+---
+
+## Getting started
+
+### Prerequisites
+
+- **.NET 9 SDK** (the repo pins the SDK via `global.json`)
+- **SQL Server** (2019+ or SQL Express; Azure SQL works as a drop-in)
+
+### Clone & build
+
+```bash
+git clone https://github.com/VskySolutions/FS_THF_Integrations.git
+cd FS_THF_Integrations
+dotnet build IntegrationHub.sln -c Release
+```
+
+---
+
+## Configuration
+
+Configuration lives in each host's `appsettings.json` and is overridable via environment variables / secrets. Key sections (`IntegrationHub.Api`):
+
+| Section | Purpose |
+|---------|---------|
+| `ConnectionStrings:SqlServer` | Shared SQL Server connection string |
+| `Authentication` | `Issuer`, `Audience`, `PrivateKeyPem`/`PublicKeyPem` (RS256), `AccessTokenMinutes` (60), `RefreshTokenDays` (7), `ApiKeyHeaderName` |
+| `ApiKeys` | Registered machine-to-machine keys (PBKDF2 hashes) |
+| `Hangfire` | `WorkerCount`, `ServerName`, `SchemaName`, `DashboardEnabled` |
+| `Retry` | `MaxAttempts` (4), `BackoffMinutes` (5/15/30/60), `RetryFailedJobsCron` |
+| `ExternalSystems` | Paycor/Concur/Maconomy base URLs (per-tenant credentials override these at runtime) |
+| `Serilog` | `MinimumLevel` |
+| `Bootstrap` | First-run Super Admin (`Email`, `Password`, `TenantIdentifier`, `TenantName`) |
+| `ErrorHandling` | `IncludeExceptionDetails` (defaults to Development) |
+
+> **Security:** never commit real secrets. Use environment variables, user-secrets, or a secrets manager for the connection string, signing keys, and the bootstrap password before any non-local deployment.
+
+---
+
+## Running the platform
+
+The **API** owns schema migrations and seeds a bootstrap Super Admin on first run, so start it first.
+
+```bash
+# Terminal 1 — API (applies migrations + seeds, serves HTTP)
+dotnet run --project src/IntegrationHub.Api --urls http://localhost:5080
+
+# Terminal 2 — Worker (Hangfire server: executes jobs)
+dotnet run --project src/IntegrationHub.Workers
+```
+
+In **Development** the API serves:
+
+- Scalar API reference → `http://localhost:5080/scalar/v1`
+- OpenAPI document → `http://localhost:5080/openapi/v1.json`
+- Hangfire dashboard → `http://localhost:5080/hangfire` (admin role)
+- Health → `http://localhost:5080/health`, `/health/live`, `/health/ready`
+
+### First login
+
+The bootstrap seeder creates a Super Admin (defaults — change them):
+
+```
+email:    admin@integrationhub.local
+password: ChangeMe123!
+```
+
+```bash
+curl -X POST http://localhost:5080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@integrationhub.local","password":"ChangeMe123!"}'
+# → { "data": { "accessToken": "...", "refreshToken": "...", ... } }
+```
+
+Use the `accessToken` as `Authorization: Bearer <token>` on subsequent calls.
+
+---
+
+## API surface
+
+All responses use the standard envelope (`ApiResponse<T>` / `ApiErrorResponse`).
+
+| Area | Endpoints |
+|------|-----------|
+| **Auth** | `POST /api/auth/login` · `refresh` · `logout` · `logout-all` · `switch-tenant` · `GET /api/auth/profile` · `PUT /api/users/me/change-password` |
+| **Users** | `POST/GET /api/admin/users` · `GET/PUT/PUT…/status /api/admin/users/{id}` · `PUT /api/users/me` · tenant-assignment endpoints |
+| **Tenants** | `POST/GET /api/admin/tenants` · lifecycle (`status`, `archive`) · `concur-config`/`maconomy-config` (store/clear/test) · mapping CRUD |
+| **Concur** | `POST /api/concur/expenses/import` · `invoices/import` · `payments/import` (202 + `jobId`) |
+| **Admin** | `GET /api/admin/jobs` · `logs` · `retries` · `health` · `POST /api/admin/retry/{jobId}` |
+| **Health** | `GET /health` · `/health/live` · `/health/ready` (anonymous) |
+
+---
+
+## Authentication & roles
+
+- **Two schemes:** platform JWT (RS256, primary) and API Key (`X-Api-Key`, machine-to-machine). A composite `AnyOf` scheme tries JWT first.
+- **Three roles (RBAC):** `SuperAdmin` > `TenantAdmin` > `Operator`, enforced by named policies `SuperAdminOnly`, `TenantAdminOrAbove`, `OperatorOrAbove`.
+- **Tenant isolation:** the JWT carries `activeTenantId`; `TenantResolutionMiddleware` resolves and validates it, and all tenant-scoped queries filter by it automatically (EF global query filters). Background jobs carry the tenant id in their Hangfire payload.
+- **Session invalidation:** a `tokenVersion` on the user is incremented on password change, deactivation, email change, and logout; the JWT handler rejects stale tokens.
+
+---
+
+## Database & migrations
+
+- **Code-first EF Core**, applied automatically by the API on startup (`Database.Migrate()`).
+- Generate a new migration:
+
+```bash
+dotnet ef migrations add <Name> \
+  --project src/IntegrationHub.Infrastructure \
+  --startup-project src/IntegrationHub.Api \
+  --output-dir Persistence/Migrations
+```
+
+- Core tables: `IntegrationJobs`, `IntegrationLogs`, `RetryQueue`, `MappingConfigurations`, `AuditTrail` (all tenant-scoped), plus `Tenants`, `TenantApiConfigurations`, `JobScheduleConfigurations`, `Users`, `UserTenantRoles`, `RefreshTokens`, and `DataProtectionKeys`. Hangfire and Serilog manage their own schemas.
+
+---
+
+## Background jobs
+
+- The **Worker** hosts the Hangfire server. `HangfireJobScheduler` loads cron schedules from `JobScheduleConfigurations` on startup and polls every minute for runtime changes.
+- Recurring jobs: `ExpenseImportJob`, `InvoiceImportJob`, `VendorPaymentImportJob`, `RetryFailedJobsJob`. Recurring jobs fan out across all active tenants.
+- **Retry strategy:** transient failures retry on a 5/15/30/60-minute incremental backoff; after 4 attempts a job is dead-lettered. Validation failures fail permanently without retry.
+
+---
+
+## Testing
+
+```bash
+# All tests
+dotnet test IntegrationHub.sln
+
+# Unit only
+dotnet test tests/IntegrationHub.UnitTests
+```
+
+- **Unit tests** mock all external dependencies.
+- **Integration tests** boot the real app via `WebApplicationFactory` against a dedicated SQL test database (`FS_THF_Integration_Test`), created by EF migrations on first run. Ensure SQL Server is reachable.
+
+---
+
+## Further reading
+
+- [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — coding conventions, architecture rules, and how to extend the platform (add a connector, flow, endpoint, or migration).
+</content>

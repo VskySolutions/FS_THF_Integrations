@@ -16,8 +16,11 @@ public static class ConfigurationSections
     /// <summary>Serilog structured logging configuration.</summary>
     public const string Serilog = "Serilog";
 
-    /// <summary>Authentication (JWT / OAuth2 / API key) configuration.</summary>
+    /// <summary>Authentication (JWT / API key) configuration.</summary>
     public const string Authentication = "Authentication";
+
+    /// <summary>Registered machine-to-machine API keys.</summary>
+    public const string ApiKeys = "ApiKeys";
 
     /// <summary>Paycor external system configuration.</summary>
     public const string Paycor = "ExternalSystems:Paycor";

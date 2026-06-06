@@ -1,3 +1,4 @@
+using IntegrationHub.Api.Security;
 using IntegrationHub.Application;
 using IntegrationHub.Infrastructure;
 using IntegrationHub.Infrastructure.Persistence;
@@ -5,10 +6,12 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// API host services. Controllers, authentication, middleware, and routing are
-// added in later work orders.
+// API host services. Controllers and routing are added in later work orders.
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// Authentication (JWT + API key), the AnyOf composite scheme, and RBAC policies.
+builder.Services.AddIntegrationHubAuthentication(builder.Configuration);
 
 // Clean Architecture composition root.
 builder.Services.AddApplication();
@@ -29,5 +32,11 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+// Correlation ID is established first so every downstream log entry carries it,
+// including auth failures. Authentication then Authorization follow.
+app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.Run();

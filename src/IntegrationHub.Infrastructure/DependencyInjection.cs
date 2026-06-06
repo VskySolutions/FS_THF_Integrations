@@ -1,6 +1,8 @@
 using IntegrationHub.Application.Abstractions.Persistence;
+using IntegrationHub.Application.Abstractions.Security;
 using IntegrationHub.Infrastructure.Persistence;
 using IntegrationHub.Infrastructure.Persistence.Repositories;
+using IntegrationHub.Infrastructure.Security;
 using IntegrationHub.Shared.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -27,6 +29,9 @@ public static class DependencyInjection
         services.Configure<PaycorOptions>(configuration.GetSection(ConfigurationSections.Paycor));
         services.Configure<ConcurOptions>(configuration.GetSection(ConfigurationSections.Concur));
         services.Configure<MaconomyOptions>(configuration.GetSection(ConfigurationSections.Maconomy));
+        services.Configure<ApiKeysOptions>(configuration.GetSection(ConfigurationSections.ApiKeys));
+
+        services.AddSecurity();
 
         services.AddDbContext<IntegrationHubDbContext>(options =>
             options.UseSqlServer(
@@ -51,6 +56,18 @@ public static class DependencyInjection
         services.AddScoped<IRetryQueueRepository, RetryQueueRepository>();
         services.AddScoped<IMappingConfigurationRepository, MappingConfigurationRepository>();
         services.AddScoped<IAuditTrailRepository, AuditTrailRepository>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers cross-cutting security services shared by the API and Worker hosts:
+    /// the scoped correlation context, the token-version store, and the API key validator.
+    /// </summary>
+    private static IServiceCollection AddSecurity(this IServiceCollection services)
+    {
+        services.AddScoped<ICorrelationContext, CorrelationContext>();
+        services.AddScoped<IUserSecurityStore, PlaceholderUserSecurityStore>();
+        services.AddSingleton<IApiKeyValidator, Pbkdf2ApiKeyValidator>();
         return services;
     }
 }

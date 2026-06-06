@@ -1,21 +1,34 @@
 namespace IntegrationHub.Shared.Configuration;
 
 /// <summary>
-/// Authentication configuration for the Integration API. Supports JWT bearer,
-/// OAuth2 client credentials, and API key headers. Placeholder shape only —
-/// the authentication middleware is delivered in a later work order.
+/// Authentication configuration for the Integration API. Platform-issued JWTs are
+/// verified with RS256 against <see cref="PublicKeyPem"/>; a symmetric
+/// <see cref="SigningKey"/> is supported as a development fallback. API key
+/// auth covers machine-to-machine callers.
 /// </summary>
 public sealed class AuthenticationOptions
 {
-    /// <summary>Expected token issuer.</summary>
+    /// <summary>Expected token issuer. Empty disables issuer validation.</summary>
     public string Issuer { get; set; } = string.Empty;
 
-    /// <summary>Expected token audience.</summary>
+    /// <summary>Expected token audience. Empty disables audience validation.</summary>
     public string Audience { get; set; } = string.Empty;
 
-    /// <summary>Signing key for symmetric JWT validation. Injected via secrets at deploy time.</summary>
+    /// <summary>
+    /// RSA public key (PEM) used to verify RS256 token signatures. Provisioned
+    /// alongside the login endpoint that issues tokens (WO-39).
+    /// </summary>
+    public string PublicKeyPem { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Symmetric signing key, used only as a development fallback when no
+    /// <see cref="PublicKeyPem"/> is configured. Injected via secrets at deploy time.
+    /// </summary>
     public string SigningKey { get; set; } = string.Empty;
 
     /// <summary>Name of the HTTP header carrying the API key.</summary>
     public string ApiKeyHeaderName { get; set; } = "X-Api-Key";
+
+    /// <summary>Allowed clock skew, in seconds, when validating token lifetime.</summary>
+    public int ClockSkewSeconds { get; set; } = 30;
 }

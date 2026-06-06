@@ -1,4 +1,5 @@
 using IntegrationHub.Api.Logging;
+using IntegrationHub.Api.Middleware;
 using IntegrationHub.Api.Security;
 using IntegrationHub.Application;
 using IntegrationHub.Infrastructure;
@@ -44,9 +45,11 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// Correlation ID is established first so every downstream log entry carries it,
-// including auth failures. Request/response logging follows, then auth.
+// Correlation ID is established first so every downstream log entry — and the 500
+// error body — carries it. Exception handling then wraps all downstream middleware,
+// followed by request/response logging and auth.
 app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseMiddleware<RequestResponseLoggingMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();

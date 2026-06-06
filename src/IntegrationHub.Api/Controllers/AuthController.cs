@@ -16,7 +16,7 @@ using Microsoft.Extensions.Options;
 namespace IntegrationHub.Api.Controllers;
 
 /// <summary>
-/// Authentication & session management (WO-39): login, refresh, logout, logout-all,
+/// Authentication and session management (WO-39): login, refresh, logout, logout-all,
 /// tenant switch, profile, change-password (Admin User &amp; Role Management).
 /// </summary>
 [ApiController]

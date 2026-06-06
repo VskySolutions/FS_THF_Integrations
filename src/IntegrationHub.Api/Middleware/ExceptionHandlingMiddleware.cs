@@ -7,7 +7,7 @@ namespace IntegrationHub.Api.Middleware;
 /// <summary>
 /// Catches unhandled exceptions before they reach the caller, logs the full exception
 /// (type, message, stack trace, correlation ID) via Serilog, and returns an
-/// <see cref="ApiResponse"/> error envelope (ADR-002) with <c>code: INTERNAL_ERROR</c>
+/// <c>ApiErrorResponse</c> error envelope (ADR-002) with <c>code: INTERNAL_ERROR</c>
 /// and the correlation ID in <c>details</c>. Exception detail is appended only when
 /// enabled (default: Development).
 /// </summary>

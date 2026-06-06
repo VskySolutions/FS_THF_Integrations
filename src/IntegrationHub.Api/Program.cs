@@ -7,6 +7,7 @@ using IntegrationHub.Api.HealthChecks;
 using IntegrationHub.Api.Logging;
 using IntegrationHub.Api.Middleware;
 using IntegrationHub.Api.Security;
+using IntegrationHub.Api.Swagger;
 using IntegrationHub.Api.Tenancy;
 using IntegrationHub.Application;
 using IntegrationHub.Application.Abstractions.Tenancy;
@@ -42,7 +43,7 @@ builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddIntegrationHubSwagger();
 
 // Authentication (JWT + API key), the AnyOf composite scheme, and RBAC policies.
 builder.Services.AddIntegrationHubAuthentication(builder.Configuration);
@@ -70,7 +71,8 @@ using (var scope = app.Services.CreateScope())
     await IntegrationHub.Api.Startup.BootstrapSeeder.SeedAsync(scope.ServiceProvider, builder.Configuration);
 }
 
-if (app.Environment.IsDevelopment())
+// Swagger UI and spec are exposed only in Development and Staging.
+if (app.Environment.IsDevelopment() || app.Environment.IsStaging())
 {
     app.UseSwagger();
     app.UseSwaggerUI();

@@ -1,10 +1,14 @@
+using global::Hangfire;
 using IntegrationHub.Api.Hangfire;
 using IntegrationHub.Api.HealthChecks;
 using IntegrationHub.Api.Logging;
 using IntegrationHub.Api.Middleware;
 using IntegrationHub.Api.Security;
+using IntegrationHub.Api.Tenancy;
 using IntegrationHub.Application;
+using IntegrationHub.Application.Abstractions.Tenancy;
 using IntegrationHub.Infrastructure;
+using IntegrationHub.Infrastructure.Hangfire;
 using IntegrationHub.Infrastructure.HealthChecks;
 using IntegrationHub.Infrastructure.Logging;
 using IntegrationHub.Infrastructure.Persistence;
@@ -63,6 +67,19 @@ app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseMiddleware<RequestResponseLoggingMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Resolve the active tenant from the authenticated JWT and populate ITenantContext.
+app.UseMiddleware<TenantResolutionMiddleware>();
+
+// Propagate the active tenant into Hangfire job payloads at enqueue time.
+var httpContextAccessor = app.Services.GetRequiredService<IHttpContextAccessor>();
+GlobalJobFilters.Filters.Add(new TenantHangfireJobFilter(() =>
+{
+    var tenant = httpContextAccessor.HttpContext?.RequestServices.GetService<ITenantContext>();
+    return tenant?.IsResolved == true
+        ? new TenantSnapshot(tenant.TenantId, tenant.TenantIdentifier)
+        : (TenantSnapshot?)null;
+}));
 
 // Hangfire dashboard at /hangfire, gated by the TenantAdminOrAbove policy.
 app.UseIntegrationHubHangfireDashboard(builder.Configuration);

@@ -29,6 +29,9 @@ if (HangfireStorageConfigurator.IsConfigured(builder.Configuration))
     var hangfireOptions = builder.Configuration.GetSection(ConfigurationSections.Hangfire).Get<HangfireOptions>()
         ?? new HangfireOptions();
 
+    // Reconstruct ITenantContext from each job payload before the handler runs.
+    GlobalJobFilters.Filters.Add(new TenantHangfireJobFilter());
+
     builder.Services.AddHangfire(config => HangfireStorageConfigurator.Configure(config, builder.Configuration));
     builder.Services.AddHangfireServer(options =>
     {

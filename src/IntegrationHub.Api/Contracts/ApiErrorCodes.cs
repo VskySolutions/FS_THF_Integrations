@@ -8,4 +8,13 @@ public static class ApiErrorCodes
 
     /// <summary>Request failed model/business validation.</summary>
     public const string ValidationFailed = "VALIDATION_FAILED";
+
+    /// <summary>Authentication missing or the tenant could not be resolved.</summary>
+    public const string Unauthorized = "UNAUTHORIZED";
+
+    /// <summary>The resolved tenant is inactive or archived.</summary>
+    public const string TenantInactive = "TENANT_INACTIVE";
+
+    /// <summary>The referenced tenant does not exist.</summary>
+    public const string TenantNotFound = "TENANT_NOT_FOUND";
 }

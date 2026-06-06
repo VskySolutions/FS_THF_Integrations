@@ -2,7 +2,9 @@ using IntegrationHub.Application.Abstractions.Auditing;
 using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Application.Abstractions.Retry;
 using IntegrationHub.Application.Abstractions.Security;
+using IntegrationHub.Application.Abstractions.Tenancy;
 using IntegrationHub.Infrastructure.Auditing;
+using IntegrationHub.Infrastructure.Tenancy;
 using IntegrationHub.Infrastructure.Persistence;
 using IntegrationHub.Infrastructure.Persistence.Repositories;
 using IntegrationHub.Infrastructure.Retry;
@@ -77,6 +79,7 @@ public static class DependencyInjection
     private static IServiceCollection AddSecurity(this IServiceCollection services)
     {
         services.AddScoped<ICorrelationContext, CorrelationContext>();
+        services.AddScoped<ITenantContext, TenantContext>();
         services.AddScoped<ITokenVersionValidator, DefaultTokenVersionValidator>();
         services.AddSingleton<IApiKeyValidator, Pbkdf2ApiKeyValidator>();
         // Default actor identity is the system; the API replaces this with an

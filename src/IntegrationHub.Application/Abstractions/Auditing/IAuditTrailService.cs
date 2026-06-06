@@ -10,12 +10,14 @@ public interface IAuditTrailService
 {
     /// <summary>
     /// Stages an audit entry. When <paramref name="performedBy"/> is null the actor is
-    /// resolved from the current security context.
+    /// resolved from the current security context. <paramref name="details"/> captures
+    /// optional structured context (e.g. a dead-letter failure reason and retry history).
     /// </summary>
     Task AddAsync(
         string entityName,
         string entityId,
         string action,
+        string? details = null,
         string? performedBy = null,
         CancellationToken cancellationToken = default);
 }

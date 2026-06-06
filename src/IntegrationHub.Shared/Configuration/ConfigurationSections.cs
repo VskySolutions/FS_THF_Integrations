@@ -13,6 +13,9 @@ public static class ConfigurationSections
     /// <summary>Hangfire background queue configuration.</summary>
     public const string Hangfire = "Hangfire";
 
+    /// <summary>Retry framework configuration.</summary>
+    public const string Retry = "Retry";
+
     /// <summary>Serilog structured logging configuration.</summary>
     public const string Serilog = "Serilog";
 

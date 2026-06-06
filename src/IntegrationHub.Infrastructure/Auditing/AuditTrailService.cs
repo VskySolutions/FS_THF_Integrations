@@ -25,6 +25,7 @@ internal sealed class AuditTrailService : IAuditTrailService
         string entityName,
         string entityId,
         string action,
+        string? details = null,
         string? performedBy = null,
         CancellationToken cancellationToken = default)
     {
@@ -33,6 +34,7 @@ internal sealed class AuditTrailService : IAuditTrailService
             EntityName = entityName,
             EntityId = entityId,
             Action = action,
+            Details = details,
             PerformedBy = string.IsNullOrWhiteSpace(performedBy) ? _actorAccessor.GetCurrentActor() : performedBy,
             CreatedDate = DateTime.UtcNow,
         };

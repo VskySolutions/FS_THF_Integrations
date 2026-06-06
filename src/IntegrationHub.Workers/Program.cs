@@ -4,6 +4,7 @@ using IntegrationHub.Infrastructure;
 using IntegrationHub.Infrastructure.Hangfire;
 using IntegrationHub.Infrastructure.Logging;
 using IntegrationHub.Shared.Configuration;
+using IntegrationHub.Workers;
 using Serilog;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -37,6 +38,9 @@ if (HangfireStorageConfigurator.IsConfigured(builder.Configuration))
             options.ServerName = hangfireOptions.ServerName;
         }
     });
+
+    // Registers the RetryFailedJobsJob recurring job once the server is up.
+    builder.Services.AddHostedService<RecurringJobRegistrar>();
 }
 
 var host = builder.Build();

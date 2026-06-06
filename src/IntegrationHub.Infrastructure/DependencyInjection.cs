@@ -1,9 +1,11 @@
 using IntegrationHub.Application.Abstractions.Auditing;
 using IntegrationHub.Application.Abstractions.Persistence;
+using IntegrationHub.Application.Abstractions.Retry;
 using IntegrationHub.Application.Abstractions.Security;
 using IntegrationHub.Infrastructure.Auditing;
 using IntegrationHub.Infrastructure.Persistence;
 using IntegrationHub.Infrastructure.Persistence.Repositories;
+using IntegrationHub.Infrastructure.Retry;
 using IntegrationHub.Infrastructure.Security;
 using IntegrationHub.Shared.Configuration;
 using Microsoft.EntityFrameworkCore;
@@ -33,8 +35,10 @@ public static class DependencyInjection
         services.Configure<ConcurOptions>(configuration.GetSection(ConfigurationSections.Concur));
         services.Configure<MaconomyOptions>(configuration.GetSection(ConfigurationSections.Maconomy));
         services.Configure<ApiKeysOptions>(configuration.GetSection(ConfigurationSections.ApiKeys));
+        services.Configure<RetryOptions>(configuration.GetSection(ConfigurationSections.Retry));
 
         services.AddSecurity();
+        services.AddRetry();
 
         services.AddDbContext<IntegrationHubDbContext>(options =>
             options.UseSqlServer(
@@ -75,6 +79,19 @@ public static class DependencyInjection
         // Default actor identity is the system; the API replaces this with an
         // HttpContext-based accessor that resolves the authenticated user.
         services.TryAddScoped<IActorAccessor, SystemActorAccessor>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the retry framework: the retry/dead-letter managers, the recurring-job
+    /// target, and the (placeholder) job executor.
+    /// </summary>
+    private static IServiceCollection AddRetry(this IServiceCollection services)
+    {
+        services.AddScoped<IDeadLetterQueueManager, DeadLetterQueueManager>();
+        services.AddScoped<IRetryQueueManager, RetryQueueManager>();
+        services.AddScoped<IIntegrationJobExecutor, PlaceholderIntegrationJobExecutor>();
+        services.AddScoped<RetryJobScheduler>();
         return services;
     }
 }

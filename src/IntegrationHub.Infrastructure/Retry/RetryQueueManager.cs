@@ -117,6 +117,46 @@ internal sealed class RetryQueueManager : IRetryQueueManager
             jobId, nextAttempt, nextRetryDate);
     }
 
+    public async Task<bool> ManualRetryAsync(Guid jobId, string? performedBy, CancellationToken cancellationToken = default)
+    {
+        var job = await _jobRepository.GetByIdAsync(jobId, cancellationToken);
+        if (job is null)
+        {
+            return false;
+        }
+
+        // Only failed jobs can be manually retried (AC-INF-004.2).
+        if (job.Status is not (IntegrationJobStatus.Failed or IntegrationJobStatus.PermanentlyFailed or IntegrationJobStatus.PartiallyFailed))
+        {
+            return false;
+        }
+
+        var entry = await _retryQueueRepository.GetByJobIdAsync(jobId, cancellationToken);
+        if (entry is not null)
+        {
+            _retryQueueRepository.Remove(entry); // reset retry state
+        }
+
+        job.Status = IntegrationJobStatus.Created;
+        job.AttemptCount = 0;
+        job.ErrorMessage = null;
+        _jobRepository.Update(job);
+
+        await _auditTrailService.AddAsync(
+            entityName: nameof(IntegrationJob),
+            entityId: jobId.ToString(),
+            action: "ManualRetry",
+            details: "Retry count reset and re-enqueued.",
+            performedBy: performedBy,
+            cancellationToken: cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _jobExecutor.EnqueueForExecutionAsync(jobId, cancellationToken);
+
+        _logger.LogInformation("Job {JobId} manually retried by {Actor}", jobId, performedBy ?? "system");
+        return true;
+    }
+
     public async Task ProcessDueRetriesAsync(CancellationToken cancellationToken = default)
     {
         var due = await _retryQueueRepository.ListDueAsync(DateTime.UtcNow, cancellationToken);

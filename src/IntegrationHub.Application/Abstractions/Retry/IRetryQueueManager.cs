@@ -18,4 +18,10 @@ public interface IRetryQueueManager
     /// RetryFailedJobsJob recurring job.
     /// </summary>
     Task ProcessDueRetriesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Manually re-enqueues a failed job, resetting its retry count (REQ-INF-004). Returns
+    /// false when the job does not exist or is not in a failed state.
+    /// </summary>
+    Task<bool> ManualRetryAsync(Guid jobId, string? performedBy, CancellationToken cancellationToken = default);
 }

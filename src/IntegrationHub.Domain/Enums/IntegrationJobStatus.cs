@@ -18,5 +18,8 @@ public enum IntegrationJobStatus
     Failed = 3,
 
     /// <summary>The job exhausted its retries and moved to the dead-letter state.</summary>
-    PermanentlyFailed = 4
+    PermanentlyFailed = 4,
+
+    /// <summary>Some records/lines succeeded while others failed and are pending retry.</summary>
+    PartiallyFailed = 5
 }

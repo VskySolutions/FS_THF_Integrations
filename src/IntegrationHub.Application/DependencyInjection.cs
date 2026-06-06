@@ -1,3 +1,6 @@
+using IntegrationHub.Application.Abstractions.Connectors;
+using IntegrationHub.Application.Concur;
+using IntegrationHub.Domain.Enums;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace IntegrationHub.Application;
@@ -5,17 +8,33 @@ namespace IntegrationHub.Application;
 /// <summary>
 /// Composition-root entry point for the Application layer. Host projects
 /// (Api, Workers, McpServer) call <see cref="AddApplication"/> to register
-/// use cases, validators, and orchestration services.
+/// MediatR handlers, integration flow services, transformers, and validators.
 /// </summary>
 public static class DependencyInjection
 {
-    /// <summary>
-    /// Registers the Application layer services into the DI container.
-    /// Concrete registrations are added as use cases are implemented in later work orders.
-    /// </summary>
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
-        // Application-layer registrations (use cases, validators, mappers) are added here.
+        var assembly = typeof(DependencyInjection).Assembly;
+
+        // MediatR command/handler pipeline for the integration flows.
+        services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(assembly));
+
+        // Concur → Maconomy import flow services.
+        services.AddScoped<ExpenseImportIntegrationService>();
+        services.AddScoped<VendorInvoiceImportIntegrationService>();
+        services.AddScoped<VendorPaymentImportIntegrationService>();
+
+        // Transformers, keyed by (source, destination) system pair.
+        services.AddTransformer<Abstractions.Connectors.Concur.ConcurExpenseReport, Abstractions.Connectors.Maconomy.MaconomyExpenseReport, ConcurExpenseTransformer>(SystemName.Concur, SystemName.Maconomy);
+        services.AddScoped<ConcurExpenseTransformer>();
+        services.AddScoped<ConcurInvoiceTransformer>();
+        services.AddScoped<ConcurPaymentTransformer>();
+
+        // Domain validators.
+        services.AddScoped<ExpenseValidator>();
+        services.AddScoped<InvoiceValidator>();
+        services.AddScoped<PaymentValidator>();
+
         return services;
     }
 }

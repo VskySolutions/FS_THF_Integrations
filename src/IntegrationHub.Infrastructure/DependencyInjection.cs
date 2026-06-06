@@ -1,4 +1,6 @@
+using IntegrationHub.Infrastructure.Persistence;
 using IntegrationHub.Shared.Configuration;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -24,7 +26,12 @@ public static class DependencyInjection
         services.Configure<ConcurOptions>(configuration.GetSection(ConfigurationSections.Concur));
         services.Configure<MaconomyOptions>(configuration.GetSection(ConfigurationSections.Maconomy));
 
-        // EF Core DbContext, repositories, and external connectors are registered here in later work orders.
+        services.AddDbContext<IntegrationHubDbContext>(options =>
+            options.UseSqlServer(
+                configuration.GetConnectionString(ConfigurationSections.SqlServerConnection),
+                sql => sql.MigrationsAssembly(typeof(IntegrationHubDbContext).Assembly.FullName)));
+
+        // Repositories and external connectors are registered here in later work orders.
         return services;
     }
 }

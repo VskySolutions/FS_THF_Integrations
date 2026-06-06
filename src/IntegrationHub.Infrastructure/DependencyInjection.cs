@@ -1,10 +1,12 @@
 using IntegrationHub.Application.Abstractions.Auditing;
 using IntegrationHub.Application.Abstractions.Connectors;
+using IntegrationHub.Application.Abstractions.Connectors.Concur;
 using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Application.Abstractions.Retry;
 using IntegrationHub.Application.Abstractions.Security;
 using IntegrationHub.Application.Abstractions.Tenancy;
 using IntegrationHub.Infrastructure.Auditing;
+using IntegrationHub.Infrastructure.Connectors.Concur;
 using IntegrationHub.Infrastructure.Tenancy;
 using IntegrationHub.Infrastructure.Persistence;
 using IntegrationHub.Infrastructure.Persistence.Repositories;
@@ -42,6 +44,7 @@ public static class DependencyInjection
 
         services.AddSecurity();
         services.AddRetry();
+        services.AddConnectors();
 
         services.AddDbContext<IntegrationHubDbContext>(options =>
             options.UseSqlServer(
@@ -100,6 +103,20 @@ public static class DependencyInjection
         services.AddScoped<IRetryQueueManager, RetryQueueManager>();
         services.AddScoped<IIntegrationJobExecutor, PlaceholderIntegrationJobExecutor>();
         services.AddScoped<RetryJobScheduler>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the connector framework runtime: per-tenant credential resolution and the
+    /// external system connectors (Concur, Maconomy). Connectors hold in-memory token state,
+    /// so they are scoped to a request/job.
+    /// </summary>
+    private static IServiceCollection AddConnectors(this IServiceCollection services)
+    {
+        services.AddHttpClient();
+        services.AddSingleton<ICredentialProtector, PassthroughCredentialProtector>();
+        services.AddScoped<ITenantApiConfigurationService, TenantApiConfigurationService>();
+        services.AddScoped<IConcurConnector, ConcurConnector>();
         return services;
     }
 }

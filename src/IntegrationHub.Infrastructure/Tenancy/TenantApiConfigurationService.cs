@@ -14,7 +14,7 @@ internal sealed class TenantApiConfigurationService : ITenantApiConfigurationSer
 {
     private readonly ITenantContext _tenantContext;
     private readonly ITenantApiConfigurationRepository _repository;
-    private readonly ICredentialProtector _protector;
+    private readonly ICredentialEncryptionService _encryptionService;
 
     private ConcurConfigDto? _concurCache;
     private MaconomyConfigDto? _maconomyCache;
@@ -24,11 +24,11 @@ internal sealed class TenantApiConfigurationService : ITenantApiConfigurationSer
     public TenantApiConfigurationService(
         ITenantContext tenantContext,
         ITenantApiConfigurationRepository repository,
-        ICredentialProtector protector)
+        ICredentialEncryptionService encryptionService)
     {
         _tenantContext = tenantContext;
         _repository = repository;
-        _protector = protector;
+        _encryptionService = encryptionService;
     }
 
     public async Task<ConcurConfigDto?> GetConcurConfigAsync(CancellationToken cancellationToken = default)
@@ -68,7 +68,7 @@ internal sealed class TenantApiConfigurationService : ITenantApiConfigurationSer
             return null;
         }
 
-        var json = _protector.Unprotect(configuration.EncryptedCredentials);
+        var json = _encryptionService.Decrypt(configuration.EncryptedCredentials);
         return JsonSerializer.Deserialize<T>(json);
     }
 }

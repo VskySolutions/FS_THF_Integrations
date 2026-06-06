@@ -15,6 +15,7 @@ using IntegrationHub.Infrastructure.Persistence.Repositories;
 using IntegrationHub.Infrastructure.Retry;
 using IntegrationHub.Infrastructure.Security;
 using IntegrationHub.Shared.Configuration;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -54,6 +55,12 @@ public static class DependencyInjection
                 sql => sql.MigrationsAssembly(typeof(IntegrationHubDbContext).Assembly.FullName)));
 
         services.AddPersistence();
+
+        // Persist the Data Protection key ring to SQL Server so every API/Worker instance
+        // shares the same keys (Multi-Tenancy ADR-002). Application name isolates the ring.
+        services.AddDataProtection()
+            .PersistKeysToDbContext<IntegrationHubDbContext>()
+            .SetApplicationName("IntegrationHub");
 
         // External connectors are registered here in later work orders.
         return services;
@@ -116,7 +123,7 @@ public static class DependencyInjection
     private static IServiceCollection AddConnectors(this IServiceCollection services)
     {
         services.AddHttpClient();
-        services.AddSingleton<ICredentialProtector, PassthroughCredentialProtector>();
+        services.AddSingleton<ICredentialEncryptionService, DataProtectionCredentialEncryptionService>();
         services.AddScoped<ITenantApiConfigurationService, TenantApiConfigurationService>();
         services.AddScoped<IConcurConnector, ConcurConnector>();
         services.AddScoped<IMaconomyConnector, MaconomyConnector>();

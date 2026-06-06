@@ -1,5 +1,6 @@
 using IntegrationHub.Application.Abstractions.Tenancy;
 using IntegrationHub.Domain.Entities;
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace IntegrationHub.Infrastructure.Persistence;
@@ -16,7 +17,7 @@ namespace IntegrationHub.Infrastructure.Persistence;
 /// operations such as the retry scheduler, or design-time), the filter is a no-op.
 /// </para>
 /// </summary>
-public class IntegrationHubDbContext : DbContext
+public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
 {
     private readonly ITenantContext _tenantContext;
 
@@ -41,6 +42,9 @@ public class IntegrationHubDbContext : DbContext
     public DbSet<TenantApiConfiguration> TenantApiConfigurations => Set<TenantApiConfiguration>();
 
     public DbSet<JobScheduleConfiguration> JobScheduleConfigurations => Set<JobScheduleConfiguration>();
+
+    /// <summary>Data Protection key ring storage (Multi-Tenancy ADR-002).</summary>
+    public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

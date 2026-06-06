@@ -132,6 +132,11 @@ public static class DependencyInjection
         services.AddScoped<ITenantApiConfigurationService, TenantApiConfigurationService>();
         services.AddScoped<IConcurConnector, ConcurConnector>();
         services.AddScoped<IMaconomyConnector, MaconomyConnector>();
+
+        // Recurring/triggered Concur import job classes (Hangfire resolves them from DI).
+        services.AddScoped<Jobs.ExpenseImportJob>();
+        services.AddScoped<Jobs.InvoiceImportJob>();
+        services.AddScoped<Jobs.VendorPaymentImportJob>();
         return services;
     }
 }

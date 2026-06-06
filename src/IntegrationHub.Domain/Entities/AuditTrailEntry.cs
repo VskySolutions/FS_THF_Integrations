@@ -9,6 +9,9 @@ public class AuditTrailEntry
     /// <summary>Primary key.</summary>
     public long Id { get; set; }
 
+    /// <summary>Owning tenant (tenant isolation, REQ-TNT-007).</summary>
+    public Guid TenantId { get; set; }
+
     /// <summary>Name of the entity or domain concept the change applies to.</summary>
     public string EntityName { get; set; } = string.Empty;
 

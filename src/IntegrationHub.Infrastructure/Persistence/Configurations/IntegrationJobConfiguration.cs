@@ -48,6 +48,12 @@ internal sealed class IntegrationJobConfiguration : IEntityTypeConfiguration<Int
         builder.HasIndex(j => j.Status);
         builder.HasIndex(j => j.CorrelationId);
         builder.HasIndex(j => j.CreatedAtUtc);
+        builder.HasIndex(j => j.TenantId);
+
+        builder.HasOne<Tenant>()
+            .WithMany()
+            .HasForeignKey(j => j.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasMany(j => j.Logs)
             .WithOne(l => l.Job!)

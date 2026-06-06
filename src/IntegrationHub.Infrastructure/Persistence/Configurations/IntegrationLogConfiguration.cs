@@ -30,5 +30,11 @@ internal sealed class IntegrationLogConfiguration : IEntityTypeConfiguration<Int
             .IsRequired();
 
         builder.HasIndex(l => l.JobId);
+        builder.HasIndex(l => l.TenantId);
+
+        builder.HasOne<Tenant>()
+            .WithMany()
+            .HasForeignKey(l => l.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

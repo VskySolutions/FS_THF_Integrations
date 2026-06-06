@@ -1,0 +1,24 @@
+namespace IntegrationHub.Domain.Entities;
+
+/// <summary>
+/// DB-driven cron schedule for a recurring background job. Loaded by the
+/// HangfireJobScheduler at startup so schedules can change without redeployment
+/// (AC-INF-001.2).
+/// </summary>
+public class JobScheduleConfiguration
+{
+    /// <summary>Primary key.</summary>
+    public Guid Id { get; set; }
+
+    /// <summary>Unique recurring job name (e.g. ExpenseImportJob).</summary>
+    public string JobName { get; set; } = string.Empty;
+
+    /// <summary>Cron expression controlling the job cadence.</summary>
+    public string CronExpression { get; set; } = string.Empty;
+
+    /// <summary>Whether this schedule is active.</summary>
+    public bool IsActive { get; set; } = true;
+
+    /// <summary>UTC timestamp when the schedule was last updated.</summary>
+    public DateTime UpdatedDate { get; set; }
+}

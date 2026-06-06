@@ -64,6 +64,9 @@ public static class DependencyInjection
         services.AddScoped<IMappingConfigurationRepository, MappingConfigurationRepository>();
         services.AddScoped<IAuditTrailRepository, AuditTrailRepository>();
         services.AddScoped<IAuditTrailService, AuditTrailService>();
+        services.AddScoped<ITenantRepository, TenantRepository>();
+        services.AddScoped<ITenantApiConfigurationRepository, TenantApiConfigurationRepository>();
+        services.AddScoped<IJobScheduleConfigurationRepository, JobScheduleConfigurationRepository>();
         return services;
     }
 

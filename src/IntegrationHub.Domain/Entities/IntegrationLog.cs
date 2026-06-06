@@ -9,6 +9,9 @@ public class IntegrationLog
     /// <summary>Primary key.</summary>
     public long Id { get; set; }
 
+    /// <summary>Owning tenant (tenant isolation, REQ-TNT-007).</summary>
+    public Guid TenantId { get; set; }
+
     /// <summary>Foreign key to the owning <see cref="IntegrationJob"/>.</summary>
     public Guid JobId { get; set; }
 

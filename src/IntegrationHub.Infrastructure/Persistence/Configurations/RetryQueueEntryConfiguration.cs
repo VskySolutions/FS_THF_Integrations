@@ -33,6 +33,12 @@ internal sealed class RetryQueueEntryConfiguration : IEntityTypeConfiguration<Re
         // The RetryJobScheduler polls for due, pending entries.
         builder.HasIndex(r => new { r.Status, r.NextRetryDate });
         builder.HasIndex(r => r.JobId);
+        builder.HasIndex(r => r.TenantId);
+
+        builder.HasOne<Tenant>()
+            .WithMany()
+            .HasForeignKey(r => r.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne(r => r.Job)
             .WithMany()

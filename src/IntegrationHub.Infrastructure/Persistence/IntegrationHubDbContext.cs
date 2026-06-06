@@ -26,6 +26,12 @@ public class IntegrationHubDbContext : DbContext
 
     public DbSet<AuditTrailEntry> AuditTrail => Set<AuditTrailEntry>();
 
+    public DbSet<Tenant> Tenants => Set<Tenant>();
+
+    public DbSet<TenantApiConfiguration> TenantApiConfigurations => Set<TenantApiConfiguration>();
+
+    public DbSet<JobScheduleConfiguration> JobScheduleConfigurations => Set<JobScheduleConfiguration>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

@@ -38,5 +38,11 @@ internal sealed class AuditTrailEntryConfiguration : IEntityTypeConfiguration<Au
 
         builder.HasIndex(a => new { a.EntityName, a.EntityId });
         builder.HasIndex(a => a.CreatedDate);
+        builder.HasIndex(a => a.TenantId);
+
+        builder.HasOne<Tenant>()
+            .WithMany()
+            .HasForeignKey(a => a.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

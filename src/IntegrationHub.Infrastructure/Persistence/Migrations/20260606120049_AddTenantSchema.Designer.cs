@@ -4,6 +4,7 @@ using IntegrationHub.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace IntegrationHub.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(IntegrationHubDbContext))]
-    partial class IntegrationHubDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260606120049_AddTenantSchema")]
+    partial class AddTenantSchema
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -55,14 +58,9 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedDate");
-
-                    b.HasIndex("TenantId");
 
                     b.HasIndex("EntityName", "EntityId");
 
@@ -120,9 +118,6 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.HasKey("Id");
 
                     b.HasIndex("CorrelationId");
@@ -130,8 +125,6 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                     b.HasIndex("CreatedAtUtc");
 
                     b.HasIndex("Status");
-
-                    b.HasIndex("TenantId");
 
                     b.ToTable("IntegrationJobs", (string)null);
                 });
@@ -165,14 +158,9 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                     b.Property<string>("ResponsePayload")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.HasKey("Id");
 
                     b.HasIndex("JobId");
-
-                    b.HasIndex("TenantId");
 
                     b.ToTable("IntegrationLogs", (string)null);
                 });
@@ -312,14 +300,9 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)");
 
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.HasKey("Id");
 
                     b.HasIndex("JobId");
-
-                    b.HasIndex("TenantId");
 
                     b.HasIndex("Status", "NextRetryDate");
 
@@ -390,36 +373,12 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                     b.ToTable("TenantApiConfigurations", (string)null);
                 });
 
-            modelBuilder.Entity("IntegrationHub.Domain.Entities.AuditTrailEntry", b =>
-                {
-                    b.HasOne("IntegrationHub.Domain.Entities.Tenant", null)
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("IntegrationHub.Domain.Entities.IntegrationJob", b =>
-                {
-                    b.HasOne("IntegrationHub.Domain.Entities.Tenant", null)
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("IntegrationHub.Domain.Entities.IntegrationLog", b =>
                 {
                     b.HasOne("IntegrationHub.Domain.Entities.IntegrationJob", "Job")
                         .WithMany("Logs")
                         .HasForeignKey("JobId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IntegrationHub.Domain.Entities.Tenant", null)
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Job");
@@ -431,12 +390,6 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("JobId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IntegrationHub.Domain.Entities.Tenant", null)
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Job");

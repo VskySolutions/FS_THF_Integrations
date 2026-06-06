@@ -12,6 +12,9 @@ public class IntegrationJob
     /// <summary>Primary key. Returned to callers as the <c>jobId</c>.</summary>
     public Guid Id { get; set; }
 
+    /// <summary>Owning tenant (tenant isolation, REQ-TNT-007).</summary>
+    public Guid TenantId { get; set; }
+
     /// <summary>Name of the integration interface/flow (e.g. "EmployeeSync").</summary>
     public string InterfaceName { get; set; } = string.Empty;
 

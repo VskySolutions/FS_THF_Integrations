@@ -12,6 +12,9 @@ public class RetryQueueEntry
     /// <summary>Primary key.</summary>
     public Guid Id { get; set; }
 
+    /// <summary>Owning tenant; preserved so background retries run in the correct tenant scope.</summary>
+    public Guid TenantId { get; set; }
+
     /// <summary>Foreign key to the job awaiting retry.</summary>
     public Guid JobId { get; set; }
 

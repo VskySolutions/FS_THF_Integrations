@@ -1,4 +1,6 @@
+using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Infrastructure.Persistence;
+using IntegrationHub.Infrastructure.Persistence.Repositories;
 using IntegrationHub.Shared.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -31,7 +33,24 @@ public static class DependencyInjection
                 configuration.GetConnectionString(ConfigurationSections.SqlServerConnection),
                 sql => sql.MigrationsAssembly(typeof(IntegrationHubDbContext).Assembly.FullName)));
 
-        // Repositories and external connectors are registered here in later work orders.
+        services.AddPersistence();
+
+        // External connectors are registered here in later work orders.
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the unit of work and EF Core repositories. All share the scoped
+    /// <see cref="IntegrationHubDbContext"/> so writes commit in a single transaction.
+    /// </summary>
+    private static IServiceCollection AddPersistence(this IServiceCollection services)
+    {
+        services.AddScoped<IUnitOfWork, UnitOfWork>();
+        services.AddScoped<IIntegrationJobRepository, IntegrationJobRepository>();
+        services.AddScoped<IIntegrationLogRepository, IntegrationLogRepository>();
+        services.AddScoped<IRetryQueueRepository, RetryQueueRepository>();
+        services.AddScoped<IMappingConfigurationRepository, MappingConfigurationRepository>();
+        services.AddScoped<IAuditTrailRepository, AuditTrailRepository>();
         return services;
     }
 }

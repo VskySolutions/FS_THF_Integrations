@@ -1,12 +1,14 @@
 using IntegrationHub.Application.Abstractions.Auditing;
 using IntegrationHub.Application.Abstractions.Connectors;
 using IntegrationHub.Application.Abstractions.Connectors.Concur;
+using IntegrationHub.Application.Abstractions.Connectors.Maconomy;
 using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Application.Abstractions.Retry;
 using IntegrationHub.Application.Abstractions.Security;
 using IntegrationHub.Application.Abstractions.Tenancy;
 using IntegrationHub.Infrastructure.Auditing;
 using IntegrationHub.Infrastructure.Connectors.Concur;
+using IntegrationHub.Infrastructure.Connectors.Maconomy;
 using IntegrationHub.Infrastructure.Tenancy;
 using IntegrationHub.Infrastructure.Persistence;
 using IntegrationHub.Infrastructure.Persistence.Repositories;
@@ -117,6 +119,7 @@ public static class DependencyInjection
         services.AddSingleton<ICredentialProtector, PassthroughCredentialProtector>();
         services.AddScoped<ITenantApiConfigurationService, TenantApiConfigurationService>();
         services.AddScoped<IConcurConnector, ConcurConnector>();
+        services.AddScoped<IMaconomyConnector, MaconomyConnector>();
         return services;
     }
 }

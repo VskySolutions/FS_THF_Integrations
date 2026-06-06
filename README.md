@@ -227,5 +227,7 @@ dotnet test tests/IntegrationHub.UnitTests
 
 ## Further reading
 
+- [`docs/RUN.md`](docs/RUN.md) — build, configure, run each host, verify end-to-end, and troubleshoot.
+- [`docs/SCALAR.md`](docs/SCALAR.md) — run and use the Scalar API reference and the OpenAPI document.
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — coding conventions, architecture rules, and how to extend the platform (add a connector, flow, endpoint, or migration).
 </content>

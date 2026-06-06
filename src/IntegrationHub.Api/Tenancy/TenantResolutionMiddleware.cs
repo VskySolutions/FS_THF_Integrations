@@ -1,8 +1,8 @@
 using System.Text.Json;
-using IntegrationHub.Api.Contracts;
 using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Application.Abstractions.Tenancy;
 using IntegrationHub.Domain.Enums;
+using IntegrationHub.Shared.Contracts;
 using IntegrationHub.Shared.Security;
 
 namespace IntegrationHub.Api.Tenancy;
@@ -71,7 +71,7 @@ public sealed class TenantResolutionMiddleware
 
     private static async Task WriteErrorAsync(HttpContext context, int statusCode, string message, string code)
     {
-        var envelope = ApiResponseFactory.Error(message, code);
+        var envelope = ApiResponseFactory.Error(code, message, details: string.Empty);
         context.Response.Clear();
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = "application/json";

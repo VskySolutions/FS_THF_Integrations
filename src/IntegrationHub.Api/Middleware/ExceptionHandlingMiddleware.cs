@@ -1,6 +1,6 @@
 using System.Text.Json;
-using IntegrationHub.Api.Contracts;
 using IntegrationHub.Application.Abstractions.Security;
+using IntegrationHub.Shared.Contracts;
 
 namespace IntegrationHub.Api.Middleware;
 
@@ -64,7 +64,7 @@ public sealed class ExceptionHandlingMiddleware
                 ? $"{correlationId} | {ex.GetType().Name}: {ex.Message}"
                 : correlationId;
 
-            var envelope = ApiResponseFactory.Error(GenericMessage, ApiErrorCodes.InternalError, details);
+            var envelope = ApiResponseFactory.Error(ApiErrorCodes.InternalError, GenericMessage, details);
 
             context.Response.Clear();
             context.Response.StatusCode = StatusCodes.Status500InternalServerError;

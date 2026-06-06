@@ -1,4 +1,5 @@
 using global::Hangfire;
+using IntegrationHub.Api.Filters;
 using IntegrationHub.Api.Hangfire;
 using IntegrationHub.Api.HealthChecks;
 using IntegrationHub.Api.Logging;
@@ -26,7 +27,12 @@ builder.Host.UseSerilog((context, _, loggerConfiguration) =>
         "IntegrationHub.Api",
         context.HostingEnvironment.EnvironmentName));
 
-// API host services. Controllers and routing are added in later work orders.
+// API host services. Controllers route through the global validation filter, which emits
+// the ApiResponseFactory.ValidationError envelope (ADR-002); the default [ApiController]
+// 400 behavior is suppressed so our envelope is the single validation response shape.
+builder.Services.AddControllers(options => options.Filters.Add<ValidationActionFilter>());
+builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(
+    options => options.SuppressModelStateInvalidFilter = true);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -103,5 +109,8 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
     Predicate = check => check.Tags.Contains(IntegrationHubHealthCheckExtensions.ReadyTag),
     ResponseWriter = HealthCheckResponseWriter.WriteAsync,
 }).AllowAnonymous();
+
+// Controllers are delivered in later phases; routing is wired here.
+app.MapControllers();
 
 app.Run();

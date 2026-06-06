@@ -74,7 +74,7 @@ public static class DependencyInjection
     private static IServiceCollection AddSecurity(this IServiceCollection services)
     {
         services.AddScoped<ICorrelationContext, CorrelationContext>();
-        services.AddScoped<IUserSecurityStore, PlaceholderUserSecurityStore>();
+        services.AddScoped<ITokenVersionValidator, DefaultTokenVersionValidator>();
         services.AddSingleton<IApiKeyValidator, Pbkdf2ApiKeyValidator>();
         // Default actor identity is the system; the API replaces this with an
         // HttpContext-based accessor that resolves the authenticated user.

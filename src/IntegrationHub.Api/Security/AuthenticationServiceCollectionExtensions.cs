@@ -126,12 +126,12 @@ public static class AuthenticationServiceCollectionExtensions
             return;
         }
 
-        var store = context.HttpContext.RequestServices.GetRequiredService<IUserSecurityStore>();
-        var currentVersion = await store.GetCurrentTokenVersionAsync(userId, context.HttpContext.RequestAborted);
+        var validator = context.HttpContext.RequestServices.GetRequiredService<ITokenVersionValidator>();
+        var isValid = await validator.IsValidAsync(userId, tokenVersion, context.HttpContext.RequestAborted);
 
-        // Reject tokens invalidated by password change / deactivation. A null current
-        // version means enforcement is not yet available (placeholder store).
-        if (currentVersion is int current && tokenVersion < current)
+        // Reject tokens invalidated by password change / deactivation. The Phase 1
+        // validator accepts all versions; WO-38 adds the DB-backed comparison.
+        if (!isValid)
         {
             context.Fail("Token has been invalidated.");
         }

@@ -24,6 +24,6 @@ public class AuditTrailEntry
     /// <summary>Identity of the actor that performed the change.</summary>
     public string? PerformedBy { get; set; }
 
-    /// <summary>UTC timestamp when the change occurred.</summary>
-    public DateTime CreatedAtUtc { get; set; }
+    /// <summary>UTC timestamp when the change occurred (Audit &amp; Logging schema: CreatedDate).</summary>
+    public DateTime CreatedDate { get; set; }
 }

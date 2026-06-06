@@ -33,10 +33,10 @@ internal sealed class AuditTrailEntryConfiguration : IEntityTypeConfiguration<Au
         builder.Property(a => a.PerformedBy)
             .HasMaxLength(200);
 
-        builder.Property(a => a.CreatedAtUtc)
+        builder.Property(a => a.CreatedDate)
             .IsRequired();
 
         builder.HasIndex(a => new { a.EntityName, a.EntityId });
-        builder.HasIndex(a => a.CreatedAtUtc);
+        builder.HasIndex(a => a.CreatedDate);
     }
 }

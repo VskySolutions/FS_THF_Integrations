@@ -23,6 +23,11 @@ public static class AuthenticationServiceCollectionExtensions
             .GetSection(ConfigurationSections.Authentication)
             .Get<AuthenticationOptions>() ?? new AuthenticationOptions();
 
+        // Resolve the audit actor from the authenticated HTTP user. Registered before
+        // AddInfrastructure so it takes precedence over the system-identity default.
+        services.AddHttpContextAccessor();
+        services.AddScoped<IActorAccessor, HttpContextActorAccessor>();
+
         services
             .AddAuthentication(AuthenticationSchemes.AnyOf)
             .AddPolicyScheme(AuthenticationSchemes.AnyOf, AuthenticationSchemes.AnyOf, options =>

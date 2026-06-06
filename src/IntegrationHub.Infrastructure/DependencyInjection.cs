@@ -1,5 +1,7 @@
+using IntegrationHub.Application.Abstractions.Auditing;
 using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Application.Abstractions.Security;
+using IntegrationHub.Infrastructure.Auditing;
 using IntegrationHub.Infrastructure.Persistence;
 using IntegrationHub.Infrastructure.Persistence.Repositories;
 using IntegrationHub.Infrastructure.Security;
@@ -7,6 +9,7 @@ using IntegrationHub.Shared.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace IntegrationHub.Infrastructure;
 
@@ -56,6 +59,7 @@ public static class DependencyInjection
         services.AddScoped<IRetryQueueRepository, RetryQueueRepository>();
         services.AddScoped<IMappingConfigurationRepository, MappingConfigurationRepository>();
         services.AddScoped<IAuditTrailRepository, AuditTrailRepository>();
+        services.AddScoped<IAuditTrailService, AuditTrailService>();
         return services;
     }
 
@@ -68,6 +72,9 @@ public static class DependencyInjection
         services.AddScoped<ICorrelationContext, CorrelationContext>();
         services.AddScoped<IUserSecurityStore, PlaceholderUserSecurityStore>();
         services.AddSingleton<IApiKeyValidator, Pbkdf2ApiKeyValidator>();
+        // Default actor identity is the system; the API replaces this with an
+        // HttpContext-based accessor that resolves the authenticated user.
+        services.TryAddScoped<IActorAccessor, SystemActorAccessor>();
         return services;
     }
 }

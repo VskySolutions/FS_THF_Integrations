@@ -14,4 +14,7 @@ public sealed class HangfireOptions
 
     /// <summary>Schema name used for the Hangfire SQL Server tables.</summary>
     public string SchemaName { get; set; } = "HangFire";
+
+    /// <summary>Logical name of this Hangfire server instance. Empty uses the machine default.</summary>
+    public string ServerName { get; set; } = string.Empty;
 }

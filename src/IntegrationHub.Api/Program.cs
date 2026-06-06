@@ -1,3 +1,4 @@
+using IntegrationHub.Api.Hangfire;
 using IntegrationHub.Api.Logging;
 using IntegrationHub.Api.Middleware;
 using IntegrationHub.Api.Security;
@@ -24,6 +25,9 @@ builder.Services.AddSwaggerGen();
 
 // Authentication (JWT + API key), the AnyOf composite scheme, and RBAC policies.
 builder.Services.AddIntegrationHubAuthentication(builder.Configuration);
+
+// Hangfire storage so the API can host the monitoring dashboard (jobs run in the Worker).
+builder.Services.AddIntegrationHubHangfireDashboard(builder.Configuration);
 
 // Clean Architecture composition root.
 builder.Services.AddApplication();
@@ -53,5 +57,8 @@ app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseMiddleware<RequestResponseLoggingMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Hangfire dashboard at /hangfire, gated by the TenantAdminOrAbove policy.
+app.UseIntegrationHubHangfireDashboard(builder.Configuration);
 
 app.Run();

@@ -1,6 +1,9 @@
+using global::Hangfire;
 using IntegrationHub.Application;
 using IntegrationHub.Infrastructure;
+using IntegrationHub.Infrastructure.Hangfire;
 using IntegrationHub.Infrastructure.Logging;
+using IntegrationHub.Shared.Configuration;
 using Serilog;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -17,7 +20,24 @@ builder.Services.AddSerilog((_, loggerConfiguration) =>
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
-// Hosted background services (Hangfire server, recurring jobs) are registered in later work orders.
+// Hangfire server: consumes jobs from the shared SQL Server queue (schema auto-provisioned).
+// AddHangfireServer registers an IHostedService that drains in-flight jobs on the host's
+// cancellation token for graceful shutdown. Recurring job registration is a later work order.
+if (HangfireStorageConfigurator.IsConfigured(builder.Configuration))
+{
+    var hangfireOptions = builder.Configuration.GetSection(ConfigurationSections.Hangfire).Get<HangfireOptions>()
+        ?? new HangfireOptions();
+
+    builder.Services.AddHangfire(config => HangfireStorageConfigurator.Configure(config, builder.Configuration));
+    builder.Services.AddHangfireServer(options =>
+    {
+        options.WorkerCount = hangfireOptions.WorkerCount > 0 ? hangfireOptions.WorkerCount : Environment.ProcessorCount * 5;
+        if (!string.IsNullOrWhiteSpace(hangfireOptions.ServerName))
+        {
+            options.ServerName = hangfireOptions.ServerName;
+        }
+    });
+}
 
 var host = builder.Build();
 host.Run();

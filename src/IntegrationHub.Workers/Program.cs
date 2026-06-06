@@ -42,8 +42,9 @@ if (HangfireStorageConfigurator.IsConfigured(builder.Configuration))
         }
     });
 
-    // Registers the RetryFailedJobsJob recurring job once the server is up.
-    builder.Services.AddHostedService<RecurringJobRegistrar>();
+    // DB-driven scheduler: registers all recurring jobs from SQL Server and polls for
+    // schedule changes at runtime (WO-30).
+    builder.Services.AddHostedService<HangfireJobScheduler>();
 }
 
 var host = builder.Build();

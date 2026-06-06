@@ -33,4 +33,21 @@ internal sealed class IntegrationJobRepository : IIntegrationJobRepository
         => _dbContext.IntegrationJobs.IgnoreQueryFilters()
             .AnyAsync(j => j.TenantId == tenantId
                 && (j.Status == IntegrationJobStatus.Created || j.Status == IntegrationJobStatus.Running), cancellationToken);
+
+    public async Task<(IReadOnlyList<IntegrationJob> Items, int Total)> QueryAsync(
+        Guid? tenantId, IntegrationJobStatus? status, string? interfaceName, DateTime? fromDate, DateTime? toDate,
+        int page, int limit, CancellationToken cancellationToken = default)
+    {
+        var query = _dbContext.IntegrationJobs.IgnoreQueryFilters().AsQueryable();
+        if (tenantId is { } tid) { query = query.Where(j => j.TenantId == tid); }
+        if (status is { } st) { query = query.Where(j => j.Status == st); }
+        if (!string.IsNullOrWhiteSpace(interfaceName)) { query = query.Where(j => j.InterfaceName == interfaceName); }
+        if (fromDate is { } from) { query = query.Where(j => j.CreatedAtUtc >= from); }
+        if (toDate is { } to) { query = query.Where(j => j.CreatedAtUtc <= to); }
+
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query.OrderByDescending(j => j.CreatedAtUtc)
+            .Skip((page - 1) * limit).Take(limit).ToListAsync(cancellationToken);
+        return (items, total);
+    }
 }

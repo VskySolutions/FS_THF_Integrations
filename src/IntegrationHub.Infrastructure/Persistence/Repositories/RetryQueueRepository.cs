@@ -31,4 +31,16 @@ internal sealed class RetryQueueRepository : IRetryQueueRepository
 
     public void Remove(RetryQueueEntry entry)
         => _dbContext.RetryQueue.Remove(entry);
+
+    public async Task<(IReadOnlyList<RetryQueueEntry> Items, int Total)> QueryAsync(
+        Guid? tenantId, int page, int limit, CancellationToken cancellationToken = default)
+    {
+        var query = _dbContext.RetryQueue.IgnoreQueryFilters().AsQueryable();
+        if (tenantId is { } tid) { query = query.Where(r => r.TenantId == tid); }
+
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query.OrderBy(r => r.NextRetryDate)
+            .Skip((page - 1) * limit).Take(limit).ToListAsync(cancellationToken);
+        return (items, total);
+    }
 }

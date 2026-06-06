@@ -18,4 +18,8 @@ public interface IRetryQueueRepository
     void Update(RetryQueueEntry entry);
 
     void Remove(RetryQueueEntry entry);
+
+    /// <summary>Admin query; null <paramref name="tenantId"/> returns all tenants.</summary>
+    Task<(IReadOnlyList<RetryQueueEntry> Items, int Total)> QueryAsync(
+        Guid? tenantId, int page, int limit, CancellationToken cancellationToken = default);
 }

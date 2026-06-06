@@ -11,4 +11,9 @@ public interface IIntegrationLogRepository
     Task AddAsync(IntegrationLog log, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<IntegrationLog>> ListByJobIdAsync(Guid jobId, CancellationToken cancellationToken = default);
+
+    /// <summary>Admin query with optional filters; null <paramref name="tenantId"/> returns all tenants.</summary>
+    Task<(IReadOnlyList<IntegrationLog> Items, int Total)> QueryAsync(
+        Guid? tenantId, Guid? jobId, string? level, DateTime? fromDate, DateTime? toDate,
+        int page, int limit, CancellationToken cancellationToken = default);
 }

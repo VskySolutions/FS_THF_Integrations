@@ -19,4 +19,12 @@ public interface IIntegrationJobRepository
 
     /// <summary>True if the tenant has any Created/Running jobs (blocks tenant archive).</summary>
     Task<bool> HasActiveJobsAsync(Guid tenantId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Admin query with optional filters. <paramref name="tenantId"/> null returns all
+    /// tenants (Super Admin); a value scopes to that tenant.
+    /// </summary>
+    Task<(IReadOnlyList<IntegrationJob> Items, int Total)> QueryAsync(
+        Guid? tenantId, IntegrationJobStatus? status, string? interfaceName, DateTime? fromDate, DateTime? toDate,
+        int page, int limit, CancellationToken cancellationToken = default);
 }

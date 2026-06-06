@@ -35,3 +35,15 @@ public sealed class UpdateProfileRequestValidator : AbstractValidator<UpdateProf
         RuleFor(x => x.DisplayName).NotEmpty().MaximumLength(200);
     }
 }
+
+public sealed class AssignTenantRoleRequestValidator : AbstractValidator<AssignTenantRoleRequest>
+{
+    public AssignTenantRoleRequestValidator()
+    {
+        RuleFor(x => x.TenantId).NotEmpty();
+        RuleFor(x => x.Role)
+            .NotEmpty()
+            .Must(role => Enum.TryParse<UserRole>(role, ignoreCase: false, out _))
+            .WithMessage("Role must be one of: SuperAdmin, TenantAdmin, Operator.");
+    }
+}

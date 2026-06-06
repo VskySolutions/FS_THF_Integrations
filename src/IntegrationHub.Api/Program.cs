@@ -65,6 +65,9 @@ using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<IntegrationHubDbContext>();
     dbContext.Database.Migrate();
+
+    // Seed a bootstrap Super Admin on first run so the platform is usable out of the box.
+    await IntegrationHub.Api.Startup.BootstrapSeeder.SeedAsync(scope.ServiceProvider, builder.Configuration);
 }
 
 if (app.Environment.IsDevelopment())

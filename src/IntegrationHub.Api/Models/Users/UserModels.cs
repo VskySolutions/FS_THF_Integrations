@@ -25,6 +25,12 @@ public sealed class UpdateUserStatusRequest
     public bool IsActive { get; set; }
 }
 
+public sealed class AssignTenantRoleRequest
+{
+    public Guid TenantId { get; set; }
+    public string Role { get; set; } = string.Empty;
+}
+
 public sealed record TenantAssignmentDto(Guid TenantId, string Role);
 
 public sealed record CreateUserResponse(Guid UserId, string TemporaryPassword);

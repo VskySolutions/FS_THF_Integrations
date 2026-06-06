@@ -83,6 +83,7 @@ public static class DependencyInjection
         services.AddScoped<ITenantApiConfigurationRepository, TenantApiConfigurationRepository>();
         services.AddScoped<IJobScheduleConfigurationRepository, JobScheduleConfigurationRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddSingleton<ITransformationRuleEvaluator, Connectors.TransformationRuleEvaluator>();
         return services;
     }
@@ -95,9 +96,11 @@ public static class DependencyInjection
     {
         services.AddScoped<ICorrelationContext, CorrelationContext>();
         services.AddScoped<ITenantContext, TenantContext>();
-        services.AddScoped<ITokenVersionValidator, DefaultTokenVersionValidator>();
+        services.AddScoped<ITokenVersionValidator, DbTokenVersionValidator>();
         services.AddSingleton<IApiKeyValidator, Pbkdf2ApiKeyValidator>();
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
+        services.AddSingleton<ISigningKeyProvider, RsaSigningKeyProvider>();
+        services.AddSingleton<IJwtTokenService, JwtTokenService>();
         // Default actor identity is the system; the API replaces this with an
         // HttpContext-based accessor that resolves the authenticated user.
         services.TryAddScoped<IActorAccessor, SystemActorAccessor>();

@@ -3,6 +3,7 @@ using IntegrationHub.Application.Abstractions.Security;
 using IntegrationHub.Shared.Configuration;
 using IntegrationHub.Shared.Security;
 using Microsoft.AspNetCore.Authentication;
+using IntegrationHub.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using AuthenticationOptions = IntegrationHub.Shared.Configuration.AuthenticationOptions;
@@ -52,6 +53,15 @@ public static class AuthenticationServiceCollectionExtensions
             })
             .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
                 AuthenticationSchemes.ApiKey, _ => { });
+
+        // The platform issues and validates RS256 tokens with the same key (WO-39); resolve
+        // it from the signing-key provider so issuance and validation always agree.
+        services.AddOptions<JwtBearerOptions>(AuthenticationSchemes.Jwt)
+            .Configure<ISigningKeyProvider>((jwtOptions, keyProvider) =>
+            {
+                jwtOptions.TokenValidationParameters.IssuerSigningKey = keyProvider.ValidationKey;
+                jwtOptions.TokenValidationParameters.ValidAlgorithms = new[] { SecurityAlgorithms.RsaSha256 };
+            });
 
         services.AddAuthorization(options =>
         {

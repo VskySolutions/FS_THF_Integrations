@@ -21,10 +21,22 @@ public sealed class AuthenticationOptions
     public string PublicKeyPem { get; set; } = string.Empty;
 
     /// <summary>
+    /// RSA private key (PEM) used to sign issued JWTs (RS256). When empty an ephemeral key
+    /// is generated for the process lifetime (development only).
+    /// </summary>
+    public string PrivateKeyPem { get; set; } = string.Empty;
+
+    /// <summary>
     /// Symmetric signing key, used only as a development fallback when no
     /// <see cref="PublicKeyPem"/> is configured. Injected via secrets at deploy time.
     /// </summary>
     public string SigningKey { get; set; } = string.Empty;
+
+    /// <summary>Access token lifetime in minutes (default 60).</summary>
+    public int AccessTokenMinutes { get; set; } = 60;
+
+    /// <summary>Refresh token lifetime in days (default 7).</summary>
+    public int RefreshTokenDays { get; set; } = 7;
 
     /// <summary>Name of the HTTP header carrying the API key.</summary>
     public string ApiKeyHeaderName { get; set; } = "X-Api-Key";

@@ -226,6 +226,58 @@ public sealed class UsersController : ControllerBase
         return Ok(ApiResponseFactory.Success(new { userId = user.Id, isActive = user.IsActive }, "Status updated."));
     }
 
+    [HttpPost("/api/admin/users/{id:guid}/tenant-assignments")]
+    [Authorize(Policy = AuthorizationPolicies.SuperAdminOnly)]
+    public async Task<IActionResult> AssignTenantRole(Guid id, [FromBody] AssignTenantRoleRequest request, CancellationToken cancellationToken)
+    {
+        var user = await _users.GetByIdAsync(id, cancellationToken);
+        if (user is null)
+        {
+            return NotFound(ApiResponseFactory.NotFound("User not found."));
+        }
+
+        var role = Enum.Parse<UserRole>(request.Role);
+        var existing = await _users.GetAssignmentAsync(id, request.TenantId, cancellationToken);
+        if (existing is not null)
+        {
+            existing.Role = role; // reassignment updates rather than duplicates (AC-ADM-006.2)
+        }
+        else
+        {
+            await _users.AddAssignmentAsync(new UserTenantRole
+            {
+                Id = Guid.NewGuid(),
+                UserId = id,
+                TenantId = request.TenantId,
+                Role = role,
+            }, cancellationToken);
+        }
+
+        await _audit.AddAsync(nameof(User), id.ToString(), "TenantRoleAssigned",
+            details: $"tenant={request.TenantId}; role={role}", cancellationToken: cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Ok(ApiResponseFactory.Success(new { userId = id, tenantId = request.TenantId, role = role.ToString() }, "Assignment saved."));
+    }
+
+    [HttpDelete("/api/admin/users/{id:guid}/tenant-assignments/{tenantId:guid}")]
+    [Authorize(Policy = AuthorizationPolicies.SuperAdminOnly)]
+    public async Task<IActionResult> RemoveTenantRole(Guid id, Guid tenantId, CancellationToken cancellationToken)
+    {
+        var existing = await _users.GetAssignmentAsync(id, tenantId, cancellationToken);
+        if (existing is null)
+        {
+            return NotFound(ApiResponseFactory.NotFound("Assignment not found."));
+        }
+
+        _users.RemoveAssignment(existing);
+        await _audit.AddAsync(nameof(User), id.ToString(), "TenantRoleRemoved",
+            details: $"tenant={tenantId}", cancellationToken: cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Ok(ApiResponseFactory.Success(new { message = "Assignment removed." }, "Assignment removed."));
+    }
+
     private bool CanCallerSee(User user)
     {
         if (User.IsSuperAdmin())

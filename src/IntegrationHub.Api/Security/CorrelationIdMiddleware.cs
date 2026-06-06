@@ -1,4 +1,5 @@
 using IntegrationHub.Application.Abstractions.Security;
+using Serilog.Context;
 
 namespace IntegrationHub.Api.Security;
 
@@ -34,6 +35,10 @@ public sealed class CorrelationIdMiddleware
             return Task.CompletedTask;
         });
 
-        await _next(context);
+        // Enrich every log entry written during this request with the correlation ID.
+        using (LogContext.PushProperty("CorrelationId", correlationId))
+        {
+            await _next(context);
+        }
     }
 }

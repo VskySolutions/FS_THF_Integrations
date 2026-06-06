@@ -1,8 +1,18 @@
 using IntegrationHub.Application;
 using IntegrationHub.Infrastructure;
+using IntegrationHub.Infrastructure.Logging;
 using Microsoft.Extensions.Hosting;
+using Serilog;
 
 var builder = Host.CreateApplicationBuilder(args);
+
+// Structured logging to SQL Server, enriched with correlation ID, service, environment.
+builder.Services.AddSerilog((_, loggerConfiguration) =>
+    SerilogConfigurator.Configure(
+        loggerConfiguration,
+        builder.Configuration,
+        "IntegrationHub.McpServer",
+        builder.Environment.EnvironmentName));
 
 // Clean Architecture composition root. The MCP Server invokes Integration API
 // flows over internal HTTP; tool registration and the MCP transport are added

@@ -1,0 +1,11 @@
+# Normalize line endings: let Git decide and store LF in the repo.
+* text=auto
+
+# Force LF for source and config so cross-platform checkouts are stable.
+*.cs text eol=lf
+*.csproj text eol=lf
+*.sln text eol=crlf
+*.json text eol=lf
+*.md text eol=lf
+*.gitignore text eol=lf
+*.gitattributes text eol=lf

@@ -1,30 +1,42 @@
 using System.Text.Json;
+using IntegrationHub.Api.Contracts;
 using IntegrationHub.Application.Abstractions.Security;
 
 namespace IntegrationHub.Api.Middleware;
 
 /// <summary>
 /// Catches unhandled exceptions before they reach the caller, logs the full exception
-/// (type, message, stack trace, correlation ID) via Serilog, and returns a structured
-/// HTTP 500 carrying only the correlation ID and a generic message. Exception detail is
-/// exposed only in Development (Error Handling &amp; Retry blueprint).
+/// (type, message, stack trace, correlation ID) via Serilog, and returns an
+/// <see cref="ApiResponse"/> error envelope (ADR-002) with <c>code: INTERNAL_ERROR</c>
+/// and the correlation ID in <c>details</c>. Exception detail is appended only when
+/// enabled (default: Development).
 /// </summary>
 public sealed class ExceptionHandlingMiddleware
 {
     private const string GenericMessage = "An unexpected error occurred";
+    private const string IncludeDetailsKey = "ErrorHandling:IncludeExceptionDetails";
+
+    private static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
 
     private readonly RequestDelegate _next;
     private readonly ILogger<ExceptionHandlingMiddleware> _logger;
     private readonly IHostEnvironment _environment;
+    private readonly bool _includeExceptionDetails;
 
     public ExceptionHandlingMiddleware(
         RequestDelegate next,
         ILogger<ExceptionHandlingMiddleware> logger,
-        IHostEnvironment environment)
+        IHostEnvironment environment,
+        IConfiguration configuration)
     {
         _next = next;
         _logger = logger;
         _environment = environment;
+        // Configurable via appsettings; defaults to on in Development.
+        _includeExceptionDetails = configuration.GetValue<bool?>(IncludeDetailsKey) ?? environment.IsDevelopment();
     }
 
     public async Task InvokeAsync(HttpContext context, ICorrelationContext correlationContext)
@@ -48,23 +60,16 @@ public sealed class ExceptionHandlingMiddleware
                 throw;
             }
 
+            var details = _includeExceptionDetails
+                ? $"{correlationId} | {ex.GetType().Name}: {ex.Message}"
+                : correlationId;
+
+            var envelope = ApiResponseFactory.Error(GenericMessage, ApiErrorCodes.InternalError, details);
+
             context.Response.Clear();
             context.Response.StatusCode = StatusCodes.Status500InternalServerError;
             context.Response.ContentType = "application/json";
-
-            var body = new Dictionary<string, string?>
-            {
-                ["correlationId"] = correlationId,
-                ["message"] = GenericMessage,
-            };
-
-            if (_environment.IsDevelopment())
-            {
-                body["detail"] = ex.Message;
-                body["exceptionType"] = ex.GetType().FullName;
-            }
-
-            await context.Response.WriteAsync(JsonSerializer.Serialize(body), context.RequestAborted);
+            await context.Response.WriteAsync(JsonSerializer.Serialize(envelope, SerializerOptions), context.RequestAborted);
         }
     }
 }

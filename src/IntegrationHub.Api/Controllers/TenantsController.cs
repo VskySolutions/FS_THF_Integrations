@@ -22,6 +22,13 @@ namespace IntegrationHub.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("/api/admin/tenants")]
+[Produces("application/json")]
+[Tags("Tenants")]
+[ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
+[ProducesResponseType(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType(StatusCodes.Status403Forbidden)]
+[ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
+[ProducesResponseType<ApiErrorResponse>(StatusCodes.Status500InternalServerError)]
 public sealed class TenantsController : ControllerBase
 {
     private readonly ITenantRepository _tenants;
@@ -63,6 +70,7 @@ public sealed class TenantsController : ControllerBase
 
     [HttpPost]
     [Authorize(Policy = AuthorizationPolicies.SuperAdminOnly)]
+    [ProducesResponseType<ApiResponse<TenantResponse>>(StatusCodes.Status201Created)]
     public async Task<IActionResult> Create([FromBody] CreateTenantRequest request, CancellationToken cancellationToken)
     {
         if (await _tenants.IdentifierExistsAsync(request.Identifier, cancellationToken))
@@ -103,6 +111,7 @@ public sealed class TenantsController : ControllerBase
 
     [HttpGet("{id:guid}")]
     [Authorize(Policy = AuthorizationPolicies.SuperAdminOnly)]
+    [ProducesResponseType<ApiResponse<TenantDetail>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
         var tenant = await _tenants.GetByIdAsync(id, cancellationToken);

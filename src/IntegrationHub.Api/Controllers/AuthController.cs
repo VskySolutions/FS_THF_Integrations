@@ -20,6 +20,12 @@ namespace IntegrationHub.Api.Controllers;
 /// tenant switch, profile, change-password (Admin User &amp; Role Management).
 /// </summary>
 [ApiController]
+[Produces("application/json")]
+[Tags("Auth")]
+[ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
+[ProducesResponseType(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType(StatusCodes.Status403Forbidden)]
+[ProducesResponseType<ApiErrorResponse>(StatusCodes.Status500InternalServerError)]
 public sealed class AuthController : ControllerBase
 {
     private readonly IUserRepository _users;
@@ -50,6 +56,7 @@ public sealed class AuthController : ControllerBase
 
     [HttpPost("/api/auth/login")]
     [AllowAnonymous]
+    [ProducesResponseType<ApiResponse<LoginTokenResponse>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Login([FromBody] LoginRequest request, CancellationToken cancellationToken)
     {
         var user = await _users.GetByEmailAsync(request.Email, cancellationToken);
@@ -75,6 +82,7 @@ public sealed class AuthController : ControllerBase
 
     [HttpPost("/api/auth/refresh")]
     [AllowAnonymous]
+    [ProducesResponseType<ApiResponse<RefreshTokenResponse>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Refresh([FromBody] RefreshRequest request, CancellationToken cancellationToken)
     {
         var stored = await _refreshTokens.GetByHashAsync(HashToken(request.RefreshToken), cancellationToken);
@@ -149,6 +157,7 @@ public sealed class AuthController : ControllerBase
 
     [HttpPost("/api/auth/switch-tenant")]
     [Authorize]
+    [ProducesResponseType<ApiResponse<SwitchTenantResponse>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> SwitchTenant([FromBody] SwitchTenantRequest request, CancellationToken cancellationToken)
     {
         var user = await CurrentUserAsync(cancellationToken);
@@ -180,6 +189,7 @@ public sealed class AuthController : ControllerBase
 
     [HttpGet("/api/auth/profile")]
     [Authorize]
+    [ProducesResponseType<ApiResponse<UserProfileResponse>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Profile(CancellationToken cancellationToken)
     {
         var user = await CurrentUserAsync(cancellationToken);

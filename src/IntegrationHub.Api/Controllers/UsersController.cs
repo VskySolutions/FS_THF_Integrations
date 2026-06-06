@@ -17,6 +17,13 @@ namespace IntegrationHub.Api.Controllers;
 /// Operators/Tenant Admins within their active tenant (REQ-ADM-001/002/003/009/010).
 /// </summary>
 [ApiController]
+[Produces("application/json")]
+[Tags("Users")]
+[ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
+[ProducesResponseType(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType(StatusCodes.Status403Forbidden)]
+[ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
+[ProducesResponseType<ApiErrorResponse>(StatusCodes.Status500InternalServerError)]
 public sealed class UsersController : ControllerBase
 {
     private readonly IUserRepository _users;
@@ -38,6 +45,7 @@ public sealed class UsersController : ControllerBase
 
     [HttpPost("/api/admin/users")]
     [Authorize(Policy = AuthorizationPolicies.TenantAdminOrAbove)]
+    [ProducesResponseType<ApiResponse<CreateUserResponse>>(StatusCodes.Status201Created)]
     public async Task<IActionResult> Create([FromBody] CreateUserRequest request, CancellationToken cancellationToken)
     {
         var role = Enum.Parse<UserRole>(request.Role);

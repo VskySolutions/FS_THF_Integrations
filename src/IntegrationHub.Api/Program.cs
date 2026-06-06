@@ -6,9 +6,10 @@ using IntegrationHub.Api.Hangfire;
 using IntegrationHub.Api.HealthChecks;
 using IntegrationHub.Api.Logging;
 using IntegrationHub.Api.Middleware;
+using IntegrationHub.Api.OpenApi;
 using IntegrationHub.Api.Security;
-using IntegrationHub.Api.Swagger;
 using IntegrationHub.Api.Tenancy;
+using Scalar.AspNetCore;
 using IntegrationHub.Application;
 using IntegrationHub.Application.Abstractions.Tenancy;
 using IntegrationHub.Infrastructure;
@@ -42,8 +43,7 @@ builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
 
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddIntegrationHubSwagger();
+builder.Services.AddIntegrationHubOpenApi();
 
 // Authentication (JWT + API key), the AnyOf composite scheme, and RBAC policies.
 builder.Services.AddIntegrationHubAuthentication(builder.Configuration);
@@ -71,11 +71,12 @@ using (var scope = app.Services.CreateScope())
     await IntegrationHub.Api.Startup.BootstrapSeeder.SeedAsync(scope.ServiceProvider, builder.Configuration);
 }
 
-// Swagger UI and spec are exposed only in Development and Staging.
+// OpenAPI spec (/openapi/v1.json) and the Scalar UI (/scalar/v1) are exposed only in
+// Development and Staging.
 if (app.Environment.IsDevelopment() || app.Environment.IsStaging())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
+    app.MapOpenApi();
+    app.MapScalarApiReference(options => options.WithTitle("IntegrationHub API"));
 }
 
 // Correlation ID is established first so every downstream log entry — and the 500

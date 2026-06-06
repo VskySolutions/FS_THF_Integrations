@@ -18,6 +18,13 @@ namespace IntegrationHub.Api.Controllers;
 [ApiController]
 [Route("/api/admin")]
 [Authorize(Policy = AuthorizationPolicies.TenantAdminOrAbove)]
+[Produces("application/json")]
+[Tags("Admin")]
+[ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
+[ProducesResponseType(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType(StatusCodes.Status403Forbidden)]
+[ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
+[ProducesResponseType<ApiErrorResponse>(StatusCodes.Status500InternalServerError)]
 public sealed class AdminController : ControllerBase
 {
     private readonly IIntegrationJobRepository _jobs;

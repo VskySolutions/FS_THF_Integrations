@@ -18,6 +18,12 @@ namespace IntegrationHub.Api.Controllers;
 [ApiController]
 [Route("/api/concur")]
 [Authorize(Policy = AuthorizationPolicies.OperatorOrAbove)]
+[Produces("application/json")]
+[Tags("Concur")]
+[ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
+[ProducesResponseType(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType(StatusCodes.Status403Forbidden)]
+[ProducesResponseType<ApiErrorResponse>(StatusCodes.Status500InternalServerError)]
 public sealed class ConcurController : ControllerBase
 {
     private readonly IIntegrationJobRepository _jobs;
@@ -32,6 +38,7 @@ public sealed class ConcurController : ControllerBase
     }
 
     [HttpPost("expenses/import")]
+    [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status202Accepted)]
     public async Task<IActionResult> ImportExpenses(CancellationToken cancellationToken)
     {
         var jobId = await CreateJobAsync("ExpenseImport", cancellationToken);
@@ -40,6 +47,7 @@ public sealed class ConcurController : ControllerBase
     }
 
     [HttpPost("invoices/import")]
+    [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status202Accepted)]
     public async Task<IActionResult> ImportInvoices(CancellationToken cancellationToken)
     {
         var jobId = await CreateJobAsync("InvoiceImport", cancellationToken);
@@ -48,6 +56,7 @@ public sealed class ConcurController : ControllerBase
     }
 
     [HttpPost("payments/import")]
+    [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status202Accepted)]
     public async Task<IActionResult> ImportPayments(CancellationToken cancellationToken)
     {
         var jobId = await CreateJobAsync("VendorPaymentImport", cancellationToken);

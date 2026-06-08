@@ -1,5 +1,5 @@
 <template>
-  <q-breadcrumbs class="q-mb-md text-grey-7" active-color="primary">
+  <q-breadcrumbs :class="noMargin ? 'text-grey-7' : 'q-mb-md text-grey-7'" active-color="primary">
     <q-breadcrumbs-el
       v-for="(item, index) in items"
       :key="index"
@@ -13,6 +13,7 @@
 <script setup>
 defineProps({
   // [{ label, icon?, to? }]
-  items: { type: Array, default: () => [] }
+  items: { type: Array, default: () => [] },
+  noMargin: { type: Boolean, default: false }
 });
 </script>

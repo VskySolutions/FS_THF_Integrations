@@ -2,7 +2,6 @@
   <q-page padding>
     <app-list-header
       :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'Integration Jobs' }]"
-      title="Integration Jobs"
       :show-filters="tab === 'jobs'"
       :filter-count="filterChips.length"
       show-add
@@ -25,7 +24,7 @@
       <q-tab-panel name="jobs" class="q-pa-none">
         <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
           <app-select v-model="filters.status" :options="statusOptions" label="Status" class="q-mb-md" />
-          <q-input v-model="filters.interfaceName" outlined dense clearable label="Interface name" class="q-mb-md" />
+          <q-input v-model="filters.interfaceName" outlined clearable label="Interface name" class="q-mb-md" />
           <app-date-picker v-model="filters.fromDate" label="From date" :max-date="filters.toDate" class="q-mb-md" />
           <app-date-picker v-model="filters.toDate" label="To date" :min-date="filters.fromDate" />
         </app-filter-drawer>

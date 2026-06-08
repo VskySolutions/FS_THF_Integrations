@@ -2,7 +2,6 @@
   <q-page padding>
     <app-list-header
       :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'Mapping Configuration' }]"
-      title="Mapping Configuration"
       :search="search"
       show-search
       search-placeholder="Search fields"

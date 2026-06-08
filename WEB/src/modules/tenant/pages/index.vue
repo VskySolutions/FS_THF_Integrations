@@ -2,7 +2,6 @@
   <q-page padding>
     <app-list-header
       :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'Tenants' }]"
-      title="Tenants"
       :search="search"
       show-search
       search-placeholder="Search name or identifier"
@@ -18,13 +17,10 @@
     />
 
     <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
-      <q-select
+      <app-select
         v-model="filters.status"
-        outlined
-        dense
-        clearable
+        :options="statusFilterOptions"
         label="Status"
-        :options="['Active', 'Inactive', 'Archived']"
         class="q-mb-md"
       />
       <q-toggle v-model="filters.includeArchived" label="Show archived" />
@@ -136,6 +132,7 @@ import AppDataTable from "components/common/AppDataTable.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
+import AppSelect from "components/common/AppSelect.vue";
 
 const notify = useNotify();
 const { confirm } = useConfirm();
@@ -157,6 +154,7 @@ const filters = reactive({ status: null, includeArchived: false });
 const pagination = ref({ page: 1, rowsPerPage: 20, sortBy: null, descending: false, rowsNumber: 0 });
 
 const statusColor = (status) => ({ Active: "positive", Inactive: "grey", Archived: "blue-grey" }[status] || "grey");
+const statusFilterOptions = ["Active", "Inactive", "Archived"].map((s) => ({ label: s, value: s }));
 
 const filterChips = computed(() => {
   const chips = [];

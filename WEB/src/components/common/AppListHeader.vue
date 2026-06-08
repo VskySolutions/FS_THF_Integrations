@@ -1,32 +1,28 @@
 <template>
-  <div class="app-list-header">
-    <app-breadcrumbs v-if="breadcrumbs.length" :items="breadcrumbs" />
+  <div class="row items-center no-wrap q-gutter-sm q-mb-md app-list-header">
+    <app-breadcrumbs v-if="breadcrumbs.length" :items="breadcrumbs" no-margin />
+    <q-space />
 
-    <div class="row items-center no-wrap q-gutter-sm q-mb-md">
-      <div class="text-h5 text-weight-bold ellipsis">{{ title }}</div>
-      <q-space />
+    <q-input
+      v-if="showSearch"
+      :model-value="search"
+      dense
+      outlined
+      debounce="300"
+      :placeholder="searchPlaceholder"
+      class="app-list-header__search"
+      @update:model-value="$emit('update:search', $event)"
+    >
+      <template #prepend><q-icon name="o_search" /></template>
+    </q-input>
 
-      <q-input
-        v-if="showSearch"
-        :model-value="search"
-        dense
-        outlined
-        debounce="300"
-        :placeholder="searchPlaceholder"
-        class="app-list-header__search"
-        @update:model-value="$emit('update:search', $event)"
-      >
-        <template #prepend><q-icon name="o_search" /></template>
-      </q-input>
+    <q-btn v-if="showFilters" outline no-caps color="primary" icon="o_filter_list" label="Filters" @click="$emit('filters')">
+      <q-badge v-if="filterCount" floating color="primary">{{ filterCount }}</q-badge>
+    </q-btn>
 
-      <q-btn v-if="showFilters" outline no-caps color="primary" icon="o_filter_list" label="Filters" @click="$emit('filters')">
-        <q-badge v-if="filterCount" floating color="primary">{{ filterCount }}</q-badge>
-      </q-btn>
+    <q-btn v-if="showAdd" unelevated no-caps color="primary" :icon="addIcon" :label="addLabel" :disable="addDisable" @click="$emit('add')" />
 
-      <q-btn v-if="showAdd" unelevated no-caps color="primary" :icon="addIcon" :label="addLabel" :disable="addDisable" @click="$emit('add')" />
-
-      <q-btn v-if="showBack" flat no-caps color="primary" icon="o_arrow_back" label="Back" @click="$emit('back')" />
-    </div>
+    <q-btn v-if="showBack" flat no-caps color="primary" icon="o_arrow_back" label="Back" @click="$emit('back')" />
   </div>
 </template>
 
@@ -35,7 +31,6 @@ import AppBreadcrumbs from "components/common/AppBreadcrumbs.vue";
 
 defineProps({
   breadcrumbs: { type: Array, default: () => [] },
-  title: { type: String, default: "" },
   search: { type: String, default: "" },
   searchPlaceholder: { type: String, default: "Search" },
   showSearch: { type: Boolean, default: false },

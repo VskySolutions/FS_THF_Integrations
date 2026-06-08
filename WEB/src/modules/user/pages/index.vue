@@ -2,7 +2,6 @@
   <q-page padding>
     <app-list-header
       :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'Users' }]"
-      title="Users"
       :search="search"
       show-search
       search-placeholder="Search name or email"
@@ -18,7 +17,7 @@
     />
 
     <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
-      <q-select v-model="filters.status" outlined dense clearable label="Status" :options="['Active', 'Inactive']" />
+      <app-select v-model="filters.status" :options="statusFilterOptions" label="Status" />
     </app-filter-drawer>
 
     <app-data-table
@@ -130,6 +129,7 @@ const filterOpen = ref(false);
 const filters = reactive({ status: null });
 const pagination = ref({ page: 1, rowsPerPage: 20, sortBy: null, descending: false, rowsNumber: 0 });
 
+const statusFilterOptions = ["Active", "Inactive"].map((s) => ({ label: s, value: s }));
 const filterChips = computed(() => (filters.status ? [{ key: "status", label: `Status: ${filters.status}` }] : []));
 const removeFilter = () => { filters.status = null; };
 const clearFilters = () => { filters.status = null; };

@@ -2,7 +2,6 @@
   <q-page padding>
     <app-list-header
       :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'Logs' }]"
-      title="Integration Logs"
       show-filters
       :filter-count="filterChips.length"
       show-back
@@ -11,7 +10,7 @@
     />
 
     <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
-      <q-input v-model="filters.jobId" outlined dense clearable label="Job ID" class="q-mb-md" />
+      <q-input v-model="filters.jobId" outlined clearable label="Job ID" class="q-mb-md" />
       <app-select v-model="filters.status" :options="statusOptions" label="Level" class="q-mb-md" />
       <app-date-picker v-model="filters.fromDate" label="From date" :max-date="filters.toDate" class="q-mb-md" />
       <app-date-picker v-model="filters.toDate" label="To date" :min-date="filters.fromDate" />

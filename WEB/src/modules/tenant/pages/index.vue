@@ -1,0 +1,336 @@
+<template>
+  <q-page padding>
+    <app-breadcrumbs :items="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'Tenants' }]" />
+
+    <div class="row items-center q-mb-md q-gutter-sm">
+      <div class="text-h5 text-weight-bold">Tenants</div>
+      <q-space />
+      <q-input
+        v-model="search"
+        dense
+        outlined
+        debounce="300"
+        placeholder="Search name or identifier"
+        class="col-grow"
+        style="max-width: 280px;"
+      >
+        <template #prepend><q-icon name="o_search" /></template>
+      </q-input>
+      <q-btn unelevated no-caps color="primary" icon="o_add" label="Create Tenant" @click="openCreate" />
+    </div>
+
+    <app-filter-drawer :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
+      <q-select
+        v-model="filters.status"
+        outlined
+        dense
+        clearable
+        label="Status"
+        :options="['Active', 'Inactive', 'Archived']"
+        class="q-mb-md"
+      />
+      <q-toggle v-model="filters.includeArchived" label="Show archived" />
+    </app-filter-drawer>
+
+    <app-data-table
+      page-key="tenants"
+      row-key="tenantId"
+      title="All tenants"
+      :rows="filteredRows"
+      :columns="columns"
+      :loading="loading"
+      :total-records="totalRecords"
+      :pagination="pagination"
+      selectable
+      @request="onRequest"
+      @refresh="load"
+      @update:selected="selected = $event"
+    >
+      <template #bulk-actions="{ selected: sel }">
+        <q-btn flat dense no-caps color="positive" label="Activate" @click="bulkSetStatus(sel, true)" />
+        <q-btn flat dense no-caps color="negative" label="Deactivate" @click="bulkSetStatus(sel, false)" />
+      </template>
+
+      <template #body-cell-status="cell">
+        <q-td :props="cell">
+          <q-badge :color="statusColor(cell.value)">{{ cell.value }}</q-badge>
+        </q-td>
+      </template>
+
+      <template #body-cell-actions="cell">
+        <q-td :props="cell" class="text-right">
+          <q-btn flat round dense icon="o_more_vert">
+            <q-menu auto-close>
+              <q-list style="min-width: 160px;">
+                <q-item clickable :to="{ name: 'tenant_detail', params: { id: cell.row.tenantId } }">
+                  <q-item-section avatar><q-icon name="o_visibility" /></q-item-section>
+                  <q-item-section>View / Manage</q-item-section>
+                </q-item>
+                <q-item clickable @click="openEdit(cell.row)">
+                  <q-item-section avatar><q-icon name="o_edit" /></q-item-section>
+                  <q-item-section>Edit</q-item-section>
+                </q-item>
+                <q-item v-if="cell.row.status !== 'Active'" clickable @click="setStatus(cell.row, true)">
+                  <q-item-section avatar><q-icon name="o_check_circle" /></q-item-section>
+                  <q-item-section>Activate</q-item-section>
+                </q-item>
+                <q-item v-if="cell.row.status === 'Active'" clickable @click="setStatus(cell.row, false)">
+                  <q-item-section avatar><q-icon name="o_block" /></q-item-section>
+                  <q-item-section>Deactivate</q-item-section>
+                </q-item>
+                <q-separator />
+                <q-item clickable class="text-negative" @click="archive(cell.row)">
+                  <q-item-section avatar><q-icon name="o_archive" color="negative" /></q-item-section>
+                  <q-item-section>Archive</q-item-section>
+                </q-item>
+              </q-list>
+            </q-menu>
+          </q-btn>
+        </q-td>
+      </template>
+    </app-data-table>
+
+    <!-- Create / Edit drawer -->
+    <app-form-drawer
+      v-model="formOpen"
+      :title="editing ? 'Edit Tenant' : 'Create Tenant'"
+      :saving="saving"
+      @submit="submitForm"
+      @cancel="resetForm"
+    >
+      <q-form ref="formRef" greedy>
+        <q-input
+          v-model="form.name"
+          outlined
+          stack-label
+          hide-bottom-space
+          label="Name *"
+          class="q-mb-md"
+          :rules="[(v) => !!v || 'Name is required']"
+        />
+        <q-input
+          v-model="form.identifier"
+          outlined
+          stack-label
+          hide-bottom-space
+          label="Identifier *"
+          :disable="editing"
+          hint="Lowercase letters, numbers and hyphens"
+          :error="!!identifierError"
+          :error-message="identifierError"
+          :rules="editing ? [] : [
+            (v) => !!v || 'Identifier is required',
+            (v) => /^[a-z0-9-]+$/.test(v) || 'Use lowercase letters, numbers and hyphens only'
+          ]"
+        />
+      </q-form>
+    </app-form-drawer>
+  </q-page>
+</template>
+
+<script setup>
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from "vue";
+import { tenantApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
+import { useNotify } from "composables/useNotify";
+import { useConfirm } from "composables/useConfirm";
+
+import AppDataTable from "components/common/AppDataTable.vue";
+import AppFormDrawer from "components/common/AppFormDrawer.vue";
+import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
+import AppBreadcrumbs from "components/common/AppBreadcrumbs.vue";
+
+const notify = useNotify();
+const { confirm } = useConfirm();
+
+const columns = [
+  { name: "name", label: "Name", field: "name", align: "left", sortable: true },
+  { name: "identifier", label: "Identifier", field: "identifier", align: "left", sortable: true },
+  { name: "status", label: "Status", field: "status", align: "left", sortable: true },
+  { name: "actions", label: "", field: "actions", align: "right" }
+];
+
+const rows = ref([]);
+const loading = ref(false);
+const totalRecords = ref(0);
+const selected = ref([]);
+const search = ref("");
+const filters = reactive({ status: null, includeArchived: false });
+const pagination = ref({ page: 1, rowsPerPage: 20, sortBy: null, descending: false, rowsNumber: 0 });
+
+const statusColor = (status) => ({ Active: "positive", Inactive: "grey", Archived: "blue-grey" }[status] || "grey");
+
+const filterChips = computed(() => {
+  const chips = [];
+  if (filters.status) chips.push({ key: "status", label: `Status: ${filters.status}` });
+  if (filters.includeArchived) chips.push({ key: "includeArchived", label: "Including archived" });
+  return chips;
+});
+
+const filteredRows = computed(() => {
+  let result = rows.value;
+  if (filters.status) {
+    result = result.filter((r) => r.status === filters.status);
+  }
+  const q = search.value.trim().toLowerCase();
+  if (q) {
+    result = result.filter((r) =>
+      r.name?.toLowerCase().includes(q) || r.identifier?.toLowerCase().includes(q));
+  }
+  return result;
+});
+
+const removeFilter = (key) => {
+  if (key === "status") filters.status = null;
+  if (key === "includeArchived") filters.includeArchived = false;
+  load();
+};
+const clearFilters = () => {
+  filters.status = null;
+  filters.includeArchived = false;
+  load();
+};
+
+const load = async () => {
+  loading.value = true;
+  try {
+    const resp = await tenantApi.list({
+      page: pagination.value.page,
+      limit: pagination.value.rowsPerPage,
+      includeArchived: filters.includeArchived
+    });
+    rows.value = resp?.data || [];
+    totalRecords.value = resp?.meta?.totalRecords ?? rows.value.length;
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    loading.value = false;
+  }
+};
+
+const onRequest = (pag) => {
+  pagination.value = { ...pagination.value, ...pag };
+  load();
+};
+
+// ---- Create / Edit ----
+const formOpen = ref(false);
+const editing = ref(false);
+const saving = ref(false);
+const identifierError = ref("");
+const formRef = ref(null);
+const form = reactive({ tenantId: null, name: "", identifier: "" });
+
+const resetForm = () => {
+  form.tenantId = null;
+  form.name = "";
+  form.identifier = "";
+  identifierError.value = "";
+  editing.value = false;
+};
+
+const openCreate = () => {
+  resetForm();
+  formOpen.value = true;
+};
+
+const openEdit = (row) => {
+  resetForm();
+  editing.value = true;
+  form.tenantId = row.tenantId;
+  form.name = row.name;
+  form.identifier = row.identifier;
+  formOpen.value = true;
+};
+
+const submitForm = async ({ clearDraft } = {}) => {
+  identifierError.value = "";
+  const valid = await formRef.value?.validate();
+  if (!valid) return;
+
+  saving.value = true;
+  try {
+    if (editing.value) {
+      await tenantApi.update(form.tenantId, { name: form.name });
+      notify.success("Tenant updated.");
+    } else {
+      await tenantApi.create({ name: form.name, identifier: form.identifier });
+      notify.success("Tenant created.");
+    }
+    clearDraft?.();
+    formOpen.value = false;
+    resetForm();
+    load();
+  } catch (err) {
+    if (getApiErrorCode(err) === ApiErrorCodes.DuplicateIdentifier) {
+      identifierError.value = "This identifier is already in use.";
+    } else {
+      notify.error(getApiErrorMessage(err));
+    }
+  } finally {
+    saving.value = false;
+  }
+};
+
+// ---- Status / Archive ----
+const setStatus = async (row, isActive) => {
+  const ok = await confirm({
+    title: isActive ? "Activate tenant" : "Deactivate tenant",
+    message: `${isActive ? "Activate" : "Deactivate"} "${row.name}"?`,
+    type: isActive ? "primary" : "danger"
+  });
+  if (!ok) return;
+  try {
+    await tenantApi.setStatus(row.tenantId, isActive);
+    notify.success("Status updated.");
+    load();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  }
+};
+
+const bulkSetStatus = async (sel, isActive) => {
+  if (!sel.length) return;
+  const ok = await confirm({
+    title: isActive ? "Activate tenants" : "Deactivate tenants",
+    message: `${isActive ? "Activate" : "Deactivate"} ${sel.length} tenant(s)?`,
+    type: isActive ? "primary" : "danger"
+  });
+  if (!ok) return;
+  try {
+    await Promise.all(sel.map((r) => tenantApi.setStatus(r.tenantId, isActive)));
+    notify.success("Tenants updated.");
+    selected.value = [];
+    load();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  }
+};
+
+const archive = async (row) => {
+  const ok = await confirm({
+    title: "Archive tenant",
+    message: `Archive "${row.name}"? This retires the tenant.`,
+    confirmLabel: "Archive",
+    type: "danger"
+  });
+  if (!ok) return;
+  try {
+    await tenantApi.archive(row.tenantId);
+    notify.success("Tenant archived.");
+    load();
+  } catch (err) {
+    if (getApiErrorCode(err) === ApiErrorCodes.ActiveJobsExist) {
+      notify.error("Tenant has active jobs and cannot be archived.");
+    } else {
+      notify.error(getApiErrorMessage(err));
+    }
+  }
+};
+
+const onTenantSwitched = () => load();
+onMounted(() => {
+  load();
+  window.addEventListener("tenant-switched", onTenantSwitched);
+});
+onBeforeUnmount(() => window.removeEventListener("tenant-switched", onTenantSwitched));
+</script>

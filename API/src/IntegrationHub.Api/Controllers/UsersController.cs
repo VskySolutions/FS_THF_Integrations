@@ -28,17 +28,20 @@ public sealed class UsersController : ControllerBase
 {
     private readonly IUserRepository _users;
     private readonly IPasswordHasher _passwordHasher;
+    private readonly IRefreshTokenRepository _refreshTokens;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditTrailService _audit;
 
     public UsersController(
         IUserRepository users,
         IPasswordHasher passwordHasher,
+        IRefreshTokenRepository refreshTokens,
         IUnitOfWork unitOfWork,
         IAuditTrailService audit)
     {
         _users = users;
         _passwordHasher = passwordHasher;
+        _refreshTokens = refreshTokens;
         _unitOfWork = unitOfWork;
         _audit = audit;
     }
@@ -232,6 +235,42 @@ public sealed class UsersController : ControllerBase
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Ok(ApiResponseFactory.Success(new { userId = user.Id, isActive = user.IsActive }, "Status updated."));
+    }
+
+    [HttpPost("/api/admin/users/{id:guid}/reset-password")]
+    [Authorize(Policy = AuthorizationPolicies.TenantAdminOrAbove)]
+    [ProducesResponseType<ApiResponse<ResetPasswordResponse>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> ResetPassword(Guid id, CancellationToken cancellationToken)
+    {
+        var user = await _users.GetByIdAsync(id, cancellationToken);
+        if (user is null || !CanCallerSee(user))
+        {
+            return NotFound(ApiResponseFactory.NotFound("User not found."));
+        }
+
+        // AC-ADM-013.3: a Tenant Admin may not reset a Super Admin's password.
+        var targetIsSuperAdmin = user.TenantRoles.Any(r => r.Role == UserRole.SuperAdmin);
+        if (!User.IsSuperAdmin() && targetIsSuperAdmin)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseFactory.Forbidden("Tenant Admins cannot reset a Super Admin's password."));
+        }
+
+        // AC-ADM-013.1/013.4: new temporary password, force change on next login.
+        var temporaryPassword = _passwordHasher.GenerateTemporaryPassword();
+        var (hash, salt) = _passwordHasher.Hash(temporaryPassword);
+        user.PasswordHash = hash;
+        user.Salt = salt;
+        user.MustChangePassword = true;
+        user.TokenVersion++; // AC-ADM-013.5: invalidate all existing sessions
+        _users.Update(user);
+        await _refreshTokens.RevokeAllForUserAsync(user.Id, cancellationToken);
+        await _audit.AddAsync(nameof(User), user.Id.ToString(), "PasswordReset", cancellationToken: cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // AC-ADM-013.2: the plaintext temporary password is returned only in this response.
+        return Ok(ApiResponseFactory.Success(
+            new ResetPasswordResponse(user.Id, temporaryPassword), "Password reset."));
     }
 
     [HttpPost("/api/admin/users/{id:guid}/tenant-assignments")]

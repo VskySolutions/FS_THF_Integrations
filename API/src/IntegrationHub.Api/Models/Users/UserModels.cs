@@ -35,6 +35,8 @@ public sealed record TenantAssignmentDto(Guid TenantId, string Role);
 
 public sealed record CreateUserResponse(Guid UserId, string TemporaryPassword);
 
+public sealed record ResetPasswordResponse(Guid UserId, string TemporaryPassword);
+
 public sealed record UserSummary(Guid UserId, string Email, string DisplayName, bool IsActive);
 
 public sealed record UserDetail(

@@ -114,10 +114,11 @@ public class UsersControllerTests
 {
     private readonly Mock<IUserRepository> _users = new();
     private readonly Mock<IPasswordHasher> _hasher = new();
+    private readonly Mock<IRefreshTokenRepository> _refreshTokens = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IAuditTrailService> _audit = new();
 
-    private UsersController Create() => new(_users.Object, _hasher.Object, _unitOfWork.Object, _audit.Object);
+    private UsersController Create() => new(_users.Object, _hasher.Object, _refreshTokens.Object, _unitOfWork.Object, _audit.Object);
 
     [Fact]
     public async Task Super_admin_creates_user_returns_201_with_temp_password()
@@ -164,6 +165,39 @@ public class UsersControllerTests
 
         var controller = Create().WithUser(Guid.NewGuid(), Roles.TenantAdmin, tenantId);
         var result = await controller.SetStatus(target.Id, new UpdateUserStatusRequest { IsActive = false }, default);
+
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
+    public async Task Reset_password_returns_temp_password_and_forces_change()
+    {
+        var target = TestData.User();
+        var tenantId = Guid.NewGuid();
+        target.TenantRoles.Add(TestData.Assignment(target.Id, tenantId, UserRole.Operator));
+        _users.Setup(u => u.GetByIdAsync(target.Id, It.IsAny<CancellationToken>())).ReturnsAsync(target);
+        _hasher.Setup(h => h.GenerateTemporaryPassword()).Returns("Temp123!");
+        _hasher.Setup(h => h.Hash(It.IsAny<string>())).Returns(("h", "s"));
+
+        var controller = Create().WithUser(Guid.NewGuid(), Roles.SuperAdmin);
+        var result = await controller.ResetPassword(target.Id, default);
+
+        var obj = result.Should().BeOfType<OkObjectResult>().Subject;
+        obj.Value.Should().BeOfType<ApiResponse<ResetPasswordResponse>>().Which.Data!.TemporaryPassword.Should().Be("Temp123!");
+        target.MustChangePassword.Should().BeTrue();
+        _refreshTokens.Verify(r => r.RevokeAllForUserAsync(target.Id, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Tenant_admin_cannot_reset_super_admin_password()
+    {
+        var target = TestData.User();
+        var tenantId = Guid.NewGuid();
+        target.TenantRoles.Add(TestData.Assignment(target.Id, tenantId, UserRole.SuperAdmin));
+        _users.Setup(u => u.GetByIdAsync(target.Id, It.IsAny<CancellationToken>())).ReturnsAsync(target);
+
+        var controller = Create().WithUser(Guid.NewGuid(), Roles.TenantAdmin, tenantId);
+        var result = await controller.ResetPassword(target.Id, default);
 
         result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
     }

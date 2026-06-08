@@ -1,4 +1,36 @@
-# Build results
+# =====================================================================
+# Repository layout: API/ (.NET 9 solution) + WEB/ (Quasar SPA)
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# OS
+# ---------------------------------------------------------------------
+.DS_Store
+.thumbs.db
+Thumbs.db
+
+# ---------------------------------------------------------------------
+# Editors / IDEs
+# ---------------------------------------------------------------------
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+*.ntvs*
+*.njsproj
+
+# Rider / ReSharper
+_ReSharper*/
+*.DotSettings.user
+
+# ---------------------------------------------------------------------
+# API — .NET 9 (API/)
+# ---------------------------------------------------------------------
+# Build results (match at any depth: API/src/**/bin, **/obj, etc.)
 [Bb]in/
 [Oo]bj/
 [Dd]ebug/
@@ -13,15 +45,6 @@ bld/
 [Ll]og/
 [Ll]ogs/
 
-# Visual Studio / Rider
-.vs/
-.idea/
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
-*.userprefs
-
 # Test results
 [Tt]est[Rr]esult*/
 *.trx
@@ -35,13 +58,34 @@ bld/
 **/packages/*
 !**/packages/build/
 
-# Rider / ReSharper
-_ReSharper*/
-*.DotSettings.user
+# Local secrets / settings overrides
+appsettings.*.local.json
 
-# OS
-.DS_Store
-Thumbs.db
+# ---------------------------------------------------------------------
+# WEB — Node / Quasar (WEB/)
+# ---------------------------------------------------------------------
+node_modules/
 
-# WEB (Quasar SPA) build output — emitted to repo root via distDir "../publish/spa"
+# Quasar core build/cache directories
+.quasar/
+WEB/dist/
+**/quasar.config.*.temporary.compiled*
+
+# SPA production build output (distDir = "../publish/spa/...")
 /publish/
+
+# Cordova / Capacitor
+/src-cordova/node_modules/
+/src-cordova/platforms/
+/src-cordova/plugins/
+/src-cordova/www/
+/src-capacitor/www/
+/src-capacitor/node_modules/
+
+# npm / yarn logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local environment files
+.env.local*

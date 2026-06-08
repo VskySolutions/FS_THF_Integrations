@@ -77,16 +77,20 @@
 import { ref } from "vue";
 import useVuelidate from "@vuelidate/core";
 import { required, helpers, minLength } from "@vuelidate/validators";
-import accountService from "modules/account/account.service";
-import { notifySuccess } from "assets/utils";
-import { useRouter } from "vue-router";
+import { useRouter, onBeforeRouteLeave } from "vue-router";
+import { authApi, getApiErrorMessage } from "services/api";
+import { useAuthStore } from "stores/auth";
+import { useNotify } from "composables/useNotify";
 
 const router = useRouter();
+const authStore = useAuthStore();
+const { notifySuccess, notifyError, notifyWarning } = useNotify();
 
 const isPassword = ref(true);
 const isPassword2 = ref(true);
 const isconfirmPassword = ref(true);
 const loading = ref(false);
+const submitted = ref(false);
 
 const model = ref({
   oldPassword: "",
@@ -103,16 +107,38 @@ const rules = {
 const v$ = useVuelidate(rules, model, { $lazy: true, $autoDirty: true });
 
 const onSubmit = async () => {
-  if (await v$.value.$validate()) {
-    loading.value = true;
-    accountService.changePassword(model.value).then((resp) => {
-      notifySuccess({ message: "The password has been changed successfully." });
-      router.push({ name: "login", params: {} });
-    }).finally(() => {
-      loading.value = false;
-    });
+  if (!(await v$.value.$validate())) {
+    return;
+  }
+  if (model.value.newPassword !== model.value.confirmPassword) {
+    notifyError("New password and confirmation do not match.");
+    return;
+  }
+
+  loading.value = true;
+  try {
+    await authApi.changePassword(model.value.oldPassword, model.value.newPassword);
+    submitted.value = true;
+    authStore.mustChangePassword = false;
+    notifySuccess("Your password has been changed. Please sign in again.");
+    // Changing the password invalidates all sessions server-side; re-authenticate.
+    authStore.clearSession();
+    router.replace({ name: "login" });
+  } catch (err) {
+    notifyError(getApiErrorMessage(err, "Could not change password. Please try again."));
+  } finally {
+    loading.value = false;
   }
 };
+
+// AC-UI-003.4: block leaving the forced password-change screen until submitted.
+onBeforeRouteLeave((to) => {
+  if (authStore.mustChangePassword && !submitted.value && to.name !== "change_password") {
+    notifyWarning("Please set a new password before continuing.");
+    return false;
+  }
+  return true;
+});
 </script>
 
 <style scoped>

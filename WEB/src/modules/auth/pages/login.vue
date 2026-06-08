@@ -5,22 +5,30 @@
       <div class="text-body2 text-grey-7 q-mt-xs">Please sign in to your account to continue.</div>
     </div>
 
+    <q-banner v-if="errorMessage" dense rounded class="bg-red-1 text-negative q-mb-md auth-error">
+      <template #avatar>
+        <q-icon name="o_error" color="negative" />
+      </template>
+      {{ errorMessage }}
+    </q-banner>
+
     <q-form greedy @submit.prevent.stop="login">
       <q-input
-        v-model="model.username"
+        v-model="model.email"
         outlined
-        label="Username"
+        type="email"
+        label="Email"
         stack-label
         hide-bottom-space
         maxlength="128"
         autofocus
         class="q-mb-md"
-        :error="v$.username.$error"
-        :error-message="v$.username.$errors[0]?.$message"
-        @blur="v$.username.$touch"
+        :error="v$.email.$error"
+        :error-message="v$.email.$errors[0]?.$message"
+        @blur="v$.email.$touch"
       >
         <template #prepend>
-          <q-icon name="o_person" />
+          <q-icon name="o_mail" />
         </template>
       </q-input>
 
@@ -60,60 +68,79 @@
 <script setup>
 import { ref } from "vue";
 import useVuelidate from "@vuelidate/core";
-import { required, helpers } from "@vuelidate/validators";
+import { required, helpers, email } from "@vuelidate/validators";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "stores/auth";
+import { getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
 import { setLocalStorage, getLocalStorage, clearLocalStorage } from "assets/utils";
+
 const router = useRouter();
 const authStore = useAuthStore();
 
 const loading = ref(false);
 const isPassword = ref(true);
+const errorMessage = ref("");
 
-// Set Filters to local storage
+// Remember-me persistence (email only; never persist the password).
 const localStorageKey = "Login";
 const filterLocalStorage = getLocalStorage(localStorageKey);
 
-const username = filterLocalStorage ? filterLocalStorage.username : "";
-const password = filterLocalStorage ? filterLocalStorage.password : "";
-const isRememberMeChecked = filterLocalStorage ? filterLocalStorage.isRememberMeChecked : ref(false);
-
 const model = ref({
-  username,
-  password,
-  isRememberMeChecked
+  email: filterLocalStorage?.email || "",
+  password: "",
+  isRememberMeChecked: filterLocalStorage?.isRememberMeChecked || false
 });
 
 const rules = {
-  username: { required: helpers.withMessage("Username is required", required) },
+  email: {
+    required: helpers.withMessage("Email is required", required),
+    email: helpers.withMessage("Enter a valid email address", email)
+  },
   password: { required: helpers.withMessage("Password is required", required) }
 };
 
 const v$ = useVuelidate(rules, model, { $lazy: true, $autoDirty: true });
 
 const login = async () => {
-  if (await v$.value.$validate()) {
-    loading.value = true;
-    authStore.login(model.value).then((resp) => {
-      if (model.value.isRememberMeChecked === true) {
-        setLocalStorage(localStorageKey, model.value);
-      } else {
-        clearLocalStorage(localStorageKey);
-      }
-      if (resp?.token) {
-        localStorage.setItem("access_token", resp.token);
-      }
-      redirectToLanding();
-    }).finally(() => {
-      loading.value = false;
-    });
+  errorMessage.value = "";
+  if (!(await v$.value.$validate())) {
+    return;
+  }
+
+  loading.value = true;
+  try {
+    await authStore.login({ email: model.value.email, password: model.value.password });
+
+    if (model.value.isRememberMeChecked) {
+      setLocalStorage(localStorageKey, { email: model.value.email, isRememberMeChecked: true });
+    } else {
+      clearLocalStorage(localStorageKey);
+    }
+
+    // AC-UI-001.5: first login with a temporary password.
+    if (authStore.mustChangePassword) {
+      router.push({ name: "change_password" });
+      return;
+    }
+    redirectToLanding();
+  } catch (err) {
+    // AC-UI-001.3 (no field hint) / AC-UI-001.4 (inactive) / AC-UI-001.6 (server error).
+    const code = getApiErrorCode(err);
+    if (err?.response?.status === 401) {
+      errorMessage.value = getApiErrorMessage(err, "Invalid email or password.");
+    } else if (code === ApiErrorCodes.Forbidden || err?.response?.status === 403) {
+      errorMessage.value = "Your account is disabled. Please contact your administrator.";
+    } else {
+      errorMessage.value = getApiErrorMessage(err, "Unable to sign in right now. Please try again.");
+    }
+  } finally {
+    loading.value = false;
   }
 };
 
 const redirectToLanding = () => {
-  const landingPage = authStore.user?.siteLandingPageLink || "/";
-  localStorage.setItem("last_route", landingPage);
-  router.push(landingPage);
+  localStorage.setItem("last_route", "/");
+  router.push("/");
 };
 </script>
 

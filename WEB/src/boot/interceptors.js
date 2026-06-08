@@ -1,23 +1,10 @@
 import { boot } from "quasar/wrappers";
-import { notifyError } from "assets/utils";
-import { getApiErrorMessage } from "services/api";
-import { http2, http } from "boot/axios";
+import { http } from "boot/axios";
 import { useAuthStore } from "stores/auth";
 
+// Error display is owned by the views (inline banners / useNotify on catch);
+// these interceptors only handle authentication concerns.
 export default boot(({ store, router }) => {
-  const notify = (error) => {
-    notifyError({ timeout: 10000, message: getApiErrorMessage(error) });
-  };
-
-  // Anonymous instance (login / refresh) — surface errors, no auth handling.
-  http2.interceptors.response.use(
-    (response) => response,
-    (error) => {
-      notify(error);
-      return Promise.reject(error);
-    }
-  );
-
   // Authenticated instance — 401 triggers a single silent refresh + retry
   // (AC-UI-004.1); if refresh fails, clear the session and go to login (AC-UI-004.2).
   http.interceptors.response.use(
@@ -48,9 +35,6 @@ export default boot(({ store, router }) => {
         return Promise.reject(error);
       }
 
-      if (status !== 401) {
-        notify(error);
-      }
       return Promise.reject(error);
     }
   );

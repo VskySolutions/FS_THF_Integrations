@@ -20,12 +20,14 @@ import accountRoutes from "modules/account/routes";
 import tenantRoutes from "modules/tenant/routes";
 import userRoutes from "modules/user/routes";
 import integrationRoutes from "modules/integration/routes";
+import mappingRoutes from "modules/mapping/routes";
 
 routes.push(...accountRoutes);
 routes.push(...authRoutes);
 routes.push(...tenantRoutes);
 routes.push(...userRoutes);
 routes.push(...integrationRoutes);
+routes.push(...mappingRoutes);
 
 export default route(function ({ store }) {
   const createHistory = process.env.SERVER

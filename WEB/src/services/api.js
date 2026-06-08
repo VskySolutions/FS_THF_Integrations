@@ -94,6 +94,8 @@ export const userApi = {
   create: (payload) => api.post("/api/admin/users", payload).then(unwrap),
   update: (id, payload) => api.put(`/api/admin/users/${id}`, payload).then(unwrap),
   setStatus: (id, isActive) => api.put(`/api/admin/users/${id}/status`, { isActive }).then(unwrap),
+  // Admin password reset (REQ-ADM-013) — returns a new temporary password.
+  resetPassword: (id) => api.post(`/api/admin/users/${id}/reset-password`).then(unwrap),
   assignTenantRole: (id, tenantId, role) =>
     api.post(`/api/admin/users/${id}/tenant-assignments`, { tenantId, role }).then(unwrap),
   removeTenantRole: (id, tenantId) =>

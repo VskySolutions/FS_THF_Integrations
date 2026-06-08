@@ -18,10 +18,12 @@ import { useNotify } from "composables/useNotify";
 import authRoutes from "modules/auth/routes";
 import accountRoutes from "modules/account/routes";
 import tenantRoutes from "modules/tenant/routes";
+import userRoutes from "modules/user/routes";
 
 routes.push(...accountRoutes);
 routes.push(...authRoutes);
 routes.push(...tenantRoutes);
+routes.push(...userRoutes);
 
 export default route(function ({ store }) {
   const createHistory = process.env.SERVER

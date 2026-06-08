@@ -81,4 +81,55 @@ public class ApiIntegrationTests
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
+
+    // WO-39 (REQ-ADM-013): admin password reset.
+    [Fact]
+    public async Task Admin_reset_password_returns_temporary_password()
+    {
+        var client = _factory.CreateClient();
+        var token = await LoginAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        // Scope the new user to an existing tenant (the bootstrap "system" tenant).
+        var tenantsResponse = await client.GetAsync("/api/admin/tenants?page=1&limit=1");
+        tenantsResponse.EnsureSuccessStatusCode();
+        using var tenantsDoc = JsonDocument.Parse(await tenantsResponse.Content.ReadAsStringAsync());
+        var tenantId = tenantsDoc.RootElement.GetProperty("data")[0].GetProperty("tenantId").GetString();
+
+        var email = $"reset-{Guid.NewGuid():N}@test.local";
+        var createResponse = await client.PostAsJsonAsync("/api/admin/users",
+            new { email, displayName = "Reset Target", role = "Operator", tenantId });
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var createDoc = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+        var userId = createDoc.RootElement.GetProperty("data").GetProperty("userId").GetString();
+
+        var resetResponse = await client.PostAsync($"/api/admin/users/{userId}/reset-password", content: null);
+
+        resetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var resetDoc = JsonDocument.Parse(await resetResponse.Content.ReadAsStringAsync());
+        var temporaryPassword = resetDoc.RootElement.GetProperty("data").GetProperty("temporaryPassword").GetString();
+        temporaryPassword.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task Admin_reset_password_requires_auth()
+    {
+        var client = _factory.CreateClient();
+
+        var response = await client.PostAsync($"/api/admin/users/{Guid.NewGuid()}/reset-password", content: null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Admin_reset_password_unknown_user_returns_404()
+    {
+        var client = _factory.CreateClient();
+        var token = await LoginAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await client.PostAsync($"/api/admin/users/{Guid.NewGuid()}/reset-password", content: null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
 }

@@ -53,12 +53,21 @@
             <q-item-label>Change Password</q-item-label>
           </q-item-section>
         </q-item>
+        <q-separator class="q-my-sm" />
         <q-item v-ripple clickable @click="onLogout">
           <q-item-section avatar>
             <q-icon name="logout" color="orange" class="material-icons-outlined" />
           </q-item-section>
           <q-item-section>
             <q-item-label>Logout</q-item-label>
+          </q-item-section>
+        </q-item>
+        <q-item v-ripple clickable @click="onLogoutAll">
+          <q-item-section avatar>
+            <q-icon name="o_devices" color="orange" class="material-icons-outlined" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label>Logout all devices</q-item-label>
           </q-item-section>
         </q-item>
       </q-list>
@@ -93,8 +102,13 @@ function getProfile () {
   });
 }
 
-const onLogout = () => {
-  authStore.logout();
+const onLogout = async () => {
+  await authStore.logout();
+  router.replace({ name: "login" });
+};
+
+const onLogoutAll = async () => {
+  await authStore.logoutAll();
   router.replace({ name: "login" });
 };
 

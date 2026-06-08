@@ -9,7 +9,37 @@
           </q-btn>
         </div>
         <!-- User menu when signed in, otherwise a login action -->
-        <div class="row q-gutter-md items-center no-wrap">
+        <div class="row q-gutter-sm items-center no-wrap">
+          <!-- Active Tenant switcher -->
+          <q-btn-dropdown
+            v-if="isLoggedIn && hasMultipleTenants"
+            flat
+            no-caps
+            icon="o_apartment"
+            :label="activeTenantLabel"
+            class="text-grey-9"
+          >
+            <q-list>
+              <q-item-label header class="text-grey-7">Switch tenant</q-item-label>
+              <q-item
+                v-for="t in assignments"
+                :key="t.tenantId"
+                v-close-popup
+                clickable
+                :active="t.tenantId === activeTenantId"
+                @click="onSwitchTenant(t.tenantId)"
+              >
+                <q-item-section>
+                  <q-item-label>{{ t.name || t.identifier }}</q-item-label>
+                  <q-item-label caption class="text-capitalize">{{ t.role }}</q-item-label>
+                </q-item-section>
+                <q-item-section v-if="t.tenantId === activeTenantId" side>
+                  <q-icon name="o_check" color="primary" />
+                </q-item-section>
+              </q-item>
+            </q-list>
+          </q-btn-dropdown>
+
           <user-info v-if="isLoggedIn" />
           <q-btn v-else unelevated color="primary" no-caps icon="o_login" label="Login" :to="{ name: 'login' }" />
         </div>
@@ -41,8 +71,10 @@
 </template>
 
 <script setup>
-import { ref } from "vue";
-import { LocalStorage } from "quasar";
+import { ref, computed } from "vue";
+import { LocalStorage, Dialog } from "quasar";
+import { storeToRefs } from "pinia";
+import { useTenantStore } from "stores/tenant";
 
 import UserInfo from "shared/user_info.vue";
 import AsideHeader from "shared/aside_header.vue";
@@ -52,6 +84,33 @@ const isLoggedIn = !!LocalStorage.getItem("token");
 
 const leftDrawerOpen = ref(false);
 const toggleLeftDrawer = () => { leftDrawerOpen.value = !leftDrawerOpen.value; };
+
+const tenantStore = useTenantStore();
+const { assignments, activeTenantId } = storeToRefs(tenantStore);
+const hasMultipleTenants = computed(() => tenantStore.hasMultipleTenants);
+const activeTenantLabel = computed(() => {
+  const t = tenantStore.activeTenant;
+  return t?.name || t?.identifier || "Tenant";
+});
+
+// Confirm-before-discard when an open form has unsaved changes (AC-UI-007.4 guard).
+const confirmDiscard = () => new Promise((resolve) => {
+  Dialog.create({
+    title: "Unsaved changes",
+    message: "Switching tenant will discard your unsaved changes. Continue?",
+    cancel: { label: "Cancel", flat: true, noCaps: true },
+    ok: { label: "Continue", color: "primary", unelevated: true, noCaps: true },
+    persistent: true
+  }).onOk(() => resolve(true)).onCancel(() => resolve(false));
+});
+
+const onSwitchTenant = async (tenantId) => {
+  const switched = await tenantStore.switchTenant(tenantId, { confirm: confirmDiscard });
+  if (switched) {
+    // Active page components listen and re-fetch their data for the new tenant.
+    window.dispatchEvent(new CustomEvent("tenant-switched", { detail: { tenantId } }));
+  }
+};
 </script>
 
 <style scoped>

@@ -24,7 +24,6 @@ export default defineConfig((ctx) => {
       "error",
       "axios",
       "interceptors",
-      "auth",
       "title",
       "components",
       "i18n"

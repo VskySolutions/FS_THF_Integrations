@@ -58,6 +58,17 @@ builder.Services.AddIntegrationHubHealthChecks();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
+// CORS for the browser SPA (WEB/). Allowed origins come from configuration
+// (Cors:AllowedOrigins); falls back to the local Quasar dev server ports.
+const string SpaCorsPolicy = "SpaCors";
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? ["http://localhost:9000", "http://localhost:9001"];
+builder.Services.AddCors(options =>
+    options.AddPolicy(SpaCorsPolicy, policy =>
+        policy.WithOrigins(allowedOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod()));
+
 var app = builder.Build();
 
 // The Integration API owns the application schema and applies EF Core migrations
@@ -85,6 +96,10 @@ if (app.Environment.IsDevelopment() || app.Environment.IsStaging())
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseMiddleware<RequestResponseLoggingMiddleware>();
+
+// CORS runs before authentication so preflight OPTIONS requests succeed.
+app.UseCors(SpaCorsPolicy);
+
 app.UseAuthentication();
 app.UseAuthorization();
 

@@ -1,0 +1,319 @@
+// Company Module css
+.custom-plus-minus-icon{
+    color: #ffffff;
+    background-color: #1976d2;
+    font-style: normal;
+    font-size: 20px;
+    border-radius: 50px;
+    padding: 3px;
+}
+
+@media (max-width:600px){
+    .editProject{
+        .q-card{
+            width: 400px !important;
+        }
+    }
+    .viewProject{
+        .q-card{
+            width: 400px !important;
+        }
+    }
+    .advSearch{
+        flex-direction: column;
+
+        h1{
+            margin-bottom: 10px;
+        }
+    }
+}
+@media (max-width:400px){
+    .editProject{
+        .q-card{
+            width: 300px !important;
+        }
+    }
+    .viewProject{
+        .q-card{
+            width: 300px !important;
+        }
+    }
+    .advSearch{
+        .q-btn{
+            font-size: 12px;
+        }
+    }
+}
+
+.sortable-ghost {
+  opacity: 0.5;
+  background-color: rgb(216, 216, 216);
+}
+.highlighted {
+  background-color: rgba(255, 255, 0, 0.3); /* Light yellow highlight */
+}
+.swimlane {
+  /* border-radius: 5px; */
+  /* box-shadow: 0px 0px 5px 1px #eee; */
+  margin-bottom: 15px;
+  border-bottom: 1px solid #e2e2e2;
+  /* border-bottom: 1px solid #e2e2e2; */
+}
+
+.swimlane-header {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px;
+  cursor: grab;
+}
+
+.subswimlane {
+  /* padding: 10px; */
+  border-right: 1px solid #e2e2e2;
+}
+
+.subswimlane-header {
+  border-radius: 0px;
+  border-top-left-radius: 5px;
+  padding: 12px;
+  cursor: grab;
+}
+
+.task-box {
+  background: rgb(3 83 131 / 15%);
+  padding: 10px;
+  border-bottom-left-radius: 5px;
+  border-bottom-right-radius: 5px;
+  margin: 5px 0;
+}
+.task-box h3 {
+  cursor: grab;
+}
+
+.title-input, .task-input {
+  font-size: 1rem;
+  /* width: 100%; */
+}
+.color-blue {
+  color: #1b75ab;
+}
+.theme-blue {
+  /* background-color: #f3fbff; */
+  /* color: #174e6c; */
+}
+.theme-red {
+  background-color: rgb(255, 255, 255);
+  color: rgb(165, 0, 0);
+}
+.fit-content {
+  width: fit-content;
+}
+.border-grey {
+  border-top: 4px solid grey;
+}
+
+.border-orange {
+  border-top: 4px solid orange;
+}
+
+.border-red {
+  border-top: 4px solid red;
+}
+.q-menu .q-item {
+  min-height: 35px;
+  padding: 3px 10px;
+}
+.q-item__section--avatar{
+  min-width: auto !important;
+}
+.q-textarea .q-field__native{
+  padding-top: 5px;
+}
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+.q-btn{
+  padding: 3px 10px;
+}
+.on-left{
+  margin-right: 7px;
+}
+.WhiteTable th{
+  font-weight: 600;
+  background-color: #1b75ab;
+  color: white;
+  font-size: 17px;
+}
+.WhiteTable th, .WhiteTable td{
+  border: 1px solid #d1d1d1  !important;
+  padding: 3px 5px;
+}
+.WhiteTable td{
+  font-size: 15px;
+}
+.q-editor__toolbar{
+  min-height: inherit !important;
+}
+.q-editor .q-btn{
+  margin: 0;
+  padding: 2px 3px;
+}
+.q-table thead tr{
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.LastUpdatedBy{
+  font-size: 11px;
+  font-weight: 600;
+  color: #939393;
+  font-style: italic;
+}
+.cursor-auto{
+  cursor: auto;
+}
+.statusTable{
+  border-collapse: collapse;
+}
+.statusTable th{
+  font-weight: 500;
+  font-size: 11px;
+  background-color: #616161;
+}
+.statusTable th, .statusTable td{
+  border: 1px solid #fff !important;
+  padding: 2px 3px;
+}
+.GreyTable th{
+  font-weight: 600;
+  background-color: #616161;
+  color: white;
+  font-size: 10px;
+}
+.GreyTable th, .GreyTable td{
+  border: 1px solid #d1d1d1  !important;
+  padding: 3px 5px;
+}
+.GreyTable td{
+  font-size: 10px;
+}
+.q-field__bottom{
+  padding: 5px 0px 0;
+}
+
+.q-item__section--avatar{
+min-width: 10px !important;
+}
+.rightDialog {
+  position: absolute;
+  right: 2%;
+  top: 30%;
+  height: 45vh;
+  border-left: 1px solid #ccc;
+  border-radius: 0;
+}
+.TaskActivity .Person {
+    border-radius: 50%;
+    background-color: #5d5d5d;
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 3px;
+    margin-right: 3px;
+    transition: 0.5s all ease-in-out;
+}
+.cursor-grab{
+  cursor: grab;
+  background: none !important;
+}
+.q-popup-edit__title {
+  font-size: 13px !important;
+  font-weight: 500;
+}
+.dot-circle {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: inline-block;
+}
+.dot-active {
+  background-color: #21ba45; /* Quasar 'positive' color */
+}
+.dot-inactive {
+  background-color: #c10015; /* Quasar 'negative' color */
+}
+.rightDialog {
+  position: absolute;
+  right: 2%;
+  top: 30%;
+  height: 45vh;
+  border-left: 1px solid #ccc;
+  border-radius: 0;
+}
+.resizable-table {
+  border-collapse: collapse;
+  width: auto;
+}
+.resizable-table th,
+.resizable-table td {
+  border: 1px solid #ccc;
+  padding: 4px 8px;
+  position: relative;
+  box-sizing: border-box;
+}
+
+.th-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+}
+
+.resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 5px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+  width: 6px;
+  user-select: none;
+}
+.resize-handle:hover {
+  background-color: rgba(0, 0, 0, 0.15);
+}
+.table-scroll-container {
+  overflow-x: auto; /* enable horizontal scroll */
+  overflow-y: hidden;
+  width: 100%;
+  max-width: 100%;
+}
+.common-q-td {
+  overflow-wrap: break-word !important;
+  word-wrap: break-word !important;
+  white-space: normal !important;
+}
+
+/* Chrome, Safari, Edge, Opera */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Firefox */
+input[type=number] {
+  -moz-appearance: textfield;
+}
+
+/* General property for modern browsers (less support than prefixed versions) */
+input[type=number] {
+  appearance: none;
+}

@@ -42,3 +42,6 @@ _ReSharper*/
 # OS
 .DS_Store
 Thumbs.db
+
+# WEB (Quasar SPA) build output — emitted to repo root via distDir "../publish/spa"
+/publish/

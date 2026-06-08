@@ -1,0 +1,53 @@
+.app-loading {
+  height: 100vh;
+  background-color: var(--q-primary);
+  color: #fff;
+}
+
+.gdpr {
+  max-width: 360px;
+}
+
+.table-sm {
+  border: solid 1px #d0d7de;
+
+  thead {
+    tr {
+      background-color: #ccc;
+      height: auto !important;
+
+      th {
+        padding: 6px 12px !important;
+      }
+    }
+  }
+
+  tr {
+    td {
+      padding: 4px 12px !important;
+      height: auto !important;
+    }
+  }
+}
+
+.table-sm2 {
+  border: solid 1px #d0d7de;
+
+  thead {
+    tr {
+      background-color: #ccc;
+      height: auto !important;
+
+      th {
+        padding: 6px 6px !important;
+      }
+    }
+  }
+
+  tr {
+    td {
+      padding: 4px 6px !important;
+      height: auto !important;
+    }
+  }
+}

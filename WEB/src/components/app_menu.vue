@@ -27,6 +27,7 @@ const tenantStore = useTenantStore();
 const items = [
   { label: "Home", icon: "o_home", to: "/", roles: null },
   { label: "Integration Jobs", icon: "o_sync", to: "/jobs", roles: null },
+  { label: "Logs", icon: "o_description", to: "/logs", roles: ["TenantAdmin", "SuperAdmin"] },
   { label: "Mapping Config", icon: "o_swap_horiz", to: "/mappings", roles: ["TenantAdmin", "SuperAdmin"] },
   { label: "Users", icon: "o_group", to: "/users", roles: ["TenantAdmin", "SuperAdmin"] },
   { label: "Tenants", icon: "o_apartment", to: "/tenants", roles: ["SuperAdmin"] },

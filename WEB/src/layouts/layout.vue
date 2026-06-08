@@ -71,7 +71,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import { LocalStorage, Dialog } from "quasar";
 import { storeToRefs } from "pinia";
 import { useTenantStore } from "stores/tenant";
@@ -82,7 +82,11 @@ import AppMenu from "src/components/app_menu.vue";
 
 const isLoggedIn = !!LocalStorage.getItem("token");
 
-const leftDrawerOpen = ref(false);
+// Persist the drawer open/closed state across reloads (defaults to open).
+const DRAWER_KEY = "leftDrawerOpen";
+const storedDrawer = LocalStorage.getItem(DRAWER_KEY);
+const leftDrawerOpen = ref(storedDrawer === null ? true : storedDrawer);
+watch(leftDrawerOpen, (value) => LocalStorage.set(DRAWER_KEY, value));
 const toggleLeftDrawer = () => { leftDrawerOpen.value = !leftDrawerOpen.value; };
 
 const tenantStore = useTenantStore();

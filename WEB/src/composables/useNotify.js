@@ -35,6 +35,11 @@ export function useNotify () {
     notifyInfo,
     // Friendly aliases
     notifySuccess: notifyPositive,
-    notifyError: notifyNegative
+    notifyError: notifyNegative,
+    // Short names (UI Development Standards §4.3)
+    success: notifyPositive,
+    error: notifyNegative,
+    warning: notifyWarning,
+    info: notifyInfo
   };
 }

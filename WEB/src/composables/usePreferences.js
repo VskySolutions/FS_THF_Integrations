@@ -43,5 +43,8 @@ export function usePreferences (pageKey) {
 
   const clear = () => Cookies.remove(cookieName, { path: "/" });
 
-  return { all, get, set, merge, remove, clear };
+  // Alias for API parity with the common-components contract.
+  const clearAll = clear;
+
+  return { all, get, set, merge, remove, clear, clearAll };
 }

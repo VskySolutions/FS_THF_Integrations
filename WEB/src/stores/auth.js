@@ -1,85 +1,134 @@
 import { defineStore } from "pinia";
 import { LocalStorage } from "quasar";
-import authService from "modules/auth/auth.service";
+import { authApi } from "services/api";
+import { useTenantStore } from "stores/tenant";
+
+// Refresh-token validity window (backend default: 7 days). Used to drive the
+// session-expiry warning when the JWT does not carry a usable expiry.
+const REFRESH_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 export const useAuthStore = defineStore("auth", {
-
   state: () => ({
     token: LocalStorage.getItem("token"),
-    user: LocalStorage.getItem("user")
+    refreshToken: LocalStorage.getItem("refreshToken"),
+    user: LocalStorage.getItem("user"),
+    mustChangePassword: false,
+    sessionExpiresAt: LocalStorage.getItem("sessionExpiresAt")
+      ? new Date(LocalStorage.getItem("sessionExpiresAt"))
+      : null
   }),
 
   getters: {
-    loggedIn: (state) => !!state.token
+    isAuthenticated: (state) => !!state.token,
+    roles: (state) => {
+      const active = useTenantStore().activeTenant;
+      return active?.role ? [active.role] : [];
+    }
   },
 
   actions: {
+    // AC-UI-001.2 / AC-UI-001.4
+    async login (credentials) {
+      const email = credentials.email ?? credentials.username;
+      const resp = await authApi.login({ email, password: credentials.password });
+      const data = resp?.data;
+      if (!data?.accessToken) {
+        return resp;
+      }
+      this._setTokens(data.accessToken, data.refreshToken);
+      this.mustChangePassword = !!data.mustChangePassword;
+      await this.loadProfile();
+      return resp;
+    },
 
-    async login (model) {
+    // GET /api/auth/profile → populate current user + tenant assignments.
+    async loadProfile () {
+      const profile = await authApi.profile();
+      this.user = {
+        userId: profile.userId,
+        email: profile.email,
+        displayName: profile.displayName,
+        tenants: profile.tenants || []
+      };
+      LocalStorage.set("user", this.user);
+      useTenantStore().setAssignments(profile.tenants || []);
+      return profile;
+    },
+
+    // AC-UI-004.1: silent token refresh.
+    async refresh () {
+      if (!this.refreshToken) {
+        throw new Error("No refresh token available.");
+      }
+      const resp = await authApi.refresh(this.refreshToken);
+      const data = resp?.data;
+      if (!data?.accessToken) {
+        throw new Error("Token refresh failed.");
+      }
+      this._setTokens(data.accessToken, data.refreshToken);
+      return data.accessToken;
+    },
+
+    // AC-UI-002.1 / AC-UI-002.3: clear local session even if the API call fails.
+    async logout () {
+      const rt = this.refreshToken;
       try {
-        const resp = await authService.login(model);
-
-        if (resp.token) {
-          LocalStorage.clear();
-
-          const token = resp.token;
-
-          const user = {
-            employeeId: resp.employeeId,
-            userId: resp.userId,
-            personId: resp.personId,
-            username: resp.username,
-            firstName: resp.firstName,
-            lastName: resp.lastName,
-            email: resp.email,
-            userEmail: resp.userEmail,
-            roles: resp.roles,
-            siteId: resp.siteId,
-            siteName: resp.siteName,
-            siteTimeZone: resp.siteTimeZone,
-            siteLandingPageLink: resp.siteLandingPageLink
-          };
-
-          this.token = token;
-          this.user = user;
-
-          LocalStorage.set("token", token);
-          LocalStorage.set("user", user);
-
-          return resp;
-        }
-      } catch (error) {
-        console.error("Login failed:", error);
-        throw error;
+        await authApi.logout(rt);
+      } catch {
+        // best-effort; clear locally regardless
+      } finally {
+        this.clearSession();
       }
     },
 
-    logout () {
-      LocalStorage.clear();
+    // AC-UI-002.2
+    async logoutAll () {
+      try {
+        await authApi.logoutAll();
+      } catch {
+        // best-effort
+      } finally {
+        this.clearSession();
+      }
+    },
 
-      this.token = null;
-      this.user = null;
+    // Called on app mount to restore the session.
+    async initialize () {
+      if (!this.token) {
+        return;
+      }
+      try {
+        await this.loadProfile();
+      } catch {
+        this.clearSession();
+      }
     },
 
     setUserInfo (payload) {
-      this.user = {
-        ...this.user,
-        ...payload
-      };
-
+      this.user = { ...this.user, ...payload };
       LocalStorage.set("user", this.user);
     },
 
-    changeTenant (siteId, siteTimeZone, name, landingPage) {
-      const updatedUser = {
-        ...this.user,
-        siteId,
-        siteTimeZone,
-        siteName: name,
-        siteLandingPageLink: landingPage
-      };
-      this.user = updatedUser;
-      LocalStorage.set("user", updatedUser);
+    _setTokens (accessToken, refreshToken) {
+      this.token = accessToken;
+      LocalStorage.set("token", accessToken);
+      if (refreshToken) {
+        this.refreshToken = refreshToken;
+        LocalStorage.set("refreshToken", refreshToken);
+      }
+      this.sessionExpiresAt = new Date(Date.now() + REFRESH_WINDOW_MS);
+      LocalStorage.set("sessionExpiresAt", this.sessionExpiresAt.toISOString());
+    },
+
+    // Clear local session without calling the API (safe to use inside interceptors).
+    clearSession () {
+      this.token = null;
+      this.refreshToken = null;
+      this.user = null;
+      this.mustChangePassword = false;
+      this.sessionExpiresAt = null;
+      LocalStorage.clear();
+      useTenantStore().clear();
     }
   }
 });

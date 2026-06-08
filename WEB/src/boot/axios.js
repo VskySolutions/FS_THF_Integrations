@@ -2,6 +2,18 @@ import { boot } from "quasar/wrappers";
 import axios from "axios";
 import { LocalStorage } from "quasar";
 
+// UUID v4 for per-request correlation tracing (falls back when crypto.randomUUID is unavailable).
+function generateCorrelationId () {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 // Token based axios instance
 const http = axios.create({
   baseURL: process.env.API_BASE_URL,
@@ -33,6 +45,9 @@ export default boot(({ app }) => {
       } else {
         delete config.headers.Authorization;
       }
+
+      // Correlation id for request tracing
+      config.headers["X-Correlation-Id"] = generateCorrelationId();
 
       // Tenant Header
       if (user?.siteId) {

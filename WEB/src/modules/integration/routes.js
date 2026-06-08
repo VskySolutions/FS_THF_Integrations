@@ -24,5 +24,17 @@ export default [
         meta: { requiresAuth: true, roles: ["TenantAdmin", "SuperAdmin"], title: "Logs" }
       }
     ]
+  },
+  {
+    path: "/health",
+    component: () => import("layouts/layout.vue"),
+    children: [
+      {
+        path: "",
+        name: "health",
+        component: () => import("modules/integration/pages/health.vue"),
+        meta: { requiresAuth: true, roles: ["TenantAdmin", "SuperAdmin"], title: "Health" }
+      }
+    ]
   }
 ];

@@ -1,22 +1,29 @@
 <template>
   <q-page padding>
-    <app-breadcrumbs :items="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'Mapping Configuration' }]" />
-
-    <div class="row items-center q-mb-md q-gutter-sm">
-      <div class="text-h5 text-weight-bold">Mapping Configuration</div>
-      <q-space />
-      <q-input v-model="search" dense outlined debounce="300" placeholder="Search fields" style="max-width: 260px;">
-        <template #prepend><q-icon name="o_search" /></template>
-      </q-input>
-      <q-btn unelevated no-caps color="primary" icon="o_add" label="Add Mapping" :disable="!tenantId" @click="openCreate" />
-    </div>
+    <app-list-header
+      :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'Mapping Configuration' }]"
+      title="Mapping Configuration"
+      :search="search"
+      show-search
+      search-placeholder="Search fields"
+      show-filters
+      :filter-count="filterChips.length"
+      show-add
+      add-label="Add Mapping"
+      :add-disable="!tenantId"
+      show-back
+      @update:search="search = $event"
+      @filters="filterOpen = true"
+      @add="openCreate"
+      @back="$router.back()"
+    />
 
     <q-banner v-if="!tenantId" dense class="bg-orange-1 text-orange-9 q-mb-md">
       <template #avatar><q-icon name="o_warning" color="orange" /></template>
       No active tenant selected.
     </q-banner>
 
-    <app-filter-drawer :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
+    <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
       <app-select v-model="filters.sourceSystem" :options="systemOptions" label="Source system" class="q-mb-md" />
       <app-select v-model="filters.destinationSystem" :options="systemOptions" label="Destination system" />
     </app-filter-drawer>
@@ -92,7 +99,7 @@ import AppDataTable from "components/common/AppDataTable.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppSelect from "components/common/AppSelect.vue";
-import AppBreadcrumbs from "components/common/AppBreadcrumbs.vue";
+import AppListHeader from "components/common/AppListHeader.vue";
 
 const notify = useNotify();
 const { confirm } = useConfirm();
@@ -115,6 +122,7 @@ const rows = ref([]);
 const loading = ref(false);
 const total = ref(0);
 const search = ref("");
+const filterOpen = ref(false);
 const filters = reactive({ sourceSystem: null, destinationSystem: null });
 const pagination = ref({ page: 1, rowsPerPage: 20, sortBy: null, descending: false, rowsNumber: 0 });
 

@@ -1,12 +1,16 @@
 <template>
   <q-page padding>
-    <app-breadcrumbs :items="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'Logs' }]" />
+    <app-list-header
+      :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'Logs' }]"
+      title="Integration Logs"
+      show-filters
+      :filter-count="filterChips.length"
+      show-back
+      @filters="filterOpen = true"
+      @back="$router.back()"
+    />
 
-    <div class="row items-center q-mb-md">
-      <div class="text-h5 text-weight-bold">Integration Logs</div>
-    </div>
-
-    <app-filter-drawer :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
+    <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
       <q-input v-model="filters.jobId" outlined dense clearable label="Job ID" class="q-mb-md" />
       <app-select v-model="filters.status" :options="statusOptions" label="Level" class="q-mb-md" />
       <app-date-picker v-model="filters.fromDate" label="From date" :max-date="filters.toDate" class="q-mb-md" />
@@ -55,7 +59,7 @@ import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppViewDrawer from "components/common/AppViewDrawer.vue";
 import AppDatePicker from "components/common/AppDatePicker.vue";
 import AppSelect from "components/common/AppSelect.vue";
-import AppBreadcrumbs from "components/common/AppBreadcrumbs.vue";
+import AppListHeader from "components/common/AppListHeader.vue";
 
 const notify = useNotify();
 
@@ -81,6 +85,7 @@ const rows = ref([]);
 const loading = ref(false);
 const total = ref(0);
 const pagination = ref({ page: 1, rowsPerPage: 20, sortBy: null, descending: false, rowsNumber: 0 });
+const filterOpen = ref(false);
 const filters = reactive({ jobId: "", status: null, fromDate: null, toDate: null });
 
 const filterChips = computed(() => {

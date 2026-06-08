@@ -1,12 +1,18 @@
 <template>
   <q-page padding>
-    <app-breadcrumbs :items="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'Integration Jobs' }]" />
-
-    <div class="row items-center q-mb-md q-gutter-sm">
-      <div class="text-h5 text-weight-bold">Integration Jobs</div>
-      <q-space />
-      <q-btn unelevated no-caps color="primary" icon="o_play_arrow" label="Trigger Import" @click="openTrigger" />
-    </div>
+    <app-list-header
+      :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'Integration Jobs' }]"
+      title="Integration Jobs"
+      :show-filters="tab === 'jobs'"
+      :filter-count="filterChips.length"
+      show-add
+      add-label="Trigger Import"
+      add-icon="o_play_arrow"
+      show-back
+      @filters="filterOpen = true"
+      @add="openTrigger"
+      @back="$router.back()"
+    />
 
     <q-tabs v-model="tab" align="left" class="text-primary q-mb-sm" dense narrow-indicator>
       <q-tab name="jobs" label="Jobs" no-caps />
@@ -17,14 +23,12 @@
     <q-tab-panels v-model="tab" animated>
       <!-- Jobs -->
       <q-tab-panel name="jobs" class="q-pa-none">
-        <div class="row items-center q-mb-sm">
-          <app-filter-drawer :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
-            <app-select v-model="filters.status" :options="statusOptions" label="Status" class="q-mb-md" />
-            <q-input v-model="filters.interfaceName" outlined dense clearable label="Interface name" class="q-mb-md" />
-            <app-date-picker v-model="filters.fromDate" label="From date" :max-date="filters.toDate" class="q-mb-md" />
-            <app-date-picker v-model="filters.toDate" label="To date" :min-date="filters.fromDate" />
-          </app-filter-drawer>
-        </div>
+        <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
+          <app-select v-model="filters.status" :options="statusOptions" label="Status" class="q-mb-md" />
+          <q-input v-model="filters.interfaceName" outlined dense clearable label="Interface name" class="q-mb-md" />
+          <app-date-picker v-model="filters.fromDate" label="From date" :max-date="filters.toDate" class="q-mb-md" />
+          <app-date-picker v-model="filters.toDate" label="To date" :min-date="filters.fromDate" />
+        </app-filter-drawer>
 
         <app-data-table
           page-key="jobs"
@@ -136,7 +140,7 @@ import AppViewDrawer from "components/common/AppViewDrawer.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppDatePicker from "components/common/AppDatePicker.vue";
 import AppSelect from "components/common/AppSelect.vue";
-import AppBreadcrumbs from "components/common/AppBreadcrumbs.vue";
+import AppListHeader from "components/common/AppListHeader.vue";
 
 const notify = useNotify();
 const { confirm } = useConfirm();
@@ -173,6 +177,7 @@ const jobs = ref([]);
 const loadingJobs = ref(false);
 const jobsTotal = ref(0);
 const jobsPagination = ref({ page: 1, rowsPerPage: 20, sortBy: null, descending: false, rowsNumber: 0 });
+const filterOpen = ref(false);
 const filters = reactive({ status: null, interfaceName: "", fromDate: null, toDate: null });
 
 const filterChips = computed(() => {

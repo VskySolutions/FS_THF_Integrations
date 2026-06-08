@@ -1,25 +1,23 @@
 <template>
   <q-page padding>
-    <app-breadcrumbs :items="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'Tenants' }]" />
+    <app-list-header
+      :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'Tenants' }]"
+      title="Tenants"
+      :search="search"
+      show-search
+      search-placeholder="Search name or identifier"
+      show-filters
+      :filter-count="filterChips.length"
+      show-add
+      add-label="Create Tenant"
+      show-back
+      @update:search="search = $event"
+      @filters="filterOpen = true"
+      @add="openCreate"
+      @back="$router.back()"
+    />
 
-    <div class="row items-center q-mb-md q-gutter-sm">
-      <div class="text-h5 text-weight-bold">Tenants</div>
-      <q-space />
-      <q-input
-        v-model="search"
-        dense
-        outlined
-        debounce="300"
-        placeholder="Search name or identifier"
-        class="col-grow"
-        style="max-width: 280px;"
-      >
-        <template #prepend><q-icon name="o_search" /></template>
-      </q-input>
-      <q-btn unelevated no-caps color="primary" icon="o_add" label="Create Tenant" @click="openCreate" />
-    </div>
-
-    <app-filter-drawer :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
+    <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
       <q-select
         v-model="filters.status"
         outlined
@@ -137,7 +135,7 @@ import { useConfirm } from "composables/useConfirm";
 import AppDataTable from "components/common/AppDataTable.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
-import AppBreadcrumbs from "components/common/AppBreadcrumbs.vue";
+import AppListHeader from "components/common/AppListHeader.vue";
 
 const notify = useNotify();
 const { confirm } = useConfirm();
@@ -154,6 +152,7 @@ const loading = ref(false);
 const totalRecords = ref(0);
 const selected = ref([]);
 const search = ref("");
+const filterOpen = ref(false);
 const filters = reactive({ status: null, includeArchived: false });
 const pagination = ref({ page: 1, rowsPerPage: 20, sortBy: null, descending: false, rowsNumber: 0 });
 

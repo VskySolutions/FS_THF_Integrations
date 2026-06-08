@@ -8,10 +8,10 @@
     class="app-form-drawer column no-wrap"
   >
     <!-- Fixed header -->
-    <div class="row items-center q-pa-md bg-grey-1">
+    <div class="row items-center q-pa-md bg-primary text-white">
       <div class="text-h6">{{ title }}</div>
       <q-space />
-      <q-btn flat round dense icon="o_close" @click="onCancel" />
+      <q-btn flat round dense color="white" icon="o_close" @click="onCancel" />
     </div>
     <q-separator />
 

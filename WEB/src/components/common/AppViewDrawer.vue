@@ -7,10 +7,10 @@
     :width="width"
     class="column no-wrap"
   >
-    <div class="row items-center q-pa-md bg-grey-1">
+    <div class="row items-center q-pa-md bg-primary text-white">
       <div class="text-h6">{{ title }}</div>
       <q-space />
-      <q-btn flat round dense icon="o_close" @click="open = false" />
+      <q-btn flat round dense color="white" icon="o_close" @click="open = false" />
     </div>
     <q-separator />
 

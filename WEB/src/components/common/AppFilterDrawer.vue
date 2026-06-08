@@ -1,10 +1,7 @@
 <template>
   <div>
-    <!-- Trigger + active chips -->
-    <div class="row items-center q-gutter-sm q-mb-sm">
-      <q-btn outline no-caps color="primary" icon="o_filter_list" label="Filters" @click="open = true">
-        <q-badge v-if="activeCount" color="primary" floating>{{ activeCount }}</q-badge>
-      </q-btn>
+    <!-- Active filter chips (above the table; the Filters trigger lives in AppListHeader). -->
+    <div v-if="chips.length" class="row items-center q-gutter-sm q-mb-sm">
       <q-chip
         v-for="chip in chips"
         :key="chip.key"
@@ -15,14 +12,14 @@
       >
         {{ chip.label }}
       </q-chip>
-      <q-btn v-if="activeCount" flat dense no-caps color="grey-7" label="Clear all" @click="$emit('clear')" />
+      <q-btn flat dense no-caps color="grey-7" label="Clear all" @click="$emit('clear')" />
     </div>
 
     <q-drawer v-model="open" side="right" overlay bordered :width="360" class="column no-wrap">
-      <div class="row items-center q-pa-md bg-grey-1">
+      <div class="row items-center q-pa-md bg-primary text-white">
         <div class="text-h6">Filters</div>
         <q-space />
-        <q-btn flat round dense icon="o_close" @click="open = false" />
+        <q-btn flat round dense color="white" icon="o_close" @click="open = false" />
       </div>
       <q-separator />
       <q-scroll-area class="col">
@@ -40,15 +37,18 @@
 </template>
 
 <script setup>
-import { ref, computed } from "vue";
+import { computed } from "vue";
 
 const props = defineProps({
-  // [{ key, label }] for each active filter; drives chips + count.
+  modelValue: { type: Boolean, default: false },
+  // [{ key, label }] for each active filter; drives the chips.
   chips: { type: Array, default: () => [] }
 });
 
-defineEmits(["remove", "clear"]);
+const emit = defineEmits(["update:modelValue", "remove", "clear"]);
 
-const open = ref(false);
-const activeCount = computed(() => props.chips.length);
+const open = computed({
+  get: () => props.modelValue,
+  set: (val) => emit("update:modelValue", val)
+});
 </script>

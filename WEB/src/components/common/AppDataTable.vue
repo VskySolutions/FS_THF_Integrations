@@ -11,7 +11,7 @@
     :rows-per-page-options="rowsPerPageOptions"
     flat
     bordered
-    class="app-data-table"
+    :class="['app-data-table', { 'with-selection': selectable }]"
     @request="onRequest"
   >
     <!-- Top bar: title, custom actions, column menu, refresh -->
@@ -225,5 +225,13 @@ const forwardedSlots = computed(() =>
 .app-th__resize:hover {
   background: var(--q-primary);
   opacity: 0.4;
+}
+
+/* Left-align the selection (checkbox) column header + body cells. */
+.app-data-table.with-selection :deep(thead th:first-child),
+.app-data-table.with-selection :deep(tbody td:first-child) {
+  text-align: left;
+  width: 1%;
+  white-space: nowrap;
 }
 </style>

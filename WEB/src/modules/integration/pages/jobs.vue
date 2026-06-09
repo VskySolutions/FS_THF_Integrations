@@ -128,7 +128,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from "vue";
-import { date } from "quasar";
+import { useDateFormat } from "composables/useDateFormat";
 import { jobApi, logApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
@@ -160,16 +160,17 @@ const statusColor = (status) => ({
 }[status] || "grey");
 
 const isRetryable = (status) => ["Failed", "PermanentlyFailed"].includes(status);
-const formatDate = (d) => (d ? date.formatDate(d, "YYYY-MM-DD HH:mm") : "—");
+const { formatDateTime: formatDate } = useDateFormat();
 
 // ---- Jobs ----
 const jobColumns = [
-  { name: "status", label: "Status", field: "status", align: "left", sortable: true },
-  { name: "interfaceName", label: "Interface", field: "interfaceName", align: "left", sortable: true },
-  { name: "sourceSystem", label: "Source", field: "sourceSystem", align: "left" },
-  { name: "targetSystem", label: "Target", field: "targetSystem", align: "left" },
-  { name: "createdDate", label: "Created", field: (r) => formatDate(r.createdDate), align: "left", sortable: true },
+  { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true },
+  { name: "interfaceName", label: "Interface", field: "interfaceName", align: "left", sortable: true, default: true },
+  { name: "sourceSystem", label: "Source", field: "sourceSystem", align: "left", default: true },
+  { name: "targetSystem", label: "Target", field: "targetSystem", align: "left", default: true },
+  { name: "createdDate", label: "Created", field: (r) => formatDate(r.createdDate), align: "left", sortable: true, default: true },
   { name: "processedDate", label: "Processed", field: (r) => formatDate(r.processedDate), align: "left" },
+  { name: "updatedOnUtc", label: "Updated", field: (r) => formatDate(r.updatedOnUtc), align: "left", sortable: true },
   { name: "actions", label: "", field: "actions", align: "right" }
 ];
 const jobs = ref([]);

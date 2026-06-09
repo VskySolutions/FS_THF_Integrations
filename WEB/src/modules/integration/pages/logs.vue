@@ -49,7 +49,7 @@
 
 <script setup>
 import { ref, reactive, computed } from "vue";
-import { date } from "quasar";
+import { useDateFormat } from "composables/useDateFormat";
 import { logApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 
@@ -64,7 +64,7 @@ import { useListTable } from "composables/useListTable";
 const notify = useNotify();
 
 const statusOptions = ["Information", "Warning", "Error"].map((s) => ({ label: s, value: s }));
-const formatDate = (d) => (d ? date.formatDate(d, "YYYY-MM-DD HH:mm") : "—");
+const { formatDateTime: formatDate } = useDateFormat();
 const isError = (level) => (level || "").toLowerCase().startsWith("err");
 const levelColor = (level) => {
   const l = (level || "").toLowerCase();
@@ -74,10 +74,11 @@ const levelColor = (level) => {
 };
 
 const columns = [
-  { name: "level", label: "Level", field: "level", align: "left" },
-  { name: "jobId", label: "Job ID", field: "jobId", align: "left" },
-  { name: "message", label: "Message", field: "message", align: "left" },
-  { name: "createdDate", label: "Time", field: (r) => formatDate(r.createdDate), align: "left", sortable: true },
+  { name: "level", label: "Level", field: "level", align: "left", default: true },
+  { name: "jobId", label: "Job ID", field: "jobId", align: "left", default: true },
+  { name: "message", label: "Message", field: "message", align: "left", default: true },
+  { name: "createdDate", label: "Time", field: (r) => formatDate(r.createdDate), align: "left", sortable: true, default: true },
+  { name: "updatedOnUtc", label: "Updated", field: (r) => formatDate(r.updatedOnUtc), align: "left", sortable: true },
   { name: "actions", label: "", field: "actions", align: "right" }
 ];
 

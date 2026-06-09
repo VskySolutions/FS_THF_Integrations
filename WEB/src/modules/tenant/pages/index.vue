@@ -117,6 +117,18 @@
             (v) => /^[a-z0-9-]+$/.test(v) || 'Use lowercase letters, numbers and hyphens only'
           ]"
         />
+        <q-select
+          v-model="form.timeZoneId"
+          outlined
+          stack-label
+          hide-bottom-space
+          label="Time Zone *"
+          class="q-mt-md"
+          use-input
+          input-debounce="200"
+          :options="filteredZones"
+          @filter="filterZones"
+        />
       </q-form>
     </app-form-drawer>
   </q-page>
@@ -128,6 +140,7 @@ import { tenantApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "s
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
+import { useDateFormat } from "composables/useDateFormat";
 
 import AppDataTable from "components/common/AppDataTable.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
@@ -137,11 +150,15 @@ import AppSelect from "components/common/AppSelect.vue";
 
 const notify = useNotify();
 const { confirm } = useConfirm();
+const fmt = useDateFormat();
 
 const columns = [
-  { name: "name", label: "Name", field: "name", align: "left", sortable: true },
-  { name: "identifier", label: "Identifier", field: "identifier", align: "left", sortable: true },
-  { name: "status", label: "Status", field: "status", align: "left", sortable: true },
+  { name: "name", label: "Name", field: "name", align: "left", sortable: true, default: true },
+  { name: "identifier", label: "Identifier", field: "identifier", align: "left", sortable: true, default: true },
+  { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true },
+  { name: "timeZoneId", label: "Time Zone", field: "timeZoneId", align: "left", sortable: true },
+  { name: "createdOnUtc", label: "Created", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true },
+  { name: "updatedOnUtc", label: "Updated", field: (r) => fmt.formatDateTime(r.updatedOnUtc), align: "left", sortable: true, default: true },
   { name: "actions", label: "", field: "actions", align: "right" }
 ];
 
@@ -193,12 +210,22 @@ const editing = ref(false);
 const saving = ref(false);
 const identifierError = ref("");
 const formRef = ref(null);
-const form = reactive({ tenantId: null, name: "", identifier: "" });
+const form = reactive({ tenantId: null, name: "", identifier: "", timeZoneId: "UTC" });
+
+const allZones = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : ["UTC"];
+const filteredZones = ref([...allZones]);
+const filterZones = (val, update) => {
+  update(() => {
+    const needle = val.toLowerCase();
+    filteredZones.value = needle ? allZones.filter((z) => z.toLowerCase().includes(needle)) : [...allZones];
+  });
+};
 
 const resetForm = () => {
   form.tenantId = null;
   form.name = "";
   form.identifier = "";
+  form.timeZoneId = "UTC";
   identifierError.value = "";
   editing.value = false;
 };
@@ -214,6 +241,7 @@ const openEdit = (row) => {
   form.tenantId = row.tenantId;
   form.name = row.name;
   form.identifier = row.identifier;
+  form.timeZoneId = row.timeZoneId || "UTC";
   formOpen.value = true;
 };
 
@@ -225,10 +253,10 @@ const submitForm = async ({ clearDraft } = {}) => {
   saving.value = true;
   try {
     if (editing.value) {
-      await tenantApi.update(form.tenantId, { name: form.name });
+      await tenantApi.update(form.tenantId, { name: form.name, timeZoneId: form.timeZoneId });
       notify.success("Tenant updated.");
     } else {
-      await tenantApi.create({ name: form.name, identifier: form.identifier });
+      await tenantApi.create({ name: form.name, identifier: form.identifier, timeZoneId: form.timeZoneId });
       notify.success("Tenant created.");
     }
     clearDraft?.();

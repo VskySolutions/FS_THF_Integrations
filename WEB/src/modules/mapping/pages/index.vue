@@ -94,6 +94,7 @@ import { useTenantStore } from "stores/tenant";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
+import { useDateFormat } from "composables/useDateFormat";
 
 import AppDataTable from "components/common/AppDataTable.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
@@ -108,13 +109,16 @@ const tenantId = computed(() => tenantStore.activeTenantId);
 
 const systemOptions = ["Concur", "Maconomy", "Paycor"].map((s) => ({ label: s, value: s }));
 
+const fmt = useDateFormat();
 const columns = [
-  { name: "sourceSystem", label: "Source system", field: "sourceSystem", align: "left", sortable: true },
-  { name: "destinationSystem", label: "Destination system", field: "destinationSystem", align: "left", sortable: true },
-  { name: "sourceField", label: "Source field", field: "sourceField", align: "left", sortable: true },
-  { name: "destinationField", label: "Destination field", field: "destinationField", align: "left" },
+  { name: "sourceSystem", label: "Source system", field: "sourceSystem", align: "left", sortable: true, default: true },
+  { name: "destinationSystem", label: "Destination system", field: "destinationSystem", align: "left", sortable: true, default: true },
+  { name: "sourceField", label: "Source field", field: "sourceField", align: "left", sortable: true, default: true },
+  { name: "destinationField", label: "Destination field", field: "destinationField", align: "left", default: true },
   { name: "transformationRule", label: "Transformation", field: "transformationRule", align: "left" },
-  { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true },
+  { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true, default: true },
+  { name: "createdOnUtc", label: "Created", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true },
+  { name: "updatedOnUtc", label: "Updated", field: (r) => fmt.formatDateTime(r.updatedOnUtc), align: "left", sortable: true, default: true },
   { name: "actions", label: "", field: "actions", align: "right" }
 ];
 

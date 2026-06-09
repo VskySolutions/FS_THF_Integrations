@@ -101,6 +101,7 @@ import { useTenantStore } from "stores/tenant";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
+import { useDateFormat } from "composables/useDateFormat";
 
 import AppDataTable from "components/common/AppDataTable.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
@@ -113,11 +114,14 @@ const notify = useNotify();
 const { confirm } = useConfirm();
 const tenantStore = useTenantStore();
 const isSuperAdmin = computed(() => tenantStore.activeRole === "SuperAdmin");
+const fmt = useDateFormat();
 
 const columns = [
-  { name: "displayName", label: "Name", field: "displayName", align: "left", sortable: true },
-  { name: "email", label: "Email", field: "email", align: "left", sortable: true },
-  { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true },
+  { name: "displayName", label: "Name", field: "displayName", align: "left", sortable: true, default: true },
+  { name: "email", label: "Email", field: "email", align: "left", sortable: true, default: true },
+  { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true, default: true },
+  { name: "createdOnUtc", label: "Created", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true },
+  { name: "updatedOnUtc", label: "Updated", field: (r) => fmt.formatDateTime(r.updatedOnUtc), align: "left", sortable: true, default: true },
   { name: "actions", label: "", field: "actions", align: "right" }
 ];
 

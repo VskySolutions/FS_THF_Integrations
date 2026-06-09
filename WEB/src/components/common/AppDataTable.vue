@@ -91,7 +91,9 @@ const props = defineProps({
   pageKey: { type: String, default: "" },
   totalRecords: { type: Number, default: 0 },
   selectable: { type: Boolean, default: false },
-  pagination: { type: Object, default: null }
+  pagination: { type: Object, default: null },
+  defaultSortBy: { type: String, default: "updatedOnUtc" },
+  defaultDescending: { type: Boolean, default: true }
 });
 
 const emit = defineEmits(["request", "refresh", "update:pagination", "update:selected"]);
@@ -100,8 +102,8 @@ const rowsPerPageOptions = [10, 20, 50, 100];
 const prefs = props.pageKey ? usePreferences(props.pageKey) : null;
 
 const innerPagination = ref({
-  sortBy: prefs?.get("sortBy", null) ?? null,
-  descending: prefs?.get("descending", false) ?? false,
+  sortBy: prefs?.get("sortBy", props.defaultSortBy) ?? props.defaultSortBy,
+  descending: prefs?.get("descending", props.defaultDescending) ?? props.defaultDescending,
   page: 1,
   rowsPerPage: prefs?.get("pageSize", 20) ?? 20,
   rowsNumber: props.totalRecords,

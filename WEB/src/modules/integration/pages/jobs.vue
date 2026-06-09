@@ -170,6 +170,8 @@ const jobColumns = [
   { name: "targetSystem", label: "Target", field: "targetSystem", align: "left", default: true },
   { name: "createdDate", label: "Created", field: (r) => formatDate(r.createdDate), align: "left", sortable: true, default: true },
   { name: "processedDate", label: "Processed", field: (r) => formatDate(r.processedDate), align: "left" },
+  { name: "createdBy", label: "Created By", field: "createdBy", align: "left", sortable: true },
+  { name: "updatedBy", label: "Updated By", field: "updatedBy", align: "left", sortable: true },
   { name: "updatedOnUtc", label: "Updated", field: (r) => formatDate(r.updatedOnUtc), align: "left", sortable: true },
   { name: "actions", label: "", field: "actions", align: "right" }
 ];

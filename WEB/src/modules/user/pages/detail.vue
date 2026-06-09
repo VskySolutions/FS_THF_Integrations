@@ -18,8 +18,10 @@
         <q-card-section class="text-subtitle1 text-weight-medium">Basic information</q-card-section>
         <q-separator />
         <q-card-section class="row q-col-gutter-md">
-          <q-input v-model="displayName" outlined dense stack-label label="Display Name" class="col-12 col-sm-6" :readonly="!isSuperAdmin" />
+          <q-input v-model="firstName" outlined dense stack-label label="First Name" class="col-12 col-sm-6" :readonly="!isSuperAdmin" />
+          <q-input v-model="lastName" outlined dense stack-label label="Last Name" class="col-12 col-sm-6" :readonly="!isSuperAdmin" />
           <q-input v-model="email" outlined dense stack-label label="Email" class="col-12 col-sm-6" :readonly="!isSuperAdmin" />
+          <q-input v-model="phoneNumber" outlined dense stack-label label="Phone Number" class="col-12 col-sm-6" :readonly="!isSuperAdmin" />
         </q-card-section>
         <q-card-actions v-if="isSuperAdmin" align="right">
           <q-btn unelevated no-caps color="primary" label="Save" :loading="saving" @click="save" />
@@ -103,8 +105,10 @@ const isSuperAdmin = computed(() => tenantStore.activeRole === "SuperAdmin");
 const userId = route.params.id;
 const user = ref(null);
 const loading = ref(false);
-const displayName = ref("");
+const firstName = ref("");
+const lastName = ref("");
 const email = ref("");
+const phoneNumber = ref("");
 const saving = ref(false);
 const tenantOptions = ref([]);
 const loadingTenants = ref(false);
@@ -137,7 +141,9 @@ const load = async () => {
   loading.value = !user.value;
   try {
     user.value = await userApi.get(userId);
-    displayName.value = user.value.displayName;
+    firstName.value = user.value.firstName || "";
+    lastName.value = user.value.lastName || "";
+    phoneNumber.value = user.value.phoneNumber || "";
     email.value = user.value.email;
   } catch (err) {
     notify.error(getApiErrorMessage(err));
@@ -149,7 +155,7 @@ const load = async () => {
 const save = async () => {
   saving.value = true;
   try {
-    await userApi.update(userId, { displayName: displayName.value, email: email.value });
+    await userApi.update(userId, { firstName: firstName.value, lastName: lastName.value, phoneNumber: phoneNumber.value, email: email.value });
     notify.success("User updated.");
     load();
   } catch (err) {

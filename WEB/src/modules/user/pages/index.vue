@@ -81,10 +81,17 @@
           :error="!!emailError" :error-message="emailError"
           :rules="[(v) => !!v || 'Email is required', (v) => /.+@.+\..+/.test(v) || 'Enter a valid email']"
         />
-        <q-input
-          v-model="form.displayName" outlined stack-label hide-bottom-space label="Display Name *" class="q-mb-md"
-          :rules="[(v) => !!v || 'Display name is required']"
-        />
+        <div class="row q-col-gutter-md q-mb-md">
+          <q-input
+            v-model="form.firstName" outlined stack-label hide-bottom-space label="First Name *" class="col"
+            :rules="[(v) => !!v || 'First name is required']"
+          />
+          <q-input
+            v-model="form.lastName" outlined stack-label hide-bottom-space label="Last Name *" class="col"
+            :rules="[(v) => !!v || 'Last name is required']"
+          />
+        </div>
+        <q-input v-model="form.phoneNumber" outlined stack-label hide-bottom-space label="Phone Number" class="q-mb-md" />
         <app-select v-model="form.role" :options="roleOptions" label="Role *" class="q-mb-md" :clearable="false" />
         <app-select v-if="isSuperAdmin" v-model="form.tenantId" :options="tenantOptions" label="Tenant" :loading="loadingTenants" />
       </q-form>
@@ -117,9 +124,12 @@ const isSuperAdmin = computed(() => tenantStore.activeRole === "SuperAdmin");
 const fmt = useDateFormat();
 
 const columns = [
-  { name: "displayName", label: "Name", field: "displayName", align: "left", sortable: true, default: true },
+  { name: "fullName", label: "Name", field: "fullName", align: "left", sortable: true, default: true },
   { name: "email", label: "Email", field: "email", align: "left", sortable: true, default: true },
+  { name: "phoneNumber", label: "Phone", field: "phoneNumber", align: "left", sortable: true },
   { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true, default: true },
+  { name: "createdBy", label: "Created By", field: "createdBy", align: "left", sortable: true },
+  { name: "updatedBy", label: "Updated By", field: "updatedBy", align: "left", sortable: true },
   { name: "createdOnUtc", label: "Created", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true },
   { name: "updatedOnUtc", label: "Updated", field: (r) => fmt.formatDateTime(r.updatedOnUtc), align: "left", sortable: true, default: true },
   { name: "actions", label: "", field: "actions", align: "right" }
@@ -145,7 +155,7 @@ const filteredRows = computed(() => {
   }
   const q = search.value.trim().toLowerCase();
   if (q) {
-    result = result.filter((r) => r.displayName?.toLowerCase().includes(q) || r.email?.toLowerCase().includes(q));
+    result = result.filter((r) => r.fullName?.toLowerCase().includes(q) || r.email?.toLowerCase().includes(q));
   }
   return result;
 });
@@ -155,7 +165,7 @@ const formOpen = ref(false);
 const saving = ref(false);
 const emailError = ref("");
 const formRef = ref(null);
-const form = reactive({ email: "", displayName: "", role: "Operator", tenantId: null });
+const form = reactive({ email: "", firstName: "", lastName: "", phoneNumber: "", role: "Operator", tenantId: null });
 const tenantOptions = ref([]);
 const loadingTenants = ref(false);
 
@@ -179,7 +189,9 @@ const loadTenants = async () => {
 
 const resetForm = () => {
   form.email = "";
-  form.displayName = "";
+  form.firstName = "";
+  form.lastName = "";
+  form.phoneNumber = "";
   form.role = "Operator";
   form.tenantId = null;
   emailError.value = "";
@@ -199,7 +211,7 @@ const submitForm = async ({ clearDraft } = {}) => {
   if (!(await formRef.value?.validate())) return;
   saving.value = true;
   try {
-    const payload = { email: form.email, displayName: form.displayName, role: form.role };
+    const payload = { email: form.email, firstName: form.firstName, lastName: form.lastName, phoneNumber: form.phoneNumber, role: form.role };
     if (isSuperAdmin.value && form.role !== "SuperAdmin") {
       payload.tenantId = form.tenantId;
     }

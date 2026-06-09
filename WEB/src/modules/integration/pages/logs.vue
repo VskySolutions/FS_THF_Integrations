@@ -78,6 +78,8 @@ const columns = [
   { name: "jobId", label: "Job ID", field: "jobId", align: "left", default: true },
   { name: "message", label: "Message", field: "message", align: "left", default: true },
   { name: "createdDate", label: "Time", field: (r) => formatDate(r.createdDate), align: "left", sortable: true, default: true },
+  { name: "createdBy", label: "Created By", field: "createdBy", align: "left", sortable: true },
+  { name: "updatedBy", label: "Updated By", field: "updatedBy", align: "left", sortable: true },
   { name: "updatedOnUtc", label: "Updated", field: (r) => formatDate(r.updatedOnUtc), align: "left", sortable: true },
   { name: "actions", label: "", field: "actions", align: "right" }
 ];

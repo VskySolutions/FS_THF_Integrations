@@ -117,6 +117,8 @@ const columns = [
   { name: "destinationField", label: "Destination field", field: "destinationField", align: "left", default: true },
   { name: "transformationRule", label: "Transformation", field: "transformationRule", align: "left" },
   { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true, default: true },
+  { name: "createdBy", label: "Created By", field: "createdBy", align: "left", sortable: true },
+  { name: "updatedBy", label: "Updated By", field: "updatedBy", align: "left", sortable: true },
   { name: "createdOnUtc", label: "Created", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true },
   { name: "updatedOnUtc", label: "Updated", field: (r) => fmt.formatDateTime(r.updatedOnUtc), align: "left", sortable: true, default: true },
   { name: "actions", label: "", field: "actions", align: "right" }

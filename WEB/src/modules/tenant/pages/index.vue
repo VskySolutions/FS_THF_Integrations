@@ -157,6 +157,8 @@ const columns = [
   { name: "identifier", label: "Identifier", field: "identifier", align: "left", sortable: true, default: true },
   { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true },
   { name: "timeZoneId", label: "Time Zone", field: "timeZoneId", align: "left", sortable: true },
+  { name: "createdBy", label: "Created By", field: "createdBy", align: "left", sortable: true },
+  { name: "updatedBy", label: "Updated By", field: "updatedBy", align: "left", sortable: true },
   { name: "createdOnUtc", label: "Created", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true },
   { name: "updatedOnUtc", label: "Updated", field: (r) => fmt.formatDateTime(r.updatedOnUtc), align: "left", sortable: true, default: true },
   { name: "actions", label: "", field: "actions", align: "right" }

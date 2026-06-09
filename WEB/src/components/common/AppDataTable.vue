@@ -152,12 +152,17 @@ const onRequest = (requestProps) => {
 };
 
 // ---- Column visibility (persisted) ----
+// The menu lists ALL data columns; only those flagged `default: true` are shown
+// initially (falling back to all when none are flagged). Users add the rest.
 const toggleableColumns = computed(() => props.columns.filter((c) => c.name !== "actions"));
 const allColumnNames = computed(() => props.columns.map((c) => c.name));
 
-const visibleColumnNames = ref(
-  prefs?.get("visibleColumns", null) ?? props.columns.filter((c) => c.name !== "actions").map((c) => c.name)
-);
+const defaultColumnNames = () => {
+  const flagged = props.columns.filter((c) => c.default === true && c.name !== "actions").map((c) => c.name);
+  return flagged.length ? flagged : props.columns.filter((c) => c.name !== "actions").map((c) => c.name);
+};
+
+const visibleColumnNames = ref(prefs?.get("visibleColumns", null) ?? defaultColumnNames());
 
 // "actions" is always shown; the menu only toggles data columns.
 const effectiveVisibleColumns = computed(() => {
@@ -169,7 +174,7 @@ const effectiveVisibleColumns = computed(() => {
 watch(visibleColumnNames, (val) => prefs?.set("visibleColumns", val), { deep: true });
 
 const resetColumns = () => {
-  visibleColumnNames.value = props.columns.filter((c) => c.name !== "actions").map((c) => c.name);
+  visibleColumnNames.value = defaultColumnNames();
 };
 
 // ---- Column resizing (persisted) ----

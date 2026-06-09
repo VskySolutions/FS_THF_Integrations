@@ -37,7 +37,7 @@ public sealed record CreateUserResponse(Guid UserId, string TemporaryPassword);
 
 public sealed record ResetPasswordResponse(Guid UserId, string TemporaryPassword);
 
-public sealed record UserSummary(Guid UserId, string Email, string DisplayName, bool IsActive);
+public sealed record UserSummary(Guid UserId, string Email, string DisplayName, bool IsActive, DateTime CreatedOnUtc, DateTime UpdatedOnUtc);
 
 public sealed record UserDetail(
     Guid UserId,

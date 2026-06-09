@@ -44,7 +44,7 @@ internal sealed class MappingConfigurationRepository : IMappingConfigurationRepo
         var query = _dbContext.MappingConfigurations.IgnoreQueryFilters().Where(m => m.TenantId == tenantId);
         var total = await query.CountAsync(cancellationToken);
         var items = await query
-            .OrderBy(m => m.SourceField)
+            .OrderByDescending(m => m.UpdatedOnUtc)
             .Skip((page - 1) * limit)
             .Take(limit)
             .ToListAsync(cancellationToken);

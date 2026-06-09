@@ -39,7 +39,7 @@ internal sealed class RetryQueueRepository : IRetryQueueRepository
         if (tenantId is { } tid) { query = query.Where(r => r.TenantId == tid); }
 
         var total = await query.CountAsync(cancellationToken);
-        var items = await query.OrderBy(r => r.NextRetryDate)
+        var items = await query.OrderByDescending(r => r.UpdatedOnUtc)
             .Skip((page - 1) * limit).Take(limit).ToListAsync(cancellationToken);
         return (items, total);
     }

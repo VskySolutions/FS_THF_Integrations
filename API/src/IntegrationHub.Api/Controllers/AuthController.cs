@@ -206,7 +206,8 @@ public sealed class AuthController : ControllerBase
                 assignment.TenantId,
                 tenant?.Identifier ?? string.Empty,
                 tenant?.Name ?? string.Empty,
-                assignment.Role.ToString()));
+                assignment.Role.ToString(),
+                tenant?.TimeZoneId ?? "UTC"));
         }
 
         return Ok(ApiResponseFactory.Success(

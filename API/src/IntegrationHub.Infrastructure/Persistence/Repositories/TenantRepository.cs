@@ -23,7 +23,7 @@ internal sealed class TenantRepository : ITenantRepository
         => _dbContext.Tenants.AnyAsync(t => t.Identifier == identifier, cancellationToken);
 
     public async Task<IReadOnlyList<Tenant>> ListAsync(CancellationToken cancellationToken = default)
-        => await _dbContext.Tenants.OrderBy(t => t.Name).ToListAsync(cancellationToken);
+        => await _dbContext.Tenants.OrderByDescending(t => t.UpdatedOnUtc).ToListAsync(cancellationToken);
 
     public async Task AddAsync(Tenant tenant, CancellationToken cancellationToken = default)
         => await _dbContext.Tenants.AddAsync(tenant, cancellationToken);

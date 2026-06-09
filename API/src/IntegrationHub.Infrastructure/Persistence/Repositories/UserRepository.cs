@@ -34,7 +34,7 @@ internal sealed class UserRepository : IUserRepository
 
         var total = await query.CountAsync(cancellationToken);
         var items = await query
-            .OrderBy(u => u.Email)
+            .OrderByDescending(u => u.UpdatedOnUtc)
             .Skip((page - 1) * limit)
             .Take(limit)
             .ToListAsync(cancellationToken);

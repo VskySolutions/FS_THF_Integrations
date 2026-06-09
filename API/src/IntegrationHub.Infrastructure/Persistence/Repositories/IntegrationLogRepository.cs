@@ -34,7 +34,7 @@ internal sealed class IntegrationLogRepository : IIntegrationLogRepository
         if (toDate is { } to) { query = query.Where(l => l.CreatedAtUtc <= to); }
 
         var total = await query.CountAsync(cancellationToken);
-        var items = await query.OrderByDescending(l => l.CreatedAtUtc)
+        var items = await query.OrderByDescending(l => l.UpdatedOnUtc)
             .Skip((page - 1) * limit).Take(limit).ToListAsync(cancellationToken);
         return (items, total);
     }

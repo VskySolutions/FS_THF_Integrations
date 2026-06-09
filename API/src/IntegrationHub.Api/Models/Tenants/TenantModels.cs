@@ -4,11 +4,13 @@ public sealed class CreateTenantRequest
 {
     public string Name { get; set; } = string.Empty;
     public string Identifier { get; set; } = string.Empty;
+    public string TimeZoneId { get; set; } = "UTC";
 }
 
 public sealed class UpdateTenantRequest
 {
     public string Name { get; set; } = string.Empty;
+    public string? TimeZoneId { get; set; }
 }
 
 public sealed class UpdateTenantStatusRequest
@@ -50,7 +52,14 @@ public sealed class UpdateMappingRequest
 
 public sealed record TenantResponse(Guid TenantId, string Identifier, string Status);
 
-public sealed record TenantSummary(Guid TenantId, string Name, string Identifier, string Status);
+public sealed record TenantSummary(
+    Guid TenantId,
+    string Name,
+    string Identifier,
+    string Status,
+    string TimeZoneId,
+    DateTime CreatedOnUtc,
+    DateTime UpdatedOnUtc);
 
 public sealed record CredentialIndicator(bool Configured);
 
@@ -59,8 +68,11 @@ public sealed record TenantDetail(
     string Name,
     string Identifier,
     string Status,
+    string TimeZoneId,
     CredentialIndicator ConcurConfig,
-    CredentialIndicator MaconomyConfig);
+    CredentialIndicator MaconomyConfig,
+    DateTime CreatedOnUtc,
+    DateTime UpdatedOnUtc);
 
 public sealed record CredentialTestResponse(bool Connected, string Message);
 
@@ -71,4 +83,6 @@ public sealed record MappingResponse(
     string SourceField,
     string DestinationField,
     string? TransformationRule,
-    bool IsActive);
+    bool IsActive,
+    DateTime CreatedOnUtc,
+    DateTime UpdatedOnUtc);

@@ -20,7 +20,7 @@ internal sealed class IntegrationJobRepository : IIntegrationJobRepository
     public async Task<IReadOnlyList<IntegrationJob>> ListByStatusAsync(IntegrationJobStatus status, CancellationToken cancellationToken = default)
         => await _dbContext.IntegrationJobs
             .Where(j => j.Status == status)
-            .OrderByDescending(j => j.CreatedAtUtc)
+            .OrderByDescending(j => j.UpdatedOnUtc)
             .ToListAsync(cancellationToken);
 
     public async Task AddAsync(IntegrationJob job, CancellationToken cancellationToken = default)
@@ -46,7 +46,7 @@ internal sealed class IntegrationJobRepository : IIntegrationJobRepository
         if (toDate is { } to) { query = query.Where(j => j.CreatedAtUtc <= to); }
 
         var total = await query.CountAsync(cancellationToken);
-        var items = await query.OrderByDescending(j => j.CreatedAtUtc)
+        var items = await query.OrderByDescending(j => j.UpdatedOnUtc)
             .Skip((page - 1) * limit).Take(limit).ToListAsync(cancellationToken);
         return (items, total);
     }

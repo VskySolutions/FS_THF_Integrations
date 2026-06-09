@@ -63,6 +63,7 @@ public sealed class AdminController : ControllerBase
             jobId = j.Id, j.TenantId, j.InterfaceName, status = j.Status.ToString(),
             sourceSystem = j.SourceSystem.ToString(), targetSystem = j.TargetSystem.ToString(),
             createdDate = j.CreatedAtUtc, processedDate = j.CompletedAtUtc,
+            createdOnUtc = j.CreatedOnUtc, updatedOnUtc = j.UpdatedOnUtc,
         });
 
         return Ok(ApiResponseFactory.Paginated(summaries, "Jobs retrieved.", page, limit, total));
@@ -77,7 +78,7 @@ public sealed class AdminController : ControllerBase
     {
         (page, limit) = Normalize(page, limit);
         var (items, total) = await _logs.QueryAsync(ResolveTenant(tenantId), jobId, status, fromDate, toDate, page, limit, cancellationToken);
-        var entries = items.Select(l => new { l.Id, jobId = l.JobId, level = l.Level, l.Message, createdDate = l.CreatedAtUtc });
+        var entries = items.Select(l => new { l.Id, jobId = l.JobId, level = l.Level, l.Message, createdDate = l.CreatedAtUtc, updatedOnUtc = l.UpdatedOnUtc });
         return Ok(ApiResponseFactory.Paginated(entries, "Logs retrieved.", page, limit, total));
     }
 

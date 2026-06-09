@@ -83,6 +83,7 @@ public sealed class TenantsController : ControllerBase
             Id = Guid.NewGuid(),
             Name = request.Name,
             Identifier = request.Identifier,
+            TimeZoneId = string.IsNullOrWhiteSpace(request.TimeZoneId) ? "UTC" : request.TimeZoneId,
             Status = TenantStatus.Active,
             CreatedDate = DateTime.UtcNow,
         };
@@ -104,7 +105,7 @@ public sealed class TenantsController : ControllerBase
         var all = await _tenants.ListAsync(cancellationToken);
         var filtered = (includeArchived ? all : all.Where(t => t.Status != TenantStatus.Archived)).ToList();
         var pageItems = filtered.Skip((page - 1) * limit).Take(limit)
-            .Select(t => new TenantSummary(t.Id, t.Name, t.Identifier, t.Status.ToString()));
+            .Select(t => new TenantSummary(t.Id, t.Name, t.Identifier, t.Status.ToString(), t.TimeZoneId, t.CreatedOnUtc, t.UpdatedOnUtc));
 
         return Ok(ApiResponseFactory.Paginated(pageItems, "Tenants retrieved.", page, limit, filtered.Count));
     }
@@ -122,9 +123,10 @@ public sealed class TenantsController : ControllerBase
 
         var configs = await _configs.ListByTenantAsync(id, cancellationToken);
         var detail = new TenantDetail(
-            tenant.Id, tenant.Name, tenant.Identifier, tenant.Status.ToString(),
+            tenant.Id, tenant.Name, tenant.Identifier, tenant.Status.ToString(), tenant.TimeZoneId,
             new CredentialIndicator(configs.Any(c => c.System == SystemName.Concur)),
-            new CredentialIndicator(configs.Any(c => c.System == SystemName.Maconomy)));
+            new CredentialIndicator(configs.Any(c => c.System == SystemName.Maconomy)),
+            tenant.CreatedOnUtc, tenant.UpdatedOnUtc);
 
         return Ok(ApiResponseFactory.Success(detail, "Tenant retrieved."));
     }
@@ -140,6 +142,10 @@ public sealed class TenantsController : ControllerBase
         }
 
         tenant.Name = request.Name; // identifier is immutable
+        if (!string.IsNullOrWhiteSpace(request.TimeZoneId))
+        {
+            tenant.TimeZoneId = request.TimeZoneId;
+        }
         _tenants.Update(tenant);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -446,5 +452,6 @@ public sealed class TenantsController : ControllerBase
 
     private static MappingResponse Map(MappingConfiguration m) => new(
         m.Id, m.SourceSystem.ToString(), m.TargetSystem.ToString(),
-        m.SourceField, m.DestinationField, m.TransformationRule, m.IsActive);
+        m.SourceField, m.DestinationField, m.TransformationRule, m.IsActive,
+        m.CreatedOnUtc, m.UpdatedOnUtc);
 }

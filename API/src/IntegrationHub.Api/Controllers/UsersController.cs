@@ -133,7 +133,7 @@ public sealed class UsersController : ControllerBase
         Guid? tenantFilter = User.IsSuperAdmin() ? null : User.GetActiveTenantId();
         var (items, total) = await _users.ListAsync(tenantFilter, page, limit, cancellationToken);
 
-        var summaries = items.Select(u => new UserSummary(u.Id, u.Email, u.DisplayName, u.IsActive));
+        var summaries = items.Select(u => new UserSummary(u.Id, u.Email, u.DisplayName, u.IsActive, u.CreatedOnUtc, u.UpdatedOnUtc));
         return Ok(ApiResponseFactory.Paginated(summaries, "Users retrieved.", page, limit, total));
     }
 

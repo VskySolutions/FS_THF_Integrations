@@ -33,6 +33,6 @@ public sealed record RefreshTokenResponse(string AccessToken, int ExpiresIn, str
 
 public sealed record SwitchTenantResponse(string AccessToken, int ExpiresIn, string TenantIdentifier, string Role);
 
-public sealed record TenantMembershipDto(Guid TenantId, string Identifier, string Name, string Role);
+public sealed record TenantMembershipDto(Guid TenantId, string Identifier, string Name, string Role, string TimeZoneId);
 
 public sealed record UserProfileResponse(Guid UserId, string Email, string DisplayName, IReadOnlyList<TenantMembershipDto> Tenants);

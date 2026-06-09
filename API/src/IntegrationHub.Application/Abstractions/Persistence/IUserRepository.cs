@@ -14,6 +14,9 @@ public interface IUserRepository
 
     Task<bool> EmailExistsAsync(string email, CancellationToken cancellationToken = default);
 
+    /// <summary>Resolves user ids to display full names (FirstName + LastName), for Created/Updated By columns.</summary>
+    Task<IReadOnlyDictionary<Guid, string>> GetFullNamesAsync(IEnumerable<Guid> userIds, CancellationToken cancellationToken = default);
+
     /// <summary>Paginated user list; when <paramref name="tenantId"/> is set, only that tenant's users.</summary>
     Task<(IReadOnlyList<User> Items, int Total)> ListAsync(Guid? tenantId, int page, int limit, CancellationToken cancellationToken = default);
 

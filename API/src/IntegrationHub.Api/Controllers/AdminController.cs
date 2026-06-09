@@ -31,6 +31,7 @@ public sealed class AdminController : ControllerBase
     private readonly IIntegrationLogRepository _logs;
     private readonly IRetryQueueRepository _retries;
     private readonly IRetryQueueManager _retryManager;
+    private readonly IUserRepository _users;
     private readonly HealthCheckService _healthChecks;
 
     public AdminController(
@@ -38,14 +39,22 @@ public sealed class AdminController : ControllerBase
         IIntegrationLogRepository logs,
         IRetryQueueRepository retries,
         IRetryQueueManager retryManager,
+        IUserRepository users,
         HealthCheckService healthChecks)
     {
         _jobs = jobs;
         _logs = logs;
         _retries = retries;
         _retryManager = retryManager;
+        _users = users;
         _healthChecks = healthChecks;
     }
+
+    private async Task<IReadOnlyDictionary<Guid, string>> ResolveActorNamesAsync(IEnumerable<Guid?> ids, CancellationToken cancellationToken)
+        => await _users.GetFullNamesAsync(ids.Where(id => id.HasValue).Select(id => id!.Value), cancellationToken);
+
+    private static string? NameOf(IReadOnlyDictionary<Guid, string> names, Guid? id)
+        => id.HasValue && names.TryGetValue(id.Value, out var name) ? name : null;
 
     [HttpGet("jobs")]
     public async Task<IActionResult> GetJobs(
@@ -58,11 +67,13 @@ public sealed class AdminController : ControllerBase
         IntegrationJobStatus? statusFilter = Enum.TryParse<IntegrationJobStatus>(status, out var s) ? s : null;
 
         var (items, total) = await _jobs.QueryAsync(ResolveTenant(tenantId), statusFilter, interfaceName, fromDate, toDate, page, limit, cancellationToken);
+        var names = await ResolveActorNamesAsync(items.SelectMany(j => new[] { j.CreatedById, j.UpdatedById }), cancellationToken);
         var summaries = items.Select(j => new
         {
             jobId = j.Id, j.TenantId, j.InterfaceName, status = j.Status.ToString(),
             sourceSystem = j.SourceSystem.ToString(), targetSystem = j.TargetSystem.ToString(),
             createdDate = j.CreatedAtUtc, processedDate = j.CompletedAtUtc,
+            createdBy = NameOf(names, j.CreatedById), updatedBy = NameOf(names, j.UpdatedById),
             createdOnUtc = j.CreatedOnUtc, updatedOnUtc = j.UpdatedOnUtc,
         });
 
@@ -78,7 +89,12 @@ public sealed class AdminController : ControllerBase
     {
         (page, limit) = Normalize(page, limit);
         var (items, total) = await _logs.QueryAsync(ResolveTenant(tenantId), jobId, status, fromDate, toDate, page, limit, cancellationToken);
-        var entries = items.Select(l => new { l.Id, jobId = l.JobId, level = l.Level, l.Message, createdDate = l.CreatedAtUtc, updatedOnUtc = l.UpdatedOnUtc });
+        var names = await ResolveActorNamesAsync(items.SelectMany(l => new[] { l.CreatedById, l.UpdatedById }), cancellationToken);
+        var entries = items.Select(l => new
+        {
+            l.Id, jobId = l.JobId, level = l.Level, l.Message, createdDate = l.CreatedAtUtc,
+            createdBy = NameOf(names, l.CreatedById), updatedBy = NameOf(names, l.UpdatedById), updatedOnUtc = l.UpdatedOnUtc,
+        });
         return Ok(ApiResponseFactory.Paginated(entries, "Logs retrieved.", page, limit, total));
     }
 

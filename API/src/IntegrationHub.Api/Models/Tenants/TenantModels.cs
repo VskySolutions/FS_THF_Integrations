@@ -58,6 +58,8 @@ public sealed record TenantSummary(
     string Identifier,
     string Status,
     string TimeZoneId,
+    string? CreatedBy,
+    string? UpdatedBy,
     DateTime CreatedOnUtc,
     DateTime UpdatedOnUtc);
 
@@ -84,5 +86,7 @@ public sealed record MappingResponse(
     string DestinationField,
     string? TransformationRule,
     bool IsActive,
+    string? CreatedBy,
+    string? UpdatedBy,
     DateTime CreatedOnUtc,
     DateTime UpdatedOnUtc);

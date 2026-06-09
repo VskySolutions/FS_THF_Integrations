@@ -208,6 +208,8 @@ public class UsersControllerTests
         var tenantId = Guid.NewGuid();
         _users.Setup(u => u.ListAsync(It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Array.Empty<User>(), 0));
+        _users.Setup(u => u.GetFullNamesAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, string>());
 
         var controller = Create().WithUser(Guid.NewGuid(), Roles.TenantAdmin, tenantId);
         await controller.List(1, 20, default);
@@ -223,6 +225,7 @@ public class TenantsControllerTests
     private readonly Mock<ITenantApiConfigurationRepository> _configs = new();
     private readonly Mock<IMappingConfigurationRepository> _mappings = new();
     private readonly Mock<IIntegrationJobRepository> _jobs = new();
+    private readonly Mock<IUserRepository> _users = new();
     private readonly Mock<ICredentialEncryptionService> _encryption = new();
     private readonly Mock<ITenantContext> _tenantContext = new();
     private readonly Mock<IConcurConnector> _concur = new();
@@ -231,7 +234,7 @@ public class TenantsControllerTests
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
 
     private TenantsController Create() => new(
-        _tenants.Object, _configs.Object, _mappings.Object, _jobs.Object, _encryption.Object,
+        _tenants.Object, _configs.Object, _mappings.Object, _jobs.Object, _users.Object, _encryption.Object,
         _tenantContext.Object, _concur.Object, _maconomy.Object, _audit.Object, _unitOfWork.Object);
 
     [Fact]

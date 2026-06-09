@@ -90,11 +90,15 @@ public sealed class UsersController : ControllerBase
         var temporaryPassword = _passwordHasher.GenerateTemporaryPassword();
         var (hash, salt) = _passwordHasher.Hash(temporaryPassword);
 
+        var fullName = string.Join(" ", new[] { request.FirstName, request.LastName }.Where(s => !string.IsNullOrWhiteSpace(s)));
         var user = new User
         {
             Id = Guid.NewGuid(),
             Email = request.Email,
-            DisplayName = request.DisplayName,
+            FirstName = request.FirstName,
+            LastName = request.LastName,
+            PhoneNumber = request.PhoneNumber,
+            DisplayName = string.IsNullOrWhiteSpace(fullName) ? (request.DisplayName ?? string.Empty) : fullName,
             PasswordHash = hash,
             Salt = salt,
             IsActive = true,
@@ -133,7 +137,10 @@ public sealed class UsersController : ControllerBase
         Guid? tenantFilter = User.IsSuperAdmin() ? null : User.GetActiveTenantId();
         var (items, total) = await _users.ListAsync(tenantFilter, page, limit, cancellationToken);
 
-        var summaries = items.Select(u => new UserSummary(u.Id, u.Email, u.DisplayName, u.IsActive, u.CreatedOnUtc, u.UpdatedOnUtc));
+        var names = await ResolveActorNamesAsync(items.SelectMany(u => new[] { u.CreatedById, u.UpdatedById }), cancellationToken);
+        var summaries = items.Select(u => new UserSummary(
+            u.Id, u.Email, u.FirstName, u.LastName, u.FullName, u.PhoneNumber, u.IsActive,
+            NameOf(names, u.CreatedById), NameOf(names, u.UpdatedById), u.CreatedOnUtc, u.UpdatedOnUtc));
         return Ok(ApiResponseFactory.Paginated(summaries, "Users retrieved.", page, limit, total));
     }
 
@@ -171,9 +178,27 @@ public sealed class UsersController : ControllerBase
             user.TokenVersion++; // email change invalidates sessions
         }
 
+        if (request.FirstName is not null)
+        {
+            user.FirstName = request.FirstName;
+        }
+        if (request.LastName is not null)
+        {
+            user.LastName = request.LastName;
+        }
+        if (request.PhoneNumber is not null)
+        {
+            user.PhoneNumber = request.PhoneNumber;
+        }
+
+        // Keep DisplayName in sync with the name unless explicitly overridden.
         if (request.DisplayName is { } displayName)
         {
             user.DisplayName = displayName;
+        }
+        else if (request.FirstName is not null || request.LastName is not null)
+        {
+            user.DisplayName = user.FullName;
         }
 
         _users.Update(user);
@@ -339,8 +364,18 @@ public sealed class UsersController : ControllerBase
     private static UserDetail Map(User user) => new(
         user.Id,
         user.Email,
+        user.FirstName,
+        user.LastName,
+        user.FullName,
+        user.PhoneNumber,
         user.DisplayName,
         user.IsActive,
         user.MustChangePassword,
         user.TenantRoles.Select(r => new TenantAssignmentDto(r.TenantId, r.Role.ToString())).ToList());
+
+    private async Task<IReadOnlyDictionary<Guid, string>> ResolveActorNamesAsync(IEnumerable<Guid?> ids, CancellationToken cancellationToken)
+        => await _users.GetFullNamesAsync(ids.Where(id => id.HasValue).Select(id => id!.Value), cancellationToken);
+
+    private static string? NameOf(IReadOnlyDictionary<Guid, string> names, Guid? id)
+        => id.HasValue && names.TryGetValue(id.Value, out var name) ? name : null;
 }

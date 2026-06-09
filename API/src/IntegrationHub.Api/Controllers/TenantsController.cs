@@ -35,6 +35,7 @@ public sealed class TenantsController : ControllerBase
     private readonly ITenantApiConfigurationRepository _configs;
     private readonly IMappingConfigurationRepository _mappings;
     private readonly IIntegrationJobRepository _jobs;
+    private readonly IUserRepository _users;
     private readonly ICredentialEncryptionService _encryption;
     private readonly ITenantContext _tenantContext;
     private readonly IConcurConnector _concur;
@@ -47,6 +48,7 @@ public sealed class TenantsController : ControllerBase
         ITenantApiConfigurationRepository configs,
         IMappingConfigurationRepository mappings,
         IIntegrationJobRepository jobs,
+        IUserRepository users,
         ICredentialEncryptionService encryption,
         ITenantContext tenantContext,
         IConcurConnector concur,
@@ -58,6 +60,7 @@ public sealed class TenantsController : ControllerBase
         _configs = configs;
         _mappings = mappings;
         _jobs = jobs;
+        _users = users;
         _encryption = encryption;
         _tenantContext = tenantContext;
         _concur = concur;
@@ -104,8 +107,11 @@ public sealed class TenantsController : ControllerBase
 
         var all = await _tenants.ListAsync(cancellationToken);
         var filtered = (includeArchived ? all : all.Where(t => t.Status != TenantStatus.Archived)).ToList();
-        var pageItems = filtered.Skip((page - 1) * limit).Take(limit)
-            .Select(t => new TenantSummary(t.Id, t.Name, t.Identifier, t.Status.ToString(), t.TimeZoneId, t.CreatedOnUtc, t.UpdatedOnUtc));
+        var pageTenants = filtered.Skip((page - 1) * limit).Take(limit).ToList();
+        var names = await ResolveActorNamesAsync(pageTenants.SelectMany(t => new[] { t.CreatedById, t.UpdatedById }), cancellationToken);
+        var pageItems = pageTenants.Select(t => new TenantSummary(
+            t.Id, t.Name, t.Identifier, t.Status.ToString(), t.TimeZoneId,
+            NameOf(names, t.CreatedById), NameOf(names, t.UpdatedById), t.CreatedOnUtc, t.UpdatedOnUtc));
 
         return Ok(ApiResponseFactory.Paginated(pageItems, "Tenants retrieved.", page, limit, filtered.Count));
     }
@@ -266,7 +272,9 @@ public sealed class TenantsController : ControllerBase
         page = Math.Max(1, page);
         limit = Math.Clamp(limit, 1, 100);
         var (items, total) = await _mappings.ListByTenantAsync(id, page, limit, cancellationToken);
-        return Ok(ApiResponseFactory.Paginated(items.Select(Map), "Mappings retrieved.", page, limit, total));
+        var names = await ResolveActorNamesAsync(items.SelectMany(m => new[] { m.CreatedById, m.UpdatedById }), cancellationToken);
+        var mapped = items.Select(m => Map(m, NameOf(names, m.CreatedById), NameOf(names, m.UpdatedById)));
+        return Ok(ApiResponseFactory.Paginated(mapped, "Mappings retrieved.", page, limit, total));
     }
 
     [HttpPost("{id:guid}/mappings")]
@@ -450,8 +458,14 @@ public sealed class TenantsController : ControllerBase
         return null;
     }
 
-    private static MappingResponse Map(MappingConfiguration m) => new(
+    private static MappingResponse Map(MappingConfiguration m, string? createdBy = null, string? updatedBy = null) => new(
         m.Id, m.SourceSystem.ToString(), m.TargetSystem.ToString(),
         m.SourceField, m.DestinationField, m.TransformationRule, m.IsActive,
-        m.CreatedOnUtc, m.UpdatedOnUtc);
+        createdBy, updatedBy, m.CreatedOnUtc, m.UpdatedOnUtc);
+
+    private async Task<IReadOnlyDictionary<Guid, string>> ResolveActorNamesAsync(IEnumerable<Guid?> ids, CancellationToken cancellationToken)
+        => await _users.GetFullNamesAsync(ids.Where(id => id.HasValue).Select(id => id!.Value), cancellationToken);
+
+    private static string? NameOf(IReadOnlyDictionary<Guid, string> names, Guid? id)
+        => id.HasValue && names.TryGetValue(id.Value, out var name) ? name : null;
 }

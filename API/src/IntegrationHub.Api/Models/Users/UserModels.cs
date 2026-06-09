@@ -3,7 +3,10 @@ namespace IntegrationHub.Api.Models.Users;
 public sealed class CreateUserRequest
 {
     public string Email { get; set; } = string.Empty;
-    public string DisplayName { get; set; } = string.Empty;
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string? PhoneNumber { get; set; }
+    public string? DisplayName { get; set; }
     /// <summary>Target tenant. Ignored for Tenant Admins (forced to their active tenant).</summary>
     public Guid? TenantId { get; set; }
     public string Role { get; set; } = string.Empty;
@@ -11,6 +14,9 @@ public sealed class CreateUserRequest
 
 public sealed class UpdateUserRequest
 {
+    public string? FirstName { get; set; }
+    public string? LastName { get; set; }
+    public string? PhoneNumber { get; set; }
     public string? DisplayName { get; set; }
     public string? Email { get; set; }
 }
@@ -37,11 +43,26 @@ public sealed record CreateUserResponse(Guid UserId, string TemporaryPassword);
 
 public sealed record ResetPasswordResponse(Guid UserId, string TemporaryPassword);
 
-public sealed record UserSummary(Guid UserId, string Email, string DisplayName, bool IsActive, DateTime CreatedOnUtc, DateTime UpdatedOnUtc);
+public sealed record UserSummary(
+    Guid UserId,
+    string Email,
+    string FirstName,
+    string LastName,
+    string FullName,
+    string? PhoneNumber,
+    bool IsActive,
+    string? CreatedBy,
+    string? UpdatedBy,
+    DateTime CreatedOnUtc,
+    DateTime UpdatedOnUtc);
 
 public sealed record UserDetail(
     Guid UserId,
     string Email,
+    string FirstName,
+    string LastName,
+    string FullName,
+    string? PhoneNumber,
     string DisplayName,
     bool IsActive,
     bool MustChangePassword,

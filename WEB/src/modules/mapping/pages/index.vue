@@ -88,11 +88,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, reactive, computed } from "vue";
 import { mappingApi, getApiErrorMessage } from "services/api";
 import { useTenantStore } from "stores/tenant";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
+import { useListTable } from "composables/useListTable";
 
 import AppDataTable from "components/common/AppDataTable.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
@@ -117,13 +118,14 @@ const columns = [
   { name: "actions", label: "", field: "actions", align: "right" }
 ];
 
-const rows = ref([]);
-const loading = ref(false);
-const total = ref(0);
-const search = ref("");
-const filterOpen = ref(false);
 const filters = reactive({ sourceSystem: null, destinationSystem: null });
-const pagination = ref({ page: 1, rowsPerPage: 20, sortBy: null, descending: false, rowsNumber: 0 });
+const { rows, loading, totalRecords: total, search, filterOpen, pagination, load, onRequest } = useListTable({
+  fetcher: ({ page, limit }) => {
+    if (!tenantId.value) return Promise.resolve({ data: [], total: 0 });
+    return mappingApi.list(tenantId.value, { page, limit }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords }));
+  },
+  onError: (err) => notify.error(getApiErrorMessage(err))
+});
 
 const filterChips = computed(() => {
   const chips = [];
@@ -145,21 +147,6 @@ const filteredRows = computed(() => {
   }
   return result;
 });
-
-const load = async () => {
-  if (!tenantId.value) return;
-  loading.value = true;
-  try {
-    const resp = await mappingApi.list(tenantId.value, { page: pagination.value.page, limit: pagination.value.rowsPerPage });
-    rows.value = resp?.data || [];
-    total.value = resp?.meta?.totalRecords ?? rows.value.length;
-  } catch (err) {
-    notify.error(getApiErrorMessage(err));
-  } finally {
-    loading.value = false;
-  }
-};
-const onRequest = (pag) => { pagination.value = { ...pagination.value, ...pag }; load(); };
 
 // Create / edit
 const formOpen = ref(false);
@@ -263,10 +250,4 @@ const remove = async (row) => {
   }
 };
 
-const onTenantSwitched = () => load();
-onMounted(() => {
-  load();
-  window.addEventListener("tenant-switched", onTenantSwitched);
-});
-onBeforeUnmount(() => window.removeEventListener("tenant-switched", onTenantSwitched));
 </script>

@@ -48,7 +48,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, reactive, computed } from "vue";
 import { date } from "quasar";
 import { logApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
@@ -59,6 +59,7 @@ import AppViewDrawer from "components/common/AppViewDrawer.vue";
 import AppDatePicker from "components/common/AppDatePicker.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
+import { useListTable } from "composables/useListTable";
 
 const notify = useNotify();
 
@@ -80,12 +81,19 @@ const columns = [
   { name: "actions", label: "", field: "actions", align: "right" }
 ];
 
-const rows = ref([]);
-const loading = ref(false);
-const total = ref(0);
-const pagination = ref({ page: 1, rowsPerPage: 20, sortBy: null, descending: false, rowsNumber: 0 });
-const filterOpen = ref(false);
 const filters = reactive({ jobId: "", status: null, fromDate: null, toDate: null });
+const { rows, loading, totalRecords: total, pagination, filterOpen, load, onRequest } = useListTable({
+  fetcher: ({ page, limit }) =>
+    logApi.list({
+      page,
+      limit,
+      jobId: filters.jobId || undefined,
+      status: filters.status || undefined,
+      fromDate: filters.fromDate || undefined,
+      toDate: filters.toDate || undefined
+    }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),
+  onError: (err) => notify.error(getApiErrorMessage(err))
+});
 
 const filterChips = computed(() => {
   const chips = [];
@@ -97,27 +105,6 @@ const filterChips = computed(() => {
 });
 const removeFilter = (key) => { filters[key] = key === "jobId" ? "" : null; load(); };
 const clearFilters = () => { filters.jobId = ""; filters.status = null; filters.fromDate = null; filters.toDate = null; load(); };
-
-const load = async () => {
-  loading.value = true;
-  try {
-    const resp = await logApi.list({
-      page: pagination.value.page,
-      limit: pagination.value.rowsPerPage,
-      jobId: filters.jobId || undefined,
-      status: filters.status || undefined,
-      fromDate: filters.fromDate || undefined,
-      toDate: filters.toDate || undefined
-    });
-    rows.value = resp?.data || [];
-    total.value = resp?.meta?.totalRecords ?? rows.value.length;
-  } catch (err) {
-    notify.error(getApiErrorMessage(err));
-  } finally {
-    loading.value = false;
-  }
-};
-const onRequest = (pag) => { pagination.value = { ...pagination.value, ...pag }; load(); };
 
 const detailOpen = ref(false);
 const detail = ref(null);
@@ -133,10 +120,4 @@ const openDetail = (row) => {
   detailOpen.value = true;
 };
 
-const onTenantSwitched = () => load();
-onMounted(() => {
-  load();
-  window.addEventListener("tenant-switched", onTenantSwitched);
-});
-onBeforeUnmount(() => window.removeEventListener("tenant-switched", onTenantSwitched));
 </script>

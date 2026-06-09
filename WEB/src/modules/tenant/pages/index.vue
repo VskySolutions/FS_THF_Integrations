@@ -123,10 +123,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, reactive, computed } from "vue";
 import { tenantApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
+import { useListTable } from "composables/useListTable";
 
 import AppDataTable from "components/common/AppDataTable.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
@@ -144,14 +145,13 @@ const columns = [
   { name: "actions", label: "", field: "actions", align: "right" }
 ];
 
-const rows = ref([]);
-const loading = ref(false);
-const totalRecords = ref(0);
-const selected = ref([]);
-const search = ref("");
-const filterOpen = ref(false);
 const filters = reactive({ status: null, includeArchived: false });
-const pagination = ref({ page: 1, rowsPerPage: 20, sortBy: null, descending: false, rowsNumber: 0 });
+const { rows, loading, totalRecords, selected, search, filterOpen, pagination, load, onRequest } = useListTable({
+  fetcher: ({ page, limit }) =>
+    tenantApi.list({ page, limit, includeArchived: filters.includeArchived })
+      .then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),
+  onError: (err) => notify.error(getApiErrorMessage(err))
+});
 
 const statusColor = (status) => ({ Active: "positive", Inactive: "grey", Archived: "blue-grey" }[status] || "grey");
 const statusFilterOptions = ["Active", "Inactive", "Archived"].map((s) => ({ label: s, value: s }));
@@ -184,28 +184,6 @@ const removeFilter = (key) => {
 const clearFilters = () => {
   filters.status = null;
   filters.includeArchived = false;
-  load();
-};
-
-const load = async () => {
-  loading.value = true;
-  try {
-    const resp = await tenantApi.list({
-      page: pagination.value.page,
-      limit: pagination.value.rowsPerPage,
-      includeArchived: filters.includeArchived
-    });
-    rows.value = resp?.data || [];
-    totalRecords.value = resp?.meta?.totalRecords ?? rows.value.length;
-  } catch (err) {
-    notify.error(getApiErrorMessage(err));
-  } finally {
-    loading.value = false;
-  }
-};
-
-const onRequest = (pag) => {
-  pagination.value = { ...pagination.value, ...pag };
   load();
 };
 
@@ -324,10 +302,4 @@ const archive = async (row) => {
   }
 };
 
-const onTenantSwitched = () => load();
-onMounted(() => {
-  load();
-  window.addEventListener("tenant-switched", onTenantSwitched);
-});
-onBeforeUnmount(() => window.removeEventListener("tenant-switched", onTenantSwitched));
 </script>

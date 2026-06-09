@@ -95,11 +95,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, computed } from "vue";
 import { userApi, tenantApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
 import { useTenantStore } from "stores/tenant";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
+import { useListTable } from "composables/useListTable";
 
 import AppDataTable from "components/common/AppDataTable.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
@@ -120,14 +121,12 @@ const columns = [
   { name: "actions", label: "", field: "actions", align: "right" }
 ];
 
-const rows = ref([]);
-const loading = ref(false);
-const totalRecords = ref(0);
-const selected = ref([]);
-const search = ref("");
-const filterOpen = ref(false);
 const filters = reactive({ status: null });
-const pagination = ref({ page: 1, rowsPerPage: 20, sortBy: null, descending: false, rowsNumber: 0 });
+const { rows, loading, totalRecords, selected, search, filterOpen, pagination, load, onRequest } = useListTable({
+  fetcher: ({ page, limit }) =>
+    userApi.list({ page, limit }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),
+  onError: (err) => notify.error(getApiErrorMessage(err))
+});
 
 const statusFilterOptions = ["Active", "Inactive"].map((s) => ({ label: s, value: s }));
 const filterChips = computed(() => (filters.status ? [{ key: "status", label: `Status: ${filters.status}` }] : []));
@@ -146,24 +145,6 @@ const filteredRows = computed(() => {
   }
   return result;
 });
-
-const load = async () => {
-  loading.value = true;
-  try {
-    const resp = await userApi.list({ page: pagination.value.page, limit: pagination.value.rowsPerPage });
-    rows.value = resp?.data || [];
-    totalRecords.value = resp?.meta?.totalRecords ?? rows.value.length;
-  } catch (err) {
-    notify.error(getApiErrorMessage(err));
-  } finally {
-    loading.value = false;
-  }
-};
-
-const onRequest = (pag) => {
-  pagination.value = { ...pagination.value, ...pag };
-  load();
-};
 
 // ---- Create ----
 const formOpen = ref(false);
@@ -288,5 +269,4 @@ const resetPassword = async (row) => {
   }
 };
 
-onMounted(load);
 </script>

@@ -2,6 +2,7 @@ using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Application.Abstractions.Security;
 using IntegrationHub.Domain.Entities;
 using IntegrationHub.Domain.Enums;
+using IntegrationHub.Shared.Security;
 
 namespace IntegrationHub.Api.Startup;
 
@@ -18,6 +19,10 @@ public static class BootstrapSeeder
         var tenants = services.GetRequiredService<ITenantRepository>();
         var hasher = services.GetRequiredService<IPasswordHasher>();
         var unitOfWork = services.GetRequiredService<IUnitOfWork>();
+        var roles = services.GetRequiredService<IRoleRepository>();
+
+        // System RBAC roles are seeded/refreshed on every startup (independent of users).
+        await SeedSystemRolesAsync(roles, unitOfWork, cancellationToken);
 
         // If any user already exists, the platform is initialized.
         if (await users.EmailExistsAsync(GetValue(configuration, "Email", "admin@integrationhub.local"), cancellationToken)
@@ -60,6 +65,41 @@ public static class BootstrapSeeder
             },
         };
         await users.AddAsync(admin, cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    private static async Task SeedSystemRolesAsync(IRoleRepository roles, IUnitOfWork unitOfWork, CancellationToken cancellationToken)
+    {
+        var definitions = new (string Name, string Description, IReadOnlyList<string> Permissions)[]
+        {
+            (Roles.SuperAdmin, "Full platform access.", Permissions.ForSuperAdmin()),
+            (Roles.TenantAdmin, "Manage a tenant's users, mappings and integrations.", Permissions.ForTenantAdmin()),
+            (Roles.Operator, "Trigger and monitor integrations.", Permissions.ForOperator()),
+        };
+
+        foreach (var (name, description, permissions) in definitions)
+        {
+            var existing = await roles.GetByNameAsync(name, cancellationToken);
+            if (existing is null)
+            {
+                await roles.AddAsync(new Role
+                {
+                    Id = Guid.NewGuid(),
+                    Name = name,
+                    Description = description,
+                    IsSystem = true,
+                    Permissions = permissions.ToList(),
+                }, cancellationToken);
+            }
+            else
+            {
+                // Keep the seeded permission set authoritative for system roles.
+                existing.IsSystem = true;
+                existing.Permissions = permissions.ToList();
+                roles.Update(existing);
+            }
+        }
+
         await unitOfWork.SaveChangesAsync(cancellationToken);
     }
 

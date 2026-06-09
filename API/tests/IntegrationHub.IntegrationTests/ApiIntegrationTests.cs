@@ -121,6 +121,21 @@ public class ApiIntegrationTests
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    // WO/RBAC Phase 1: seeded system roles.
+    [Fact]
+    public async Task Roles_list_returns_seeded_system_roles()
+    {
+        var client = _factory.CreateClient();
+        var token = await LoginAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await client.GetAsync("/api/admin/roles");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("SuperAdmin").And.Contain("TenantAdmin").And.Contain("Operator");
+    }
+
     [Fact]
     public async Task Admin_reset_password_unknown_user_returns_404()
     {

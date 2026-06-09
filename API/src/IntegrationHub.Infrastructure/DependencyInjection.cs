@@ -84,6 +84,7 @@ public static class DependencyInjection
         services.AddScoped<IJobScheduleConfigurationRepository, JobScheduleConfigurationRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+        services.AddScoped<IRoleRepository, RoleRepository>();
         services.AddSingleton<ITransformationRuleEvaluator, Connectors.TransformationRuleEvaluator>();
         return services;
     }

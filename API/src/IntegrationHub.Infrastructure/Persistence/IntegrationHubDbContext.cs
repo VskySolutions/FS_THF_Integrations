@@ -55,6 +55,10 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
+    public DbSet<Role> Roles => Set<Role>();
+
+    public DbSet<TenantRole> TenantRoles => Set<TenantRole>();
+
     /// <summary>Data Protection key ring storage (Multi-Tenancy ADR-002).</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
@@ -80,6 +84,8 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
         modelBuilder.Entity<RefreshToken>().HasQueryFilter(e => !e.Deleted);
         modelBuilder.Entity<TenantApiConfiguration>().HasQueryFilter(e => !e.Deleted);
         modelBuilder.Entity<JobScheduleConfiguration>().HasQueryFilter(e => !e.Deleted);
+        modelBuilder.Entity<Role>().HasQueryFilter(e => !e.Deleted);
+        modelBuilder.Entity<TenantRole>().HasQueryFilter(e => !e.Deleted);
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)

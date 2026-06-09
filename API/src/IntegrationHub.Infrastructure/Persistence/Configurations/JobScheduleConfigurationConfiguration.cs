@@ -29,7 +29,7 @@ internal sealed class JobScheduleConfigurationConfiguration : IEntityTypeConfigu
         builder.Property(j => j.UpdatedDate)
             .IsRequired();
 
-        builder.HasIndex(j => j.JobName).IsUnique();
+        builder.HasIndex(j => j.JobName).IsUnique().HasFilter("[Deleted] = 0");
 
         // Default recurring schedules loaded by the HangfireJobScheduler.
         builder.HasData(

@@ -4,7 +4,7 @@ namespace IntegrationHub.Domain.Entities;
 /// Immutable, append-only change record. Written by the Integration API and
 /// Background Worker; never updated or deleted via application code.
 /// </summary>
-public class AuditTrailEntry
+public class AuditTrailEntry : AuditableEntity
 {
     /// <summary>Primary key.</summary>
     public long Id { get; set; }

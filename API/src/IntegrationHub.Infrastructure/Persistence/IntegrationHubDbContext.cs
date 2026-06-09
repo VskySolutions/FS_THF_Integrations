@@ -1,3 +1,4 @@
+using IntegrationHub.Application.Abstractions.Security;
 using IntegrationHub.Application.Abstractions.Tenancy;
 using IntegrationHub.Domain.Entities;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
@@ -20,11 +21,16 @@ namespace IntegrationHub.Infrastructure.Persistence;
 public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
 {
     private readonly ITenantContext _tenantContext;
+    private readonly IActorAccessor _actorAccessor;
 
-    public IntegrationHubDbContext(DbContextOptions<IntegrationHubDbContext> options, ITenantContext tenantContext)
+    public IntegrationHubDbContext(
+        DbContextOptions<IntegrationHubDbContext> options,
+        ITenantContext tenantContext,
+        IActorAccessor actorAccessor)
         : base(options)
     {
         _tenantContext = tenantContext;
+        _actorAccessor = actorAccessor;
     }
 
     public DbSet<IntegrationJob> IntegrationJobs => Set<IntegrationJob>();
@@ -57,25 +63,75 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
         base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(IntegrationHubDbContext).Assembly);
 
-        // Tenant isolation filters. Filter is bypassed when no tenant is resolved so
-        // global background operations (e.g. the cross-tenant retry scheduler) still work.
-        modelBuilder.Entity<IntegrationJob>().HasQueryFilter(e => !_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId);
-        modelBuilder.Entity<IntegrationLog>().HasQueryFilter(e => !_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId);
-        modelBuilder.Entity<RetryQueueEntry>().HasQueryFilter(e => !_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId);
-        modelBuilder.Entity<AuditTrailEntry>().HasQueryFilter(e => !_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId);
-        modelBuilder.Entity<MappingConfiguration>().HasQueryFilter(e => !_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId);
+        // Tenant isolation filters, combined with the soft-delete filter. The tenant
+        // filter is bypassed when no tenant is resolved so global background operations
+        // (e.g. the cross-tenant retry scheduler) still work; soft-deleted rows are
+        // always excluded.
+        modelBuilder.Entity<IntegrationJob>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<IntegrationLog>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<RetryQueueEntry>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<AuditTrailEntry>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<MappingConfiguration>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+
+        // Soft-delete filters for the non-tenant-scoped entities.
+        modelBuilder.Entity<Tenant>().HasQueryFilter(e => !e.Deleted);
+        modelBuilder.Entity<User>().HasQueryFilter(e => !e.Deleted);
+        modelBuilder.Entity<UserTenantRole>().HasQueryFilter(e => !e.Deleted);
+        modelBuilder.Entity<RefreshToken>().HasQueryFilter(e => !e.Deleted);
+        modelBuilder.Entity<TenantApiConfiguration>().HasQueryFilter(e => !e.Deleted);
+        modelBuilder.Entity<JobScheduleConfiguration>().HasQueryFilter(e => !e.Deleted);
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         StampTenant();
+        StampAudit();
         return base.SaveChangesAsync(cancellationToken);
     }
 
     public override int SaveChanges()
     {
         StampTenant();
+        StampAudit();
         return base.SaveChanges();
+    }
+
+    /// <summary>
+    /// Stamps audit fields and converts deletes into soft-deletes. Created* is set on
+    /// insert, Updated* on every change, and a requested delete becomes a Modified row
+    /// flagged <see cref="AuditableEntity.Deleted"/> rather than being physically removed.
+    /// </summary>
+    private void StampAudit()
+    {
+        var now = DateTime.UtcNow;
+        var actorId = Guid.TryParse(_actorAccessor.GetCurrentActor(), out var id) ? id : (Guid?)null;
+
+        foreach (var entry in ChangeTracker.Entries<AuditableEntity>())
+        {
+            switch (entry.State)
+            {
+                case EntityState.Added:
+                    entry.Entity.CreatedOnUtc = now;
+                    entry.Entity.CreatedById = actorId;
+                    entry.Entity.UpdatedOnUtc = now;
+                    entry.Entity.UpdatedById = actorId;
+                    entry.Entity.Deleted = false;
+                    break;
+
+                case EntityState.Modified:
+                    entry.Entity.UpdatedOnUtc = now;
+                    entry.Entity.UpdatedById = actorId;
+                    break;
+
+                case EntityState.Deleted:
+                    entry.State = EntityState.Modified;
+                    entry.Entity.Deleted = true;
+                    entry.Entity.DeletedOnUtc = now;
+                    entry.Entity.UpdatedOnUtc = now;
+                    entry.Entity.UpdatedById = actorId;
+                    break;
+            }
+        }
     }
 
     /// <summary>Stamps the resolved tenant id on newly added tenant-scoped entities.</summary>

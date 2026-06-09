@@ -7,7 +7,7 @@ namespace IntegrationHub.Domain.Entities;
 /// Written and read exclusively by the Background Worker. Schema aligns with the
 /// Error Handling &amp; Retry blueprint: Id, JobId, RetryCount, NextRetryDate, Status.
 /// </summary>
-public class RetryQueueEntry
+public class RetryQueueEntry : AuditableEntity
 {
     /// <summary>Primary key.</summary>
     public Guid Id { get; set; }

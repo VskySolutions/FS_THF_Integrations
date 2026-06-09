@@ -4,7 +4,7 @@ namespace IntegrationHub.Domain.Entities;
 /// A long-lived refresh token (stored hashed). Rotated on refresh; revoked on logout,
 /// password change, and deactivation (Admin User &amp; Role Management).
 /// </summary>
-public class RefreshToken
+public class RefreshToken : AuditableEntity
 {
     public Guid Id { get; set; }
 

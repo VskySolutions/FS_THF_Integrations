@@ -6,7 +6,7 @@ namespace IntegrationHub.Domain.Entities;
 /// Per-tenant external system API credentials. The credential blob is encrypted at rest
 /// via the .NET Data Protection API (Multi-Tenancy ADR-002); plaintext is never stored.
 /// </summary>
-public class TenantApiConfiguration
+public class TenantApiConfiguration : AuditableEntity
 {
     /// <summary>Primary key.</summary>
     public Guid Id { get; set; }

@@ -5,7 +5,7 @@ namespace IntegrationHub.Domain.Entities;
 /// HangfireJobScheduler at startup so schedules can change without redeployment
 /// (AC-INF-001.2).
 /// </summary>
-public class JobScheduleConfiguration
+public class JobScheduleConfiguration : AuditableEntity
 {
     /// <summary>Primary key.</summary>
     public Guid Id { get; set; }

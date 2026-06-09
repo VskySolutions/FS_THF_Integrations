@@ -7,7 +7,7 @@ namespace IntegrationHub.Domain.Entities;
 /// Integration API when a flow is triggered and updated by the Background Worker
 /// as the job runs. Satisfies REQ-INF-002 (job status tracking).
 /// </summary>
-public class IntegrationJob
+public class IntegrationJob : AuditableEntity
 {
     /// <summary>Primary key. Returned to callers as the <c>jobId</c>.</summary>
     public Guid Id { get; set; }

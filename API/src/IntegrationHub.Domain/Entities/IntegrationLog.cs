@@ -4,7 +4,7 @@ namespace IntegrationHub.Domain.Entities;
 /// Per-job request/response log entry written by the Background Worker on job
 /// completion or failure. Satisfies AC-INF-002.3 (store request and response payloads).
 /// </summary>
-public class IntegrationLog
+public class IntegrationLog : AuditableEntity
 {
     /// <summary>Primary key.</summary>
     public long Id { get; set; }

@@ -6,7 +6,7 @@ namespace IntegrationHub.Domain.Entities;
 /// Runtime field-mapping rules applied by transformers during a flow. Written by
 /// the Admin API and read by the Background Worker on every transformer invocation.
 /// </summary>
-public class MappingConfiguration
+public class MappingConfiguration : AuditableEntity
 {
     /// <summary>Primary key.</summary>
     public Guid Id { get; set; }

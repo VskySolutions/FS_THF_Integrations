@@ -21,7 +21,7 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.TokenVersion).IsRequired();
         builder.Property(u => u.CreatedDate).IsRequired();
 
-        builder.HasIndex(u => u.Email).IsUnique();
+        builder.HasIndex(u => u.Email).IsUnique().HasFilter("[Deleted] = 0");
 
         builder.HasMany(u => u.TenantRoles)
             .WithOne(r => r.User!)
@@ -44,6 +44,6 @@ internal sealed class UserTenantRoleConfiguration : IEntityTypeConfiguration<Use
             .HasMaxLength(30);
 
         // One role per (user, tenant).
-        builder.HasIndex(r => new { r.UserId, r.TenantId }).IsUnique();
+        builder.HasIndex(r => new { r.UserId, r.TenantId }).IsUnique().HasFilter("[Deleted] = 0");
     }
 }

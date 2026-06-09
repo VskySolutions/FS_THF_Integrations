@@ -25,6 +25,6 @@ internal sealed class TenantApiConfigurationConfiguration : IEntityTypeConfigura
             .IsRequired();
 
         // One configuration per (tenant, system).
-        builder.HasIndex(c => new { c.TenantId, c.System }).IsUnique();
+        builder.HasIndex(c => new { c.TenantId, c.System }).IsUnique().HasFilter("[Deleted] = 0");
     }
 }

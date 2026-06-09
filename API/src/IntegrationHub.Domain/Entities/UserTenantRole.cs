@@ -7,7 +7,7 @@ namespace IntegrationHub.Domain.Entities;
 /// Unique per (user, tenant); reassignment updates the role rather than duplicating
 /// (AC-ADM-006.2).
 /// </summary>
-public class UserTenantRole
+public class UserTenantRole : AuditableEntity
 {
     public Guid Id { get; set; }
 

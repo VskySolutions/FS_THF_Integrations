@@ -5,7 +5,7 @@ namespace IntegrationHub.Domain.Entities;
 /// is incremented on password change, deactivation, email change, and logout to
 /// invalidate outstanding JWTs (Admin User &amp; Role Management).
 /// </summary>
-public class User
+public class User : AuditableEntity
 {
     public Guid Id { get; set; }
 

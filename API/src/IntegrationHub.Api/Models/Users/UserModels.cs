@@ -9,7 +9,10 @@ public sealed class CreateUserRequest
     public string? DisplayName { get; set; }
     /// <summary>Target tenant. Ignored for Tenant Admins (forced to their active tenant).</summary>
     public Guid? TenantId { get; set; }
+    /// <summary>Legacy fixed-tier role. Optional when <see cref="RoleId"/> is supplied.</summary>
     public string Role { get; set; } = string.Empty;
+    /// <summary>RBAC role to assign. When set, takes precedence and must be available to the tenant.</summary>
+    public Guid? RoleId { get; set; }
 }
 
 public sealed class UpdateUserRequest
@@ -34,10 +37,13 @@ public sealed class UpdateUserStatusRequest
 public sealed class AssignTenantRoleRequest
 {
     public Guid TenantId { get; set; }
-    public string Role { get; set; } = string.Empty;
+    /// <summary>Legacy fixed-tier role. Optional when <see cref="RoleId"/> is supplied.</summary>
+    public string? Role { get; set; }
+    /// <summary>RBAC role to assign. When set, takes precedence and must be available to the tenant.</summary>
+    public Guid? RoleId { get; set; }
 }
 
-public sealed record TenantAssignmentDto(Guid TenantId, string Role);
+public sealed record TenantAssignmentDto(Guid TenantId, string Role, Guid? RoleId, string? RoleName);
 
 public sealed record CreateUserResponse(Guid UserId, string TemporaryPassword);
 

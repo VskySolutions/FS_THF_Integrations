@@ -96,10 +96,29 @@ export const userApi = {
   setStatus: (id, isActive) => api.put(`/api/admin/users/${id}/status`, { isActive }).then(unwrap),
   // Admin password reset (REQ-ADM-013) — returns a new temporary password.
   resetPassword: (id) => api.post(`/api/admin/users/${id}/reset-password`).then(unwrap),
-  assignTenantRole: (id, tenantId, role) =>
-    api.post(`/api/admin/users/${id}/tenant-assignments`, { tenantId, role }).then(unwrap),
+  // payload: { tenantId, role?, roleId? } — roleId (RBAC) takes precedence over the legacy role enum.
+  assignTenantRole: (id, payload) =>
+    api.post(`/api/admin/users/${id}/tenant-assignments`, payload).then(unwrap),
   removeTenantRole: (id, tenantId) =>
     api.delete(`/api/admin/users/${id}/tenant-assignments/${tenantId}`).then(envelope)
+};
+
+export const roleApi = {
+  list: () => api.get("/api/admin/roles").then(unwrap),
+  get: (id) => api.get(`/api/admin/roles/${id}`).then(unwrap),
+  create: (payload) => api.post("/api/admin/roles", payload).then(unwrap),
+  update: (id, payload) => api.put(`/api/admin/roles/${id}`, payload).then(unwrap),
+  remove: (id) => api.delete(`/api/admin/roles/${id}`).then(envelope),
+  // Full permission catalogue, for the role permission picker.
+  permissions: () => api.get("/api/admin/permissions").then(unwrap),
+  // Roles assignable within a tenant (system roles + the tenant's custom roles) — drives user role pickers.
+  tenantRoles: (tenantId) => api.get(`/api/admin/tenants/${tenantId}/roles`).then(unwrap),
+  // Tenant ids a role is currently available to (for the role↔tenant availability editor).
+  roleTenants: (id) => api.get(`/api/admin/roles/${id}/tenants`).then(unwrap),
+  assignToTenant: (tenantId, roleId) =>
+    api.post(`/api/admin/tenants/${tenantId}/roles`, { roleId }).then(unwrap),
+  unassignFromTenant: (tenantId, roleId) =>
+    api.delete(`/api/admin/tenants/${tenantId}/roles/${roleId}`).then(envelope)
 };
 
 export const mappingApi = {

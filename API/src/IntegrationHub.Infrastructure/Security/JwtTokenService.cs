@@ -47,6 +47,13 @@ internal sealed class JwtTokenService : IJwtTokenService
             claims.Add(new Claim(ClaimTypeNames.Role, role));
         }
 
+        // Effective permissions for the active tenant — the union of the assigned roles' permission
+        // sets — drive permission-based authorization and the client's permission-gated UI.
+        foreach (var permission in ResolvePermissions(user, activeTenantId))
+        {
+            claims.Add(new Claim(ClaimTypeNames.Permission, permission));
+        }
+
         var expires = DateTime.UtcNow.AddMinutes(_options.AccessTokenMinutes <= 0 ? 60 : _options.AccessTokenMinutes);
         var token = new JwtSecurityToken(
             issuer: string.IsNullOrWhiteSpace(_options.Issuer) ? null : _options.Issuer,
@@ -70,5 +77,31 @@ internal sealed class JwtTokenService : IJwtTokenService
 
         var assignment = user.TenantRoles.FirstOrDefault(r => r.TenantId == activeTenantId);
         return assignment?.Role.ToString();
+    }
+
+    /// <summary>
+    /// The user's effective permissions in the active tenant: the full catalogue for a Super Admin
+    /// (assigned anywhere), otherwise the active tenant assignment's RBAC role permissions, falling
+    /// back to the seeded set for the legacy enum when no RBAC role is linked.
+    /// </summary>
+    private static IReadOnlyList<string> ResolvePermissions(User user, Guid activeTenantId)
+    {
+        if (user.TenantRoles.Any(r => r.Role == UserRole.SuperAdmin))
+        {
+            return Permissions.ForSuperAdmin();
+        }
+
+        var assignment = user.TenantRoles.FirstOrDefault(r => r.TenantId == activeTenantId);
+        if (assignment is null)
+        {
+            return Array.Empty<string>();
+        }
+
+        if (assignment.RoleEntity is { Permissions.Count: > 0 } roleEntity)
+        {
+            return roleEntity.Permissions;
+        }
+
+        return Permissions.ForSystemRole(assignment.Role.ToString());
     }
 }

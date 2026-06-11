@@ -18,12 +18,12 @@
         <q-card-section class="text-subtitle1 text-weight-medium">Basic information</q-card-section>
         <q-separator />
         <q-card-section class="row q-col-gutter-md">
-          <q-input v-model="firstName" outlined dense stack-label label="First Name" class="col-12 col-sm-6" :readonly="!isSuperAdmin" />
-          <q-input v-model="lastName" outlined dense stack-label label="Last Name" class="col-12 col-sm-6" :readonly="!isSuperAdmin" />
-          <q-input v-model="email" outlined dense stack-label label="Email" class="col-12 col-sm-6" :readonly="!isSuperAdmin" />
-          <q-input v-model="phoneNumber" outlined dense stack-label label="Phone Number" class="col-12 col-sm-6" :readonly="!isSuperAdmin" />
+          <q-input v-model="firstName" outlined dense stack-label label="First Name" class="col-12 col-sm-6" :readonly="!canEdit" />
+          <q-input v-model="lastName" outlined dense stack-label label="Last Name" class="col-12 col-sm-6" :readonly="!canEdit" />
+          <q-input v-model="email" outlined dense stack-label label="Email" class="col-12 col-sm-6" :readonly="!canEdit" />
+          <q-input v-model="phoneNumber" outlined dense stack-label label="Phone Number" class="col-12 col-sm-6" :readonly="!canEdit" />
         </q-card-section>
-        <q-card-actions v-if="isSuperAdmin" align="right">
+        <q-card-actions v-if="canEdit" align="right">
           <q-btn unelevated no-caps color="primary" label="Save" :loading="saving" @click="save" />
         </q-card-actions>
       </q-card>
@@ -34,38 +34,38 @@
           <div class="text-subtitle1 text-weight-medium">Status</div>
           <q-badge :color="user.isActive ? 'positive' : 'grey'" class="q-ml-md">{{ user.isActive ? "Active" : "Inactive" }}</q-badge>
           <q-space />
-          <q-btn flat no-caps color="primary" icon="o_lock_reset" label="Reset password" :disable="!canManageTarget" class="q-mr-sm" @click="resetPassword">
+          <q-btn v-if="canResetPassword" flat no-caps color="primary" icon="o_lock_reset" label="Reset password" :disable="!canManageTarget" class="q-mr-sm" @click="resetPassword">
             <q-tooltip v-if="!canManageTarget">Only a Super Admin can reset this user.</q-tooltip>
           </q-btn>
-          <q-btn outline no-caps :color="user.isActive ? 'negative' : 'positive'" :label="user.isActive ? 'Deactivate' : 'Activate'" :disable="!canManageTarget" @click="toggleStatus">
+          <q-btn v-if="canEdit" outline no-caps :color="user.isActive ? 'negative' : 'positive'" :label="user.isActive ? 'Deactivate' : 'Activate'" :disable="!canManageTarget" @click="toggleStatus">
             <q-tooltip v-if="!canManageTarget">Only a Super Admin can manage this user.</q-tooltip>
           </q-btn>
         </q-card-section>
       </q-card>
 
-      <!-- Assignments (Super Admin) -->
-      <q-card v-if="isSuperAdmin" flat bordered class="user-card">
+      <!-- Tenant assignments (requires roles.assign) -->
+      <q-card v-if="canManageAssignments" flat bordered class="user-card">
         <q-card-section class="row items-center">
           <div class="text-subtitle1 text-weight-medium">Tenant assignments</div>
           <q-space />
           <q-btn unelevated no-caps color="primary" icon="o_add" label="Add" @click="openAssign" />
         </q-card-section>
         <q-separator />
-        <q-banner v-if="user.assignments.length === 1" dense class="bg-orange-1 text-orange-9">
+        <q-banner v-if="visibleAssignments.length === 1" dense class="bg-orange-1 text-orange-9">
           <template #avatar><q-icon name="o_warning" color="orange" /></template>
           This is the user's only tenant assignment.
         </q-banner>
         <q-list>
-          <q-item v-for="a in user.assignments" :key="a.tenantId">
+          <q-item v-for="a in visibleAssignments" :key="a.tenantId">
             <q-item-section>
               <q-item-label>{{ tenantName(a.tenantId) }}</q-item-label>
-              <q-item-label caption class="text-capitalize">{{ a.role }}</q-item-label>
+              <q-item-label caption class="text-capitalize">{{ a.roleName || a.role }}</q-item-label>
             </q-item-section>
             <q-item-section side>
               <q-btn flat round dense color="negative" icon="o_delete" @click="removeAssignment(a)" />
             </q-item-section>
           </q-item>
-          <q-item v-if="!user.assignments.length">
+          <q-item v-if="!visibleAssignments.length">
             <q-item-section class="text-grey-6">No assignments.</q-item-section>
           </q-item>
         </q-list>
@@ -75,8 +75,11 @@
     <!-- Add assignment -->
     <app-form-drawer v-model="assignOpen" title="Add assignment" :saving="assignSaving" @submit="submitAssign" @cancel="assignOpen = false">
       <q-form ref="assignForm" greedy>
-        <app-select v-model="assign.tenantId" :options="tenantOptions" :loading="loadingTenants" label="Tenant *" class="q-mb-md" :clearable="false" />
-        <app-select v-model="assign.role" :options="roleOptions" label="Role *" :clearable="false" />
+        <app-select
+          v-if="isPlatformAdmin" v-model="assign.tenantId" :options="tenantOptions" :loading="loadingTenants"
+          label="Tenant *" class="q-mb-md" :clearable="false" @update:model-value="onAssignTenantChange"
+        />
+        <app-select v-model="assign.roleId" :options="roleOptions" :loading="loadingRoles" label="Role *" :clearable="false" />
       </q-form>
     </app-form-drawer>
 
@@ -87,8 +90,9 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from "vue";
 import { useRoute } from "vue-router";
-import { userApi, tenantApi, getApiErrorMessage } from "services/api";
+import { userApi, tenantApi, roleApi, getApiErrorMessage } from "services/api";
 import { useTenantStore } from "stores/tenant";
+import { usePermissions, Permissions } from "composables/usePermissions";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import AppBreadcrumbs from "components/common/AppBreadcrumbs.vue";
@@ -100,7 +104,12 @@ const route = useRoute();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const tenantStore = useTenantStore();
-const isSuperAdmin = computed(() => tenantStore.activeRole === "SuperAdmin");
+const { has } = usePermissions();
+// Platform admins (tenants.write) manage any user/tenant; tenant admins (roles.assign) are scoped.
+const isPlatformAdmin = computed(() => has(Permissions.TenantsWrite));
+const canEdit = computed(() => has(Permissions.UsersWrite));
+const canManageAssignments = computed(() => has(Permissions.RolesAssign));
+const canResetPassword = computed(() => has(Permissions.UsersResetPassword));
 
 const userId = route.params.id;
 const user = ref(null);
@@ -113,19 +122,22 @@ const saving = ref(false);
 const tenantOptions = ref([]);
 const loadingTenants = ref(false);
 
-const roleOptions = [
-  { label: "Super Admin", value: "SuperAdmin" },
-  { label: "Tenant Admin", value: "TenantAdmin" },
-  { label: "Operator", value: "Operator" }
-];
+const roleOptions = ref([]);
+const loadingRoles = ref(false);
 
 const targetIsSuperAdmin = computed(() => !!user.value?.assignments?.some((a) => a.role === "SuperAdmin"));
-const canManageTarget = computed(() => isSuperAdmin.value || !targetIsSuperAdmin.value);
+const canManageTarget = computed(() => isPlatformAdmin.value || !targetIsSuperAdmin.value);
+
+// Platform admins see every assignment; tenant admins see only their active tenant's.
+const visibleAssignments = computed(() => {
+  const all = user.value?.assignments || [];
+  return isPlatformAdmin.value ? all : all.filter((a) => a.tenantId === tenantStore.activeTenantId);
+});
 
 const tenantName = (id) => tenantOptions.value.find((t) => t.value === id)?.label || id;
 
 const loadTenants = async () => {
-  if (!isSuperAdmin.value) return;
+  if (!isPlatformAdmin.value) return;
   loadingTenants.value = true;
   try {
     const resp = await tenantApi.list({ page: 1, limit: 100 });
@@ -134,6 +146,21 @@ const loadTenants = async () => {
     // non-fatal
   } finally {
     loadingTenants.value = false;
+  }
+};
+
+// Roles assignable within a tenant (system + the tenant's custom roles).
+const loadRoles = async (tenantId) => {
+  roleOptions.value = [];
+  if (!tenantId) return;
+  loadingRoles.value = true;
+  try {
+    const roles = await roleApi.tenantRoles(tenantId);
+    roleOptions.value = (roles || []).map((r) => ({ label: r.name, value: r.id }));
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    loadingRoles.value = false;
   }
 };
 
@@ -205,12 +232,25 @@ const resetPassword = async () => {
 const assignOpen = ref(false);
 const assignSaving = ref(false);
 const assignForm = ref(null);
-const assign = reactive({ tenantId: null, role: "Operator" });
+const assign = reactive({ tenantId: null, roleId: null });
 
-const openAssign = () => {
-  assign.tenantId = null;
-  assign.role = "Operator";
-  loadTenants();
+const onAssignTenantChange = (tenantId) => {
+  assign.tenantId = tenantId;
+  assign.roleId = null;
+  loadRoles(assign.tenantId);
+};
+
+const openAssign = async () => {
+  assign.roleId = null;
+  if (isPlatformAdmin.value) {
+    assign.tenantId = null;
+    roleOptions.value = [];
+    await loadTenants();
+  } else {
+    // Tenant Admin: assignment is scoped to their active tenant.
+    assign.tenantId = tenantStore.activeTenantId;
+    await loadRoles(assign.tenantId);
+  }
   assignOpen.value = true;
 };
 
@@ -220,9 +260,13 @@ const submitAssign = async ({ clearDraft } = {}) => {
     notify.error("Select a tenant.");
     return;
   }
+  if (!assign.roleId) {
+    notify.error("Select a role.");
+    return;
+  }
   assignSaving.value = true;
   try {
-    await userApi.assignTenantRole(userId, assign.tenantId, assign.role);
+    await userApi.assignTenantRole(userId, { tenantId: assign.tenantId, roleId: assign.roleId });
     notify.success("Assignment saved.");
     clearDraft?.();
     assignOpen.value = false;
@@ -237,7 +281,7 @@ const submitAssign = async ({ clearDraft } = {}) => {
 const removeAssignment = async (a) => {
   const ok = await confirm({
     title: "Remove assignment",
-    message: `Remove ${a.role} on ${tenantName(a.tenantId)}?`,
+    message: `Remove ${a.roleName || a.role} on ${tenantName(a.tenantId)}?`,
     confirmLabel: "Remove",
     type: "danger"
   });

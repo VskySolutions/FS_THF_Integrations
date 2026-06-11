@@ -1,11 +1,11 @@
 using global::Hangfire;
+using IntegrationHub.Api.Security;
 using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Domain.Entities;
 using IntegrationHub.Domain.Enums;
 using IntegrationHub.Infrastructure.Jobs;
 using IntegrationHub.Shared.Contracts;
 using IntegrationHub.Shared.Security;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace IntegrationHub.Api.Controllers;
@@ -17,7 +17,7 @@ namespace IntegrationHub.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("/api/concur")]
-[Authorize(Policy = AuthorizationPolicies.OperatorOrAbove)]
+[RequirePermission(Permissions.JobsTrigger)]
 [Produces("application/json")]
 [Tags("Concur")]
 [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]

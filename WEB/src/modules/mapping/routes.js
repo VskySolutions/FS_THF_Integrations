@@ -7,7 +7,7 @@ export default [
         path: "",
         name: "mappings",
         component: () => import("modules/mapping/pages/index.vue"),
-        meta: { requiresAuth: true, roles: ["TenantAdmin", "SuperAdmin"], title: "Mapping Configuration" }
+        meta: { requiresAuth: true, permissions: ["mappings.read"], title: "Mapping Configuration" }
       }
     ]
   }

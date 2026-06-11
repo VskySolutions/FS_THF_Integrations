@@ -3,7 +3,6 @@ import { LocalStorage } from "quasar";
 import { createRouter, createMemoryHistory, createWebHistory, createWebHashHistory } from "vue-router";
 import routes from "./routes";
 import { useAuthStore } from "stores/auth";
-import { useTenantStore } from "stores/tenant";
 import { useNotify } from "composables/useNotify";
 
 /*
@@ -19,6 +18,7 @@ import authRoutes from "modules/auth/routes";
 import accountRoutes from "modules/account/routes";
 import tenantRoutes from "modules/tenant/routes";
 import userRoutes from "modules/user/routes";
+import roleRoutes from "modules/role/routes";
 import integrationRoutes from "modules/integration/routes";
 import mappingRoutes from "modules/mapping/routes";
 
@@ -26,6 +26,7 @@ routes.push(...accountRoutes);
 routes.push(...authRoutes);
 routes.push(...tenantRoutes);
 routes.push(...userRoutes);
+routes.push(...roleRoutes);
 routes.push(...integrationRoutes);
 routes.push(...mappingRoutes);
 
@@ -62,14 +63,14 @@ export default route(function ({ store }) {
         return next({ name: "change_password" });
       }
 
-      // Role gate: route meta `roles` restricts access to the active tenant role.
-      const requiredRoles = to.matched.reduce((roles, record) => {
-        return Array.isArray(record.meta.roles) ? record.meta.roles : roles;
+      // Permission gate: route meta `permissions` requires any one of the listed permission keys
+      // (decoded from the active-tenant JWT). The deepest matched record's list wins.
+      const requiredPermissions = to.matched.reduce((permissions, record) => {
+        return Array.isArray(record.meta.permissions) ? record.meta.permissions : permissions;
       }, null);
 
-      if (Array.isArray(requiredRoles) && requiredRoles.length) {
-        const role = useTenantStore(store).activeRole;
-        if (!role || !requiredRoles.includes(role)) {
+      if (Array.isArray(requiredPermissions) && requiredPermissions.length) {
+        if (!authStore.hasAnyPermission(requiredPermissions)) {
           useNotify().notifyWarning("You do not have permission to access that page.");
           return next("/");
         }

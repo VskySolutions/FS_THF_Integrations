@@ -7,13 +7,13 @@ export default [
         path: "",
         name: "users",
         component: () => import("modules/user/pages/index.vue"),
-        meta: { requiresAuth: true, roles: ["TenantAdmin", "SuperAdmin"], title: "Users" }
+        meta: { requiresAuth: true, permissions: ["users.read"], title: "Users" }
       },
       {
         path: ":id",
         name: "user_detail",
         component: () => import("modules/user/pages/detail.vue"),
-        meta: { requiresAuth: true, roles: ["TenantAdmin", "SuperAdmin"], title: "User" }
+        meta: { requiresAuth: true, permissions: ["users.read"], title: "User" }
       }
     ]
   }

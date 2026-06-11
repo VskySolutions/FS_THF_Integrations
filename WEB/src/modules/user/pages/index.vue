@@ -7,7 +7,7 @@
       search-placeholder="Search name or email"
       show-filters
       :filter-count="filterChips.length"
-      show-add
+      :show-add="canCreate"
       add-label="Create User"
       show-back
       @update:search="search = $event"
@@ -35,8 +35,8 @@
       @update:selected="selected = $event"
     >
       <template #bulk-actions="{ selected: sel }">
-        <q-btn flat dense no-caps color="positive" label="Activate" @click="bulkSetStatus(sel, true)" />
-        <q-btn flat dense no-caps color="negative" label="Deactivate" @click="bulkSetStatus(sel, false)" />
+        <q-btn v-if="has(Permissions.UsersWrite)" flat dense no-caps color="positive" label="Activate" @click="bulkSetStatus(sel, true)" />
+        <q-btn v-if="has(Permissions.UsersWrite)" flat dense no-caps color="negative" label="Deactivate" @click="bulkSetStatus(sel, false)" />
       </template>
 
       <template #body-cell-isActive="cell">
@@ -54,15 +54,15 @@
                   <q-item-section avatar><q-icon name="o_visibility" /></q-item-section>
                   <q-item-section>View / Manage</q-item-section>
                 </q-item>
-                <q-item v-if="!cell.row.isActive" clickable @click="setStatus(cell.row, true)">
+                <q-item v-if="has(Permissions.UsersWrite) && !cell.row.isActive" clickable @click="setStatus(cell.row, true)">
                   <q-item-section avatar><q-icon name="o_check_circle" /></q-item-section>
                   <q-item-section>Activate</q-item-section>
                 </q-item>
-                <q-item v-if="cell.row.isActive" clickable @click="setStatus(cell.row, false)">
+                <q-item v-if="has(Permissions.UsersWrite) && cell.row.isActive" clickable @click="setStatus(cell.row, false)">
                   <q-item-section avatar><q-icon name="o_block" /></q-item-section>
                   <q-item-section>Deactivate</q-item-section>
                 </q-item>
-                <q-item clickable @click="resetPassword(cell.row)">
+                <q-item v-if="has(Permissions.UsersResetPassword)" clickable @click="resetPassword(cell.row)">
                   <q-item-section avatar><q-icon name="o_lock_reset" /></q-item-section>
                   <q-item-section>Reset Password</q-item-section>
                 </q-item>
@@ -92,8 +92,11 @@
           />
         </div>
         <q-input v-model="form.phoneNumber" outlined stack-label hide-bottom-space label="Phone Number" class="q-mb-md" />
-        <app-select v-model="form.role" :options="roleOptions" label="Role *" class="q-mb-md" :clearable="false" />
-        <app-select v-if="isSuperAdmin" v-model="form.tenantId" :options="tenantOptions" label="Tenant" :loading="loadingTenants" />
+        <app-select
+          v-if="canChooseTenant" v-model="form.tenantId" :options="tenantOptions" label="Tenant *"
+          :loading="loadingTenants" class="q-mb-md" :clearable="false" @update:model-value="onTenantChange"
+        />
+        <app-select v-model="form.roleId" :options="roleOptions" label="Role *" class="q-mb-md" :clearable="false" :loading="loadingRoles" />
       </q-form>
     </app-form-drawer>
 
@@ -103,8 +106,9 @@
 
 <script setup>
 import { ref, reactive, computed } from "vue";
-import { userApi, tenantApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
+import { userApi, tenantApi, roleApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
 import { useTenantStore } from "stores/tenant";
+import { usePermissions, Permissions } from "composables/usePermissions";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
@@ -120,7 +124,10 @@ import TempPasswordDialog from "components/temp_password_dialog.vue";
 const notify = useNotify();
 const { confirm } = useConfirm();
 const tenantStore = useTenantStore();
-const isSuperAdmin = computed(() => tenantStore.activeRole === "SuperAdmin");
+const { has } = usePermissions();
+// Only platform admins (tenants.write) choose a target tenant; others create within their own.
+const canChooseTenant = computed(() => has(Permissions.TenantsWrite));
+const canCreate = computed(() => has(Permissions.UsersWrite));
 const fmt = useDateFormat();
 
 const columns = [
@@ -165,17 +172,17 @@ const formOpen = ref(false);
 const saving = ref(false);
 const emailError = ref("");
 const formRef = ref(null);
-const form = reactive({ email: "", firstName: "", lastName: "", phoneNumber: "", role: "Operator", tenantId: null });
+const form = reactive({ email: "", firstName: "", lastName: "", phoneNumber: "", roleId: null, tenantId: null });
 const tenantOptions = ref([]);
 const loadingTenants = ref(false);
+const roleOptions = ref([]);
+const loadingRoles = ref(false);
 
-const roleOptions = computed(() =>
-  isSuperAdmin.value
-    ? [{ label: "Super Admin", value: "SuperAdmin" }, { label: "Tenant Admin", value: "TenantAdmin" }, { label: "Operator", value: "Operator" }]
-    : [{ label: "Tenant Admin", value: "TenantAdmin" }, { label: "Operator", value: "Operator" }]);
+// The tenant the user is being created in: chosen by platform admins, else the caller's own.
+const targetTenantId = computed(() => (canChooseTenant.value ? form.tenantId : tenantStore.activeTenantId));
 
 const loadTenants = async () => {
-  if (!isSuperAdmin.value || tenantOptions.value.length) return;
+  if (!canChooseTenant.value || tenantOptions.value.length) return;
   loadingTenants.value = true;
   try {
     const resp = await tenantApi.list({ page: 1, limit: 100 });
@@ -187,19 +194,46 @@ const loadTenants = async () => {
   }
 };
 
+// Role options come from the tenant's assignable roles (system roles + the tenant's custom roles).
+const loadRoles = async () => {
+  const tid = targetTenantId.value;
+  roleOptions.value = [];
+  form.roleId = null;
+  if (!tid) return;
+  loadingRoles.value = true;
+  try {
+    const roles = await roleApi.tenantRoles(tid);
+    roleOptions.value = (roles || []).map((r) => ({ label: r.name, value: r.id }));
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    loadingRoles.value = false;
+  }
+};
+
+const onTenantChange = (tenantId) => {
+  form.tenantId = tenantId;
+  loadRoles();
+};
+
 const resetForm = () => {
   form.email = "";
   form.firstName = "";
   form.lastName = "";
   form.phoneNumber = "";
-  form.role = "Operator";
+  form.roleId = null;
   form.tenantId = null;
+  roleOptions.value = [];
   emailError.value = "";
 };
 
-const openCreate = () => {
+const openCreate = async () => {
   resetForm();
-  loadTenants();
+  if (canChooseTenant.value) {
+    await loadTenants();
+  } else {
+    await loadRoles();
+  }
   formOpen.value = true;
 };
 
@@ -209,12 +243,26 @@ const tempPassword = ref("");
 const submitForm = async ({ clearDraft } = {}) => {
   emailError.value = "";
   if (!(await formRef.value?.validate())) return;
+  if (!form.roleId) {
+    notify.error("Select a role.");
+    return;
+  }
+  const tenantId = targetTenantId.value;
+  if (!tenantId) {
+    notify.error("Select a tenant.");
+    return;
+  }
   saving.value = true;
   try {
-    const payload = { email: form.email, firstName: form.firstName, lastName: form.lastName, phoneNumber: form.phoneNumber, role: form.role };
-    if (isSuperAdmin.value && form.role !== "SuperAdmin") {
-      payload.tenantId = form.tenantId;
-    }
+    const payload = {
+      email: form.email,
+      firstName: form.firstName,
+      lastName: form.lastName,
+      phoneNumber: form.phoneNumber,
+      displayName: `${form.firstName} ${form.lastName}`,
+      roleId: form.roleId,
+      tenantId
+    };
     const result = await userApi.create(payload);
     clearDraft?.();
     formOpen.value = false;

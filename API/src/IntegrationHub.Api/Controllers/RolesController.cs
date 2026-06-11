@@ -40,12 +40,12 @@ public sealed class RolesController : ControllerBase
     }
 
     [HttpGet("/api/admin/permissions")]
-    [Authorize(Policy = AuthorizationPolicies.TenantAdminOrAbove)]
+    [RequirePermission(Permissions.RolesRead)]
     public IActionResult Catalog()
         => Ok(ApiResponseFactory.Success(Permissions.All, "Permissions retrieved."));
 
     [HttpGet("/api/admin/roles")]
-    [Authorize(Policy = AuthorizationPolicies.SuperAdminOnly)]
+    [RequirePermission(Permissions.RolesWrite)]
     public async Task<IActionResult> List(CancellationToken cancellationToken)
     {
         var roles = await _roles.ListAsync(cancellationToken);
@@ -53,7 +53,7 @@ public sealed class RolesController : ControllerBase
     }
 
     [HttpGet("/api/admin/roles/{id:guid}")]
-    [Authorize(Policy = AuthorizationPolicies.SuperAdminOnly)]
+    [RequirePermission(Permissions.RolesWrite)]
     [ProducesResponseType<ApiResponse<RoleResponse>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
@@ -64,7 +64,7 @@ public sealed class RolesController : ControllerBase
     }
 
     [HttpPost("/api/admin/roles")]
-    [Authorize(Policy = AuthorizationPolicies.SuperAdminOnly)]
+    [RequirePermission(Permissions.RolesWrite)]
     [ProducesResponseType<ApiResponse<RoleResponse>>(StatusCodes.Status201Created)]
     public async Task<IActionResult> Create([FromBody] CreateRoleRequest request, CancellationToken cancellationToken)
     {
@@ -95,7 +95,7 @@ public sealed class RolesController : ControllerBase
     }
 
     [HttpPut("/api/admin/roles/{id:guid}")]
-    [Authorize(Policy = AuthorizationPolicies.SuperAdminOnly)]
+    [RequirePermission(Permissions.RolesWrite)]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateRoleRequest request, CancellationToken cancellationToken)
     {
         var role = await _roles.GetByIdAsync(id, cancellationToken);
@@ -131,7 +131,7 @@ public sealed class RolesController : ControllerBase
     }
 
     [HttpDelete("/api/admin/roles/{id:guid}")]
-    [Authorize(Policy = AuthorizationPolicies.SuperAdminOnly)]
+    [RequirePermission(Permissions.RolesWrite)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         var role = await _roles.GetByIdAsync(id, cancellationToken);
@@ -150,10 +150,23 @@ public sealed class RolesController : ControllerBase
         return Ok(ApiResponseFactory.Success(new { message = "Role deleted." }, "Role deleted."));
     }
 
+    [HttpGet("/api/admin/roles/{id:guid}/tenants")]
+    [RequirePermission(Permissions.RolesWrite)]
+    public async Task<IActionResult> ListRoleTenants(Guid id, CancellationToken cancellationToken)
+    {
+        if (await _roles.GetByIdAsync(id, cancellationToken) is null)
+        {
+            return NotFound(ApiResponseFactory.NotFound("Role not found."));
+        }
+
+        var tenantIds = await _roles.ListTenantIdsForRoleAsync(id, cancellationToken);
+        return Ok(ApiResponseFactory.Success(tenantIds, "Role tenants retrieved."));
+    }
+
     // ---- Tenant ↔ role availability ----
 
     [HttpGet("/api/admin/tenants/{tenantId:guid}/roles")]
-    [Authorize(Policy = AuthorizationPolicies.TenantAdminOrAbove)]
+    [RequirePermission(Permissions.RolesRead)]
     public async Task<IActionResult> ListForTenant(Guid tenantId, CancellationToken cancellationToken)
     {
         if (!User.IsSuperAdmin() && User.GetActiveTenantId() != tenantId)
@@ -161,12 +174,19 @@ public sealed class RolesController : ControllerBase
             return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden("Not permitted for this tenant."));
         }
 
-        var roles = await _roles.ListByTenantAsync(tenantId, cancellationToken);
-        return Ok(ApiResponseFactory.Success(roles.Select(ToSummary), "Tenant roles retrieved."));
+        // Roles assignable within the tenant: the system roles (Super Admin only when the caller is
+        // one — it is platform-wide, not tenant-scoped) plus the custom roles made available to the
+        // tenant. This is the authoritative source for the user role pickers.
+        var all = await _roles.ListAsync(cancellationToken);
+        var systemRoles = all.Where(r => r.IsSystem && (User.IsSuperAdmin() || r.Name != Roles.SuperAdmin));
+        var tenantRoles = await _roles.ListByTenantAsync(tenantId, cancellationToken);
+        var assignable = systemRoles.Concat(tenantRoles).DistinctBy(r => r.Id).OrderBy(r => r.Name);
+
+        return Ok(ApiResponseFactory.Success(assignable.Select(ToSummary), "Tenant roles retrieved."));
     }
 
     [HttpPost("/api/admin/tenants/{tenantId:guid}/roles")]
-    [Authorize(Policy = AuthorizationPolicies.SuperAdminOnly)]
+    [RequirePermission(Permissions.RolesWrite)]
     public async Task<IActionResult> AssignToTenant(Guid tenantId, [FromBody] AssignRoleToTenantRequest request, CancellationToken cancellationToken)
     {
         if (await _tenants.GetByIdAsync(tenantId, cancellationToken) is null)
@@ -189,7 +209,7 @@ public sealed class RolesController : ControllerBase
     }
 
     [HttpDelete("/api/admin/tenants/{tenantId:guid}/roles/{roleId:guid}")]
-    [Authorize(Policy = AuthorizationPolicies.SuperAdminOnly)]
+    [RequirePermission(Permissions.RolesWrite)]
     public async Task<IActionResult> UnassignFromTenant(Guid tenantId, Guid roleId, CancellationToken cancellationToken)
     {
         var existing = await _roles.GetTenantRoleAsync(tenantId, roleId, cancellationToken);

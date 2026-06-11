@@ -17,7 +17,6 @@ namespace IntegrationHub.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("/api/admin")]
-[Authorize(Policy = AuthorizationPolicies.TenantAdminOrAbove)]
 [Produces("application/json")]
 [Tags("Admin")]
 [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
@@ -57,6 +56,7 @@ public sealed class AdminController : ControllerBase
         => id.HasValue && names.TryGetValue(id.Value, out var name) ? name : null;
 
     [HttpGet("jobs")]
+    [RequirePermission(Permissions.JobsRead)]
     public async Task<IActionResult> GetJobs(
         [FromQuery] string? status, [FromQuery] string? interfaceName,
         [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate,
@@ -81,6 +81,7 @@ public sealed class AdminController : ControllerBase
     }
 
     [HttpGet("logs")]
+    [RequirePermission(Permissions.LogsRead)]
     public async Task<IActionResult> GetLogs(
         [FromQuery] Guid? jobId, [FromQuery] string? status,
         [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate,
@@ -99,6 +100,7 @@ public sealed class AdminController : ControllerBase
     }
 
     [HttpGet("retries")]
+    [RequirePermission(Permissions.JobsRead)]
     public async Task<IActionResult> GetRetries(
         [FromQuery] Guid? tenantId, [FromQuery] int page = 1, [FromQuery] int limit = 20,
         CancellationToken cancellationToken = default)
@@ -110,6 +112,7 @@ public sealed class AdminController : ControllerBase
     }
 
     [HttpGet("health")]
+    [RequirePermission(Permissions.HealthRead)]
     public async Task<IActionResult> GetHealth(CancellationToken cancellationToken)
     {
         var report = await _healthChecks.CheckHealthAsync(cancellationToken);
@@ -122,6 +125,7 @@ public sealed class AdminController : ControllerBase
     }
 
     [HttpPost("retry/{jobId:guid}")]
+    [RequirePermission(Permissions.JobsRetry)]
     public async Task<IActionResult> ManualRetry(Guid jobId, CancellationToken cancellationToken)
     {
         var actor = User.GetUserId()?.ToString() ?? "system";

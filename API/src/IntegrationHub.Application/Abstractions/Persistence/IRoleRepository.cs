@@ -22,6 +22,9 @@ public interface IRoleRepository
     /// <summary>Roles made available to a tenant (via <see cref="TenantRole"/>).</summary>
     Task<IReadOnlyList<Role>> ListByTenantAsync(Guid tenantId, CancellationToken cancellationToken = default);
 
+    /// <summary>Tenant ids a role is currently available to (via <see cref="TenantRole"/>).</summary>
+    Task<IReadOnlyList<Guid>> ListTenantIdsForRoleAsync(Guid roleId, CancellationToken cancellationToken = default);
+
     Task<TenantRole?> GetTenantRoleAsync(Guid tenantId, Guid roleId, CancellationToken cancellationToken = default);
 
     Task AddTenantRoleAsync(TenantRole tenantRole, CancellationToken cancellationToken = default);

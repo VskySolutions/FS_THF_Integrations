@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { LocalStorage } from "quasar";
 import { authApi } from "services/api";
 import { useTenantStore } from "stores/tenant";
+import { decodeJwtPermissions } from "services/jwt";
 
 // Refresh-token validity window (backend default: 7 days). Used to drive the
 // session-expiry warning when the JWT does not carry a usable expiry.
@@ -13,6 +14,9 @@ export const useAuthStore = defineStore("auth", {
     refreshToken: LocalStorage.getItem("refreshToken"),
     user: LocalStorage.getItem("user"),
     mustChangePassword: false,
+    // Effective permissions for the active tenant, decoded from the JWT. Re-derived whenever
+    // the token changes (login / refresh / tenant switch) so the UI gates stay in sync.
+    permissions: decodeJwtPermissions(LocalStorage.getItem("token")),
     sessionExpiresAt: LocalStorage.getItem("sessionExpiresAt")
       ? new Date(LocalStorage.getItem("sessionExpiresAt"))
       : null
@@ -23,7 +27,11 @@ export const useAuthStore = defineStore("auth", {
     roles: (state) => {
       const active = useTenantStore().activeTenant;
       return active?.role ? [active.role] : [];
-    }
+    },
+    // Permission predicates for the active tenant.
+    hasPermission: (state) => (permission) => state.permissions.includes(permission),
+    hasAnyPermission: (state) => (permissions) =>
+      Array.isArray(permissions) && permissions.some((p) => state.permissions.includes(p))
   },
 
   actions: {
@@ -111,6 +119,7 @@ export const useAuthStore = defineStore("auth", {
 
     _setTokens (accessToken, refreshToken) {
       this.token = accessToken;
+      this.permissions = decodeJwtPermissions(accessToken);
       LocalStorage.set("token", accessToken);
       if (refreshToken) {
         this.refreshToken = refreshToken;
@@ -125,6 +134,7 @@ export const useAuthStore = defineStore("auth", {
       this.token = null;
       this.refreshToken = null;
       this.user = null;
+      this.permissions = [];
       this.mustChangePassword = false;
       this.sessionExpiresAt = null;
       LocalStorage.clear();

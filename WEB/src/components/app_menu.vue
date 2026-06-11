@@ -25,63 +25,60 @@
 
 <script setup>
 import { computed } from "vue";
-import { useTenantStore } from "stores/tenant";
+import { useAuthStore } from "stores/auth";
+import { Permissions } from "composables/usePermissions";
 
-const tenantStore = useTenantStore();
-
-const TENANT_ADMIN = ["TenantAdmin", "SuperAdmin"];
+const authStore = useAuthStore();
 
 // Ordered by application flow: overview → set up → configure → operate → personal.
-// `roles: null` → visible to everyone; otherwise restricted to the active tenant role.
+// `permissions: null` → visible to every authenticated user; otherwise visible when the active
+// tenant grants any one of the listed permissions.
 const sections = [
   {
     key: "overview",
     label: null,
     items: [
-      { label: "Dashboard", icon: "o_dashboard", to: "/", exact: true, roles: null }
+      { label: "Dashboard", icon: "o_dashboard", to: "/", exact: true, permissions: null }
     ]
   },
   {
     key: "administration",
     label: "Administration",
     items: [
-      { label: "Tenants", icon: "o_apartment", to: "/tenants", roles: ["SuperAdmin"] },
-      { label: "Users", icon: "o_group", to: "/users", roles: TENANT_ADMIN }
+      { label: "Tenants", icon: "o_apartment", to: "/tenants", permissions: [Permissions.TenantsWrite] },
+      { label: "Users", icon: "o_group", to: "/users", permissions: [Permissions.UsersRead] },
+      { label: "Roles", icon: "o_admin_panel_settings", to: "/roles", permissions: [Permissions.RolesWrite] }
     ]
   },
   {
     key: "configuration",
     label: "Configuration",
     items: [
-      { label: "Mapping Config", icon: "o_swap_horiz", to: "/mappings", roles: TENANT_ADMIN }
+      { label: "Mapping Config", icon: "o_swap_horiz", to: "/mappings", permissions: [Permissions.MappingsRead] }
     ]
   },
   {
     key: "operations",
     label: "Operations",
     items: [
-      { label: "Integration Jobs", icon: "o_sync", to: "/jobs", roles: null },
-      { label: "Logs", icon: "o_description", to: "/logs", roles: TENANT_ADMIN },
-      { label: "Health", icon: "o_monitor_heart", to: "/health", roles: TENANT_ADMIN }
+      { label: "Integration Jobs", icon: "o_sync", to: "/jobs", permissions: [Permissions.JobsRead] },
+      { label: "Logs", icon: "o_description", to: "/logs", permissions: [Permissions.LogsRead] },
+      { label: "Health", icon: "o_monitor_heart", to: "/health", permissions: [Permissions.HealthRead] }
     ]
   },
   {
     key: "account",
     label: "Account",
     items: [
-      { label: "My Account", icon: "o_manage_accounts", to: "/account", roles: null }
+      { label: "My Account", icon: "o_manage_accounts", to: "/account", permissions: null }
     ]
   }
 ];
 
-const canSee = (roles) => {
-  if (!roles) return true;
-  const role = tenantStore.activeRole;
-  return !!role && roles.includes(role);
-};
+const canSee = (permissions) => !permissions || authStore.hasAnyPermission(permissions);
 
 const visibleSections = computed(() =>
   sections
-    .map((section) => ({ ...section, items: section.items.filter((item) => canSee(item.roles)) }))
+    .map((section) => ({ ...section, items: section.items.filter((item) => canSee(item.permissions)) }))
     .filter((section) => section.items.length));
 </script>

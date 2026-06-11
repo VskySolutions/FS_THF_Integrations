@@ -147,4 +147,39 @@ public class ApiIntegrationTests
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    // WO-60 RBAC Phase 3: permission gating end-to-end. A Tenant Admin's token carries users.read
+    // but not roles.write, so user listing is allowed while role management is forbidden.
+    [Fact]
+    public async Task Tenant_admin_token_is_permission_gated()
+    {
+        var client = _factory.CreateClient();
+        var adminToken = await LoginAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+
+        var tenantsResponse = await client.GetAsync("/api/admin/tenants?page=1&limit=1");
+        tenantsResponse.EnsureSuccessStatusCode();
+        using var tenantsDoc = JsonDocument.Parse(await tenantsResponse.Content.ReadAsStringAsync());
+        var tenantId = tenantsDoc.RootElement.GetProperty("data")[0].GetProperty("tenantId").GetString();
+
+        var email = $"ta-{Guid.NewGuid():N}@test.local";
+        var createResponse = await client.PostAsJsonAsync("/api/admin/users",
+            new { email, displayName = "Tenant Admin", role = "TenantAdmin", tenantId });
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var createDoc = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+        var tempPassword = createDoc.RootElement.GetProperty("data").GetProperty("temporaryPassword").GetString();
+
+        // Log in as the new Tenant Admin and swap to their token.
+        var taClient = _factory.CreateClient();
+        var loginResponse = await taClient.PostAsJsonAsync("/api/auth/login", new { email, password = tempPassword });
+        loginResponse.EnsureSuccessStatusCode();
+        using var loginDoc = JsonDocument.Parse(await loginResponse.Content.ReadAsStringAsync());
+        var taToken = loginDoc.RootElement.GetProperty("data").GetProperty("accessToken").GetString();
+        taClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", taToken);
+
+        // users.read → allowed.
+        (await taClient.GetAsync("/api/admin/users?page=1&limit=1")).StatusCode.Should().Be(HttpStatusCode.OK);
+        // roles.write (Super-Admin-only) → forbidden.
+        (await taClient.GetAsync("/api/admin/roles")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
 }

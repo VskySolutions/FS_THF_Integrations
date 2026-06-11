@@ -31,27 +31,35 @@ public sealed class UsersController : ControllerBase
     private readonly IRefreshTokenRepository _refreshTokens;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditTrailService _audit;
+    private readonly IRoleRepository _roles;
 
     public UsersController(
         IUserRepository users,
         IPasswordHasher passwordHasher,
         IRefreshTokenRepository refreshTokens,
         IUnitOfWork unitOfWork,
-        IAuditTrailService audit)
+        IAuditTrailService audit,
+        IRoleRepository roles)
     {
         _users = users;
         _passwordHasher = passwordHasher;
         _refreshTokens = refreshTokens;
         _unitOfWork = unitOfWork;
         _audit = audit;
+        _roles = roles;
     }
 
     [HttpPost("/api/admin/users")]
-    [Authorize(Policy = AuthorizationPolicies.TenantAdminOrAbove)]
+    [RequirePermission(Permissions.UsersWrite)]
     [ProducesResponseType<ApiResponse<CreateUserResponse>>(StatusCodes.Status201Created)]
     public async Task<IActionResult> Create([FromBody] CreateUserRequest request, CancellationToken cancellationToken)
     {
-        var role = Enum.Parse<UserRole>(request.Role);
+        var (role, roleEntity, roleError) = await ResolveRequestRoleAsync(request.RoleId, request.Role, cancellationToken);
+        if (roleError is not null)
+        {
+            return roleError;
+        }
+
         Guid? tenantId;
 
         if (User.IsSuperAdmin())
@@ -110,12 +118,19 @@ public sealed class UsersController : ControllerBase
 
         if (tenantId is { } tid)
         {
+            var (assignedRoleId, availabilityError) = await ResolveAssignmentRoleIdAsync(role, roleEntity, tid, cancellationToken);
+            if (availabilityError is not null)
+            {
+                return availabilityError;
+            }
+
             await _users.AddAssignmentAsync(new UserTenantRole
             {
                 Id = Guid.NewGuid(),
                 UserId = user.Id,
                 TenantId = tid,
                 Role = role,
+                RoleId = assignedRoleId,
             }, cancellationToken);
         }
 
@@ -128,7 +143,7 @@ public sealed class UsersController : ControllerBase
     }
 
     [HttpGet("/api/admin/users")]
-    [Authorize(Policy = AuthorizationPolicies.TenantAdminOrAbove)]
+    [RequirePermission(Permissions.UsersRead)]
     public async Task<IActionResult> List([FromQuery] int page = 1, [FromQuery] int limit = 20, CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
@@ -145,7 +160,7 @@ public sealed class UsersController : ControllerBase
     }
 
     [HttpGet("/api/admin/users/{id:guid}")]
-    [Authorize(Policy = AuthorizationPolicies.TenantAdminOrAbove)]
+    [RequirePermission(Permissions.UsersRead)]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
         var user = await _users.GetByIdAsync(id, cancellationToken);
@@ -158,13 +173,21 @@ public sealed class UsersController : ControllerBase
     }
 
     [HttpPut("/api/admin/users/{id:guid}")]
-    [Authorize(Policy = AuthorizationPolicies.SuperAdminOnly)]
+    [RequirePermission(Permissions.UsersWrite)]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateUserRequest request, CancellationToken cancellationToken)
     {
         var user = await _users.GetByIdAsync(id, cancellationToken);
         if (user is null)
         {
             return NotFound(ApiResponseFactory.NotFound("User not found."));
+        }
+
+        // Non-Super-Admins may only edit users within their active tenant, and never a Super Admin.
+        var targetIsSuperAdmin = user.TenantRoles.Any(r => r.Role == UserRole.SuperAdmin);
+        if (!User.IsSuperAdmin() && (targetIsSuperAdmin || !CanCallerSee(user)))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseFactory.Forbidden("Not permitted to manage this user."));
         }
 
         if (request.Email is { } email && !string.Equals(email, user.Email, StringComparison.OrdinalIgnoreCase))
@@ -232,7 +255,7 @@ public sealed class UsersController : ControllerBase
     }
 
     [HttpPut("/api/admin/users/{id:guid}/status")]
-    [Authorize(Policy = AuthorizationPolicies.TenantAdminOrAbove)]
+    [RequirePermission(Permissions.UsersWrite)]
     public async Task<IActionResult> SetStatus(Guid id, [FromBody] UpdateUserStatusRequest request, CancellationToken cancellationToken)
     {
         var user = await _users.GetByIdAsync(id, cancellationToken);
@@ -263,7 +286,7 @@ public sealed class UsersController : ControllerBase
     }
 
     [HttpPost("/api/admin/users/{id:guid}/reset-password")]
-    [Authorize(Policy = AuthorizationPolicies.TenantAdminOrAbove)]
+    [RequirePermission(Permissions.UsersResetPassword)]
     [ProducesResponseType<ApiResponse<ResetPasswordResponse>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> ResetPassword(Guid id, CancellationToken cancellationToken)
     {
@@ -299,7 +322,7 @@ public sealed class UsersController : ControllerBase
     }
 
     [HttpPost("/api/admin/users/{id:guid}/tenant-assignments")]
-    [Authorize(Policy = AuthorizationPolicies.SuperAdminOnly)]
+    [RequirePermission(Permissions.RolesAssign)]
     public async Task<IActionResult> AssignTenantRole(Guid id, [FromBody] AssignTenantRoleRequest request, CancellationToken cancellationToken)
     {
         var user = await _users.GetByIdAsync(id, cancellationToken);
@@ -308,11 +331,47 @@ public sealed class UsersController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("User not found."));
         }
 
-        var role = Enum.Parse<UserRole>(request.Role);
+        // Tenant Admins are scoped to their active tenant (Super Admins are unrestricted).
+        if (!User.IsSuperAdmin())
+        {
+            var activeTenant = User.GetActiveTenantId();
+            if (activeTenant is null || request.TenantId != activeTenant)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden,
+                    ApiResponseFactory.Forbidden("Tenant Admins can only assign roles within their active tenant."));
+            }
+
+            if (user.TenantRoles.Any(r => r.Role == UserRole.SuperAdmin))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden,
+                    ApiResponseFactory.Forbidden("Tenant Admins cannot manage Super Admin users."));
+            }
+        }
+
+        var (role, roleEntity, roleError) = await ResolveRequestRoleAsync(request.RoleId, request.Role, cancellationToken);
+        if (roleError is not null)
+        {
+            return roleError;
+        }
+
+        if (!User.IsSuperAdmin() && role == UserRole.SuperAdmin)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseFactory.Forbidden("Tenant Admins cannot assign the Super Admin role."));
+        }
+
+        var (assignedRoleId, availabilityError) = await ResolveAssignmentRoleIdAsync(role, roleEntity, request.TenantId, cancellationToken);
+        if (availabilityError is not null)
+        {
+            return availabilityError;
+        }
+
         var existing = await _users.GetAssignmentAsync(id, request.TenantId, cancellationToken);
         if (existing is not null)
         {
-            existing.Role = role; // reassignment updates rather than duplicates (AC-ADM-006.2)
+            // reassignment updates rather than duplicates (AC-ADM-006.2)
+            existing.Role = role;
+            existing.RoleId = assignedRoleId;
         }
         else
         {
@@ -322,6 +381,7 @@ public sealed class UsersController : ControllerBase
                 UserId = id,
                 TenantId = request.TenantId,
                 Role = role,
+                RoleId = assignedRoleId,
             }, cancellationToken);
         }
 
@@ -333,13 +393,26 @@ public sealed class UsersController : ControllerBase
     }
 
     [HttpDelete("/api/admin/users/{id:guid}/tenant-assignments/{tenantId:guid}")]
-    [Authorize(Policy = AuthorizationPolicies.SuperAdminOnly)]
+    [RequirePermission(Permissions.RolesAssign)]
     public async Task<IActionResult> RemoveTenantRole(Guid id, Guid tenantId, CancellationToken cancellationToken)
     {
+        // Tenant Admins are scoped to their active tenant (Super Admins are unrestricted).
+        if (!User.IsSuperAdmin() && User.GetActiveTenantId() != tenantId)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseFactory.Forbidden("Tenant Admins can only remove roles within their active tenant."));
+        }
+
         var existing = await _users.GetAssignmentAsync(id, tenantId, cancellationToken);
         if (existing is null)
         {
             return NotFound(ApiResponseFactory.NotFound("Assignment not found."));
+        }
+
+        if (!User.IsSuperAdmin() && existing.Role == UserRole.SuperAdmin)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseFactory.Forbidden("Tenant Admins cannot remove a Super Admin assignment."));
         }
 
         _users.RemoveAssignment(existing);
@@ -348,6 +421,78 @@ public sealed class UsersController : ControllerBase
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Ok(ApiResponseFactory.Success(new { message = "Assignment removed." }, "Assignment removed."));
+    }
+
+    /// <summary>
+    /// Resolves the role to assign from either an explicit <paramref name="roleId"/> (RBAC) or the
+    /// legacy <paramref name="roleName"/> enum, returning the legacy enum (for transition-era policies)
+    /// and the loaded RBAC role when one was supplied.
+    /// </summary>
+    private async Task<(UserRole Role, Role? RoleEntity, IActionResult? Error)> ResolveRequestRoleAsync(
+        Guid? roleId, string? roleName, CancellationToken cancellationToken)
+    {
+        if (roleId is { } rid)
+        {
+            var roleEntity = await _roles.GetByIdAsync(rid, cancellationToken);
+            if (roleEntity is null)
+            {
+                return (default, null, BadRequest(ApiResponseFactory.Error(
+                    ApiErrorCodes.ValidationFailed, "Validation failed.", "Unknown roleId.")));
+            }
+
+            return (MapLegacyRole(roleEntity, roleName), roleEntity, null);
+        }
+
+        if (string.IsNullOrWhiteSpace(roleName) || !Enum.TryParse<UserRole>(roleName, ignoreCase: false, out var enumValue))
+        {
+            return (default, null, BadRequest(ApiResponseFactory.Error(
+                ApiErrorCodes.ValidationFailed, "Validation failed.", "A valid role or roleId is required.")));
+        }
+
+        return (enumValue, null, null);
+    }
+
+    /// <summary>
+    /// Determines the <see cref="UserTenantRole.RoleId"/> to persist and enforces tenant availability:
+    /// custom roles must be made available to the tenant (via <see cref="TenantRole"/>); system roles
+    /// are universal. Enum-driven assignments link to the matching seeded system role when present.
+    /// </summary>
+    private async Task<(Guid? RoleId, IActionResult? Error)> ResolveAssignmentRoleIdAsync(
+        UserRole role, Role? roleEntity, Guid tenantId, CancellationToken cancellationToken)
+    {
+        if (roleEntity is not null)
+        {
+            if (!roleEntity.IsSystem && await _roles.GetTenantRoleAsync(tenantId, roleEntity.Id, cancellationToken) is null)
+            {
+                return (null, BadRequest(ApiResponseFactory.Error(
+                    ApiErrorCodes.ValidationFailed, "Validation failed.", "Role is not available to this tenant.")));
+            }
+
+            return (roleEntity.Id, null);
+        }
+
+        var systemRole = await _roles.GetByNameAsync(role.ToString(), cancellationToken);
+        return (systemRole?.Id, null);
+    }
+
+    /// <summary>
+    /// Maps an RBAC role to a legacy fixed-tier enum for the transition period: system roles map by
+    /// name; custom roles fall back to an explicit enum if given, otherwise least-privilege Operator
+    /// (the enum is superseded by permission-based authorization in Phase 3).
+    /// </summary>
+    private static UserRole MapLegacyRole(Role roleEntity, string? explicitRole)
+    {
+        if (roleEntity.IsSystem && Enum.TryParse<UserRole>(roleEntity.Name, ignoreCase: false, out var system))
+        {
+            return system;
+        }
+
+        if (!string.IsNullOrWhiteSpace(explicitRole) && Enum.TryParse<UserRole>(explicitRole, ignoreCase: false, out var explicitEnum))
+        {
+            return explicitEnum;
+        }
+
+        return UserRole.Operator;
     }
 
     private bool CanCallerSee(User user)
@@ -371,7 +516,7 @@ public sealed class UsersController : ControllerBase
         user.DisplayName,
         user.IsActive,
         user.MustChangePassword,
-        user.TenantRoles.Select(r => new TenantAssignmentDto(r.TenantId, r.Role.ToString())).ToList());
+        user.TenantRoles.Select(r => new TenantAssignmentDto(r.TenantId, r.Role.ToString(), r.RoleId, r.RoleEntity?.Name)).ToList());
 
     private async Task<IReadOnlyDictionary<Guid, string>> ResolveActorNamesAsync(IEnumerable<Guid?> ids, CancellationToken cancellationToken)
         => await _users.GetFullNamesAsync(ids.Where(id => id.HasValue).Select(id => id!.Value), cancellationToken);

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using FluentAssertions;
 using IntegrationHub.Api.Controllers;
+using IntegrationHub.Api.Security;
 using IntegrationHub.Api.Models.Auth;
 using IntegrationHub.Api.Models.Tenants;
 using IntegrationHub.Api.Models.Users;
@@ -14,6 +15,7 @@ using IntegrationHub.Domain.Entities;
 using IntegrationHub.Domain.Enums;
 using IntegrationHub.Shared.Contracts;
 using IntegrationHub.Shared.Security;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -117,8 +119,9 @@ public class UsersControllerTests
     private readonly Mock<IRefreshTokenRepository> _refreshTokens = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IAuditTrailService> _audit = new();
+    private readonly Mock<IRoleRepository> _roles = new();
 
-    private UsersController Create() => new(_users.Object, _hasher.Object, _refreshTokens.Object, _unitOfWork.Object, _audit.Object);
+    private UsersController Create() => new(_users.Object, _hasher.Object, _refreshTokens.Object, _unitOfWork.Object, _audit.Object, _roles.Object);
 
     [Fact]
     public async Task Super_admin_creates_user_returns_201_with_temp_password()
@@ -144,6 +147,50 @@ public class UsersControllerTests
         var result = await controller.Create(new CreateUserRequest { Email = "dup@t.com", DisplayName = "N", Role = "Operator", TenantId = Guid.NewGuid() }, default);
 
         result.Should().BeOfType<ConflictObjectResult>();
+    }
+
+    [Fact]
+    public async Task Create_with_system_roleId_links_roleId_and_maps_legacy_enum()
+    {
+        var tenantId = Guid.NewGuid();
+        var roleId = Guid.NewGuid();
+        UserTenantRole? captured = null;
+        _users.Setup(u => u.EmailExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _users.Setup(u => u.AddAssignmentAsync(It.IsAny<UserTenantRole>(), It.IsAny<CancellationToken>()))
+            .Callback<UserTenantRole, CancellationToken>((a, _) => captured = a);
+        _hasher.Setup(h => h.GenerateTemporaryPassword()).Returns("Temp123!");
+        _hasher.Setup(h => h.Hash(It.IsAny<string>())).Returns(("h", "s"));
+        _roles.Setup(r => r.GetByIdAsync(roleId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Role { Id = roleId, Name = "Operator", IsSystem = true });
+
+        var controller = Create().WithUser(Guid.NewGuid(), Roles.SuperAdmin);
+        var result = await controller.Create(
+            new CreateUserRequest { Email = "n@t.com", DisplayName = "N", RoleId = roleId, TenantId = tenantId }, default);
+
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status201Created);
+        captured.Should().NotBeNull();
+        captured!.RoleId.Should().Be(roleId);
+        captured.Role.Should().Be(UserRole.Operator);
+    }
+
+    [Fact]
+    public async Task Create_with_custom_roleId_not_available_to_tenant_is_bad_request()
+    {
+        var tenantId = Guid.NewGuid();
+        var roleId = Guid.NewGuid();
+        _users.Setup(u => u.EmailExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _hasher.Setup(h => h.GenerateTemporaryPassword()).Returns("Temp123!");
+        _hasher.Setup(h => h.Hash(It.IsAny<string>())).Returns(("h", "s"));
+        _roles.Setup(r => r.GetByIdAsync(roleId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Role { Id = roleId, Name = "Auditor", IsSystem = false });
+        _roles.Setup(r => r.GetTenantRoleAsync(tenantId, roleId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((TenantRole?)null);
+
+        var controller = Create().WithUser(Guid.NewGuid(), Roles.SuperAdmin);
+        var result = await controller.Create(
+            new CreateUserRequest { Email = "n@t.com", DisplayName = "N", RoleId = roleId, TenantId = tenantId }, default);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
     }
 
     [Fact]
@@ -203,6 +250,59 @@ public class UsersControllerTests
     }
 
     [Fact]
+    public async Task Tenant_admin_assigns_role_within_active_tenant()
+    {
+        var tenantId = Guid.NewGuid();
+        var target = TestData.User();
+        target.TenantRoles.Add(TestData.Assignment(target.Id, tenantId, UserRole.Operator));
+        _users.Setup(u => u.GetByIdAsync(target.Id, It.IsAny<CancellationToken>())).ReturnsAsync(target);
+        _users.Setup(u => u.GetAssignmentAsync(target.Id, tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(target.TenantRoles.First());
+
+        var controller = Create().WithUser(Guid.NewGuid(), Roles.TenantAdmin, tenantId);
+        var result = await controller.AssignTenantRole(target.Id,
+            new AssignTenantRoleRequest { TenantId = tenantId, Role = "Operator" }, default);
+
+        result.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task Tenant_admin_cannot_assign_role_in_another_tenant()
+    {
+        var target = TestData.User();
+        _users.Setup(u => u.GetByIdAsync(target.Id, It.IsAny<CancellationToken>())).ReturnsAsync(target);
+
+        var controller = Create().WithUser(Guid.NewGuid(), Roles.TenantAdmin, Guid.NewGuid());
+        var result = await controller.AssignTenantRole(target.Id,
+            new AssignTenantRoleRequest { TenantId = Guid.NewGuid(), Role = "Operator" }, default);
+
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
+    public async Task Tenant_admin_cannot_assign_super_admin_role()
+    {
+        var tenantId = Guid.NewGuid();
+        var target = TestData.User();
+        _users.Setup(u => u.GetByIdAsync(target.Id, It.IsAny<CancellationToken>())).ReturnsAsync(target);
+
+        var controller = Create().WithUser(Guid.NewGuid(), Roles.TenantAdmin, tenantId);
+        var result = await controller.AssignTenantRole(target.Id,
+            new AssignTenantRoleRequest { TenantId = tenantId, Role = "SuperAdmin" }, default);
+
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
+    public async Task Tenant_admin_cannot_remove_assignment_in_another_tenant()
+    {
+        var controller = Create().WithUser(Guid.NewGuid(), Roles.TenantAdmin, Guid.NewGuid());
+        var result = await controller.RemoveTenantRole(Guid.NewGuid(), Guid.NewGuid(), default);
+
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
     public async Task Tenant_admin_list_is_scoped_to_their_tenant()
     {
         var tenantId = Guid.NewGuid();
@@ -215,6 +315,43 @@ public class UsersControllerTests
         await controller.List(1, 20, default);
 
         _users.Verify(u => u.ListAsync(tenantId, 1, 20, It.IsAny<CancellationToken>()), Times.Once);
+    }
+}
+
+// WO-60 RBAC Phase 3: permission-based authorization handler.
+public class PermissionAuthorizationHandlerTests
+{
+    private static AuthorizationHandlerContext Context(params Claim[] claims)
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "test", ClaimTypeNames.Subject, ClaimTypeNames.Role));
+        var requirement = new PermissionRequirement(Permissions.TenantsWrite);
+        return new AuthorizationHandlerContext(new[] { requirement }, principal, resource: null);
+    }
+
+    [Fact]
+    public async Task Grants_when_explicit_permission_claim_present()
+    {
+        var context = Context(new Claim(ClaimTypeNames.Permission, Permissions.TenantsWrite));
+        await new PermissionAuthorizationHandler().HandleAsync(context);
+        context.HasSucceeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Grants_via_role_claim_fallback_for_system_role()
+    {
+        // Super Admin's seeded set includes tenants.write — no explicit permission claim needed.
+        var context = Context(new Claim(ClaimTypeNames.Role, Roles.SuperAdmin));
+        await new PermissionAuthorizationHandler().HandleAsync(context);
+        context.HasSucceeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Denies_when_role_lacks_permission_and_no_claim()
+    {
+        // Operator's seeded set does not include tenants.write.
+        var context = Context(new Claim(ClaimTypeNames.Role, Roles.Operator));
+        await new PermissionAuthorizationHandler().HandleAsync(context);
+        context.HasSucceeded.Should().BeFalse();
     }
 }
 

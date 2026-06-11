@@ -46,6 +46,8 @@ public static class BootstrapSeeder
             await tenants.AddAsync(tenant, cancellationToken);
         }
 
+        var superAdminRole = await roles.GetByNameAsync(Roles.SuperAdmin, cancellationToken);
+
         var password = GetValue(configuration, "Password", "ChangeMe123!");
         var (hash, salt) = hasher.Hash(password);
         var admin = new User
@@ -61,7 +63,7 @@ public static class BootstrapSeeder
             CreatedDate = DateTime.UtcNow,
             TenantRoles =
             {
-                new UserTenantRole { Id = Guid.NewGuid(), TenantId = tenant.Id, Role = UserRole.SuperAdmin },
+                new UserTenantRole { Id = Guid.NewGuid(), TenantId = tenant.Id, Role = UserRole.SuperAdmin, RoleId = superAdminRole?.Id },
             },
         };
         await users.AddAsync(admin, cancellationToken);

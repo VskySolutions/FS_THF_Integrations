@@ -14,10 +14,11 @@ internal sealed class UserRepository : IUserRepository
     }
 
     public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
-        => _dbContext.Users.Include(u => u.TenantRoles).FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
+        => _dbContext.Users.Include(u => u.TenantRoles).ThenInclude(r => r.RoleEntity)
+            .FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
 
     public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
-        => _dbContext.Users.Include(u => u.TenantRoles)
+        => _dbContext.Users.Include(u => u.TenantRoles).ThenInclude(r => r.RoleEntity)
             .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
 
     public Task<bool> EmailExistsAsync(string email, CancellationToken cancellationToken = default)
@@ -51,7 +52,7 @@ internal sealed class UserRepository : IUserRepository
     public async Task<(IReadOnlyList<User> Items, int Total)> ListAsync(
         Guid? tenantId, int page, int limit, CancellationToken cancellationToken = default)
     {
-        var query = _dbContext.Users.Include(u => u.TenantRoles).AsQueryable();
+        var query = _dbContext.Users.Include(u => u.TenantRoles).ThenInclude(r => r.RoleEntity).AsQueryable();
         if (tenantId is { } id)
         {
             query = query.Where(u => u.TenantRoles.Any(r => r.TenantId == id));

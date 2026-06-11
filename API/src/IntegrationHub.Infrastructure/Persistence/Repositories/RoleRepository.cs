@@ -41,6 +41,12 @@ internal sealed class RoleRepository : IRoleRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Guid>> ListTenantIdsForRoleAsync(Guid roleId, CancellationToken cancellationToken = default)
+        => await _dbContext.TenantRoles
+            .Where(tr => tr.RoleId == roleId)
+            .Select(tr => tr.TenantId)
+            .ToListAsync(cancellationToken);
+
     public Task<TenantRole?> GetTenantRoleAsync(Guid tenantId, Guid roleId, CancellationToken cancellationToken = default)
         => _dbContext.TenantRoles.FirstOrDefaultAsync(tr => tr.TenantId == tenantId && tr.RoleId == roleId, cancellationToken);
 

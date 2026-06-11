@@ -87,15 +87,15 @@
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { LocalStorage, date } from "quasar";
 import { useAuthStore } from "stores/auth";
-import { useTenantStore } from "stores/tenant";
+import { usePermissions, Permissions } from "composables/usePermissions";
 import { jobApi, adminApi } from "services/api";
 
 const authStore = useAuthStore();
-const tenantStore = useTenantStore();
+const { has } = usePermissions();
 const user = authStore.user;
 const displayName = user?.displayName || user?.firstName || "";
 const isLoggedIn = !!LocalStorage.getItem("token");
-const canViewStats = computed(() => ["TenantAdmin", "SuperAdmin"].includes(tenantStore.activeRole));
+const canViewStats = computed(() => has(Permissions.JobsRead));
 
 const cards = [
   { title: "Integration Jobs", description: "Trigger imports and track job status.", icon: "o_sync", to: "/jobs" },

@@ -72,7 +72,7 @@ public sealed class TenantsController : ControllerBase
     // ---- Tenant lifecycle (Super Admin) ----
 
     [HttpPost]
-    [Authorize(Policy = AuthorizationPolicies.SuperAdminOnly)]
+    [RequirePermission(Permissions.TenantsWrite)]
     [ProducesResponseType<ApiResponse<TenantResponse>>(StatusCodes.Status201Created)]
     public async Task<IActionResult> Create([FromBody] CreateTenantRequest request, CancellationToken cancellationToken)
     {
@@ -99,7 +99,7 @@ public sealed class TenantsController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Policy = AuthorizationPolicies.SuperAdminOnly)]
+    [RequirePermission(Permissions.TenantsWrite)]
     public async Task<IActionResult> List([FromQuery] int page = 1, [FromQuery] int limit = 20, [FromQuery] bool includeArchived = false, CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
@@ -117,7 +117,7 @@ public sealed class TenantsController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    [Authorize(Policy = AuthorizationPolicies.SuperAdminOnly)]
+    [RequirePermission(Permissions.TenantsWrite)]
     [ProducesResponseType<ApiResponse<TenantDetail>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
@@ -138,7 +138,7 @@ public sealed class TenantsController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
-    [Authorize(Policy = AuthorizationPolicies.SuperAdminOnly)]
+    [RequirePermission(Permissions.TenantsWrite)]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateTenantRequest request, CancellationToken cancellationToken)
     {
         var tenant = await _tenants.GetByIdAsync(id, cancellationToken);
@@ -160,7 +160,7 @@ public sealed class TenantsController : ControllerBase
     }
 
     [HttpPut("{id:guid}/status")]
-    [Authorize(Policy = AuthorizationPolicies.SuperAdminOnly)]
+    [RequirePermission(Permissions.TenantsWrite)]
     public async Task<IActionResult> SetStatus(Guid id, [FromBody] UpdateTenantStatusRequest request, CancellationToken cancellationToken)
     {
         var tenant = await _tenants.GetByIdAsync(id, cancellationToken);
@@ -178,7 +178,7 @@ public sealed class TenantsController : ControllerBase
     }
 
     [HttpPut("{id:guid}/archive")]
-    [Authorize(Policy = AuthorizationPolicies.SuperAdminOnly)]
+    [RequirePermission(Permissions.TenantsArchive)]
     public async Task<IActionResult> Archive(Guid id, CancellationToken cancellationToken)
     {
         var tenant = await _tenants.GetByIdAsync(id, cancellationToken);
@@ -203,29 +203,29 @@ public sealed class TenantsController : ControllerBase
     // ---- Credentials (Tenant Admin or above, own tenant) ----
 
     [HttpPut("{id:guid}/concur-config")]
-    [Authorize(Policy = AuthorizationPolicies.TenantAdminOrAbove)]
+    [RequirePermission(Permissions.TenantsCredentials)]
     public Task<IActionResult> SetConcurConfig(Guid id, [FromBody] ConcurCredentialsRequest request, CancellationToken cancellationToken)
         => StoreCredentialsAsync(id, SystemName.Concur,
             new ConcurConfigDto(request.ClientId, request.ClientSecret, request.BaseUrl, request.CompanyUuid), cancellationToken);
 
     [HttpPut("{id:guid}/maconomy-config")]
-    [Authorize(Policy = AuthorizationPolicies.TenantAdminOrAbove)]
+    [RequirePermission(Permissions.TenantsCredentials)]
     public Task<IActionResult> SetMaconomyConfig(Guid id, [FromBody] MaconomyCredentialsRequest request, CancellationToken cancellationToken)
         => StoreCredentialsAsync(id, SystemName.Maconomy,
             new MaconomyConfigDto(request.BaseUrl, request.Username, request.Password), cancellationToken);
 
     [HttpDelete("{id:guid}/concur-config")]
-    [Authorize(Policy = AuthorizationPolicies.TenantAdminOrAbove)]
+    [RequirePermission(Permissions.TenantsCredentials)]
     public Task<IActionResult> ClearConcurConfig(Guid id, CancellationToken cancellationToken)
         => ClearCredentialsAsync(id, SystemName.Concur, cancellationToken);
 
     [HttpDelete("{id:guid}/maconomy-config")]
-    [Authorize(Policy = AuthorizationPolicies.TenantAdminOrAbove)]
+    [RequirePermission(Permissions.TenantsCredentials)]
     public Task<IActionResult> ClearMaconomyConfig(Guid id, CancellationToken cancellationToken)
         => ClearCredentialsAsync(id, SystemName.Maconomy, cancellationToken);
 
     [HttpPost("{id:guid}/concur-config/test")]
-    [Authorize(Policy = AuthorizationPolicies.TenantAdminOrAbove)]
+    [RequirePermission(Permissions.TenantsCredentials)]
     public async Task<IActionResult> TestConcurConfig(Guid id, CancellationToken cancellationToken)
     {
         var guard = await EnsureScopeAsync(id, cancellationToken);
@@ -242,7 +242,7 @@ public sealed class TenantsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/maconomy-config/test")]
-    [Authorize(Policy = AuthorizationPolicies.TenantAdminOrAbove)]
+    [RequirePermission(Permissions.TenantsCredentials)]
     public async Task<IActionResult> TestMaconomyConfig(Guid id, CancellationToken cancellationToken)
     {
         var guard = await EnsureScopeAsync(id, cancellationToken);
@@ -260,7 +260,7 @@ public sealed class TenantsController : ControllerBase
     // ---- Mapping configuration CRUD (Tenant Admin or above, own tenant) ----
 
     [HttpGet("{id:guid}/mappings")]
-    [Authorize(Policy = AuthorizationPolicies.TenantAdminOrAbove)]
+    [RequirePermission(Permissions.MappingsRead)]
     public async Task<IActionResult> ListMappings(Guid id, [FromQuery] int page = 1, [FromQuery] int limit = 20, CancellationToken cancellationToken = default)
     {
         var guard = await EnsureScopeAsync(id, cancellationToken);
@@ -278,7 +278,7 @@ public sealed class TenantsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/mappings")]
-    [Authorize(Policy = AuthorizationPolicies.TenantAdminOrAbove)]
+    [RequirePermission(Permissions.MappingsWrite)]
     public async Task<IActionResult> CreateMapping(Guid id, [FromBody] CreateMappingRequest request, CancellationToken cancellationToken)
     {
         var guard = await EnsureScopeAsync(id, cancellationToken);
@@ -323,7 +323,7 @@ public sealed class TenantsController : ControllerBase
     }
 
     [HttpPut("{id:guid}/mappings/{mappingId:guid}")]
-    [Authorize(Policy = AuthorizationPolicies.TenantAdminOrAbove)]
+    [RequirePermission(Permissions.MappingsWrite)]
     public async Task<IActionResult> UpdateMapping(Guid id, Guid mappingId, [FromBody] UpdateMappingRequest request, CancellationToken cancellationToken)
     {
         var guard = await EnsureScopeAsync(id, cancellationToken);
@@ -361,7 +361,7 @@ public sealed class TenantsController : ControllerBase
     }
 
     [HttpDelete("{id:guid}/mappings/{mappingId:guid}")]
-    [Authorize(Policy = AuthorizationPolicies.TenantAdminOrAbove)]
+    [RequirePermission(Permissions.MappingsWrite)]
     public async Task<IActionResult> DeleteMapping(Guid id, Guid mappingId, CancellationToken cancellationToken)
     {
         var guard = await EnsureScopeAsync(id, cancellationToken);

@@ -1,5 +1,3 @@
-const roles = ["Operator", "TenantAdmin", "SuperAdmin"];
-
 export default [
   {
     path: "/jobs",
@@ -9,7 +7,7 @@ export default [
         path: "",
         name: "jobs",
         component: () => import("modules/integration/pages/jobs.vue"),
-        meta: { requiresAuth: true, roles, title: "Integration Jobs" }
+        meta: { requiresAuth: true, permissions: ["jobs.read"], title: "Integration Jobs" }
       }
     ]
   },
@@ -21,7 +19,7 @@ export default [
         path: "",
         name: "logs",
         component: () => import("modules/integration/pages/logs.vue"),
-        meta: { requiresAuth: true, roles: ["TenantAdmin", "SuperAdmin"], title: "Logs" }
+        meta: { requiresAuth: true, permissions: ["logs.read"], title: "Logs" }
       }
     ]
   },
@@ -33,7 +31,7 @@ export default [
         path: "",
         name: "health",
         component: () => import("modules/integration/pages/health.vue"),
-        meta: { requiresAuth: true, roles: ["TenantAdmin", "SuperAdmin"], title: "Health" }
+        meta: { requiresAuth: true, permissions: ["health.read"], title: "Health" }
       }
     ]
   }

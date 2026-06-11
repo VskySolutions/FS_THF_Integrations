@@ -11,4 +11,7 @@ public static class ClaimTypeNames
     public const string Role = "role";
     public const string TokenVersion = "tokenVersion";
     public const string TenantAssignments = "tenantAssignments";
+
+    /// <summary>Effective permission key for the active tenant. Emitted once per permission.</summary>
+    public const string Permission = "permission";
 }

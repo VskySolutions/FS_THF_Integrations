@@ -3,6 +3,7 @@ using IntegrationHub.Application.Abstractions.Security;
 using IntegrationHub.Shared.Configuration;
 using IntegrationHub.Shared.Security;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using IntegrationHub.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -86,6 +87,12 @@ public static class AuthenticationServiceCollectionExtensions
                 .RequireAuthenticatedUser()
                 .RequireRole(Roles.SuperAdmin, Roles.TenantAdmin, Roles.Operator));
         });
+
+        // Permission-based authorization: a dynamic policy provider materializes "perm:<key>"
+        // policies (see RequirePermissionAttribute) and a handler grants them from permission
+        // claims, falling back to the role claim's seeded permission set.
+        services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+        services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
 
         return services;
     }

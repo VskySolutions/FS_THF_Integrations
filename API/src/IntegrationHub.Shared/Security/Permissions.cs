@@ -64,4 +64,17 @@ public static class Permissions
     {
         JobsRead, JobsTrigger, LogsRead
     };
+
+    /// <summary>
+    /// The seeded permission set for a system role name (SuperAdmin/TenantAdmin/Operator), or an
+    /// empty set for an unrecognised name. Used as the fallback when a caller carries only a role
+    /// claim (API-key callers, pre-RBAC tokens) and no explicit permission claims.
+    /// </summary>
+    public static IReadOnlyList<string> ForSystemRole(string? roleName) => roleName switch
+    {
+        Roles.SuperAdmin => ForSuperAdmin(),
+        Roles.TenantAdmin => ForTenantAdmin(),
+        Roles.Operator => ForOperator(),
+        _ => Array.Empty<string>(),
+    };
 }

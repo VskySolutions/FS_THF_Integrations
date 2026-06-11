@@ -10,9 +10,12 @@ public sealed class CreateUserRequestValidator : AbstractValidator<CreateUserReq
     {
         RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(256);
         RuleFor(x => x.DisplayName).NotEmpty().MaximumLength(200);
+        RuleFor(x => x)
+            .Must(x => x.RoleId is not null || !string.IsNullOrWhiteSpace(x.Role))
+            .WithMessage("Either role or roleId is required.");
         RuleFor(x => x.Role)
-            .NotEmpty()
             .Must(role => Enum.TryParse<UserRole>(role, ignoreCase: false, out _))
+            .When(x => !string.IsNullOrWhiteSpace(x.Role))
             .WithMessage("Role must be one of: SuperAdmin, TenantAdmin, Operator.");
     }
 }
@@ -41,9 +44,12 @@ public sealed class AssignTenantRoleRequestValidator : AbstractValidator<AssignT
     public AssignTenantRoleRequestValidator()
     {
         RuleFor(x => x.TenantId).NotEmpty();
+        RuleFor(x => x)
+            .Must(x => x.RoleId is not null || !string.IsNullOrWhiteSpace(x.Role))
+            .WithMessage("Either role or roleId is required.");
         RuleFor(x => x.Role)
-            .NotEmpty()
             .Must(role => Enum.TryParse<UserRole>(role, ignoreCase: false, out _))
+            .When(x => !string.IsNullOrWhiteSpace(x.Role))
             .WithMessage("Role must be one of: SuperAdmin, TenantAdmin, Operator.");
     }
 }

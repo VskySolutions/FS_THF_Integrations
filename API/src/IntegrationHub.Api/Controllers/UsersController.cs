@@ -32,6 +32,7 @@ public sealed class UsersController : ControllerBase
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditTrailService _audit;
     private readonly IRoleRepository _roles;
+    private readonly IPersonRepository _persons;
 
     public UsersController(
         IUserRepository users,
@@ -39,7 +40,8 @@ public sealed class UsersController : ControllerBase
         IRefreshTokenRepository refreshTokens,
         IUnitOfWork unitOfWork,
         IAuditTrailService audit,
-        IRoleRepository roles)
+        IRoleRepository roles,
+        IPersonRepository persons)
     {
         _users = users;
         _passwordHasher = passwordHasher;
@@ -47,6 +49,7 @@ public sealed class UsersController : ControllerBase
         _unitOfWork = unitOfWork;
         _audit = audit;
         _roles = roles;
+        _persons = persons;
     }
 
     [HttpPost("/api/admin/users")]
@@ -99,14 +102,30 @@ public sealed class UsersController : ControllerBase
         var (hash, salt) = _passwordHasher.Hash(temporaryPassword);
 
         var fullName = string.Join(" ", new[] { request.FirstName, request.LastName }.Where(s => !string.IsNullOrWhiteSpace(s)));
-        var user = new User
+        var displayName = string.IsNullOrWhiteSpace(fullName) ? (request.DisplayName ?? string.Empty) : fullName;
+
+        // Personal profile data lives on the Person master record (WO-61).
+        var userId = Guid.NewGuid();
+        var person = new Person
         {
             Id = Guid.NewGuid(),
-            Email = request.Email,
+            PersonCode = await GeneratePersonCodeAsync(cancellationToken),
+            UserId = userId,
             FirstName = request.FirstName,
             LastName = request.LastName,
-            PhoneNumber = request.PhoneNumber,
-            DisplayName = string.IsNullOrWhiteSpace(fullName) ? (request.DisplayName ?? string.Empty) : fullName,
+            DisplayName = displayName,
+            MobileNumber = request.PhoneNumber,
+            PrimaryEmail = request.Email,
+            IsActive = true,
+        };
+        await _persons.AddAsync(person, cancellationToken);
+
+        var user = new User
+        {
+            Id = userId,
+            Email = request.Email,
+            DisplayName = displayName,
+            PersonId = person.Id,
             PasswordHash = hash,
             Salt = salt,
             IsActive = true,
@@ -154,7 +173,9 @@ public sealed class UsersController : ControllerBase
 
         var names = await ResolveActorNamesAsync(items.SelectMany(u => new[] { u.CreatedById, u.UpdatedById }), cancellationToken);
         var summaries = items.Select(u => new UserSummary(
-            u.Id, u.Email, u.FirstName, u.LastName, u.FullName, u.PhoneNumber, u.IsActive,
+            u.Id, u.Email,
+            u.Person?.FirstName ?? string.Empty, u.Person?.LastName ?? string.Empty,
+            u.Person?.FullName ?? u.DisplayName, u.Person?.MobileNumber, u.IsActive,
             NameOf(names, u.CreatedById), NameOf(names, u.UpdatedById), u.CreatedOnUtc, u.UpdatedOnUtc));
         return Ok(ApiResponseFactory.Paginated(summaries, "Users retrieved.", page, limit, total));
     }
@@ -201,27 +222,40 @@ public sealed class UsersController : ControllerBase
             user.TokenVersion++; // email change invalidates sessions
         }
 
-        if (request.FirstName is not null)
+        // Personal fields live on the Person record (WO-61).
+        var person = user.Person;
+        if (person is not null)
         {
-            user.FirstName = request.FirstName;
-        }
-        if (request.LastName is not null)
-        {
-            user.LastName = request.LastName;
-        }
-        if (request.PhoneNumber is not null)
-        {
-            user.PhoneNumber = request.PhoneNumber;
-        }
+            if (request.FirstName is not null)
+            {
+                person.FirstName = request.FirstName;
+            }
+            if (request.LastName is not null)
+            {
+                person.LastName = request.LastName;
+            }
+            if (request.PhoneNumber is not null)
+            {
+                person.MobileNumber = request.PhoneNumber;
+            }
 
-        // Keep DisplayName in sync with the name unless explicitly overridden.
-        if (request.DisplayName is { } displayName)
-        {
-            user.DisplayName = displayName;
+            // Keep DisplayName in sync with the name unless explicitly overridden.
+            if (request.DisplayName is { } displayName)
+            {
+                person.DisplayName = displayName;
+                user.DisplayName = displayName;
+            }
+            else if (request.FirstName is not null || request.LastName is not null)
+            {
+                person.DisplayName = person.FullName;
+                user.DisplayName = person.FullName;
+            }
+
+            _persons.Update(person);
         }
-        else if (request.FirstName is not null || request.LastName is not null)
+        else if (request.DisplayName is { } displayNameOnly)
         {
-            user.DisplayName = user.FullName;
+            user.DisplayName = displayNameOnly;
         }
 
         _users.Update(user);
@@ -248,6 +282,11 @@ public sealed class UsersController : ControllerBase
         }
 
         user.DisplayName = request.DisplayName;
+        if (user.Person is not null)
+        {
+            user.Person.DisplayName = request.DisplayName;
+            _persons.Update(user.Person);
+        }
         _users.Update(user);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -506,17 +545,37 @@ public sealed class UsersController : ControllerBase
         return activeTenant is { } tenant && user.TenantRoles.Any(r => r.TenantId == tenant);
     }
 
-    private static UserDetail Map(User user) => new(
-        user.Id,
-        user.Email,
-        user.FirstName,
-        user.LastName,
-        user.FullName,
-        user.PhoneNumber,
-        user.DisplayName,
-        user.IsActive,
-        user.MustChangePassword,
-        user.TenantRoles.Select(r => new TenantAssignmentDto(r.TenantId, r.Role.ToString(), r.RoleId, r.RoleEntity?.Name)).ToList());
+    private static UserDetail Map(User user)
+    {
+        var p = user.Person;
+        return new UserDetail(
+            user.Id,
+            user.PersonId,
+            user.Email,
+            p?.FirstName ?? string.Empty,
+            p?.LastName ?? string.Empty,
+            p?.FullName ?? user.DisplayName,
+            p?.MobileNumber,
+            user.DisplayName,
+            user.IsActive,
+            user.MustChangePassword,
+            user.TenantRoles.Select(r => new TenantAssignmentDto(r.TenantId, r.Role.ToString(), r.RoleId, r.RoleEntity?.Name)).ToList());
+    }
+
+    /// <summary>Generates a unique business person code (e.g. PER-AB12CD34EF).</summary>
+    private async Task<string> GeneratePersonCodeAsync(CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var code = "PER-" + Guid.NewGuid().ToString("N")[..10].ToUpperInvariant();
+            if (!await _persons.PersonCodeExistsAsync(code, cancellationToken))
+            {
+                return code;
+            }
+        }
+
+        return "PER-" + Guid.NewGuid().ToString("N").ToUpperInvariant();
+    }
 
     private async Task<IReadOnlyDictionary<Guid, string>> ResolveActorNamesAsync(IEnumerable<Guid?> ids, CancellationToken cancellationToken)
         => await _users.GetFullNamesAsync(ids.Where(id => id.HasValue).Select(id => id!.Value), cancellationToken);

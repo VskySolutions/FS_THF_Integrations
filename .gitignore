@@ -89,3 +89,6 @@ yarn-error.log*
 
 # Local environment files
 .env.local*
+
+# Uploaded media (runtime/local + test artifacts)
+media-uploads/

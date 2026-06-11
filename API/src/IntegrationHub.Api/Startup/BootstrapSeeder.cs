@@ -20,6 +20,7 @@ public static class BootstrapSeeder
         var hasher = services.GetRequiredService<IPasswordHasher>();
         var unitOfWork = services.GetRequiredService<IUnitOfWork>();
         var roles = services.GetRequiredService<IRoleRepository>();
+        var persons = services.GetRequiredService<IPersonRepository>();
 
         // System RBAC roles are seeded/refreshed on every startup (independent of users).
         await SeedSystemRolesAsync(roles, unitOfWork, cancellationToken);
@@ -50,11 +51,29 @@ public static class BootstrapSeeder
 
         var password = GetValue(configuration, "Password", "ChangeMe123!");
         var (hash, salt) = hasher.Hash(password);
-        var admin = new User
+        var email = GetValue(configuration, "Email", "admin@integrationhub.local");
+        var adminId = Guid.NewGuid();
+
+        // The bootstrap admin's personal profile lives on a Person master record (WO-61).
+        var person = new Person
         {
             Id = Guid.NewGuid(),
-            Email = GetValue(configuration, "Email", "admin@integrationhub.local"),
+            PersonCode = "PER-" + Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(),
+            UserId = adminId,
+            FirstName = "Bootstrap",
+            LastName = "Super Admin",
             DisplayName = "Bootstrap Super Admin",
+            PrimaryEmail = email,
+            IsActive = true,
+        };
+        await persons.AddAsync(person, cancellationToken);
+
+        var admin = new User
+        {
+            Id = adminId,
+            Email = email,
+            DisplayName = "Bootstrap Super Admin",
+            PersonId = person.Id,
             PasswordHash = hash,
             Salt = salt,
             IsActive = true,

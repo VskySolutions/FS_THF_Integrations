@@ -15,6 +15,7 @@ internal sealed class UserRepository : IUserRepository
 
     public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
         => _dbContext.Users.Include(u => u.TenantRoles).ThenInclude(r => r.RoleEntity)
+            .Include(u => u.Person)
             .FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
 
     public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
@@ -32,10 +33,18 @@ internal sealed class UserRepository : IUserRepository
             return new Dictionary<Guid, string>();
         }
 
-        // Ignore filters so soft-deleted creators still resolve to a name.
+        // Ignore filters so soft-deleted creators still resolve to a name. Names now live on
+        // the associated Person; fall back to the user's display name, then email.
         var users = await _dbContext.Users.IgnoreQueryFilters()
             .Where(u => ids.Contains(u.Id))
-            .Select(u => new { u.Id, u.FirstName, u.LastName, u.DisplayName, u.Email })
+            .Select(u => new
+            {
+                u.Id,
+                u.DisplayName,
+                u.Email,
+                FirstName = u.Person != null ? u.Person.FirstName : null,
+                LastName = u.Person != null ? u.Person.LastName : null
+            })
             .ToListAsync(cancellationToken);
 
         return users.ToDictionary(
@@ -52,7 +61,8 @@ internal sealed class UserRepository : IUserRepository
     public async Task<(IReadOnlyList<User> Items, int Total)> ListAsync(
         Guid? tenantId, int page, int limit, CancellationToken cancellationToken = default)
     {
-        var query = _dbContext.Users.Include(u => u.TenantRoles).ThenInclude(r => r.RoleEntity).AsQueryable();
+        var query = _dbContext.Users.Include(u => u.TenantRoles).ThenInclude(r => r.RoleEntity)
+            .Include(u => u.Person).AsQueryable();
         if (tenantId is { } id)
         {
             query = query.Where(u => u.TenantRoles.Any(r => r.TenantId == id));

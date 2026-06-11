@@ -85,6 +85,9 @@ public static class DependencyInjection
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddScoped<IRoleRepository, RoleRepository>();
+        services.AddScoped<IPersonRepository, PersonRepository>();
+        services.AddScoped<IAddressRepository, AddressRepository>();
+        services.AddScoped<IMediaRepository, MediaRepository>();
         services.AddSingleton<ITransformationRuleEvaluator, Connectors.TransformationRuleEvaluator>();
         return services;
     }

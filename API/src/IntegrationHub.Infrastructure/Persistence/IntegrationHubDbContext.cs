@@ -59,6 +59,12 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
 
     public DbSet<TenantRole> TenantRoles => Set<TenantRole>();
 
+    public DbSet<Person> Persons => Set<Person>();
+
+    public DbSet<Address> Addresses => Set<Address>();
+
+    public DbSet<Media> Media => Set<Media>();
+
     /// <summary>Data Protection key ring storage (Multi-Tenancy ADR-002).</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
@@ -86,6 +92,9 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
         modelBuilder.Entity<JobScheduleConfiguration>().HasQueryFilter(e => !e.Deleted);
         modelBuilder.Entity<Role>().HasQueryFilter(e => !e.Deleted);
         modelBuilder.Entity<TenantRole>().HasQueryFilter(e => !e.Deleted);
+        modelBuilder.Entity<Person>().HasQueryFilter(e => !e.Deleted);
+        modelBuilder.Entity<Address>().HasQueryFilter(e => !e.Deleted);
+        modelBuilder.Entity<Media>().HasQueryFilter(e => !e.Deleted);
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)

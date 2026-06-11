@@ -23,6 +23,12 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
 
         builder.HasIndex(u => u.Email).IsUnique().HasFilter("[Deleted] = 0");
 
+        // Every user is backed by one Person master record (WO-61). The FK lives on User.
+        builder.HasOne(u => u.Person)
+            .WithOne()
+            .HasForeignKey<User>(u => u.PersonId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.HasMany(u => u.TenantRoles)
             .WithOne(r => r.User!)
             .HasForeignKey(r => r.UserId)

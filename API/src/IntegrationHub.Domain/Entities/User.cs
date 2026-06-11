@@ -1,11 +1,10 @@
-using System.ComponentModel.DataAnnotations.Schema;
-
 namespace IntegrationHub.Domain.Entities;
 
 /// <summary>
-/// A platform user account. Credentials are PBKDF2-hashed; <see cref="TokenVersion"/>
-/// is incremented on password change, deactivation, email change, and logout to
-/// invalidate outstanding JWTs (Admin User &amp; Role Management).
+/// A platform user account. Holds authentication/authorization concerns only; personal
+/// profile information lives on the associated <see cref="Person"/> (WO-61). Credentials
+/// are PBKDF2-hashed; <see cref="TokenVersion"/> is incremented on password change,
+/// deactivation, email change, and logout to invalidate outstanding JWTs.
 /// </summary>
 public class User : AuditableEntity
 {
@@ -14,21 +13,13 @@ public class User : AuditableEntity
     /// <summary>Unique login email (also the user's email address).</summary>
     public string Email { get; set; } = string.Empty;
 
-    public string FirstName { get; set; } = string.Empty;
-
-    public string LastName { get; set; } = string.Empty;
-
-    public string? PhoneNumber { get; set; }
-
-    /// <summary>Derived from FirstName + LastName on save; kept for display/back-compat.</summary>
+    /// <summary>Display identity used by auth/UI; the full profile lives on <see cref="Person"/>.</summary>
     public string DisplayName { get; set; } = string.Empty;
 
-    /// <summary>FirstName + LastName (trimmed); falls back to DisplayName then Email.</summary>
-    [NotMapped]
-    public string FullName =>
-        string.Join(" ", new[] { FirstName, LastName }.Where(s => !string.IsNullOrWhiteSpace(s))) is { Length: > 0 } name
-            ? name
-            : (string.IsNullOrWhiteSpace(DisplayName) ? Email : DisplayName);
+    /// <summary>The associated person master record. Every user has one (WO-61).</summary>
+    public Guid? PersonId { get; set; }
+
+    public Person? Person { get; set; }
 
     /// <summary>Base64 PBKDF2 hash of the password.</summary>
     public string PasswordHash { get; set; } = string.Empty;

@@ -182,4 +182,67 @@ public class ApiIntegrationTests
         // roles.write (Super-Admin-only) → forbidden.
         (await taClient.GetAsync("/api/admin/roles")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
+
+    // WO-61: the person profile (split from User) is readable and updatable, with address upsert.
+    [Fact]
+    public async Task Profile_can_be_read_and_updated_with_address()
+    {
+        var client = _factory.CreateClient();
+        var token = await LoginAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var get = await client.GetAsync("/api/users/me/profile");
+        get.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var getDoc = JsonDocument.Parse(await get.Content.ReadAsStringAsync());
+        getDoc.RootElement.GetProperty("data").GetProperty("personCode").GetString().Should().StartWith("PER-");
+
+        var update = await client.PutAsJsonAsync("/api/users/me/profile", new
+        {
+            firstName = "Ada",
+            lastName = "Lovelace",
+            jobTitle = "Engineer",
+            address = new
+            {
+                addressType = "Home",
+                addressLine1 = "1 Analytical Way",
+                cityName = "London",
+                countryCode = "GB",
+                postalCode = "SW1A 1AA"
+            }
+        });
+        update.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var updateDoc = JsonDocument.Parse(await update.Content.ReadAsStringAsync());
+        var data = updateDoc.RootElement.GetProperty("data");
+        data.GetProperty("firstName").GetString().Should().Be("Ada");
+        data.GetProperty("fullName").GetString().Should().Contain("Ada");
+        data.GetProperty("address").GetProperty("cityName").GetString().Should().Be("London");
+    }
+
+    // WO-61: media upload returns a public URL that serves the bytes without an auth header.
+    [Fact]
+    public async Task Media_upload_then_fetch_public_content()
+    {
+        var client = _factory.CreateClient();
+        var token = await LoginAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var bytes = new byte[] { 0x89, 0x50, 0x4E, 0x47 };
+        using var form = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(bytes);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+        form.Add(fileContent, "file", "avatar.png");
+        form.Add(new StringContent("Profile"), "mediaCategory");
+
+        var upload = await client.PostAsync("/api/media", form);
+        upload.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var uploadDoc = JsonDocument.Parse(await upload.Content.ReadAsStringAsync());
+        var publicUrl = uploadDoc.RootElement.GetProperty("data").GetProperty("publicUrl").GetString();
+        publicUrl.Should().NotBeNullOrEmpty();
+
+        // Public profile media is fetchable anonymously (so it renders in <img> tags).
+        var anon = _factory.CreateClient();
+        var content = await anon.GetAsync(publicUrl);
+        content.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await content.Content.ReadAsByteArrayAsync()).Should().Equal(bytes);
+    }
 }

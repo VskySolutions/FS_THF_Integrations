@@ -9,7 +9,13 @@ public sealed class CreateUserRequestValidator : AbstractValidator<CreateUserReq
     public CreateUserRequestValidator()
     {
         RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(256);
-        RuleFor(x => x.DisplayName).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.FirstName).MaximumLength(100);
+        RuleFor(x => x.LastName).MaximumLength(100);
+        RuleFor(x => x.DisplayName).MaximumLength(200);
+        // The Person needs an identity; accept either a first name or an explicit display name.
+        RuleFor(x => x)
+            .Must(x => !string.IsNullOrWhiteSpace(x.FirstName) || !string.IsNullOrWhiteSpace(x.DisplayName))
+            .WithMessage("Either firstName or displayName is required.");
         RuleFor(x => x)
             .Must(x => x.RoleId is not null || !string.IsNullOrWhiteSpace(x.Role))
             .WithMessage("Either role or roleId is required.");

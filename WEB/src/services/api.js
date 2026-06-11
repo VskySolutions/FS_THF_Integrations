@@ -121,6 +121,27 @@ export const roleApi = {
     api.delete(`/api/admin/tenants/${tenantId}/roles/${roleId}`).then(envelope)
 };
 
+export const profileApi = {
+  // Current user's person profile.
+  getMine: () => api.get("/api/users/me/profile").then(unwrap),
+  updateMine: (payload) => api.put("/api/users/me/profile", payload).then(unwrap),
+  // Admin: any user's profile.
+  getForUser: (userId) => api.get(`/api/admin/users/${userId}/profile`).then(unwrap),
+  updateForUser: (userId, payload) => api.put(`/api/admin/users/${userId}/profile`, payload).then(unwrap)
+};
+
+export const mediaApi = {
+  // Uploads a file (multipart) and returns the stored media (incl. publicUrl).
+  upload: (file, mediaCategory = "Profile") => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("mediaCategory", mediaCategory);
+    return api.post("/api/media", form, { headers: { "Content-Type": "multipart/form-data" } }).then(unwrap);
+  },
+  // Absolute URL for a media public path (the API serves public media anonymously).
+  absoluteUrl: (publicUrl) => (publicUrl ? `${process.env.API_BASE_URL || ""}${publicUrl}` : null)
+};
+
 export const mappingApi = {
   list: (tenantId, params) => api.get(`/api/admin/tenants/${tenantId}/mappings`, { params }).then(envelope),
   create: (tenantId, payload) => api.post(`/api/admin/tenants/${tenantId}/mappings`, payload).then(unwrap),

@@ -120,8 +120,9 @@ public class UsersControllerTests
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IAuditTrailService> _audit = new();
     private readonly Mock<IRoleRepository> _roles = new();
+    private readonly Mock<IPersonRepository> _persons = new();
 
-    private UsersController Create() => new(_users.Object, _hasher.Object, _refreshTokens.Object, _unitOfWork.Object, _audit.Object, _roles.Object);
+    private UsersController Create() => new(_users.Object, _hasher.Object, _refreshTokens.Object, _unitOfWork.Object, _audit.Object, _roles.Object, _persons.Object);
 
     [Fact]
     public async Task Super_admin_creates_user_returns_201_with_temp_password()

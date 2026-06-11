@@ -64,6 +64,7 @@ public sealed record UserSummary(
 
 public sealed record UserDetail(
     Guid UserId,
+    Guid? PersonId,
     string Email,
     string FirstName,
     string LastName,

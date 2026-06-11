@@ -77,11 +77,50 @@
 
     <app-form-drawer v-model="formOpen" :title="editing ? 'Edit Mapping' : 'Add Mapping'" :saving="saving" @submit="submitForm" @cancel="resetForm">
       <q-form ref="formRef" greedy>
-        <app-select v-model="form.sourceSystem" :options="systemOptions" label="Source system *" class="q-mb-md" :clearable="false" :disable="editing" />
-        <app-select v-model="form.destinationSystem" :options="systemOptions" label="Destination system *" class="q-mb-md" :clearable="false" :disable="editing" />
-        <q-input v-model="form.sourceField" outlined stack-label hide-bottom-space label="Source field *" class="q-mb-md" :disable="editing" :rules="[(v) => !!v || 'Required']" />
-        <q-input v-model="form.destinationField" outlined stack-label hide-bottom-space label="Destination field *" class="q-mb-md" :rules="[(v) => !!v || 'Required']" />
-        <q-input v-model="form.transformationRule" outlined stack-label hide-bottom-space label="Transformation rule (optional)" type="textarea" autogrow />
+        <q-expansion-item
+          icon="o_lightbulb" label="Mapping examples" dense-toggle
+          class="mapping-examples q-mb-md bg-blue-grey-1 rounded-borders"
+        >
+          <q-markup-table flat dense separator="cell" class="examples-table">
+            <thead>
+              <tr>
+                <th class="text-left">Pattern</th>
+                <th class="text-left">Source field</th>
+                <th class="text-left">Destination field</th>
+                <th class="text-left">Rule</th>
+                <th class="text-left">Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(ex, i) in mappingExamples" :key="i">
+                <td class="text-left">{{ ex.pattern }}</td>
+                <td class="text-left"><code>{{ ex.source }}</code></td>
+                <td class="text-left"><code>{{ ex.dest }}</code></td>
+                <td class="text-left"><code>{{ ex.rule }}</code></td>
+                <td class="text-left">{{ ex.result }}</td>
+              </tr>
+            </tbody>
+          </q-markup-table>
+          <div class="text-caption text-grey-7 q-pa-sm">
+            Whole line-item arrays are mapped by built-in defaults today; dotted/indexed paths require the source connector to expose them.
+          </div>
+        </q-expansion-item>
+
+        <app-select v-model="form.sourceSystem" :options="systemOptions" label="Source system *" class="q-mb-md" :clearable="false" :disable="editing">
+          <template #after><app-help-hint v-bind="help.sourceSystem" /></template>
+        </app-select>
+        <app-select v-model="form.destinationSystem" :options="systemOptions" label="Destination system *" class="q-mb-md" :clearable="false" :disable="editing">
+          <template #after><app-help-hint v-bind="help.destinationSystem" /></template>
+        </app-select>
+        <q-input v-model="form.sourceField" outlined stack-label hide-bottom-space label="Source field *" class="q-mb-md" :disable="editing" :rules="[(v) => !!v || 'Required']">
+          <template #after><app-help-hint v-bind="help.sourceField" /></template>
+        </q-input>
+        <q-input v-model="form.destinationField" outlined stack-label hide-bottom-space label="Destination field *" class="q-mb-md" :rules="[(v) => !!v || 'Required']">
+          <template #after><app-help-hint v-bind="help.destinationField" /></template>
+        </q-input>
+        <q-input v-model="form.transformationRule" outlined stack-label hide-bottom-space label="Transformation rule (optional)" type="textarea" autogrow>
+          <template #after><app-help-hint v-bind="help.transformationRule" /></template>
+        </q-input>
       </q-form>
     </app-form-drawer>
   </q-page>
@@ -101,6 +140,67 @@ import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
+import AppHelpHint from "components/common/AppHelpHint.vue";
+
+// Field-level guidance shown via the help icons next to each mapping field.
+const help = {
+  sourceSystem: {
+    title: "Source system",
+    description: "The system the data is read from. Locked once the mapping is created.",
+    examples: [
+      { code: "Concur", desc: "Expense / invoice / payment source" },
+      { code: "Maconomy", desc: "ERP (rare as an inbound source)" }
+    ]
+  },
+  destinationSystem: {
+    title: "Destination system",
+    description: "The system the mapped value is written to. Locked once the mapping is created.",
+    examples: [
+      { code: "Maconomy", desc: "Typical inbound target" }
+    ]
+  },
+  sourceField: {
+    title: "Source field",
+    description: "Exact field name from the source payload. Use dot notation for nested objects and [index] for arrays. Whole line-item arrays use built-in defaults today. Locked once created.",
+    examples: [
+      { code: "ReportId", desc: "Simple top-level field" },
+      { code: "TotalAmount", desc: "Numeric header field" },
+      { code: "Employee.CostCenter", desc: "Nested object (dot path)" },
+      { code: "Customer.Address.City", desc: "Deeply nested object" },
+      { code: "Lines[0].Amount", desc: "Array element by index" }
+    ]
+  },
+  destinationField: {
+    title: "Destination field",
+    description: "Field in the destination schema that receives the value. Required destination fields must have an active mapping; anything unmapped falls back to the built-in default.",
+    examples: [
+      { code: "ProjectNumber", desc: "Maconomy field" },
+      { code: "DepartmentCode", desc: "Maconomy field" }
+    ]
+  },
+  transformationRule: {
+    title: "Transformation rule",
+    description: "Optional. Transforms the source value before it is written; leave blank to copy it unchanged. Grammar is kind:args.",
+    examples: [
+      { code: "(blank)", desc: "Copy the value through unchanged" },
+      { code: "date:yyyy-MM-dd|dd/MM/yyyy", desc: "Reformat a date (source|target)" },
+      { code: "lookup:USD=Dollar;EUR=Euro;default=Other", desc: "Map codes to values" },
+      { code: "valuemap:Y=Yes;N=No", desc: "Alias of lookup" },
+      { code: "concat:FirstName,' ',LastName", desc: "Join fields and 'literals'" }
+    ]
+  }
+};
+
+// Worked, end-to-end mapping examples shown in the collapsible panel at the top of the form.
+const mappingExamples = [
+  { pattern: "Simple key → key", source: "ReportId", dest: "ReportNumber", rule: "—", result: "Copies the value as-is" },
+  { pattern: "Rename + value lookup", source: "CurrencyCode", dest: "Currency", rule: "lookup:USD=US Dollar;EUR=Euro;default=Other", result: "Maps a code to a label" },
+  { pattern: "Nested object", source: "Employee.CostCenter", dest: "DepartmentCode", rule: "—", result: "Reads a nested value by dot path" },
+  { pattern: "Deeply nested", source: "Customer.Address.City", dest: "City", rule: "—", result: "Any depth via dot path" },
+  { pattern: "Concatenate fields", source: "FirstName", dest: "FullName", rule: "concat:FirstName,' ',LastName", result: "Joins fields and 'literals'" },
+  { pattern: "Reformat date", source: "SubmitDate", dest: "PostingDate", rule: "date:yyyy-MM-dd|dd/MM/yyyy", result: "Changes the date format" },
+  { pattern: "Array element", source: "Lines[0].Amount", dest: "FirstLineAmount", rule: "—", result: "One array item by index" }
+];
 
 const notify = useNotify();
 const { confirm } = useConfirm();
@@ -257,3 +357,19 @@ const remove = async (row) => {
 };
 
 </script>
+
+<style scoped>
+.examples-table {
+  font-size: 12px;
+}
+.examples-table code {
+  background: #ffffff;
+  padding: 1px 4px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.examples-table th,
+.examples-table td {
+  vertical-align: top;
+}
+</style>

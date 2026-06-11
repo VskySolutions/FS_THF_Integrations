@@ -24,6 +24,9 @@
         <q-item-section class="text-grey-6">No options</q-item-section>
       </q-item>
     </template>
+    <template v-if="$slots.after" #after>
+      <slot name="after" />
+    </template>
   </q-select>
 </template>
 

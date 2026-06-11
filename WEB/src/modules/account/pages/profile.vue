@@ -29,16 +29,22 @@
           <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileSelected">
         </q-card>
 
-        <!-- Personal -->
+        <!-- Personal details -->
         <q-card flat bordered class="account-card q-mb-md">
-          <q-card-section class="text-subtitle1 text-weight-medium">Personal information</q-card-section>
+          <q-card-section class="row items-center q-gutter-sm">
+            <q-icon name="o_badge" color="primary" size="sm" />
+            <div class="text-subtitle1 text-weight-medium">Personal details</div>
+          </q-card-section>
           <q-separator />
           <q-card-section class="row q-col-gutter-md">
+            <div class="col-12 section-subhead">Name</div>
             <q-input v-model="form.firstName" outlined dense stack-label hide-bottom-space label="First Name" class="col-12 col-sm-6" />
             <q-input v-model="form.middleName" outlined dense stack-label hide-bottom-space label="Middle Name" class="col-12 col-sm-6" />
             <q-input v-model="form.lastName" outlined dense stack-label hide-bottom-space label="Last Name" class="col-12 col-sm-6" />
             <q-input v-model="form.preferredName" outlined dense stack-label hide-bottom-space label="Preferred Name" class="col-12 col-sm-6" />
             <q-input v-model="form.displayName" outlined dense stack-label hide-bottom-space label="Display Name" class="col-12 col-sm-6" />
+
+            <div class="col-12 section-subhead">Demographics</div>
             <app-select v-model="form.gender" :options="genderOptions" label="Gender" class="col-12 col-sm-6" />
             <q-input v-model="form.dateOfBirth" outlined dense stack-label hide-bottom-space type="date" label="Date of Birth" class="col-12 col-sm-6" />
             <app-select v-model="form.maritalStatus" :options="maritalOptions" label="Marital Status" class="col-12 col-sm-6" />
@@ -49,13 +55,19 @@
           </q-card-section>
         </q-card>
 
-        <!-- Contact -->
+        <!-- Contact details -->
         <q-card flat bordered class="account-card q-mb-md">
-          <q-card-section class="text-subtitle1 text-weight-medium">Contact information</q-card-section>
+          <q-card-section class="row items-center q-gutter-sm">
+            <q-icon name="o_contact_mail" color="primary" size="sm" />
+            <div class="text-subtitle1 text-weight-medium">Contact details</div>
+          </q-card-section>
           <q-separator />
           <q-card-section class="row q-col-gutter-md">
+            <div class="col-12 section-subhead">Email</div>
             <q-input v-model="form.primaryEmail" outlined dense stack-label hide-bottom-space type="email" label="Personal Email" class="col-12 col-sm-6" />
             <q-input v-model="form.secondaryEmail" outlined dense stack-label hide-bottom-space type="email" label="Alternate Email" class="col-12 col-sm-6" />
+
+            <div class="col-12 section-subhead">Phone</div>
             <app-select
               v-model="phoneCountry" :options="dialCodeOptions" label="Phone Country" use-input
               class="col-12 col-sm-4" @filter="filterDialCodes"
@@ -65,17 +77,32 @@
               :error="!!mobileError" :error-message="mobileError" @blur="validateMobile"
             />
             <q-input v-model="form.alternateMobileNumber" outlined dense stack-label hide-bottom-space label="Alternate Mobile" class="col-12 col-sm-6" />
-            <q-input v-model="form.emergencyContactName" outlined dense stack-label hide-bottom-space label="Emergency Contact Name" class="col-12 col-sm-6" />
-            <q-input v-model="form.emergencyContactRelationship" outlined dense stack-label hide-bottom-space label="Relationship" class="col-12 col-sm-6" />
-            <q-input v-model="form.emergencyContactNumber" outlined dense stack-label hide-bottom-space label="Emergency Contact Number" class="col-12 col-sm-6" />
+          </q-card-section>
+        </q-card>
+
+        <!-- Emergency contact -->
+        <q-card flat bordered class="account-card q-mb-md">
+          <q-card-section class="row items-center q-gutter-sm">
+            <q-icon name="o_emergency" color="primary" size="sm" />
+            <div class="text-subtitle1 text-weight-medium">Emergency contact</div>
+          </q-card-section>
+          <q-separator />
+          <q-card-section class="row q-col-gutter-md">
+            <q-input v-model="form.emergencyContactName" outlined dense stack-label hide-bottom-space label="Contact Name" class="col-12 col-sm-4" />
+            <q-input v-model="form.emergencyContactRelationship" outlined dense stack-label hide-bottom-space label="Relationship" class="col-12 col-sm-4" />
+            <q-input v-model="form.emergencyContactNumber" outlined dense stack-label hide-bottom-space label="Contact Number" class="col-12 col-sm-4" />
           </q-card-section>
         </q-card>
 
         <!-- Address -->
         <q-card flat bordered class="account-card q-mb-md">
-          <q-card-section class="text-subtitle1 text-weight-medium">Address</q-card-section>
+          <q-card-section class="row items-center q-gutter-sm">
+            <q-icon name="o_location_on" color="primary" size="sm" />
+            <div class="text-subtitle1 text-weight-medium">Address</div>
+          </q-card-section>
           <q-separator />
           <q-card-section class="row q-col-gutter-md">
+            <div class="col-12 section-subhead">Location</div>
             <app-select
               v-model="address.countryCode" :options="countryOptions" label="Country" use-input
               class="col-12 col-sm-4" @filter="filterCountries" @update:model-value="onCountryChange"
@@ -92,6 +119,8 @@
               v-model="address.postalCode" outlined dense stack-label hide-bottom-space label="Postal Code" class="col-12 col-sm-4"
               :error="!!postalError" :error-message="postalError" @blur="validatePostal"
             />
+
+            <div class="col-12 section-subhead">Street address</div>
             <q-input v-model="address.addressLine1" outlined dense stack-label hide-bottom-space label="Address Line 1" class="col-12 col-sm-8" />
             <q-input v-model="address.addressLine2" outlined dense stack-label hide-bottom-space label="Address Line 2" class="col-12 col-sm-6" />
             <q-input v-model="address.landmark" outlined dense stack-label hide-bottom-space label="Landmark" class="col-12 col-sm-6" />
@@ -503,6 +532,14 @@ onMounted(load);
 <style scoped>
 .account-card {
   border-radius: 16px;
+}
+.section-subhead {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--q-primary);
+  margin-top: 4px;
 }
 .profile-cropper {
   max-height: 50vh;

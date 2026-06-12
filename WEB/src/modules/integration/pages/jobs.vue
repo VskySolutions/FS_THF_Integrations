@@ -16,6 +16,7 @@
     <q-tabs v-model="tab" align="left" class="text-primary q-mb-sm" dense narrow-indicator>
       <q-tab name="jobs" label="Jobs" no-caps />
       <q-tab name="retries" label="Retry Queue" no-caps />
+      <q-tab v-if="canSchedule" name="schedules" label="Schedules" no-caps />
     </q-tabs>
     <q-separator class="q-mb-md" />
 
@@ -99,7 +100,68 @@
           </template>
         </app-data-table>
       </q-tab-panel>
+
+      <!-- Schedules -->
+      <q-tab-panel v-if="canSchedule" name="schedules" class="q-pa-none">
+        <app-select
+          v-if="canChooseScheduleTenant" v-model="scheduleTenantId" :options="scheduleTenantOptions"
+          label="Tenant" :loading="loadingScheduleTenants" :clearable="false" class="q-mt-sm" style="max-width: 360px;"
+        />
+        <q-card flat bordered class="q-mt-sm">
+          <q-list separator>
+            <q-item v-for="s in schedules" :key="s.jobName">
+              <q-item-section>
+                <q-item-label class="text-weight-medium">{{ s.displayName }}</q-item-label>
+                <q-item-label caption>
+                  <template v-if="s.cronExpression">
+                    <code>{{ s.cronExpression }}</code>
+                    <span v-if="cronHint(s.cronExpression)"> · {{ cronHint(s.cronExpression) }}</span>
+                  </template>
+                  <span v-else class="text-grey-6">Not scheduled</span>
+                </q-item-label>
+              </q-item-section>
+              <q-item-section side>
+                <q-badge :color="s.isActive ? 'positive' : 'grey'">{{ s.isActive ? "Active" : "Paused" }}</q-badge>
+              </q-item-section>
+              <q-item-section side>
+                <q-btn flat round dense icon="o_edit" @click="openScheduleEdit(s)"><q-tooltip>Edit schedule</q-tooltip></q-btn>
+              </q-item-section>
+            </q-item>
+            <q-item v-if="!schedules.length">
+              <q-item-section class="text-grey-6">No schedules.</q-item-section>
+            </q-item>
+          </q-list>
+        </q-card>
+        <div class="text-caption text-grey-7 q-pa-sm">
+          Schedules run in <strong>UTC</strong> and apply to all active tenants. Changes take effect within ~1 minute (no restart).
+        </div>
+      </q-tab-panel>
     </q-tab-panels>
+
+    <!-- Edit schedule -->
+    <app-form-drawer
+      v-model="scheduleOpen" :title="`Schedule — ${scheduleForm.displayName}`" save-label="Save schedule"
+      :saving="scheduleSaving" @submit="submitSchedule" @cancel="scheduleOpen = false"
+    >
+      <q-form ref="scheduleFormRef" greedy>
+        <q-input
+          v-model="scheduleForm.cronExpression" outlined stack-label hide-bottom-space label="Cron expression (UTC) *" class="q-mb-xs"
+          :rules="[(v) => isValidCron(v) || 'Use a 5-field cron, e.g. 0 2 * * *']"
+        />
+        <div class="text-caption text-grey-7 q-mb-md">{{ cronHint(scheduleForm.cronExpression) || "minute hour day month weekday — evaluated in UTC" }}</div>
+        <q-toggle v-model="scheduleForm.isActive" label="Active" />
+        <q-expansion-item dense icon="o_lightbulb" label="Common schedules" class="q-mt-md bg-blue-grey-1 rounded-borders">
+          <q-list dense>
+            <q-item v-for="ex in cronExamples" :key="ex.cron" clickable @click="scheduleForm.cronExpression = ex.cron">
+              <q-item-section>
+                <q-item-label><code>{{ ex.cron }}</code></q-item-label>
+                <q-item-label caption>{{ ex.desc }}</q-item-label>
+              </q-item-section>
+            </q-item>
+          </q-list>
+        </q-expansion-item>
+      </q-form>
+    </app-form-drawer>
 
     <!-- Job detail -->
     <app-view-drawer v-model="detailOpen" title="Job detail" :fields="detailFields">
@@ -133,11 +195,13 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import { useDateFormat } from "composables/useDateFormat";
-import { jobApi, logApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
+import { useTenantOptions } from "composables/useTenantOptions";
+import { jobApi, logApi, scheduleApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
+import { usePermissions, Permissions } from "composables/usePermissions";
 
 import AppDataTable from "components/common/AppDataTable.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
@@ -308,6 +372,67 @@ const openDetail = async (row) => {
   }
 };
 
+// ---- Schedules (per tenant) ----
+const { has } = usePermissions();
+const canSchedule = computed(() => has(Permissions.JobsSchedule));
+// Super admins pick which tenant's schedules to manage; others are scoped to their active tenant.
+const {
+  canChooseTenant: canChooseScheduleTenant,
+  tenantOptions: scheduleTenantOptions,
+  loadingTenants: loadingScheduleTenants,
+  loadTenants: loadScheduleTenants
+} = useTenantOptions();
+const scheduleTenantId = ref(null);
+const schedules = ref([]);
+const scheduleOpen = ref(false);
+const scheduleSaving = ref(false);
+const scheduleFormRef = ref(null);
+const scheduleForm = reactive({ jobName: "", displayName: "", cronExpression: "", isActive: true });
+
+const cronExamples = [
+  { cron: "0 2 * * *", desc: "Daily at 02:00 UTC" },
+  { cron: "30 23 * * *", desc: "Daily at 23:30 UTC" },
+  { cron: "0 6 * * 1-5", desc: "Weekdays at 06:00 UTC" },
+  { cron: "0 * * * *", desc: "Every hour" },
+  { cron: "*/15 * * * *", desc: "Every 15 minutes" },
+  { cron: "0 0 1 * *", desc: "1st of month, 00:00 UTC" }
+];
+const cronHint = (cron) => cronExamples.find((e) => e.cron === (cron || "").trim())?.desc || "";
+const isValidCron = (v) => !!v && v.trim().split(/\s+/).length === 5;
+
+const loadSchedules = async () => {
+  try {
+    schedules.value = await scheduleApi.list(scheduleTenantId.value || undefined);
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  }
+};
+watch(scheduleTenantId, loadSchedules);
+
+const openScheduleEdit = (s) => {
+  scheduleForm.jobName = s.jobName;
+  scheduleForm.displayName = s.displayName;
+  scheduleForm.cronExpression = s.cronExpression || "";
+  scheduleForm.isActive = s.isActive;
+  scheduleOpen.value = true;
+};
+
+const submitSchedule = async ({ clearDraft } = {}) => {
+  if (!(await scheduleFormRef.value?.validate())) return;
+  scheduleSaving.value = true;
+  try {
+    await scheduleApi.update(scheduleForm.jobName, { cronExpression: scheduleForm.cronExpression.trim(), isActive: scheduleForm.isActive }, scheduleTenantId.value || undefined);
+    notify.success("Schedule updated.");
+    clearDraft?.();
+    scheduleOpen.value = false;
+    loadSchedules();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    scheduleSaving.value = false;
+  }
+};
+
 // ---- Trigger import ----
 const triggerOpen = ref(false);
 const triggering = ref(false);
@@ -347,6 +472,10 @@ const onTenantSwitched = () => { loadJobs(); loadRetries(); };
 onMounted(() => {
   loadJobs();
   loadRetries();
+  if (canSchedule.value) {
+    if (canChooseScheduleTenant.value) loadScheduleTenants();
+    loadSchedules();
+  }
   window.addEventListener("tenant-switched", onTenantSwitched);
 });
 onBeforeUnmount(() => window.removeEventListener("tenant-switched", onTenantSwitched));

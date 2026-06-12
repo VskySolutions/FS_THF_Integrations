@@ -10,8 +10,14 @@ public class JobScheduleConfiguration : AuditableEntity
     /// <summary>Primary key.</summary>
     public Guid Id { get; set; }
 
-    /// <summary>Unique recurring job name (e.g. ExpenseImportJob).</summary>
+    /// <summary>Recurring job name (e.g. ExpenseImportJob). Unique per tenant.</summary>
     public string JobName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Owning tenant for a per-tenant import schedule. Null for platform-global schedules
+    /// (the retry job and the legacy global import fan-out).
+    /// </summary>
+    public Guid? TenantId { get; set; }
 
     /// <summary>Cron expression controlling the job cadence.</summary>
     public string CronExpression { get; set; } = string.Empty;

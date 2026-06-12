@@ -23,6 +23,7 @@
     </q-banner>
 
     <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
+      <app-select v-if="canChooseTenant" v-model="selectedTenantId" :options="tenantOptions" label="Tenant" :loading="loadingTenants" :clearable="false" />
       <app-select v-model="filters.sourceSystem" :options="systemOptions" label="Source system" />
       <app-select v-model="filters.destinationSystem" :options="systemOptions" label="Destination system" />
     </app-filter-drawer>
@@ -114,6 +115,10 @@
           </div>
         </q-expansion-item>
 
+        <app-select
+          v-if="canChooseTenant" v-model="selectedTenantId" :options="tenantOptions" label="Tenant *"
+          class="q-mb-md" :clearable="false" :loading="loadingTenants" :disable="editing"
+        />
         <app-select v-model="form.sourceSystem" :options="systemOptions" label="Source system *" class="q-mb-md" :clearable="false" :disable="editing">
           <template #after><app-help-hint v-bind="help.sourceSystem" /></template>
         </app-select>
@@ -135,10 +140,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch } from "vue";
+import { ref, reactive, computed, watch, onMounted } from "vue";
 import { debounce } from "quasar";
 import { mappingApi, getApiErrorMessage } from "services/api";
 import { useTenantStore } from "stores/tenant";
+import { useTenantOptions } from "composables/useTenantOptions";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
@@ -214,12 +220,19 @@ const mappingExamples = [
 const notify = useNotify();
 const { confirm } = useConfirm();
 const tenantStore = useTenantStore();
-const tenantId = computed(() => tenantStore.activeTenantId);
+const { canChooseTenant, tenantOptions, loadingTenants, loadTenants, tenantName } = useTenantOptions();
+
+// Super admins target any tenant via the dropdown; other roles use their active tenant.
+const selectedTenantId = ref(null);
+const tenantId = computed(() => (canChooseTenant.value && selectedTenantId.value ? selectedTenantId.value : tenantStore.activeTenantId));
 
 const systemOptions = ["Concur", "Maconomy", "Paycor"].map((s) => ({ label: s, value: s }));
 
 const fmt = useDateFormat();
-const columns = [
+const columns = computed(() => [
+  ...(canChooseTenant.value
+    ? [{ name: "tenant", label: "Tenant", field: () => tenantName(tenantId.value), align: "left", default: true, filterable: false }]
+    : []),
   { name: "sourceSystem", label: "Source system", field: "sourceSystem", align: "left", sortable: true, default: true },
   { name: "destinationSystem", label: "Destination system", field: "destinationSystem", align: "left", sortable: true, default: true },
   { name: "sourceField", label: "Source field", field: "sourceField", align: "left", sortable: true, default: true },
@@ -231,7 +244,7 @@ const columns = [
   { name: "createdOnUtc", label: "Created", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true },
   { name: "updatedOnUtc", label: "Updated", field: (r) => fmt.formatDateTime(r.updatedOnUtc), align: "left", sortable: true, default: true },
   { name: "actions", label: "Actions", field: "actions", align: "right" }
-];
+]);
 
 const filters = reactive({ sourceSystem: null, destinationSystem: null });
 const { rows, loading, totalRecords: total, selected, search, filterOpen, pagination, load, onRequest } = useListTable({
@@ -248,9 +261,17 @@ const { rows, loading, totalRecords: total, selected, search, filterOpen, pagina
   onError: (err) => notify.error(getApiErrorMessage(err))
 });
 
-// Server-side filtering: reload (debounced, first page) on any search/filter change.
+// Server-side filtering: reload (debounced, first page) on any search/filter/tenant change.
 const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);
-watch([search, filters], reload, { deep: true });
+watch([search, filters, tenantId], reload, { deep: true });
+
+// Super admins: load tenant options and default the selector to the active tenant.
+onMounted(() => {
+  if (canChooseTenant.value) {
+    loadTenants();
+    selectedTenantId.value = tenantStore.activeTenantId;
+  }
+});
 
 const filterChips = computed(() => {
   const chips = [];

@@ -175,6 +175,14 @@ export const logApi = {
   list: (params) => api.get("/api/admin/logs", { params }).then(envelope)
 };
 
+export const scheduleApi = {
+  // Per-tenant import schedules. tenantId is optional (Super Admin targets a tenant; others are
+  // scoped to their active tenant). update payload: { cronExpression, isActive }.
+  list: (tenantId) => api.get("/api/admin/job-schedules", { params: { tenantId } }).then(unwrap),
+  update: (jobName, payload, tenantId) =>
+    api.put(`/api/admin/job-schedules/${jobName}`, payload, { params: { tenantId } }).then(unwrap)
+};
+
 export const adminApi = {
   health: () => api.get("/api/admin/health").then(unwrap)
 };

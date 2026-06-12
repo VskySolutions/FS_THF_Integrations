@@ -24,6 +24,7 @@ public abstract class ConcurImportJobBase
     private readonly ITenantContext _tenantContext;
     private readonly IIntegrationJobRepository _jobs;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IJobScheduleConfigurationRepository _schedules;
     private readonly ILogger _logger;
 
     protected ConcurImportJobBase(
@@ -32,6 +33,7 @@ public abstract class ConcurImportJobBase
         ITenantContext tenantContext,
         IIntegrationJobRepository jobs,
         IUnitOfWork unitOfWork,
+        IJobScheduleConfigurationRepository schedules,
         ILogger logger)
     {
         _mediator = mediator;
@@ -39,16 +41,33 @@ public abstract class ConcurImportJobBase
         _tenantContext = tenantContext;
         _jobs = jobs;
         _unitOfWork = unitOfWork;
+        _schedules = schedules;
         _logger = logger;
     }
 
     protected abstract string InterfaceName { get; }
+
+    /// <summary>The recurring job name (matches the schedule's JobName, e.g. "ExpenseImportJob").</summary>
+    protected abstract string JobName { get; }
 
     protected abstract IRequest<IntegrationFlowResult> CreateCommand(Guid jobId);
 
     /// <summary>Runs the flow for an existing job (tenant already reconstructed by the Hangfire filter).</summary>
     public Task RunForJobAsync(Guid jobId, CancellationToken cancellationToken)
         => _mediator.Send(CreateCommand(jobId), cancellationToken);
+
+    /// <summary>Creates and dispatches an import job for a single tenant (per-tenant schedule).</summary>
+    public async Task RunForTenantAsync(Guid tenantId, CancellationToken cancellationToken)
+    {
+        var tenant = await _tenants.GetByIdAsync(tenantId, cancellationToken);
+        if (tenant is null || tenant.Status != TenantStatus.Active)
+        {
+            _logger.LogWarning("Skipping {Job} for tenant {Tenant}: not found or inactive", JobName, tenantId);
+            return;
+        }
+
+        await DispatchForTenantAsync(tenant, cancellationToken);
+    }
 
     [DisableConcurrentExecution(timeoutInSeconds: 1800)]
     public async Task RunRecurringAsync(CancellationToken cancellationToken)
@@ -57,25 +76,39 @@ public abstract class ConcurImportJobBase
         foreach (var tenant in tenants.Where(t => t.Status == TenantStatus.Active))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            _tenantContext.Set(tenant.Id, tenant.Identifier);
 
-            var job = new IntegrationJob
+            // A tenant with its own active per-tenant schedule is driven by that schedule — skip here
+            // so the global fan-out doesn't double-run it.
+            var ownSchedule = await _schedules.GetAsync(JobName, tenant.Id, cancellationToken);
+            if (ownSchedule is { IsActive: true })
             {
-                Id = Guid.NewGuid(),
-                TenantId = tenant.Id,
-                InterfaceName = InterfaceName,
-                Direction = IntegrationDirection.Inbound,
-                SourceSystem = SystemName.Concur,
-                TargetSystem = SystemName.Maconomy,
-                Status = IntegrationJobStatus.Created,
-                CreatedAtUtc = DateTime.UtcNow,
-            };
-            await _jobs.AddAsync(job, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+                continue;
+            }
 
-            _logger.LogInformation("Scheduled {Interface} job {JobId} for tenant {Tenant}", InterfaceName, job.Id, tenant.Identifier);
-            await _mediator.Send(CreateCommand(job.Id), cancellationToken);
+            await DispatchForTenantAsync(tenant, cancellationToken);
         }
+    }
+
+    private async Task DispatchForTenantAsync(Tenant tenant, CancellationToken cancellationToken)
+    {
+        _tenantContext.Set(tenant.Id, tenant.Identifier);
+
+        var job = new IntegrationJob
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenant.Id,
+            InterfaceName = InterfaceName,
+            Direction = IntegrationDirection.Inbound,
+            SourceSystem = SystemName.Concur,
+            TargetSystem = SystemName.Maconomy,
+            Status = IntegrationJobStatus.Created,
+            CreatedAtUtc = DateTime.UtcNow,
+        };
+        await _jobs.AddAsync(job, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Scheduled {Interface} job {JobId} for tenant {Tenant}", InterfaceName, job.Id, tenant.Identifier);
+        await _mediator.Send(CreateCommand(job.Id), cancellationToken);
     }
 }
 
@@ -83,10 +116,12 @@ public sealed class ExpenseImportJob : ConcurImportJobBase
 {
     public const string Name = "ExpenseImportJob";
 
-    public ExpenseImportJob(IMediator mediator, ITenantRepository tenants, ITenantContext tenantContext, IIntegrationJobRepository jobs, IUnitOfWork unitOfWork, ILogger<ExpenseImportJob> logger)
-        : base(mediator, tenants, tenantContext, jobs, unitOfWork, logger) { }
+    public ExpenseImportJob(IMediator mediator, ITenantRepository tenants, ITenantContext tenantContext, IIntegrationJobRepository jobs, IUnitOfWork unitOfWork, IJobScheduleConfigurationRepository schedules, ILogger<ExpenseImportJob> logger)
+        : base(mediator, tenants, tenantContext, jobs, unitOfWork, schedules, logger) { }
 
     protected override string InterfaceName => "ExpenseImport";
+
+    protected override string JobName => Name;
 
     protected override IRequest<IntegrationFlowResult> CreateCommand(Guid jobId) => new ImportConcurExpensesCommand(jobId);
 }
@@ -95,10 +130,12 @@ public sealed class InvoiceImportJob : ConcurImportJobBase
 {
     public const string Name = "InvoiceImportJob";
 
-    public InvoiceImportJob(IMediator mediator, ITenantRepository tenants, ITenantContext tenantContext, IIntegrationJobRepository jobs, IUnitOfWork unitOfWork, ILogger<InvoiceImportJob> logger)
-        : base(mediator, tenants, tenantContext, jobs, unitOfWork, logger) { }
+    public InvoiceImportJob(IMediator mediator, ITenantRepository tenants, ITenantContext tenantContext, IIntegrationJobRepository jobs, IUnitOfWork unitOfWork, IJobScheduleConfigurationRepository schedules, ILogger<InvoiceImportJob> logger)
+        : base(mediator, tenants, tenantContext, jobs, unitOfWork, schedules, logger) { }
 
     protected override string InterfaceName => "InvoiceImport";
+
+    protected override string JobName => Name;
 
     protected override IRequest<IntegrationFlowResult> CreateCommand(Guid jobId) => new ImportVendorInvoicesCommand(jobId);
 }
@@ -107,10 +144,12 @@ public sealed class VendorPaymentImportJob : ConcurImportJobBase
 {
     public const string Name = "VendorPaymentImportJob";
 
-    public VendorPaymentImportJob(IMediator mediator, ITenantRepository tenants, ITenantContext tenantContext, IIntegrationJobRepository jobs, IUnitOfWork unitOfWork, ILogger<VendorPaymentImportJob> logger)
-        : base(mediator, tenants, tenantContext, jobs, unitOfWork, logger) { }
+    public VendorPaymentImportJob(IMediator mediator, ITenantRepository tenants, ITenantContext tenantContext, IIntegrationJobRepository jobs, IUnitOfWork unitOfWork, IJobScheduleConfigurationRepository schedules, ILogger<VendorPaymentImportJob> logger)
+        : base(mediator, tenants, tenantContext, jobs, unitOfWork, schedules, logger) { }
 
     protected override string InterfaceName => "VendorPaymentImport";
+
+    protected override string JobName => Name;
 
     protected override IRequest<IntegrationFlowResult> CreateCommand(Guid jobId) => new ImportVendorPaymentsCommand(jobId);
 }

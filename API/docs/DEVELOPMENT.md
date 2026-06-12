@@ -102,10 +102,13 @@ Pipeline order (API): `CorrelationId → ExceptionHandling → RequestResponseLo
 
 ## 7. Security
 
-- Passwords: PBKDF2-SHA256, ≥100k iterations, per-user salt (`IPasswordHasher`). Never store or log plaintext.
-- JWTs are RS256, signed and validated with the same key (`ISigningKeyProvider`). Claims: `sub`, `email`, `activeTenantId`, `role`, `tokenVersion`, `tenantAssignments`.
+- Passwords: PBKDF2-SHA256, ≥100k iterations, per-user salt (`IPasswordHasher`). Never store or log plaintext. `GenerateTemporaryPassword()` returns a 16-char strong password (one of each character class).
+- JWTs are RS256, signed and validated with the same key (`ISigningKeyProvider`). Claims: `sub`, `email`, `activeTenantId`, `role`, `tokenVersion`, `tenantAssignments`, and permission claims.
 - Increment `tokenVersion` on password change, deactivation, email change, and logout to invalidate outstanding tokens.
 - Tenant credentials are encrypted at rest via `ICredentialEncryptionService`; GET responses return masked indicators only.
+- **Permission-based RBAC.** Gate endpoints with `[RequirePermission(Permissions.<Area><Action>)]` (keys live in `IntegrationHub.Shared.Security.Permissions`). Seeded system-role permission sets (`ForSuperAdmin`/`ForTenantAdmin`/`ForOperator`) are re-applied on every startup by `BootstrapSeeder`, so adding a key to the catalogue grants it to system roles without a data migration.
+- **Super-Admin-only actions** (delete a `Person`, assign/remove a user's tenant role) carry an explicit `User.IsSuperAdmin()` guard in the controller *in addition to* `[RequirePermission]`, so they stay Super-Admin-only even if a custom role is granted the permission. Tenant Admins do **not** hold `persons.delete` or `roles.assign`.
+- **Identity (WO-61):** a `User` holds auth/account data only; personal/contact/professional data lives on a linked `Person` master record (with `Address`/`Media`). Creating a user **promotes an existing `Person`** (`personId`) rather than creating identity inline.
 
 ---
 
@@ -129,7 +132,11 @@ Pipeline order (API): `CorrelationId → ExceptionHandling → RequestResponseLo
 
 ### Add an admin/query endpoint
 
-Add a controller action with the right policy, a FluentValidation request DTO, repository query methods (use `IgnoreQueryFilters` + explicit `tenantId` for Super-Admin cross-tenant reads), and `[ProducesResponseType]` annotations.
+Add a controller action gated by `[RequirePermission(Permissions.<key>)]`, a FluentValidation request DTO, repository query methods (use `IgnoreQueryFilters` + explicit `tenantId` for Super-Admin cross-tenant reads), and `[ProducesResponseType]` annotations. For an action that must be Super-Admin-only regardless of permissions, also guard with `if (!User.IsSuperAdmin()) return 403`.
+
+### Add a permission
+
+Add the key to `IntegrationHub.Shared.Security.Permissions` (`area.action`), include it in `All` and the relevant `For<Role>()` set(s). It is re-seeded onto system roles on the next startup. Mirror the key into the web side (`WEB/src/composables/usePermissions.js`) so the UI can gate controls.
 
 ---
 

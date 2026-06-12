@@ -1,30 +1,79 @@
-# Meldep (Meldep)
+# IntegrationHub — Web
 
-Meldep
+The admin SPA for IntegrationHub, built with **Quasar 2 / Vue 3**. It provides the UI for tenants,
+people, users, roles, mapping configuration, and integration monitoring (jobs, logs, retries)
+against the IntegrationHub REST API.
 
-## Install the dependencies
+## Getting started
+
 ```bash
-yarn
-# or
-npm install
+npm install        # install dependencies
+quasar dev         # run in dev (hot reload)
+npm run lint        # lint
+quasar build       # production build
 ```
 
-### Start the app in development mode (hot-code reloading, error reporting, etc.)
-```bash
-quasar dev
-```
+Configure the API base URL and other settings via `quasar.config.js` / environment (see
+[Configuring quasar.config.js](https://v2.quasar.dev/quasar-cli-vite/quasar-config-js)).
 
-### Lint the files
-```bash
-yarn lint
-# or
-npm run lint
-```
+---
 
-### Build the app for production
-```bash
-quasar build
-```
+## UI standards & shared building blocks
 
-### Customize the configuration
-See [Configuring quasar.config.js](https://v2.quasar.dev/quasar-cli-vite/quasar-config-js).
+These are enforced conventions — **reuse the shared pieces; do not hand-roll equivalents.** When a
+pattern repeats, extract a component/composable.
+
+### Inside pages (detail / view / manage / account)
+- **`components/common/AppDetailHeader.vue`** — carded header: breadcrumbs left, **Back** right,
+  optional `#actions` slot. No separate page-title row.
+- Full-width `q-card flat bordered` cards (no centered `max-width`); blue `text-subtitle1` headers.
+- Read-only rows: `q-item` as *icon + caption label + value*. Use `q-gutter-*` for flex children
+  like avatars — **never** `q-col-gutter-*` (grid-only; breaks avatar centering).
+
+### List pages (CRUD)
+- **`components/common/AppListHeader.vue`** — breadcrumbs, search, Filters button, Create, Back.
+- **`components/common/AppDataTable.vue`** + **`composables/useListTable.js`** — server pagination,
+  sortable columns, show/hide columns, **drag-to-reorder** columns (`useColumnOrder`), resizable
+  columns, multi-select (`selectable`) with a `#bulk-actions` slot, "Actions" column title,
+  **View action as a direct icon** outside the `⋮` menu, 20px action icons.
+- **Filters:** `components/common/AppColumnFilters.vue` + `composables/useColumnFilters.js`
+  (a control per column) inside the resizable `AppFilterDrawer`.
+
+### Forms & fields (define once, reuse)
+- Field components: `AppTextField`, `AppDateField`, `AppSelect`, `AppPhoneInput`,
+  `AppDatePicker` (all **dense** for consistent height; selects show multi-select as badges).
+- `AppPhoneInput` — country dial-code dropdown + as-you-type formatting (libphonenumber-js),
+  stores **E.164**. Country dropdowns pin **US (default) + India** on top (`composables/useCountries.js`).
+- **`AppFormDrawer`** (slide-in create/edit) and **`AppFilterDrawer`** are **drag-to-resize**
+  via `composables/useDrawerResize.js` (widths persist until logout).
+- Person form is defined once in `components/person/PersonFormFields.vue`, reused by the People
+  drawer and the quick-add `PersonFormDialog.vue`.
+
+### Tenancy & roles
+- **`composables/useTenantOptions.js`** — only super/platform admins (`tenants.write`) get a tenant
+  dropdown; everyone else is auto-scoped to their active tenant.
+- Deleting a person and changing a user's role are **Super-Admin-only** (the UI hides these via the
+  `persons.delete` / `roles.assign` permissions).
+
+### Visual conventions (`src/css/custom.scss`)
+- **Titles** 17px, theme blue (`var(--q-primary)`); **labels / buttons / breadcrumbs / badges** 15px.
+- Dates display app-wide as **`MM-DD-YYYY hh:mm AM/PM`** in the active tenant's time zone
+  (`composables/useDateFormat.js`).
+
+---
+
+## Project structure
+
+```
+src/
+├── components/common/   # shared UI: AppDataTable, AppFormDrawer, AppFilterDrawer, AppDetailHeader,
+│                        #            AppListHeader, AppSelect, AppTextField, AppPhoneInput, …
+├── components/person/   # PersonFormFields, PersonFormDialog
+├── composables/         # useListTable, useColumnFilters, useColumnOrder, useDrawerResize,
+│                        # useCountries, useTenantOptions, useDateFormat, usePermissions, …
+├── modules/             # feature modules: tenant, person, user, role, mapping, integration, account, auth
+│   └── <feature>/{routes.js, pages/}
+├── services/api.js      # API client (resource groups per controller)
+├── stores/              # Pinia: auth, tenant
+└── css/                 # quasar.variables.scss, app.scss, typography.scss, custom.scss
+```

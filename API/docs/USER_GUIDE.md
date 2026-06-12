@@ -36,6 +36,8 @@ login to triggering an import and checking whether it succeeded.
 | Term | What it means to you |
 |------|----------------------|
 | **Tenant** | An isolated workspace — usually one client/company. All data, credentials, and users belong to a tenant. You only ever see your own tenant's data. |
+| **Person** | The CRM master record for an individual (name, contact details, job info, optional tenant). A person exists on its own and is later **promoted to a user** (login account). |
+| **User** | A login account, always linked to one **Person**. Created by selecting an existing person and assigning a tenant + role. |
 | **Integration / Interface** | A type of import: **Expense import**, **Invoice import**, or **Vendor payment import** (Concur → Maconomy). |
 | **Job** | A single run of an import. Every time you trigger an import — or the scheduler does — a job is created and runs in the background. Each job has an ID and a status. |
 | **Credentials / Config** | The Concur and Maconomy connection details for a tenant. Stored encrypted; an import can only run once both are configured. |
@@ -50,13 +52,20 @@ login to triggering an import and checking whether it succeeded.
 
 ## 2. Who can do what (roles)
 
-There are three roles, in order of authority:
+Access is **permission-based** (RBAC). Each role carries a set of permission keys (e.g. `users.write`,
+`persons.delete`, `roles.assign`); endpoints check the relevant permission. The three seeded
+**system roles**, in order of authority:
 
 | Role | Can do |
 |------|--------|
-| **Super Admin** | Everything, across **all** tenants. Creates/archives tenants, manages any user, assigns roles, switches between tenants, views all jobs/logs. |
-| **Tenant Admin** | Everything **within their own tenant**: manage Concur/Maconomy credentials, manage mappings, create Operators and Tenant Admins, trigger imports, view their tenant's jobs/logs/retries. |
-| **Operator** | Trigger imports and view their tenant's jobs/logs/retries. Cannot manage credentials, mappings, or users. |
+| **Super Admin** | Everything, across **all** tenants. Creates/archives tenants, manages people and users, **deletes people**, **assigns/changes roles**, switches between tenants, views all jobs/logs. |
+| **Tenant Admin** | Everything **within their own tenant**: manage Concur/Maconomy credentials, manage mappings, manage people and create users, reset passwords, trigger imports, view their tenant's jobs/logs/retries. **Cannot delete a person or change a user's role** (Super-Admin-only). |
+| **Operator** | Trigger imports and view their tenant's jobs/logs/retries. Cannot manage credentials, mappings, people, or users. |
+
+> **Super-Admin-only actions:** deleting a **Person** and changing a user's **role assignment**
+> (assign/remove a tenant role) are reserved for Super Admins, even if a custom role was granted the
+> permission. Beyond the system roles, a Super Admin can define **custom roles** from the permission
+> catalogue and make them available per tenant.
 
 Each action below is labelled with the **minimum role required**. If you try something above your
 role you'll get `403 Forbidden`.
@@ -347,32 +356,53 @@ curl -X DELETE http://localhost:5080/api/admin/tenants/<id>/mappings/<mappingId>
 
 ---
 
-## 9. Managing users
+## 9. Managing people and users
 
-> **Role required: Tenant Admin or above** to create/list users. Some actions are Super-Admin only.
+> **Role required: Tenant Admin or above** to manage people and create/list users.
+> **Deleting a person** and **changing a user's role** are **Super-Admin-only**.
 
-### Create a user
+Creating a user is a **two-step flow**: first create the **Person** (the CRM master record), then
+**promote** that person to a login **User**.
 
-The system generates a **temporary password** and returns it **once** — share it securely with the
-new user, who must change it on first login.
+### Step 1 — Create a person
 
-- **Tenant Admins** can create `Operator` or `TenantAdmin` users in their own tenant (`tenantId` is
-  ignored and forced to your active tenant).
-- **Super Admins** can create any role; for tenant-scoped roles they must supply `tenantId`.
+```bash
+curl -X POST http://localhost:5080/api/admin/persons \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{
+        "firstName":"New","lastName":"User",
+        "primaryEmail":"newuser@example.com",
+        "mobileNumber":"+12025550123","countryCode":"+1",
+        "jobTitle":"Analyst","tenantId":"<tenant-guid>"
+      }'
+```
+
+- The **tenant** is chosen by Super Admins; for other roles it is auto-set to your active tenant.
+- List / search people: `GET /api/admin/persons?page=1&limit=20&search=...`.
+- A person who isn't yet a user can be **promoted** (step 2) or **deleted** (Super Admin only).
+
+### Step 2 — Create a user (promote a person)
+
+Supply the `personId`. The system generates a **temporary password** and returns it **once** —
+share it securely with the new user, who must change it on first login. The login email defaults to
+the person's primary email when omitted.
 
 ```bash
 curl -X POST http://localhost:5080/api/admin/users \
   -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
   -d '{
+        "personId":"<person-guid>",
         "email":"newuser@example.com",
-        "displayName":"New User",
-        "role":"Operator",
+        "roleId":"<role-guid>",
         "tenantId":"<tenant-guid>"
       }'
 # → response includes { "userId": "...", "temporaryPassword": "..." }
 ```
 
-Valid roles: `SuperAdmin`, `TenantAdmin`, `Operator`.
+- A person already linked to a user returns `409` (can't be promoted twice).
+- **Tenant Admins** create within their own tenant (`tenantId` forced to your active tenant);
+  **Super Admins** can target any tenant. `roleId` (RBAC) is preferred; the legacy `role` enum
+  (`SuperAdmin`/`TenantAdmin`/`Operator`) is still accepted.
 
 ### List / inspect users
 
@@ -381,7 +411,7 @@ curl "http://localhost:5080/api/admin/users?page=1&limit=20" -H "Authorization: 
 curl http://localhost:5080/api/admin/users/<userId> -H "Authorization: Bearer <token>"
 ```
 
-(Tenant Admins only see users in their own tenant.)
+(Tenant Admins only see users in their own tenant. The list shows each user's **tenant**.)
 
 ### Enable / disable a user
 
@@ -393,21 +423,33 @@ curl -X PUT http://localhost:5080/api/admin/users/<userId>/status \
   -d '{"isActive":false}'
 ```
 
-### Edit a user, assign/remove tenant roles *(Super Admin)*
+### Edit a user
 
 ```bash
-# Edit email / display name
 curl -X PUT http://localhost:5080/api/admin/users/<userId> \
   -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
   -d '{"displayName":"Updated Name","email":"updated@example.com"}'
+```
 
+### Assign / remove tenant roles *(Super Admin only)*
+
+```bash
 # Give a user a role in a tenant (re-assigning updates the existing role)
 curl -X POST http://localhost:5080/api/admin/users/<userId>/tenant-assignments \
   -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
-  -d '{"tenantId":"<tenant-guid>","role":"TenantAdmin"}'
+  -d '{"tenantId":"<tenant-guid>","roleId":"<role-guid>"}'
 
 # Remove a user's role in a tenant
 curl -X DELETE http://localhost:5080/api/admin/users/<userId>/tenant-assignments/<tenant-guid> \
+  -H "Authorization: Bearer <token>"
+```
+
+### Delete a person *(Super Admin only)*
+
+A person linked to a user can't be deleted — remove the user first.
+
+```bash
+curl -X DELETE http://localhost:5080/api/admin/persons/<person-guid> \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -616,8 +658,10 @@ Common HTTP status codes:
 | Create / list / archive tenants | `POST·GET /api/admin/tenants`, `.../status`, `.../archive` | Super Admin |
 | Set/test/clear Concur or Maconomy config | `PUT·POST·DELETE /api/admin/tenants/{id}/{concur\|maconomy}-config[/test]` | Tenant Admin |
 | Manage mappings | `GET·POST·PUT·DELETE /api/admin/tenants/{id}/mappings` | Tenant Admin |
-| Create / list / disable users | `POST·GET·PUT /api/admin/users[...]` | Tenant Admin |
-| Assign tenant roles | `POST·DELETE /api/admin/users/{id}/tenant-assignments` | Super Admin |
+| Create / list / search people | `POST·GET /api/admin/persons[...]` | Tenant Admin |
+| Delete a person | `DELETE /api/admin/persons/{id}` | **Super Admin** |
+| Create (promote a person) / list / disable users | `POST·GET·PUT /api/admin/users[...]` | Tenant Admin |
+| Assign / change tenant roles | `POST·DELETE /api/admin/users/{id}/tenant-assignments` | **Super Admin** |
 | Trigger an import | `POST /api/concur/{expenses\|invoices\|payments}/import` | Operator |
 | View jobs / logs / retries | `GET /api/admin/{jobs\|logs\|retries}` | Tenant Admin |
 | Manually retry a job | `POST /api/admin/retry/{jobId}` | Tenant Admin |

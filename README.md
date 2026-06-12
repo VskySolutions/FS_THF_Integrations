@@ -169,7 +169,9 @@ All responses use the standard envelope (`ApiResponse<T>` / `ApiErrorResponse`).
 | Area | Endpoints |
 |------|-----------|
 | **Auth** | `POST /api/auth/login` · `refresh` · `logout` · `logout-all` · `switch-tenant` · `GET /api/auth/profile` · `PUT /api/users/me/change-password` |
-| **Users** | `POST/GET /api/admin/users` · `GET/PUT/PUT…/status /api/admin/users/{id}` · `PUT /api/users/me` · tenant-assignment endpoints |
+| **People** | `POST/GET /api/admin/persons` · `GET/PUT/DELETE /api/admin/persons/{id}` · `GET /api/admin/persons/selectable` (the CRM master record; a person is promoted to a user) |
+| **Users** | `POST/GET /api/admin/users` (create **promotes an existing Person** via `personId`) · `GET/PUT/PUT…/status` · `reset-password` · tenant-assignment endpoints · `PUT /api/users/me` · `GET/PUT /api/users/me/profile` · `…/admin/users/{id}/profile` |
+| **Roles (RBAC)** | `POST/GET/PUT/DELETE /api/admin/roles` · `GET /api/admin/permissions` · tenant↔role availability endpoints |
 | **Tenants** | `POST/GET /api/admin/tenants` · lifecycle (`status`, `archive`) · `concur-config`/`maconomy-config` (store/clear/test) · mapping CRUD |
 | **Concur** | `POST /api/concur/expenses/import` · `invoices/import` · `payments/import` (202 + `jobId`) |
 | **Admin** | `GET /api/admin/jobs` · `logs` · `retries` · `health` · `POST /api/admin/retry/{jobId}` |
@@ -180,7 +182,8 @@ All responses use the standard envelope (`ApiResponse<T>` / `ApiErrorResponse`).
 ## Authentication & roles
 
 - **Two schemes:** platform JWT (RS256, primary) and API Key (`X-Api-Key`, machine-to-machine). A composite `AnyOf` scheme tries JWT first.
-- **Three roles (RBAC):** `SuperAdmin` > `TenantAdmin` > `Operator`, enforced by named policies `SuperAdminOnly`, `TenantAdminOrAbove`, `OperatorOrAbove`.
+- **Permission-based RBAC:** endpoints are gated by `[RequirePermission("area.action")]` against the permission keys carried on the caller's role. Seeded **system roles** — `SuperAdmin` (all permissions) > `TenantAdmin` > `Operator` — can be supplemented by custom roles. Permission catalogue (`IntegrationHub.Shared.Security.Permissions`): `tenants.*`, `persons.*`, `users.*`, `roles.*`, `mappings.*`, `jobs.*`, `logs.read`, `health.read`. System-role permission sets are re-seeded on every startup, so catalogue changes apply without a data migration.
+- **Super-Admin-only actions:** deleting a `Person` and changing a user's role assignment (assign/remove tenant roles) are restricted to **Super Admins** regardless of any granted permission — Tenant Admins no longer hold `persons.delete` or `roles.assign`.
 - **Tenant isolation:** the JWT carries `activeTenantId`; `TenantResolutionMiddleware` resolves and validates it, and all tenant-scoped queries filter by it automatically (EF global query filters). Background jobs carry the tenant id in their Hangfire payload.
 - **Session invalidation:** a `tokenVersion` on the user is incremented on password change, deactivation, email change, and logout; the JWT handler rejects stale tokens.
 
@@ -198,7 +201,7 @@ dotnet ef migrations add <Name> \
   --output-dir Persistence/Migrations
 ```
 
-- Core tables: `IntegrationJobs`, `IntegrationLogs`, `RetryQueue`, `MappingConfigurations`, `AuditTrail` (all tenant-scoped), plus `Tenants`, `TenantApiConfigurations`, `JobScheduleConfigurations`, `Users`, `UserTenantRoles`, `RefreshTokens`, and `DataProtectionKeys`. Hangfire and Serilog manage their own schemas.
+- Core tables: `IntegrationJobs`, `IntegrationLogs`, `RetryQueue`, `MappingConfigurations`, `AuditTrail` (all tenant-scoped), plus `Tenants`, `TenantApiConfigurations`, `JobScheduleConfigurations`, `Users`, `UserTenantRoles`, `RefreshTokens`, and `DataProtectionKeys`. Identity/CRM is normalized (WO-61) across `Persons`, `Addresses`, and `Media` — a `User` links to a `Person` master record; `Persons` carries an optional `TenantId`. RBAC adds `Roles` and `TenantRoles` (role↔tenant availability). Hangfire and Serilog manage their own schemas.
 
 ---
 

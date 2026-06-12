@@ -107,7 +107,7 @@ const columns = [
   { name: "description", label: "Description", field: "description", align: "left", default: true },
   { name: "isSystem", label: "Type", field: "isSystem", align: "left", sortable: true, default: true },
   { name: "permissionCount", label: "Permissions", field: "permissionCount", align: "left", sortable: true, default: true },
-  { name: "actions", label: "", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 
 const { rows, loading, totalRecords, search, pagination, load, onRequest } = useListTable({

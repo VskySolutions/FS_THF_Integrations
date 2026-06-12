@@ -3,6 +3,7 @@
     v-model="model"
     :label="label"
     outlined
+    :dense="dense"
     stack-label
     hide-bottom-space
     clearable
@@ -30,6 +31,8 @@ import { computed } from "vue";
 const props = defineProps({
   modelValue: { type: String, default: null },
   label: { type: String, default: "" },
+  // Dense by default so date fields match the dense selects/inputs (consistent field height).
+  dense: { type: Boolean, default: true },
   // Start/End range validation: only one of these is typically supplied.
   minDate: { type: String, default: null },
   maxDate: { type: String, default: null }

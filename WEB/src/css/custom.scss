@@ -317,3 +317,61 @@ input[type=number] {
 input[type=number] {
   appearance: none;
 }
+
+/* =========================================================================
+   Standard application typography
+   - Titles: 17px, theme blue (var(--q-primary)), semibold
+   - Labels, buttons, breadcrumbs, badges, body & table text: 15px
+   This file loads last, so these win over the legacy size overrides.
+   ========================================================================= */
+body {
+  font-size: 15px;
+}
+
+/* Title sizing (section/card/page headings). */
+.text-h4,
+.text-h5,
+.text-h6,
+.text-subtitle1 {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/* Title colour — theme blue. Limited to content titles (subtitle1 / page h5) so that
+   header titles placed on a primary background (drawers, dialogs) keep their own colour. */
+.text-h5,
+.text-subtitle1 {
+  color: var(--q-primary);
+}
+
+.text-subtitle2 {
+  font-size: 15px;
+}
+
+/* Buttons. */
+.q-btn {
+  font-size: 15px;
+}
+
+/* Breadcrumbs. */
+.q-breadcrumbs,
+.q-breadcrumbs__el {
+  font-size: 15px;
+}
+
+/* Badges & chips (status pills). */
+.q-badge,
+.q-chip {
+  font-size: 15px;
+}
+
+/* Data-table header text (body rows keep their original style). */
+.q-table thead th {
+  font-size: 15px;
+}
+
+/* List row action icons (View / ⋮ menu / inline actions) — standard 20px. */
+.app-data-table tbody .q-btn .q-icon {
+  font-size: 20px !important;
+}

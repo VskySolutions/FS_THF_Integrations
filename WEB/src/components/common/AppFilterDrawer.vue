@@ -15,7 +15,10 @@
       <q-btn flat dense no-caps color="grey-7" label="Clear all" @click="$emit('clear')" />
     </div>
 
-    <q-drawer v-model="open" side="right" overlay bordered :width="360" class="column no-wrap">
+    <q-drawer v-model="open" side="right" overlay bordered :width="width" class="app-filter-drawer column no-wrap">
+      <!-- Drag handle: resize the filter drawer (double-click resets); width persists until logout. -->
+      <div class="app-filter-drawer__resizer" @mousedown="startResize" @dblclick="resetWidth" />
+
       <div class="row items-center q-pa-md bg-primary text-white">
         <div class="text-h6">Filters</div>
         <q-space />
@@ -23,7 +26,8 @@
       </div>
       <q-separator />
       <q-scroll-area class="col">
-        <div class="q-pa-md">
+        <!-- Consistent, compact vertical spacing between all filter inputs, on every page. -->
+        <div class="q-pa-md column q-gutter-sm">
           <slot />
         </div>
       </q-scroll-area>
@@ -38,6 +42,7 @@
 
 <script setup>
 import { computed } from "vue";
+import { useDrawerResize, viewportWidth } from "composables/useDrawerResize";
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -51,4 +56,30 @@ const open = computed({
   get: () => props.modelValue,
   set: (val) => emit("update:modelValue", val)
 });
+
+// ---- Resizable width (compact by default; drag the left edge to widen) ----
+const { width, startResize, resetWidth } = useDrawerResize({
+  storageKey: "appFilterDrawerWidth",
+  getDefault: () => 360,
+  getMin: () => 300,
+  getMax: () => Math.round(viewportWidth() * 0.6)
+});
 </script>
+
+<style scoped>
+.app-filter-drawer__resizer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 6px;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+.app-filter-drawer__resizer:hover {
+  background: var(--q-primary);
+  opacity: 0.4;
+}
+</style>

@@ -233,6 +233,13 @@ public sealed class PersonsController : ControllerBase
     [RequirePermission(Permissions.PersonsDelete)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
+        // Deletion is restricted to Super Admins regardless of any granted permission.
+        if (!User.IsSuperAdmin())
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseFactory.Forbidden("Only a Super Admin can delete persons."));
+        }
+
         var person = await _persons.GetByIdAsync(id, cancellationToken);
         if (person is null)
         {

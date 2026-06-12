@@ -23,9 +23,9 @@
       <!-- Jobs -->
       <q-tab-panel name="jobs" class="q-pa-none">
         <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
-          <app-select v-model="filters.status" :options="statusOptions" label="Status" class="q-mb-md" />
-          <q-input v-model="filters.interfaceName" outlined clearable label="Interface name" class="q-mb-md" />
-          <app-date-picker v-model="filters.fromDate" label="From date" :max-date="filters.toDate" class="q-mb-md" />
+          <app-select v-model="filters.status" :options="statusOptions" label="Status" />
+          <q-input v-model="filters.interfaceName" outlined dense stack-label hide-bottom-space clearable label="Interface name" />
+          <app-date-picker v-model="filters.fromDate" label="From date" :max-date="filters.toDate" />
           <app-date-picker v-model="filters.toDate" label="To date" :min-date="filters.fromDate" />
         </app-filter-drawer>
 
@@ -38,28 +38,28 @@
           :loading="loadingJobs"
           :total-records="jobsTotal"
           :pagination="jobsPagination"
+          selectable
           @request="onJobsRequest"
           @refresh="loadJobs"
+          @update:selected="selectedJobs = $event"
         >
+          <template #bulk-actions="{ selected: sel }">
+            <q-btn flat dense no-caps color="primary" icon="o_replay" label="Retry" @click="bulkRetry(sel.filter((r) => isRetryable(r.status)))" />
+          </template>
+
           <template #body-cell-status="cell">
             <q-td :props="cell"><q-badge :color="statusColor(cell.value)">{{ cell.value }}</q-badge></q-td>
           </template>
           <template #body-cell-actions="cell">
             <q-td :props="cell" class="text-right">
-              <q-btn flat round dense icon="o_more_vert">
-                <q-menu auto-close>
-                  <q-list style="min-width: 160px;">
-                    <q-item clickable @click="openDetail(cell.row)">
-                      <q-item-section avatar><q-icon name="o_visibility" /></q-item-section>
-                      <q-item-section>View detail</q-item-section>
-                    </q-item>
-                    <q-item clickable :disable="!isRetryable(cell.row.status)" @click="retry(cell.row.jobId)">
-                      <q-item-section avatar><q-icon name="o_replay" /></q-item-section>
-                      <q-item-section>Retry</q-item-section>
-                      <q-tooltip v-if="!isRetryable(cell.row.status)">Job cannot be retried while it is in this state</q-tooltip>
-                    </q-item>
-                  </q-list>
-                </q-menu>
+              <q-btn flat round dense color="primary" icon="o_visibility" @click="openDetail(cell.row)">
+                <q-tooltip>View detail</q-tooltip>
+              </q-btn>
+              <q-btn
+                flat round dense color="primary" icon="o_replay"
+                :disable="!isRetryable(cell.row.status)" @click="retry(cell.row.jobId)"
+              >
+                <q-tooltip>{{ isRetryable(cell.row.status) ? "Retry" : "Job cannot be retried in this state" }}</q-tooltip>
               </q-btn>
             </q-td>
           </template>
@@ -77,9 +77,15 @@
           :loading="loadingRetries"
           :total-records="retriesTotal"
           :pagination="retriesPagination"
+          selectable
           @request="onRetriesRequest"
           @refresh="loadRetries"
+          @update:selected="selectedRetries = $event"
         >
+          <template #bulk-actions="{ selected: sel }">
+            <q-btn flat dense no-caps color="primary" icon="o_replay" label="Retry" @click="bulkRetry(sel)" />
+          </template>
+
           <template #no-data>
             <div class="full-width column flex-center q-pa-lg text-grey-6">
               <q-icon name="o_inbox" size="32px" class="q-mb-sm" />
@@ -173,7 +179,7 @@ const jobColumns = [
   { name: "createdBy", label: "Created By", field: "createdBy", align: "left", sortable: true },
   { name: "updatedBy", label: "Updated By", field: "updatedBy", align: "left", sortable: true },
   { name: "updatedOnUtc", label: "Updated", field: (r) => formatDate(r.updatedOnUtc), align: "left", sortable: true },
-  { name: "actions", label: "", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 const jobs = ref([]);
 const loadingJobs = ref(false);
@@ -216,16 +222,20 @@ const onJobsRequest = (pag) => { jobsPagination.value = { ...jobsPagination.valu
 
 // ---- Retry queue ----
 const retryColumns = [
-  { name: "jobId", label: "Job ID", field: "jobId", align: "left" },
-  { name: "retryCount", label: "Retry count", field: "retryCount", align: "left" },
-  { name: "nextRetryDate", label: "Next retry", field: (r) => formatDate(r.nextRetryDate), align: "left" },
-  { name: "status", label: "Status", field: "status", align: "left" },
-  { name: "actions", label: "", field: "actions", align: "right" }
+  { name: "jobId", label: "Job ID", field: "jobId", align: "left", sortable: true },
+  { name: "retryCount", label: "Retry count", field: "retryCount", align: "left", sortable: true },
+  { name: "nextRetryDate", label: "Next retry", field: (r) => formatDate(r.nextRetryDate), align: "left", sortable: true },
+  { name: "status", label: "Status", field: "status", align: "left", sortable: true },
+  { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 const retries = ref([]);
 const loadingRetries = ref(false);
 const retriesTotal = ref(0);
 const retriesPagination = ref({ page: 1, rowsPerPage: 20, sortBy: null, descending: false, rowsNumber: 0 });
+
+// Multi-select state for both tables.
+const selectedJobs = ref([]);
+const selectedRetries = ref([]);
 
 const loadRetries = async () => {
   loadingRetries.value = true;
@@ -247,6 +257,26 @@ const retry = async (jobId) => {
   try {
     await jobApi.retry(jobId);
     notify.success("Job re-enqueued.");
+    loadJobs();
+    loadRetries();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  }
+};
+
+const bulkRetry = async (sel) => {
+  const ids = (sel || []).map((r) => r.jobId);
+  if (!ids.length) {
+    notify.error("No retryable jobs selected.");
+    return;
+  }
+  const ok = await confirm({ title: "Retry jobs", message: `Re-enqueue ${ids.length} job(s) for processing?`, confirmLabel: "Retry" });
+  if (!ok) return;
+  try {
+    await Promise.all(ids.map((id) => jobApi.retry(id)));
+    notify.success("Jobs re-enqueued.");
+    selectedJobs.value = [];
+    selectedRetries.value = [];
     loadJobs();
     loadRetries();
   } catch (err) {

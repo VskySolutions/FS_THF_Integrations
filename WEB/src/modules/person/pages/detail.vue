@@ -1,25 +1,24 @@
 <template>
   <q-page padding>
-    <app-breadcrumbs
+    <app-detail-header
       :items="[
         { label: 'Home', icon: 'o_home', to: '/' },
         { label: 'Person', to: { name: 'persons' } },
         { label: form.displayName || fullName || 'Person' }
       ]"
-    />
+      :back-to="{ name: 'persons' }"
+    >
+      <template #actions>
+        <q-chip v-if="personCode" dense color="blue-grey-1" text-color="blue-grey-8">{{ personCode }}</q-chip>
+        <q-badge :color="isUser ? 'primary' : 'grey-4'" :text-color="isUser ? 'white' : 'grey-8'" class="q-mr-sm">
+          {{ isUser ? "Linked user account" : "Not a user" }}
+        </q-badge>
+      </template>
+    </app-detail-header>
 
     <div v-if="loading" class="row flex-center q-pa-xl"><q-spinner color="primary" size="40px" /></div>
 
-    <div v-else class="q-mx-auto" style="max-width: 900px;">
-      <div class="row items-center q-mb-md">
-        <div class="text-h5 text-weight-bold">{{ fullName }}</div>
-        <q-chip v-if="personCode" dense color="blue-grey-1" text-color="blue-grey-8" class="q-ml-sm">{{ personCode }}</q-chip>
-        <q-space />
-        <q-badge :color="isUser ? 'primary' : 'grey-4'" :text-color="isUser ? 'white' : 'grey-8'">
-          {{ isUser ? "Linked user account" : "Not a user" }}
-        </q-badge>
-      </div>
-
+    <div v-else>
       <q-banner v-if="!isUser && canCreateUser" dense class="bg-blue-1 text-blue-9 q-mb-md" rounded>
         <template #avatar><q-icon name="o_person_add" color="primary" /></template>
         This person has no login account yet.
@@ -87,7 +86,7 @@ import { personApi, getApiErrorMessage } from "services/api";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import { useNotify } from "composables/useNotify";
 import { useTenantOptions } from "composables/useTenantOptions";
-import AppBreadcrumbs from "components/common/AppBreadcrumbs.vue";
+import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import AppTextField from "components/common/AppTextField.vue";
 import AppDateField from "components/common/AppDateField.vue";

@@ -5,26 +5,39 @@
       :search="search"
       show-search
       search-placeholder="Search name, email or code"
+      show-filters
+      :filter-count="filterChips.length"
       :show-add="canWrite"
       add-label="Create Person"
       show-back
       @update:search="search = $event"
+      @filters="filterOpen = true"
       @add="openCreate"
       @back="$router.back()"
     />
+
+    <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
+      <app-column-filters v-model="filters" :columns="filterableColumns" />
+    </app-filter-drawer>
 
     <app-data-table
       page-key="persons"
       row-key="id"
       title="All persons"
-      :rows="rows"
+      :rows="filteredRows"
       :columns="columns"
       :loading="loading"
       :total-records="totalRecords"
       :pagination="pagination"
+      selectable
       @request="onRequest"
       @refresh="load"
+      @update:selected="selected = $event"
     >
+      <template v-if="canDelete" #bulk-actions="{ selected: sel }">
+        <q-btn flat dense no-caps color="negative" label="Delete" @click="bulkDelete(sel)" />
+      </template>
+
       <template #body-cell-isUser="cell">
         <q-td :props="cell">
           <q-badge :color="cell.value ? 'primary' : 'grey-4'" :text-color="cell.value ? 'white' : 'grey-8'">
@@ -41,13 +54,12 @@
 
       <template #body-cell-actions="cell">
         <q-td :props="cell" class="text-right">
-          <q-btn flat round dense icon="o_more_vert">
+          <q-btn flat round dense color="primary" icon="o_visibility" :to="{ name: 'person_detail', params: { id: cell.row.id } }">
+            <q-tooltip>View / Edit</q-tooltip>
+          </q-btn>
+          <q-btn v-if="canCreateUser || canDelete" flat round dense icon="o_more_vert">
             <q-menu auto-close>
               <q-list style="min-width: 190px;">
-                <q-item clickable :to="{ name: 'person_detail', params: { id: cell.row.id } }">
-                  <q-item-section avatar><q-icon name="o_visibility" /></q-item-section>
-                  <q-item-section>View / Edit</q-item-section>
-                </q-item>
                 <q-item
                   v-if="canCreateUser && !cell.row.isUser" clickable
                   @click="convertToUser(cell.row)"
@@ -88,11 +100,14 @@ import { usePermissions, Permissions } from "composables/usePermissions";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
+import { useColumnFilters } from "composables/useColumnFilters";
 import { useDateFormat } from "composables/useDateFormat";
 import { debounce } from "quasar";
 
 import AppDataTable from "components/common/AppDataTable.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
+import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
+import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
 import PersonFormFields from "components/person/PersonFormFields.vue";
 import { blankPersonForm } from "composables/personForm";
@@ -116,17 +131,20 @@ const columns = [
   { name: "primaryEmail", label: "Email", field: "primaryEmail", align: "left", sortable: true, default: true },
   { name: "mobileNumber", label: "Phone", field: "mobileNumber", align: "left" },
   { name: "jobTitle", label: "Job Title", field: "jobTitle", align: "left", sortable: true },
-  { name: "isUser", label: "Account", field: "isUser", align: "left", sortable: true, default: true },
-  { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true },
+  { name: "isUser", label: "Account", field: "isUser", align: "left", sortable: true, default: true, filterOptions: [{ label: "User", value: true }, { label: "Not a user", value: false }] },
+  { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true, filterOptions: [{ label: "Active", value: true }, { label: "Inactive", value: false }] },
   { name: "updatedOnUtc", label: "Updated", field: (r) => fmt.formatDateTime(r.updatedOnUtc), align: "left", sortable: true, default: true },
-  { name: "actions", label: "", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 
-const { rows, loading, totalRecords, search, pagination, load, onRequest } = useListTable({
+const { rows, loading, totalRecords, selected, search, filterOpen, pagination, load, onRequest } = useListTable({
   fetcher: ({ page, limit }) =>
     personApi.list({ page, limit, search: search.value || undefined }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),
   onError: (err) => notify.error(getApiErrorMessage(err))
 });
+
+// Per-column filters (client-side, over the loaded page).
+const { filters, filterableColumns, filteredRows, filterChips, removeFilter, clearFilters } = useColumnFilters(columns, rows);
 
 // Server-side search (debounced; resets to first page).
 const runSearch = debounce(() => { pagination.value.page = 1; load(); }, 300);
@@ -184,6 +202,31 @@ const removePerson = async (row) => {
   try {
     await personApi.remove(row.id);
     notify.success("Person deleted.");
+    load();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  }
+};
+
+const bulkDelete = async (sel) => {
+  // Persons linked to a user can't be deleted (the API rejects them) — skip and warn.
+  const deletable = sel.filter((r) => !r.isUser);
+  const skipped = sel.length - deletable.length;
+  if (!deletable.length) {
+    notify.error("Selected persons are linked to users and can't be deleted.");
+    return;
+  }
+  const ok = await confirm({
+    title: "Delete persons",
+    message: `Delete ${deletable.length} person(s)?${skipped ? ` (${skipped} linked to a user will be skipped.)` : ""} This cannot be undone.`,
+    confirmLabel: "Delete",
+    type: "danger"
+  });
+  if (!ok) return;
+  try {
+    await Promise.all(deletable.map((r) => personApi.remove(r.id)));
+    notify.success("Persons deleted.");
+    selected.value = [];
     load();
   } catch (err) {
     notify.error(getApiErrorMessage(err));

@@ -1,18 +1,17 @@
 <template>
   <q-page padding>
-    <app-breadcrumbs
+    <app-detail-header
       :items="[
         { label: 'Home', icon: 'o_home', to: '/' },
         { label: 'Users', to: { name: 'users' } },
         { label: user?.displayName || 'User' }
       ]"
+      :back-to="{ name: 'users' }"
     />
 
     <div v-if="loading" class="row flex-center q-pa-xl"><q-spinner color="primary" size="40px" /></div>
 
-    <div v-else-if="user" class="q-mx-auto" style="max-width: 900px;">
-      <div class="text-h5 text-weight-bold q-mb-md">{{ user.displayName }}</div>
-
+    <div v-else-if="user">
       <!-- Basic info -->
       <q-card flat bordered class="user-card q-mb-md">
         <q-card-section class="text-subtitle1 text-weight-medium">Basic information</q-card-section>
@@ -95,7 +94,7 @@ import { useTenantStore } from "stores/tenant";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
-import AppBreadcrumbs from "components/common/AppBreadcrumbs.vue";
+import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import TempPasswordDialog from "components/temp_password_dialog.vue";

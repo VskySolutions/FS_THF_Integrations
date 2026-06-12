@@ -17,7 +17,7 @@
     />
 
     <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
-      <app-select v-model="filters.status" :options="statusFilterOptions" label="Status" />
+      <app-column-filters v-model="filters" :columns="filterableColumns" />
     </app-filter-drawer>
 
     <app-data-table
@@ -47,13 +47,12 @@
 
       <template #body-cell-actions="cell">
         <q-td :props="cell" class="text-right">
-          <q-btn flat round dense icon="o_more_vert">
+          <q-btn flat round dense color="primary" icon="o_visibility" :to="{ name: 'user_detail', params: { id: cell.row.userId } }">
+            <q-tooltip>View / Manage</q-tooltip>
+          </q-btn>
+          <q-btn v-if="has(Permissions.UsersWrite) || has(Permissions.UsersResetPassword)" flat round dense icon="o_more_vert">
             <q-menu auto-close>
               <q-list style="min-width: 170px;">
-                <q-item clickable :to="{ name: 'user_detail', params: { id: cell.row.userId } }">
-                  <q-item-section avatar><q-icon name="o_visibility" /></q-item-section>
-                  <q-item-section>View / Manage</q-item-section>
-                </q-item>
                 <q-item v-if="has(Permissions.UsersWrite) && !cell.row.isActive" clickable @click="setStatus(cell.row, true)">
                   <q-item-section avatar><q-icon name="o_check_circle" /></q-item-section>
                   <q-item-section>Activate</q-item-section>
@@ -118,11 +117,13 @@ import { useTenantOptions } from "composables/useTenantOptions";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
+import { useColumnFilters } from "composables/useColumnFilters";
 import { useDateFormat } from "composables/useDateFormat";
 
 import AppDataTable from "components/common/AppDataTable.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
+import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import PersonFormDialog from "components/person/PersonFormDialog.vue";
@@ -144,32 +145,25 @@ const columns = [
   { name: "fullName", label: "Name", field: "fullName", align: "left", sortable: true, default: true },
   { name: "email", label: "Email", field: "email", align: "left", sortable: true, default: true },
   { name: "phoneNumber", label: "Phone", field: "phoneNumber", align: "left", sortable: true },
-  { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true, default: true },
+  { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true, default: true, filterOptions: [{ label: "Active", value: true }, { label: "Inactive", value: false }] },
   { name: "createdBy", label: "Created By", field: "createdBy", align: "left", sortable: true },
   { name: "updatedBy", label: "Updated By", field: "updatedBy", align: "left", sortable: true },
   { name: "createdOnUtc", label: "Created", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true },
   { name: "updatedOnUtc", label: "Updated", field: (r) => fmt.formatDateTime(r.updatedOnUtc), align: "left", sortable: true, default: true },
-  { name: "actions", label: "", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 
-const filters = reactive({ status: null });
 const { rows, loading, totalRecords, selected, search, filterOpen, pagination, load, onRequest } = useListTable({
   fetcher: ({ page, limit }) =>
     userApi.list({ page, limit }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),
   onError: (err) => notify.error(getApiErrorMessage(err))
 });
 
-const statusFilterOptions = ["Active", "Inactive"].map((s) => ({ label: s, value: s }));
-const filterChips = computed(() => (filters.status ? [{ key: "status", label: `Status: ${filters.status}` }] : []));
-const removeFilter = () => { filters.status = null; };
-const clearFilters = () => { filters.status = null; };
+// Per-column filters (drawer) + the quick name/email search box, combined.
+const { filters, filterableColumns, filteredRows: columnFilteredRows, filterChips, removeFilter, clearFilters } = useColumnFilters(columns, rows);
 
 const filteredRows = computed(() => {
-  let result = rows.value;
-  if (filters.status) {
-    const active = filters.status === "Active";
-    result = result.filter((r) => r.isActive === active);
-  }
+  let result = columnFilteredRows.value;
   const q = search.value.trim().toLowerCase();
   if (q) {
     result = result.filter((r) => r.fullName?.toLowerCase().includes(q) || r.email?.toLowerCase().includes(q));

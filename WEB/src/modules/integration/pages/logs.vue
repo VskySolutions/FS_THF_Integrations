@@ -10,9 +10,9 @@
     />
 
     <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
-      <q-input v-model="filters.jobId" outlined clearable label="Job ID" class="q-mb-md" />
-      <app-select v-model="filters.status" :options="statusOptions" label="Level" class="q-mb-md" />
-      <app-date-picker v-model="filters.fromDate" label="From date" :max-date="filters.toDate" class="q-mb-md" />
+      <q-input v-model="filters.jobId" outlined dense stack-label hide-bottom-space clearable label="Job ID" />
+      <app-select v-model="filters.status" :options="statusOptions" label="Level" />
+      <app-date-picker v-model="filters.fromDate" label="From date" :max-date="filters.toDate" />
       <app-date-picker v-model="filters.toDate" label="To date" :min-date="filters.fromDate" />
     </app-filter-drawer>
 
@@ -74,14 +74,14 @@ const levelColor = (level) => {
 };
 
 const columns = [
-  { name: "level", label: "Level", field: "level", align: "left", default: true },
-  { name: "jobId", label: "Job ID", field: "jobId", align: "left", default: true },
-  { name: "message", label: "Message", field: "message", align: "left", default: true },
+  { name: "level", label: "Level", field: "level", align: "left", sortable: true, default: true },
+  { name: "jobId", label: "Job ID", field: "jobId", align: "left", sortable: true, default: true },
+  { name: "message", label: "Message", field: "message", align: "left", sortable: true, default: true },
   { name: "createdDate", label: "Time", field: (r) => formatDate(r.createdDate), align: "left", sortable: true, default: true },
   { name: "createdBy", label: "Created By", field: "createdBy", align: "left", sortable: true },
   { name: "updatedBy", label: "Updated By", field: "updatedBy", align: "left", sortable: true },
   { name: "updatedOnUtc", label: "Updated", field: (r) => formatDate(r.updatedOnUtc), align: "left", sortable: true },
-  { name: "actions", label: "", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 
 const filters = reactive({ jobId: "", status: null, fromDate: null, toDate: null });

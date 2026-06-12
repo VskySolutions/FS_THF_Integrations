@@ -1,20 +1,19 @@
 <template>
   <q-page padding>
-    <app-breadcrumbs
+    <app-detail-header
       :items="[
         { label: 'Home', icon: 'o_home', to: '/' },
         { label: 'Tenants', to: { name: 'tenants' } },
         { label: tenant?.name || 'Tenant' }
       ]"
+      :back-to="{ name: 'tenants' }"
     />
 
     <div v-if="loading" class="row flex-center q-pa-xl">
       <q-spinner color="primary" size="40px" />
     </div>
 
-    <div v-else-if="tenant" class="q-mx-auto" style="max-width: 900px;">
-      <div class="text-h5 text-weight-bold q-mb-md">{{ tenant.name }}</div>
-
+    <div v-else-if="tenant">
       <!-- Basic info -->
       <q-card flat bordered class="tenant-card q-mb-md">
         <q-card-section class="text-subtitle1 text-weight-medium">Basic information</q-card-section>
@@ -79,7 +78,7 @@ import { useRoute, useRouter } from "vue-router";
 import { tenantApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
-import AppBreadcrumbs from "components/common/AppBreadcrumbs.vue";
+import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import CredentialConfigPanel from "components/credential_config_panel.vue";
 
 const route = useRoute();

@@ -400,6 +400,13 @@ public sealed class UsersController : ControllerBase
     [RequirePermission(Permissions.RolesAssign)]
     public async Task<IActionResult> AssignTenantRole(Guid id, [FromBody] AssignTenantRoleRequest request, CancellationToken cancellationToken)
     {
+        // Changing a user's role is restricted to Super Admins regardless of any granted permission.
+        if (!User.IsSuperAdmin())
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseFactory.Forbidden("Only a Super Admin can change role assignments."));
+        }
+
         var user = await _users.GetByIdAsync(id, cancellationToken);
         if (user is null)
         {
@@ -471,6 +478,13 @@ public sealed class UsersController : ControllerBase
     [RequirePermission(Permissions.RolesAssign)]
     public async Task<IActionResult> RemoveTenantRole(Guid id, Guid tenantId, CancellationToken cancellationToken)
     {
+        // Removing a user's role assignment is restricted to Super Admins.
+        if (!User.IsSuperAdmin())
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseFactory.Forbidden("Only a Super Admin can change role assignments."));
+        }
+
         // Tenant Admins are scoped to their active tenant (Super Admins are unrestricted).
         if (!User.IsSuperAdmin() && User.GetActiveTenantId() != tenantId)
         {

@@ -59,9 +59,11 @@ public static class Permissions
     public static IReadOnlyList<string> ForTenantAdmin() => new[]
     {
         TenantsRead, TenantsCredentials,
-        PersonsRead, PersonsWrite, PersonsDelete,
+        // Deleting persons and changing role assignments are Super-Admin-only (PersonsDelete /
+        // RolesAssign intentionally excluded here).
+        PersonsRead, PersonsWrite,
         UsersRead, UsersWrite, UsersResetPassword,
-        RolesRead, RolesAssign,
+        RolesRead,
         MappingsRead, MappingsWrite,
         JobsRead, JobsTrigger, JobsRetry, LogsRead,
         HealthRead

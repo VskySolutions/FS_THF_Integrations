@@ -43,10 +43,10 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, onBeforeUnmount } from "vue";
-import { LocalStorage } from "quasar";
+import { computed, watch } from "vue";
 import { useTenantStore } from "stores/tenant";
 import { usePreferences } from "composables/usePreferences";
+import { useDrawerResize, viewportWidth } from "composables/useDrawerResize";
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -63,49 +63,13 @@ const emit = defineEmits(["update:modelValue", "submit", "cancel", "restore-draf
 const tenantStore = useTenantStore();
 const prefs = props.draftKey ? usePreferences(props.draftKey) : null;
 
-// ---- Resizable width ----
-// The user can drag the left edge to resize. The width is shared across all drawers and stored
-// in LocalStorage, which auth.clearSession() wipes on logout — so it persists until the user logs out.
-// Sizes are viewport-relative: 50% by default, never below 30%.
-const WIDTH_KEY = "appDrawerWidth";
-const viewport = () => (typeof window !== "undefined" ? window.innerWidth : 1200);
-const minWidth = () => Math.round(viewport() * 0.30);
-const maxWidth = () => Math.round(viewport() * 0.95);
-const defaultWidth = () => Math.round(viewport() * 0.50);
-const clampWidth = (w) => Math.min(maxWidth(), Math.max(minWidth(), w));
-
-const storedWidth = Number(LocalStorage.getItem(WIDTH_KEY));
-const currentWidth = ref(clampWidth(storedWidth > 0 ? storedWidth : defaultWidth()));
-
-let startX = 0;
-let startWidth = 0;
-
-const onResizeMove = (e) => {
-  // Right-side drawer grows as the pointer moves left.
-  currentWidth.value = clampWidth(startWidth + (startX - e.clientX));
-};
-
-const stopResize = () => {
-  document.removeEventListener("mousemove", onResizeMove);
-  document.removeEventListener("mouseup", stopResize);
-  document.body.style.userSelect = "";
-  LocalStorage.set(WIDTH_KEY, currentWidth.value);
-};
-
-const startResize = (e) => {
-  startX = e.clientX;
-  startWidth = currentWidth.value;
-  document.body.style.userSelect = "none";
-  document.addEventListener("mousemove", onResizeMove);
-  document.addEventListener("mouseup", stopResize);
-};
-
-const resetWidth = () => {
-  currentWidth.value = defaultWidth();
-  LocalStorage.set(WIDTH_KEY, currentWidth.value);
-};
-
-onBeforeUnmount(stopResize);
+// ---- Resizable width (viewport-relative: 50% default, 30% min) ----
+const { width: currentWidth, startResize, resetWidth } = useDrawerResize({
+  storageKey: "appDrawerWidth",
+  getDefault: () => Math.round(viewportWidth() * 0.50),
+  getMin: () => Math.round(viewportWidth() * 0.30),
+  getMax: () => Math.round(viewportWidth() * 0.95)
+});
 
 const open = computed({
   get: () => props.modelValue,

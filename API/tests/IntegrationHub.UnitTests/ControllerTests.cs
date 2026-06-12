@@ -311,7 +311,19 @@ public class UsersControllerTests
     }
 
     [Fact]
-    public async Task Tenant_admin_assigns_role_within_active_tenant()
+    public async Task Tenant_admin_cannot_assign_role()
+    {
+        // Role changes are Super-Admin-only now.
+        var tenantId = Guid.NewGuid();
+        var controller = Create().WithUser(Guid.NewGuid(), Roles.TenantAdmin, tenantId);
+        var result = await controller.AssignTenantRole(Guid.NewGuid(),
+            new AssignTenantRoleRequest { TenantId = tenantId, Role = "Operator" }, default);
+
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
+    public async Task Super_admin_assigns_role()
     {
         var tenantId = Guid.NewGuid();
         var target = TestData.User();
@@ -320,7 +332,7 @@ public class UsersControllerTests
         _users.Setup(u => u.GetAssignmentAsync(target.Id, tenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(target.TenantRoles.First());
 
-        var controller = Create().WithUser(Guid.NewGuid(), Roles.TenantAdmin, tenantId);
+        var controller = Create().WithUser(Guid.NewGuid(), Roles.SuperAdmin);
         var result = await controller.AssignTenantRole(target.Id,
             new AssignTenantRoleRequest { TenantId = tenantId, Role = "Operator" }, default);
 
@@ -438,6 +450,16 @@ public class PersonsControllerTests
 
         result.Should().BeOfType<OkObjectResult>();
         _persons.Verify(p => p.Remove(It.IsAny<Person>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Tenant_admin_cannot_delete_person()
+    {
+        var controller = Create().WithUser(Guid.NewGuid(), Roles.TenantAdmin, Guid.NewGuid());
+        var result = await controller.Delete(Guid.NewGuid(), default);
+
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        _persons.Verify(p => p.Remove(It.IsAny<Person>()), Times.Never);
     }
 }
 

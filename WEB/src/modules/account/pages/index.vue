@@ -1,110 +1,166 @@
 <template>
   <q-page padding>
-    <div class="q-mx-auto" style="max-width: 960px;">
-      <div class="text-h5 text-weight-bold q-mb-md">Account</div>
+    <app-detail-header :items="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'My Account' }]">
+      <template #actions>
+        <q-chip v-if="profile" dense color="blue-1" text-color="primary" class="text-weight-medium">
+          {{ completion }}% complete
+        </q-chip>
+      </template>
+    </app-detail-header>
 
-      <!-- Profile summary -->
-      <q-card flat bordered>
-        <q-card-section class="row items-center q-col-gutter-md">
-          <q-avatar size="72px" color="primary" text-color="white">
-            <span class="text-h5">{{ initials }}</span>
-          </q-avatar>
-          <div class="col">
-            <div class="text-h6 text-capitalize">{{ fullName || user?.username || "—" }}</div>
-            <div class="text-body2 text-grey-7">{{ user?.email || user?.userEmail || "No email on file" }}</div>
-            <div class="q-mt-sm">
-              <q-chip
-                v-for="role in roles"
-                :key="role"
-                dense
-                square
-                color="primary"
-                text-color="white"
-                class="text-capitalize"
-              >
-                {{ role }}
-              </q-chip>
-            </div>
+    <!-- Profile summary -->
+    <q-card flat bordered class="account-card q-mb-md">
+      <q-card-section class="row items-center q-gutter-md">
+        <q-avatar size="92px" color="primary" text-color="white">
+          <img v-if="avatarUrl" :src="avatarUrl" alt="Profile">
+          <span v-else class="text-h4">{{ initials }}</span>
+        </q-avatar>
+
+        <div class="col" style="min-width: 0;">
+          <div class="row items-center q-gutter-sm">
+            <div class="text-h6 text-weight-bold">{{ displayName }}</div>
+            <q-badge v-if="profile?.isProfileVerified" color="positive" class="q-px-sm">
+              <q-icon name="o_verified" size="14px" class="q-mr-xs" /> Verified
+            </q-badge>
           </div>
-          <q-btn
-            unelevated
-            color="primary"
-            icon="o_edit"
-            label="Edit Profile"
-            no-caps
-            :to="{ name: 'profile' }"
-          />
-        </q-card-section>
-      </q-card>
-
-      <!-- Details -->
-      <div class="row q-col-gutter-md q-mt-sm">
-        <div class="col-12 col-sm-6">
-          <q-card flat bordered class="full-height">
-            <q-card-section>
-              <div class="text-subtitle2 text-grey-7 q-mb-sm">Site</div>
-              <q-list dense>
-                <q-item v-for="row in siteRows" :key="row.label" class="q-px-none">
-                  <q-item-section>
-                    <q-item-label caption>{{ row.label }}</q-item-label>
-                    <q-item-label>{{ row.value || "—" }}</q-item-label>
-                  </q-item-section>
-                </q-item>
-              </q-list>
-            </q-card-section>
-          </q-card>
+          <div class="text-body2 text-grey-7">{{ email }}</div>
+          <div v-if="jobLine" class="text-body2 text-grey-7">{{ jobLine }}</div>
+          <div v-if="roleChips.length" class="q-mt-sm row q-gutter-xs">
+            <q-chip
+              v-for="r in roleChips" :key="r" dense color="primary" text-color="white" class="text-capitalize"
+            >
+              {{ r }}
+            </q-chip>
+          </div>
         </div>
 
-        <div class="col-12 col-sm-6">
-          <q-card flat bordered class="full-height">
-            <q-card-section>
-              <div class="text-subtitle2 text-grey-7 q-mb-sm">Security</div>
-              <div class="text-body2 text-grey-8 q-mb-md">
-                Keep your account secure by updating your password regularly.
-              </div>
-              <q-btn
-                outline
-                color="primary"
-                icon="o_lock"
-                label="Change Password"
-                no-caps
-                :to="{ name: 'change_password' }"
-              />
-            </q-card-section>
-          </q-card>
+        <div class="column q-gutter-sm">
+          <q-btn unelevated no-caps color="primary" icon="o_edit" label="Edit Profile" :to="{ name: 'profile' }" />
+          <q-btn outline no-caps color="primary" icon="o_lock" label="Change Password" :to="{ name: 'change_password' }" />
         </div>
+      </q-card-section>
+
+      <q-separator />
+      <q-card-section class="q-py-sm row items-center q-gutter-md">
+        <div class="text-caption text-grey-7">Profile completion</div>
+        <q-linear-progress :value="completion / 100" rounded color="primary" track-color="blue-1" class="col" style="height: 8px;" />
+        <div class="text-caption text-weight-medium">{{ completion }}%</div>
+      </q-card-section>
+    </q-card>
+
+    <div class="row q-col-gutter-md">
+      <!-- Contact -->
+      <div class="col-12 col-md-6">
+        <q-card flat bordered class="account-card full-height">
+          <q-card-section class="row items-center q-gutter-sm">
+            <q-icon name="o_contact_mail" color="primary" size="sm" />
+            <div class="text-subtitle1 text-weight-medium">Contact</div>
+          </q-card-section>
+          <q-separator />
+          <q-list>
+            <q-item v-for="row in contactRows" :key="row.label">
+              <q-item-section avatar><q-icon :name="row.icon" color="grey-6" /></q-item-section>
+              <q-item-section>
+                <q-item-label caption>{{ row.label }}</q-item-label>
+                <q-item-label>{{ row.value || "—" }}</q-item-label>
+              </q-item-section>
+            </q-item>
+          </q-list>
+        </q-card>
+      </div>
+
+      <!-- Tenants & roles -->
+      <div class="col-12 col-md-6">
+        <q-card flat bordered class="account-card full-height">
+          <q-card-section class="row items-center q-gutter-sm">
+            <q-icon name="o_apartment" color="primary" size="sm" />
+            <div class="text-subtitle1 text-weight-medium">Tenants &amp; roles</div>
+            <q-space />
+            <q-badge color="blue-1" text-color="primary">{{ assignments.length }}</q-badge>
+          </q-card-section>
+          <q-separator />
+          <q-list separator>
+            <q-item v-for="t in assignments" :key="t.tenantId">
+              <q-item-section avatar>
+                <q-avatar size="34px" color="blue-1" text-color="primary">
+                  <q-icon name="o_business" size="18px" />
+                </q-avatar>
+              </q-item-section>
+              <q-item-section>
+                <q-item-label>{{ t.name || t.identifier }}</q-item-label>
+                <q-item-label caption>{{ t.identifier }}</q-item-label>
+              </q-item-section>
+              <q-item-section side>
+                <q-badge color="primary" class="text-capitalize">{{ t.role }}</q-badge>
+              </q-item-section>
+            </q-item>
+            <q-item v-if="!assignments.length">
+              <q-item-section class="text-grey-6">No tenant assignments.</q-item-section>
+            </q-item>
+          </q-list>
+        </q-card>
       </div>
     </div>
   </q-page>
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useAuthStore } from "stores/auth";
+import { useTenantStore } from "stores/tenant";
+import { profileApi, mediaApi, getApiErrorMessage } from "services/api";
+import { useNotify } from "composables/useNotify";
+import AppDetailHeader from "components/common/AppDetailHeader.vue";
 
 const authStore = useAuthStore();
-const user = authStore.user;
+const tenantStore = useTenantStore();
+const notify = useNotify();
 
-const fullName = computed(() =>
-  [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim());
+const profile = ref(null);
+
+const load = async () => {
+  try {
+    profile.value = await profileApi.getMine();
+  } catch (err) {
+    // Non-fatal: fall back to the basic auth-store info.
+    notify.error(getApiErrorMessage(err));
+  }
+};
+
+const displayName = computed(() =>
+  profile.value?.fullName || profile.value?.displayName || authStore.user?.displayName || authStore.user?.email || "—");
+const email = computed(() => profile.value?.primaryEmail || authStore.user?.email || "—");
+const completion = computed(() => profile.value?.profileCompletionPercentage || 0);
+
+const avatarUrl = computed(() =>
+  (profile.value?.profileMediaUrl ? mediaApi.absoluteUrl(profile.value.profileMediaUrl) : null));
 
 const initials = computed(() => {
-  const first = user?.firstName?.charAt(0) || user?.username?.charAt(0) || "";
-  const last = user?.lastName?.charAt(0) || "";
-  return (first + last).toUpperCase() || "U";
+  const parts = (displayName.value || "").trim().split(/\s+/);
+  const a = parts[0]?.charAt(0) || "";
+  const b = parts.length > 1 ? parts[parts.length - 1].charAt(0) : "";
+  return (a + b).toUpperCase() || "U";
 });
 
-const roles = computed(() => (Array.isArray(user?.roles) ? user.roles : []));
+const jobLine = computed(() =>
+  [profile.value?.jobTitle, profile.value?.organization].filter(Boolean).join(" · "));
 
-const siteRows = computed(() => [
-  { label: "Site Name", value: user?.siteName },
-  { label: "Time Zone", value: user?.siteTimeZone },
-  { label: "Username", value: user?.username }
+// Assignments come from the tenant store (kept in sync with the auth profile).
+const assignments = computed(() => tenantStore.assignments || authStore.user?.tenants || []);
+const roleChips = computed(() => [...new Set(assignments.value.map((t) => t.role).filter(Boolean))]);
+
+const contactRows = computed(() => [
+  { icon: "o_mail", label: "Email", value: email.value },
+  { icon: "o_smartphone", label: "Mobile", value: profile.value?.mobileNumber },
+  { icon: "o_work", label: "Job title", value: profile.value?.jobTitle },
+  { icon: "o_business", label: "Organization", value: profile.value?.organization }
 ]);
+
+onMounted(load);
 </script>
 
 <style scoped>
-.q-card {
+.account-card {
   border-radius: 16px;
 }
 </style>

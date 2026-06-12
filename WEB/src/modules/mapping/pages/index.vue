@@ -23,7 +23,7 @@
     </q-banner>
 
     <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
-      <app-select v-model="filters.sourceSystem" :options="systemOptions" label="Source system" class="q-mb-md" />
+      <app-select v-model="filters.sourceSystem" :options="systemOptions" label="Source system" />
       <app-select v-model="filters.destinationSystem" :options="systemOptions" label="Destination system" />
     </app-filter-drawer>
 
@@ -36,9 +36,17 @@
       :loading="loading"
       :total-records="total"
       :pagination="pagination"
+      selectable
       @request="onRequest"
       @refresh="load"
+      @update:selected="selected = $event"
     >
+      <template #bulk-actions="{ selected: sel }">
+        <q-btn flat dense no-caps color="positive" label="Activate" @click="bulkSetActive(sel, true)" />
+        <q-btn flat dense no-caps color="negative" label="Deactivate" @click="bulkSetActive(sel, false)" />
+        <q-btn flat dense no-caps color="negative" icon="o_delete" label="Delete" @click="bulkRemove(sel)" />
+      </template>
+
       <template #no-data>
         <div class="full-width column flex-center q-pa-lg text-grey-6">
           <q-icon name="o_swap_horiz" size="32px" class="q-mb-sm" />
@@ -214,18 +222,18 @@ const columns = [
   { name: "sourceSystem", label: "Source system", field: "sourceSystem", align: "left", sortable: true, default: true },
   { name: "destinationSystem", label: "Destination system", field: "destinationSystem", align: "left", sortable: true, default: true },
   { name: "sourceField", label: "Source field", field: "sourceField", align: "left", sortable: true, default: true },
-  { name: "destinationField", label: "Destination field", field: "destinationField", align: "left", default: true },
-  { name: "transformationRule", label: "Transformation", field: "transformationRule", align: "left" },
+  { name: "destinationField", label: "Destination field", field: "destinationField", align: "left", sortable: true, default: true },
+  { name: "transformationRule", label: "Transformation", field: "transformationRule", align: "left", sortable: true },
   { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true, default: true },
   { name: "createdBy", label: "Created By", field: "createdBy", align: "left", sortable: true },
   { name: "updatedBy", label: "Updated By", field: "updatedBy", align: "left", sortable: true },
   { name: "createdOnUtc", label: "Created", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true },
   { name: "updatedOnUtc", label: "Updated", field: (r) => fmt.formatDateTime(r.updatedOnUtc), align: "left", sortable: true, default: true },
-  { name: "actions", label: "", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 
 const filters = reactive({ sourceSystem: null, destinationSystem: null });
-const { rows, loading, totalRecords: total, search, filterOpen, pagination, load, onRequest } = useListTable({
+const { rows, loading, totalRecords: total, selected, search, filterOpen, pagination, load, onRequest } = useListTable({
   fetcher: ({ page, limit }) => {
     if (!tenantId.value) return Promise.resolve({ data: [], total: 0 });
     return mappingApi.list(tenantId.value, { page, limit }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords }));
@@ -350,6 +358,43 @@ const remove = async (row) => {
   try {
     await mappingApi.remove(tenantId.value, row.id);
     notify.success("Mapping deleted.");
+    load();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  }
+};
+
+const bulkSetActive = async (sel, active) => {
+  if (!sel.length) return;
+  const ok = await confirm({
+    title: active ? "Activate mappings" : "Deactivate mappings",
+    message: `${active ? "Activate" : "Deactivate"} ${sel.length} mapping(s)?`,
+    type: active ? "primary" : "danger"
+  });
+  if (!ok) return;
+  try {
+    await Promise.all(sel.map((r) => mappingApi.update(tenantId.value, r.id, { isActive: active })));
+    notify.success("Mappings updated.");
+    selected.value = [];
+    load();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  }
+};
+
+const bulkRemove = async (sel) => {
+  if (!sel.length) return;
+  const ok = await confirm({
+    title: "Delete mappings",
+    message: `Delete ${sel.length} mapping(s)? This cannot be undone.`,
+    confirmLabel: "Delete",
+    type: "danger"
+  });
+  if (!ok) return;
+  try {
+    await Promise.all(sel.map((r) => mappingApi.remove(tenantId.value, r.id)));
+    notify.success("Mappings deleted.");
+    selected.value = [];
     load();
   } catch (err) {
     notify.error(getApiErrorMessage(err));

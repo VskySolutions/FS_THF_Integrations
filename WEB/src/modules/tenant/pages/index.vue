@@ -21,7 +21,6 @@
         v-model="filters.status"
         :options="statusFilterOptions"
         label="Status"
-        class="q-mb-md"
       />
       <q-toggle v-model="filters.includeArchived" label="Show archived" />
     </app-filter-drawer>
@@ -53,13 +52,12 @@
 
       <template #body-cell-actions="cell">
         <q-td :props="cell" class="text-right">
+          <q-btn flat round dense color="primary" icon="o_visibility" :to="{ name: 'tenant_detail', params: { id: cell.row.tenantId } }">
+            <q-tooltip>View / Manage</q-tooltip>
+          </q-btn>
           <q-btn flat round dense icon="o_more_vert">
             <q-menu auto-close>
               <q-list style="min-width: 160px;">
-                <q-item clickable :to="{ name: 'tenant_detail', params: { id: cell.row.tenantId } }">
-                  <q-item-section avatar><q-icon name="o_visibility" /></q-item-section>
-                  <q-item-section>View / Manage</q-item-section>
-                </q-item>
                 <q-item clickable @click="openEdit(cell.row)">
                   <q-item-section avatar><q-icon name="o_edit" /></q-item-section>
                   <q-item-section>Edit</q-item-section>
@@ -161,7 +159,7 @@ const columns = [
   { name: "updatedBy", label: "Updated By", field: "updatedBy", align: "left", sortable: true },
   { name: "createdOnUtc", label: "Created", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true },
   { name: "updatedOnUtc", label: "Updated", field: (r) => fmt.formatDateTime(r.updatedOnUtc), align: "left", sortable: true, default: true },
-  { name: "actions", label: "", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 
 const filters = reactive({ status: null, includeArchived: false });

@@ -546,12 +546,52 @@ public `GET /health`, `/health/live`, and `/health/ready`.
 ## 12. Scheduled (automatic) imports
 
 In addition to triggering imports yourself, the platform runs them **automatically on a schedule**.
-A background worker runs recurring jobs (expense, invoice, vendor-payment imports) for all active
-tenants according to configured cron schedules, and automatically retries transient failures.
+A background **Worker** runs recurring jobs (expense, invoice, vendor-payment imports) according to
+cron schedules and automatically retries transient failures. Scheduled runs appear in the **same
+jobs/logs views** as manual runs ([section 11](#11-monitoring-jobs-logs-and-retries)), so that's
+where you confirm they ran.
 
-You don't need to do anything for scheduled runs — but they appear in the **same jobs/logs views**
-as manual runs ([section 11](#11-monitoring-jobs-logs-and-retries)), so that's where you confirm
-they ran. (Schedule configuration is an administrative/deployment task, not a per-user action.)
+### Managing schedules (Schedules tab)
+
+> **Role required: Tenant Admin or above** (`jobs.schedule`). Schedules are **per tenant**.
+
+Open **Integration Jobs → Schedules**. You'll see one row per import flow (Expense, Invoice, Vendor
+payment) with its cron expression and an **Active / Paused** badge. Click **Edit** to set the cadence:
+
+- **Cron expression** — standard 5-field cron, **evaluated in UTC**. The drawer lists common presets
+  (Daily 02:00, Weekdays 06:00, Every 15 minutes, Hourly, Monthly, …) you can click to fill in.
+- **Active** — toggle a schedule on/off.
+
+Changes take effect within **~1 minute** (no restart). Examples:
+
+| Cadence | Cron |
+|---|---|
+| Daily at 02:00 UTC | `0 2 * * *` |
+| Weekdays at 06:00 UTC | `0 6 * * 1-5` |
+| Every 15 minutes | `*/15 * * * *` |
+| Hourly | `0 * * * *` |
+| 1st of month, 00:00 UTC | `0 0 1 * *` |
+
+**Per-tenant behaviour**
+- A **Tenant Admin** manages only **their own tenant's** schedules; the imports run for that tenant only.
+- A **Super Admin** picks the tenant from a **Tenant dropdown** at the top of the Schedules tab, and
+  can manage any tenant's schedules.
+- A tenant's own active schedule **takes precedence** over any platform-wide default for that flow.
+
+Via the API:
+
+```bash
+# List the active tenant's import schedules (Super Admin may add ?tenantId=<guid>)
+curl "http://localhost:5080/api/admin/job-schedules" -H "Authorization: Bearer <token>"
+
+# Set the expense import to run daily at 02:00 UTC
+curl -X PUT "http://localhost:5080/api/admin/job-schedules/ExpenseImportJob" \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"cronExpression":"0 2 * * *","isActive":true}'
+```
+
+> Times are **UTC**. For a local time, convert first — e.g. 09:00 IST → `30 3 * * *`.
+> The Worker must be running for schedules to fire.
 
 **Automatic retries:** a job that fails for a transient reason is retried up to **4 times** on an
 increasing backoff (≈5, 15, 30, 60 minutes). After that it's marked failed for good. Jobs that fail
@@ -665,6 +705,7 @@ Common HTTP status codes:
 | Trigger an import | `POST /api/concur/{expenses\|invoices\|payments}/import` | Operator |
 | View jobs / logs / retries | `GET /api/admin/{jobs\|logs\|retries}` | Tenant Admin |
 | Manually retry a job | `POST /api/admin/retry/{jobId}` | Tenant Admin |
+| Manage import schedules | `GET·PUT /api/admin/job-schedules[...]` | Tenant Admin |
 | Check health | `GET /api/admin/health` · `GET /health` | Tenant Admin · anyone |
 
 ---

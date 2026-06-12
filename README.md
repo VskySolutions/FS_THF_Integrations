@@ -175,6 +175,7 @@ All responses use the standard envelope (`ApiResponse<T>` / `ApiErrorResponse`).
 | **Tenants** | `POST/GET /api/admin/tenants` · lifecycle (`status`, `archive`) · `concur-config`/`maconomy-config` (store/clear/test) · mapping CRUD |
 | **Concur** | `POST /api/concur/expenses/import` · `invoices/import` · `payments/import` (202 + `jobId`) |
 | **Admin** | `GET /api/admin/jobs` · `logs` · `retries` · `health` · `POST /api/admin/retry/{jobId}` |
+| **Schedules** | `GET/PUT /api/admin/job-schedules` — per-tenant import cron schedules (`jobs.schedule`) |
 | **Health** | `GET /health` · `/health/live` · `/health/ready` (anonymous) |
 
 ---

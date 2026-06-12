@@ -46,10 +46,18 @@ public sealed class RolesController : ControllerBase
 
     [HttpGet("/api/admin/roles")]
     [RequirePermission(Permissions.RolesWrite)]
-    public async Task<IActionResult> List(CancellationToken cancellationToken)
+    public async Task<IActionResult> List([FromQuery] string? search = null, CancellationToken cancellationToken = default)
     {
         var roles = await _roles.ListAsync(cancellationToken);
-        return Ok(ApiResponseFactory.Success(roles.Select(ToSummary), "Roles retrieved."));
+        IEnumerable<Role> result = roles;
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            result = result.Where(r =>
+                r.Name.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                (r.Description != null && r.Description.Contains(term, StringComparison.OrdinalIgnoreCase)));
+        }
+        return Ok(ApiResponseFactory.Success(result.Select(ToSummary), "Roles retrieved."));
     }
 
     [HttpGet("/api/admin/roles/{id:guid}")]

@@ -185,13 +185,20 @@ public sealed class UsersController : ControllerBase
 
     [HttpGet("/api/admin/users")]
     [RequirePermission(Permissions.UsersRead)]
-    public async Task<IActionResult> List([FromQuery] int page = 1, [FromQuery] int limit = 20, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> List(
+        [FromQuery] int page = 1,
+        [FromQuery] int limit = 20,
+        [FromQuery] string? search = null,
+        [FromQuery] Guid? tenantId = null,
+        [FromQuery] bool? isActive = null,
+        CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
         limit = Math.Clamp(limit, 1, 100);
 
-        Guid? tenantFilter = User.IsSuperAdmin() ? null : User.GetActiveTenantId();
-        var (items, total) = await _users.ListAsync(tenantFilter, page, limit, cancellationToken);
+        // Super Admins may filter by any tenant; everyone else is scoped to their active tenant.
+        Guid? tenantFilter = User.IsSuperAdmin() ? tenantId : User.GetActiveTenantId();
+        var (items, total) = await _users.ListAsync(tenantFilter, search, isActive, page, limit, cancellationToken);
 
         var names = await ResolveActorNamesAsync(items.SelectMany(u => new[] { u.CreatedById, u.UpdatedById }), cancellationToken);
 

@@ -31,7 +31,7 @@
       page-key="mappings"
       row-key="id"
       title="Field mappings"
-      :rows="filteredRows"
+      :rows="rows"
       :columns="columns"
       :loading="loading"
       :total-records="total"
@@ -135,7 +135,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from "vue";
+import { ref, reactive, computed, watch } from "vue";
+import { debounce } from "quasar";
 import { mappingApi, getApiErrorMessage } from "services/api";
 import { useTenantStore } from "stores/tenant";
 import { useNotify } from "composables/useNotify";
@@ -236,10 +237,20 @@ const filters = reactive({ sourceSystem: null, destinationSystem: null });
 const { rows, loading, totalRecords: total, selected, search, filterOpen, pagination, load, onRequest } = useListTable({
   fetcher: ({ page, limit }) => {
     if (!tenantId.value) return Promise.resolve({ data: [], total: 0 });
-    return mappingApi.list(tenantId.value, { page, limit }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords }));
+    return mappingApi.list(tenantId.value, {
+      page,
+      limit,
+      sourceSystem: filters.sourceSystem || undefined,
+      destinationSystem: filters.destinationSystem || undefined,
+      search: search.value || undefined
+    }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords }));
   },
   onError: (err) => notify.error(getApiErrorMessage(err))
 });
+
+// Server-side filtering: reload (debounced, first page) on any search/filter change.
+const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);
+watch([search, filters], reload, { deep: true });
 
 const filterChips = computed(() => {
   const chips = [];
@@ -249,18 +260,6 @@ const filterChips = computed(() => {
 });
 const removeFilter = (key) => { filters[key] = null; };
 const clearFilters = () => { filters.sourceSystem = null; filters.destinationSystem = null; };
-
-const filteredRows = computed(() => {
-  let result = rows.value;
-  if (filters.sourceSystem) result = result.filter((r) => r.sourceSystem === filters.sourceSystem);
-  if (filters.destinationSystem) result = result.filter((r) => r.destinationSystem === filters.destinationSystem);
-  const q = search.value.trim().toLowerCase();
-  if (q) {
-    result = result.filter((r) =>
-      r.sourceField?.toLowerCase().includes(q) || r.destinationField?.toLowerCase().includes(q));
-  }
-  return result;
-});
 
 // Create / edit
 const formOpen = ref(false);

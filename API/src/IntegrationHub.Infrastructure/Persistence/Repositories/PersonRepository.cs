@@ -30,7 +30,7 @@ internal sealed class PersonRepository : IPersonRepository
         => _dbContext.Persons.AnyAsync(p => p.PersonCode == personCode, cancellationToken);
 
     public async Task<(IReadOnlyList<Person> Items, int Total)> ListAsync(
-        string? search, int page, int limit, CancellationToken cancellationToken = default)
+        string? search, Guid? tenantId, bool? isUser, bool? isActive, int page, int limit, CancellationToken cancellationToken = default)
     {
         var query = _dbContext.Persons.Include(p => p.Tenant).AsQueryable();
 
@@ -44,6 +44,19 @@ internal sealed class PersonRepository : IPersonRepository
                 p.PersonCode.Contains(term) ||
                 (p.PrimaryEmail != null && p.PrimaryEmail.Contains(term)) ||
                 (p.MobileNumber != null && p.MobileNumber.Contains(term)));
+        }
+
+        if (tenantId is { } tid)
+        {
+            query = query.Where(p => p.TenantId == tid);
+        }
+        if (isUser is { } user)
+        {
+            query = user ? query.Where(p => p.UserId != null) : query.Where(p => p.UserId == null);
+        }
+        if (isActive is { } active)
+        {
+            query = query.Where(p => p.IsActive == active);
         }
 
         var total = await query.CountAsync(cancellationToken);

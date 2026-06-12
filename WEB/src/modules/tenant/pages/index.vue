@@ -29,7 +29,7 @@
       page-key="tenants"
       row-key="tenantId"
       title="All tenants"
-      :rows="filteredRows"
+      :rows="rows"
       :columns="columns"
       :loading="loading"
       :total-records="totalRecords"
@@ -133,7 +133,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from "vue";
+import { ref, reactive, computed, watch } from "vue";
+import { debounce } from "quasar";
 import { tenantApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
@@ -165,10 +166,14 @@ const columns = [
 const filters = reactive({ status: null, includeArchived: false });
 const { rows, loading, totalRecords, selected, search, filterOpen, pagination, load, onRequest } = useListTable({
   fetcher: ({ page, limit }) =>
-    tenantApi.list({ page, limit, includeArchived: filters.includeArchived })
+    tenantApi.list({ page, limit, includeArchived: filters.includeArchived, status: filters.status || undefined, search: search.value || undefined })
       .then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),
   onError: (err) => notify.error(getApiErrorMessage(err))
 });
+
+// Server-side filtering: reload (debounced, first page) whenever the search box or a filter changes.
+const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);
+watch([search, filters], reload, { deep: true });
 
 const statusColor = (status) => ({ Active: "positive", Inactive: "grey", Archived: "blue-grey" }[status] || "grey");
 const statusFilterOptions = ["Active", "Inactive", "Archived"].map((s) => ({ label: s, value: s }));
@@ -180,28 +185,13 @@ const filterChips = computed(() => {
   return chips;
 });
 
-const filteredRows = computed(() => {
-  let result = rows.value;
-  if (filters.status) {
-    result = result.filter((r) => r.status === filters.status);
-  }
-  const q = search.value.trim().toLowerCase();
-  if (q) {
-    result = result.filter((r) =>
-      r.name?.toLowerCase().includes(q) || r.identifier?.toLowerCase().includes(q));
-  }
-  return result;
-});
-
 const removeFilter = (key) => {
   if (key === "status") filters.status = null;
   if (key === "includeArchived") filters.includeArchived = false;
-  load();
 };
 const clearFilters = () => {
   filters.status = null;
   filters.includeArchived = false;
-  load();
 };
 
 // ---- Create / Edit ----

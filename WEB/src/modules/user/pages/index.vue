@@ -24,7 +24,7 @@
       page-key="users"
       row-key="userId"
       title="All users"
-      :rows="filteredRows"
+      :rows="rows"
       :columns="columns"
       :loading="loading"
       :total-records="totalRecords"
@@ -109,8 +109,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, computed, watch, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { debounce } from "quasar";
 import { userApi, personApi, roleApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import { useTenantOptions } from "composables/useTenantOptions";
@@ -140,36 +141,48 @@ const { canChooseTenant, activeTenantId, tenantOptions, loadingTenants, loadTena
 const canCreate = computed(() => has(Permissions.UsersWrite));
 const fmt = useDateFormat();
 
-const columns = [
-  { name: "tenantName", label: "Tenant", field: "tenantName", align: "left", sortable: true, default: true },
-  { name: "fullName", label: "Name", field: "fullName", align: "left", sortable: true, default: true },
-  { name: "email", label: "Email", field: "email", align: "left", sortable: true, default: true },
-  { name: "phoneNumber", label: "Phone", field: "phoneNumber", align: "left", sortable: true },
+// Tenant dropdown filter for platform/super admins (option value is the tenant id, sent to the API).
+const tenantFilterOptions = computed(() =>
+  (canChooseTenant.value && tenantOptions.value.length ? tenantOptions.value : null));
+
+// Filterable columns are server-side; text/computed/audit/date columns are covered by the search box.
+const columns = computed(() => [
+  {
+    name: "tenantName",
+    label: "Tenant",
+    field: "tenantName",
+    align: "left",
+    sortable: true,
+    default: true,
+    ...(tenantFilterOptions.value ? { filterOptions: tenantFilterOptions.value } : { filterable: false })
+  },
+  { name: "fullName", label: "Name", field: "fullName", align: "left", sortable: true, default: true, filterable: false },
+  { name: "email", label: "Email", field: "email", align: "left", sortable: true, default: true, filterable: false },
+  { name: "phoneNumber", label: "Phone", field: "phoneNumber", align: "left", sortable: true, filterable: false },
   { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true, default: true, filterOptions: [{ label: "Active", value: true }, { label: "Inactive", value: false }] },
-  { name: "createdBy", label: "Created By", field: "createdBy", align: "left", sortable: true },
-  { name: "updatedBy", label: "Updated By", field: "updatedBy", align: "left", sortable: true },
-  { name: "createdOnUtc", label: "Created", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true },
-  { name: "updatedOnUtc", label: "Updated", field: (r) => fmt.formatDateTime(r.updatedOnUtc), align: "left", sortable: true, default: true },
+  { name: "createdBy", label: "Created By", field: "createdBy", align: "left", sortable: true, filterable: false },
+  { name: "updatedBy", label: "Updated By", field: "updatedBy", align: "left", sortable: true, filterable: false },
+  { name: "createdOnUtc", label: "Created", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true, filterable: false },
+  { name: "updatedOnUtc", label: "Updated", field: (r) => fmt.formatDateTime(r.updatedOnUtc), align: "left", sortable: true, default: true, filterable: false },
   { name: "actions", label: "Actions", field: "actions", align: "right" }
-];
+]);
 
 const { rows, loading, totalRecords, selected, search, filterOpen, pagination, load, onRequest } = useListTable({
   fetcher: ({ page, limit }) =>
-    userApi.list({ page, limit }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),
+    userApi.list({
+      page,
+      limit,
+      search: search.value || undefined,
+      tenantId: filters.tenantName || undefined,
+      isActive: typeof filters.isActive === "boolean" ? filters.isActive : undefined
+    }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),
   onError: (err) => notify.error(getApiErrorMessage(err))
 });
 
-// Per-column filters (drawer) + the quick name/email search box, combined.
-const { filters, filterableColumns, filteredRows: columnFilteredRows, filterChips, removeFilter, clearFilters } = useColumnFilters(columns, rows);
-
-const filteredRows = computed(() => {
-  let result = columnFilteredRows.value;
-  const q = search.value.trim().toLowerCase();
-  if (q) {
-    result = result.filter((r) => r.fullName?.toLowerCase().includes(q) || r.email?.toLowerCase().includes(q));
-  }
-  return result;
-});
+// Server-side per-column filters + search box: reload (debounced, first page) whenever they change.
+const { filters, filterableColumns, filterChips, removeFilter, clearFilters } = useColumnFilters(columns, rows, { server: true });
+const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);
+watch([search, filters], reload, { deep: true });
 
 // ---- Create ----
 const formOpen = ref(false);
@@ -297,6 +310,8 @@ const openCreate = async (presetPersonId = null) => {
 
 // "Convert to User" from the People list deep-links here with ?personId=...
 onMounted(() => {
+  // Load tenant options so the Tenant dropdown filter is available to platform/super admins.
+  if (canChooseTenant.value) loadTenants();
   const presetPersonId = route.query.personId;
   if (presetPersonId && canCreate.value) {
     openCreate(presetPersonId);

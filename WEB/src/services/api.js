@@ -115,7 +115,7 @@ export const userApi = {
 };
 
 export const roleApi = {
-  list: () => api.get("/api/admin/roles").then(unwrap),
+  list: (params) => api.get("/api/admin/roles", { params }).then(unwrap),
   get: (id) => api.get(`/api/admin/roles/${id}`).then(unwrap),
   create: (payload) => api.post("/api/admin/roles", payload).then(unwrap),
   update: (id, payload) => api.put(`/api/admin/roles/${id}`, payload).then(unwrap),

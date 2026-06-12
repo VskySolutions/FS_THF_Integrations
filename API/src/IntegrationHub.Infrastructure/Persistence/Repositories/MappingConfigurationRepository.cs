@@ -39,9 +39,26 @@ internal sealed class MappingConfigurationRepository : IMappingConfigurationRepo
             .ToListAsync(cancellationToken);
 
     public async Task<(IReadOnlyList<MappingConfiguration> Items, int Total)> ListByTenantAsync(
-        Guid tenantId, int page, int limit, CancellationToken cancellationToken = default)
+        Guid tenantId, SystemName? sourceSystem, SystemName? destinationSystem, string? search, int page, int limit, CancellationToken cancellationToken = default)
     {
         var query = _dbContext.MappingConfigurations.IgnoreQueryFilters().Where(m => m.TenantId == tenantId);
+
+        if (sourceSystem is { } ss)
+        {
+            query = query.Where(m => m.SourceSystem == ss);
+        }
+        if (destinationSystem is { } ds)
+        {
+            query = query.Where(m => m.TargetSystem == ds);
+        }
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(m =>
+                m.SourceField.Contains(term) ||
+                (m.DestinationField != null && m.DestinationField.Contains(term)));
+        }
+
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(m => m.UpdatedOnUtc)

@@ -1,16 +1,20 @@
 import { reactive, computed } from "vue";
 
-// Generic per-column filtering for AppDataTable lists. Builds one reactive filter value per
-// filterable column and a `filteredRows` view (client-side, over the currently loaded page).
+// Per-column filtering for AppDataTable lists. Builds one reactive filter value per filterable
+// column, the active-filter chips, and (for client mode) a `filteredRows` view.
+//
+// Filtering is SERVER-SIDE by default: the page maps `filters` to API params and reloads, so
+// pagination/totals reflect the whole filtered set. Pass `{ server: false }` for the legacy
+// client-side filtering of the loaded page.
 //
 // Column opt-outs / hints (on the column definition):
-//   filterable: false            → no filter control for this column
-//   filterOptions: [{label,value}] → renders a select (matched by equality) instead of a text box
-// Anything else gets a case-insensitive "contains" text filter over the column's displayed value.
+//   filterable: false            → no filter control for this column (e.g. computed/audit/date columns)
+//   filterOptions: [{label,value}] → renders a select instead of a text box
 //
 //   const { filters, filterableColumns, filteredRows, filterChips, removeFilter, clearFilters }
-//     = useColumnFilters(columns, rows);
-export function useColumnFilters (columnsInput, rows) {
+//     = useColumnFilters(columns, rows, { server: true });
+export function useColumnFilters (columnsInput, rows, options = {}) {
+  const server = options.server !== false; // default: server-side
   const colList = () => (Array.isArray(columnsInput) ? columnsInput : (columnsInput.value || []));
 
   const filterableColumns = computed(() =>
@@ -26,13 +30,21 @@ export function useColumnFilters (columnsInput, rows) {
 
   const hasValue = (v) => v !== null && v !== undefined && v !== "";
 
+  // Client-side filtering — only used when server === false (server mode filters in the API).
   const filteredRows = computed(() => {
-    let result = rows.value || [];
+    if (server) return (rows && rows.value) || [];
+    let result = (rows && rows.value) || [];
     for (const col of filterableColumns.value) {
       const fv = filters[col.name];
       if (!hasValue(fv)) continue;
       if (col.filterOptions) {
-        result = result.filter((r) => valueOf(col, r) === fv);
+        // `filterMatch: "includes"` matches when the (possibly multi-valued) cell contains the
+        // selected option — e.g. a user assigned to several tenants. Default is exact equality.
+        if (col.filterMatch === "includes") {
+          result = result.filter((r) => { const v = valueOf(col, r); return v != null && String(v).includes(fv); });
+        } else {
+          result = result.filter((r) => valueOf(col, r) === fv);
+        }
       } else {
         const needle = String(fv).toLowerCase();
         result = result.filter((r) => {

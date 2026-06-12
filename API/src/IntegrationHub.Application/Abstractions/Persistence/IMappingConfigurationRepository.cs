@@ -25,9 +25,12 @@ public interface IMappingConfigurationRepository
 
     Task<IReadOnlyList<MappingConfiguration>> ListAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Paginated mappings for a specific tenant (admin management; ignores the ambient tenant filter).</summary>
+    /// <summary>
+    /// Paginated mappings for a specific tenant (admin management; ignores the ambient tenant filter),
+    /// with optional server-side filters by source/destination system and a free-text field search.
+    /// </summary>
     Task<(IReadOnlyList<MappingConfiguration> Items, int Total)> ListByTenantAsync(
-        Guid tenantId, int page, int limit, CancellationToken cancellationToken = default);
+        Guid tenantId, SystemName? sourceSystem, SystemName? destinationSystem, string? search, int page, int limit, CancellationToken cancellationToken = default);
 
     /// <summary>Fetches a mapping by id within a specific tenant (admin management).</summary>
     Task<MappingConfiguration?> GetByIdForTenantAsync(Guid id, Guid tenantId, CancellationToken cancellationToken = default);

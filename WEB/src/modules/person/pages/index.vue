@@ -24,7 +24,7 @@
       page-key="persons"
       row-key="id"
       title="All persons"
-      :rows="filteredRows"
+      :rows="rows"
       :columns="columns"
       :loading="loading"
       :total-records="totalRecords"
@@ -93,7 +93,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch } from "vue";
+import { ref, reactive, computed, watch, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { personApi, getApiErrorMessage } from "services/api";
 import { usePermissions, Permissions } from "composables/usePermissions";
@@ -124,31 +124,52 @@ const canWrite = computed(() => has(Permissions.PersonsWrite));
 const canDelete = computed(() => has(Permissions.PersonsDelete));
 const canCreateUser = computed(() => has(Permissions.UsersWrite));
 
-const columns = [
-  { name: "tenantName", label: "Tenant", field: "tenantName", align: "left", sortable: true, default: true },
-  { name: "personCode", label: "Code", field: "personCode", align: "left", sortable: true },
-  { name: "fullName", label: "Name", field: "fullName", align: "left", sortable: true, default: true },
-  { name: "primaryEmail", label: "Email", field: "primaryEmail", align: "left", sortable: true, default: true },
-  { name: "mobileNumber", label: "Phone", field: "mobileNumber", align: "left" },
-  { name: "jobTitle", label: "Job Title", field: "jobTitle", align: "left", sortable: true },
+// Tenant dropdown filter for platform/super admins (option value is the tenant id, sent to the API).
+const tenantFilterOptions = computed(() =>
+  (canChooseTenant.value && tenantOptions.value.length ? tenantOptions.value : null));
+
+// Filterable columns are server-side; text/date columns are covered by the search box.
+const columns = computed(() => [
+  {
+    name: "tenantName",
+    label: "Tenant",
+    field: "tenantName",
+    align: "left",
+    sortable: true,
+    default: true,
+    ...(tenantFilterOptions.value ? { filterOptions: tenantFilterOptions.value } : { filterable: false })
+  },
+  { name: "personCode", label: "Code", field: "personCode", align: "left", sortable: true, filterable: false },
+  { name: "fullName", label: "Name", field: "fullName", align: "left", sortable: true, default: true, filterable: false },
+  { name: "primaryEmail", label: "Email", field: "primaryEmail", align: "left", sortable: true, default: true, filterable: false },
+  { name: "mobileNumber", label: "Phone", field: "mobileNumber", align: "left", filterable: false },
+  { name: "jobTitle", label: "Job Title", field: "jobTitle", align: "left", sortable: true, filterable: false },
   { name: "isUser", label: "Account", field: "isUser", align: "left", sortable: true, default: true, filterOptions: [{ label: "User", value: true }, { label: "Not a user", value: false }] },
   { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true, filterOptions: [{ label: "Active", value: true }, { label: "Inactive", value: false }] },
-  { name: "updatedOnUtc", label: "Updated", field: (r) => fmt.formatDateTime(r.updatedOnUtc), align: "left", sortable: true, default: true },
+  { name: "updatedOnUtc", label: "Updated", field: (r) => fmt.formatDateTime(r.updatedOnUtc), align: "left", sortable: true, default: true, filterable: false },
   { name: "actions", label: "Actions", field: "actions", align: "right" }
-];
+]);
 
 const { rows, loading, totalRecords, selected, search, filterOpen, pagination, load, onRequest } = useListTable({
   fetcher: ({ page, limit }) =>
-    personApi.list({ page, limit, search: search.value || undefined }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),
+    personApi.list({
+      page,
+      limit,
+      search: search.value || undefined,
+      tenantId: filters.tenantName || undefined,
+      isUser: typeof filters.isUser === "boolean" ? filters.isUser : undefined,
+      isActive: typeof filters.isActive === "boolean" ? filters.isActive : undefined
+    }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),
   onError: (err) => notify.error(getApiErrorMessage(err))
 });
 
-// Per-column filters (client-side, over the loaded page).
-const { filters, filterableColumns, filteredRows, filterChips, removeFilter, clearFilters } = useColumnFilters(columns, rows);
+// Server-side per-column filters + search box: reload (debounced, first page) on any change.
+const { filters, filterableColumns, filterChips, removeFilter, clearFilters } = useColumnFilters(columns, rows, { server: true });
+const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);
+watch([search, filters], reload, { deep: true });
 
-// Server-side search (debounced; resets to first page).
-const runSearch = debounce(() => { pagination.value.page = 1; load(); }, 300);
-watch(search, runSearch);
+// Load tenant options so the Tenant dropdown filter is available to platform/super admins.
+onMounted(() => { if (canChooseTenant.value) loadTenants(); });
 
 // ---- Create ----
 const formOpen = ref(false);

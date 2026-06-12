@@ -100,13 +100,33 @@ public sealed class TenantsController : ControllerBase
 
     [HttpGet]
     [RequirePermission(Permissions.TenantsWrite)]
-    public async Task<IActionResult> List([FromQuery] int page = 1, [FromQuery] int limit = 20, [FromQuery] bool includeArchived = false, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> List(
+        [FromQuery] int page = 1,
+        [FromQuery] int limit = 20,
+        [FromQuery] bool includeArchived = false,
+        [FromQuery] string? status = null,
+        [FromQuery] string? search = null,
+        CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
         limit = Math.Clamp(limit, 1, 100);
 
         var all = await _tenants.ListAsync(cancellationToken);
-        var filtered = (includeArchived ? all : all.Where(t => t.Status != TenantStatus.Archived)).ToList();
+        IEnumerable<Tenant> filteredSet = includeArchived ? all : all.Where(t => t.Status != TenantStatus.Archived);
+
+        if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<TenantStatus>(status, ignoreCase: true, out var statusFilter))
+        {
+            filteredSet = filteredSet.Where(t => t.Status == statusFilter);
+        }
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            filteredSet = filteredSet.Where(t =>
+                t.Name.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                t.Identifier.Contains(term, StringComparison.OrdinalIgnoreCase));
+        }
+
+        var filtered = filteredSet.ToList();
         var pageTenants = filtered.Skip((page - 1) * limit).Take(limit).ToList();
         var names = await ResolveActorNamesAsync(pageTenants.SelectMany(t => new[] { t.CreatedById, t.UpdatedById }), cancellationToken);
         var pageItems = pageTenants.Select(t => new TenantSummary(
@@ -261,7 +281,14 @@ public sealed class TenantsController : ControllerBase
 
     [HttpGet("{id:guid}/mappings")]
     [RequirePermission(Permissions.MappingsRead)]
-    public async Task<IActionResult> ListMappings(Guid id, [FromQuery] int page = 1, [FromQuery] int limit = 20, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> ListMappings(
+        Guid id,
+        [FromQuery] int page = 1,
+        [FromQuery] int limit = 20,
+        [FromQuery] string? sourceSystem = null,
+        [FromQuery] string? destinationSystem = null,
+        [FromQuery] string? search = null,
+        CancellationToken cancellationToken = default)
     {
         var guard = await EnsureScopeAsync(id, cancellationToken);
         if (guard is not null)
@@ -271,7 +298,10 @@ public sealed class TenantsController : ControllerBase
 
         page = Math.Max(1, page);
         limit = Math.Clamp(limit, 1, 100);
-        var (items, total) = await _mappings.ListByTenantAsync(id, page, limit, cancellationToken);
+
+        SystemName? source = Enum.TryParse<SystemName>(sourceSystem, ignoreCase: true, out var src) ? src : null;
+        SystemName? destination = Enum.TryParse<SystemName>(destinationSystem, ignoreCase: true, out var dst) ? dst : null;
+        var (items, total) = await _mappings.ListByTenantAsync(id, source, destination, search, page, limit, cancellationToken);
         var names = await ResolveActorNamesAsync(items.SelectMany(m => new[] { m.CreatedById, m.UpdatedById }), cancellationToken);
         var mapped = items.Select(m => Map(m, NameOf(names, m.CreatedById), NameOf(names, m.UpdatedById)));
         return Ok(ApiResponseFactory.Paginated(mapped, "Mappings retrieved.", page, limit, total));

@@ -59,13 +59,24 @@ internal sealed class UserRepository : IUserRepository
     }
 
     public async Task<(IReadOnlyList<User> Items, int Total)> ListAsync(
-        Guid? tenantId, int page, int limit, CancellationToken cancellationToken = default)
+        Guid? tenantId, string? search, bool? isActive, int page, int limit, CancellationToken cancellationToken = default)
     {
         var query = _dbContext.Users.Include(u => u.TenantRoles).ThenInclude(r => r.RoleEntity)
             .Include(u => u.Person).AsQueryable();
         if (tenantId is { } id)
         {
             query = query.Where(u => u.TenantRoles.Any(r => r.TenantId == id));
+        }
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(u =>
+                u.Email.Contains(term) ||
+                (u.Person != null && (u.Person.FirstName.Contains(term) || u.Person.LastName.Contains(term))));
+        }
+        if (isActive is { } active)
+        {
+            query = query.Where(u => u.IsActive == active);
         }
 
         var total = await query.CountAsync(cancellationToken);

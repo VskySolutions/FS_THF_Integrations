@@ -113,12 +113,15 @@ public sealed class PersonsController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int limit = 20,
         [FromQuery] string? search = null,
+        [FromQuery] Guid? tenantId = null,
+        [FromQuery] bool? isUser = null,
+        [FromQuery] bool? isActive = null,
         CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
         limit = Math.Clamp(limit, 1, 100);
 
-        var (items, total) = await _persons.ListAsync(search, page, limit, cancellationToken);
+        var (items, total) = await _persons.ListAsync(search, tenantId, isUser, isActive, page, limit, cancellationToken);
         var names = await ResolveActorNamesAsync(items.SelectMany(p => new[] { p.CreatedById, p.UpdatedById }), cancellationToken);
         var summaries = items.Select(p => new PersonSummary(
             p.Id, p.PersonCode, p.FullName, p.PrimaryEmail, p.MobileNumber, p.JobTitle,

@@ -17,8 +17,12 @@ public interface IUserRepository
     /// <summary>Resolves user ids to display full names (FirstName + LastName), for Created/Updated By columns.</summary>
     Task<IReadOnlyDictionary<Guid, string>> GetFullNamesAsync(IEnumerable<Guid> userIds, CancellationToken cancellationToken = default);
 
-    /// <summary>Paginated user list; when <paramref name="tenantId"/> is set, only that tenant's users.</summary>
-    Task<(IReadOnlyList<User> Items, int Total)> ListAsync(Guid? tenantId, int page, int limit, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Paginated user list. When <paramref name="tenantId"/> is set, only that tenant's users;
+    /// optional <paramref name="search"/> (email/name) and <paramref name="isActive"/> filters are
+    /// applied server-side so pagination/totals reflect the filtered set.
+    /// </summary>
+    Task<(IReadOnlyList<User> Items, int Total)> ListAsync(Guid? tenantId, string? search, bool? isActive, int page, int limit, CancellationToken cancellationToken = default);
 
     Task AddAsync(User user, CancellationToken cancellationToken = default);
 

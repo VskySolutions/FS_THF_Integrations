@@ -12,9 +12,13 @@ public interface IPersonRepository
 
     Task<bool> PersonCodeExistsAsync(string personCode, CancellationToken cancellationToken = default);
 
-    /// <summary>Paginated list with optional free-text search over name, email and person code.</summary>
+    /// <summary>
+    /// Paginated list with optional free-text search (name, email, person code) and optional
+    /// structured filters (owning tenant, whether the person is a user, active state) — all applied
+    /// server-side so pagination/totals reflect the filtered set.
+    /// </summary>
     Task<(IReadOnlyList<Person> Items, int Total)> ListAsync(
-        string? search, int page, int limit, CancellationToken cancellationToken = default);
+        string? search, Guid? tenantId, bool? isUser, bool? isActive, int page, int limit, CancellationToken cancellationToken = default);
 
     /// <summary>Lightweight projection for the user-create Person dropdown (id, name, email, user-link flag).</summary>
     Task<IReadOnlyList<(Person Person, bool IsUser)>> ListSelectableAsync(CancellationToken cancellationToken = default);

@@ -17,7 +17,7 @@
       page-key="roles"
       row-key="id"
       title="Roles"
-      :rows="filteredRows"
+      :rows="rows"
       :columns="columns"
       :loading="loading"
       :total-records="totalRecords"
@@ -88,7 +88,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from "vue";
+import { ref, reactive, watch } from "vue";
+import { debounce } from "quasar";
 import { roleApi, tenantApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
@@ -111,15 +112,13 @@ const columns = [
 ];
 
 const { rows, loading, totalRecords, search, pagination, load, onRequest } = useListTable({
-  fetcher: () => roleApi.list().then((r) => ({ data: r || [], total: (r || []).length })),
+  fetcher: () => roleApi.list({ search: search.value || undefined }).then((r) => ({ data: r || [], total: (r || []).length })),
   onError: (err) => notify.error(getApiErrorMessage(err))
 });
 
-const filteredRows = computed(() => {
-  const q = search.value.trim().toLowerCase();
-  if (!q) return rows.value;
-  return rows.value.filter((r) => r.name?.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q));
-});
+// Server-side search: reload (debounced, first page) when it changes.
+const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);
+watch(search, reload);
 
 // ---- Permission catalogue ----
 const permissionOptions = ref([]);

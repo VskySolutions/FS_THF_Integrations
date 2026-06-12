@@ -8,14 +8,10 @@ public sealed class CreateUserRequestValidator : AbstractValidator<CreateUserReq
 {
     public CreateUserRequestValidator()
     {
-        RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(256);
-        RuleFor(x => x.FirstName).MaximumLength(100);
-        RuleFor(x => x.LastName).MaximumLength(100);
-        RuleFor(x => x.DisplayName).MaximumLength(200);
-        // The Person needs an identity; accept either a first name or an explicit display name.
-        RuleFor(x => x)
-            .Must(x => !string.IsNullOrWhiteSpace(x.FirstName) || !string.IsNullOrWhiteSpace(x.DisplayName))
-            .WithMessage("Either firstName or displayName is required.");
+        // A user is created by promoting an existing Person (WO-61).
+        RuleFor(x => x.PersonId).NotEmpty().WithMessage("personId is required.");
+        // Email is optional here — it defaults to the person's primary email when omitted.
+        RuleFor(x => x.Email).EmailAddress().MaximumLength(256).When(x => !string.IsNullOrWhiteSpace(x.Email));
         RuleFor(x => x)
             .Must(x => x.RoleId is not null || !string.IsNullOrWhiteSpace(x.Role))
             .WithMessage("Either role or roleId is required.");

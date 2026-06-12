@@ -13,6 +13,11 @@ public static class Permissions
     public const string TenantsArchive = "tenants.archive";
     public const string TenantsCredentials = "tenants.credentials";
 
+    // Persons (CRM master records — the precursor to a login account)
+    public const string PersonsRead = "persons.read";
+    public const string PersonsWrite = "persons.write";
+    public const string PersonsDelete = "persons.delete";
+
     // Users
     public const string UsersRead = "users.read";
     public const string UsersWrite = "users.write";
@@ -40,6 +45,7 @@ public static class Permissions
     public static readonly IReadOnlyList<string> All = new[]
     {
         TenantsRead, TenantsWrite, TenantsArchive, TenantsCredentials,
+        PersonsRead, PersonsWrite, PersonsDelete,
         UsersRead, UsersWrite, UsersResetPassword,
         RolesRead, RolesWrite, RolesAssign,
         MappingsRead, MappingsWrite,
@@ -53,6 +59,7 @@ public static class Permissions
     public static IReadOnlyList<string> ForTenantAdmin() => new[]
     {
         TenantsRead, TenantsCredentials,
+        PersonsRead, PersonsWrite, PersonsDelete,
         UsersRead, UsersWrite, UsersResetPassword,
         RolesRead, RolesAssign,
         MappingsRead, MappingsWrite,

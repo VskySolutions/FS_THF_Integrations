@@ -4,7 +4,9 @@ import { useTenantStore } from "stores/tenant";
 // and transmits UTC; display conversion happens only here.
 //
 //   const { formatDateTime, tenantTimeZone } = useDateFormat();
-//   formatDateTime(row.updatedOnUtc) // -> "2026-06-09 11:42" in the tenant's tz
+//   formatDateTime(row.updatedOnUtc) // -> "06-09-2026 11:42 AM" in the tenant's tz
+//
+// App-wide display format: MM-DD-YYYY with a 12-hour (AM/PM) clock.
 export function useDateFormat () {
   const tenantStore = useTenantStore();
 
@@ -22,23 +24,24 @@ export function useDateFormat () {
     return Number.isNaN(d.getTime()) ? null : d;
   };
 
+  // en-US so the day-period renders as AM/PM; explicit 2-digit options keep numbers locale-stable.
   const partsFor = (date, options) => {
-    const fmt = new Intl.DateTimeFormat("en-GB", { timeZone: tenantTimeZone(), hour12: false, ...options });
+    const fmt = new Intl.DateTimeFormat("en-US", { timeZone: tenantTimeZone(), ...options });
     return Object.fromEntries(fmt.formatToParts(date).map((p) => [p.type, p.value]));
   };
 
   const formatDateTime = (value, placeholder = "—") => {
     const d = toUtcDate(value);
     if (!d) return placeholder;
-    const p = partsFor(d, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-    return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+    const p = partsFor(d, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: true });
+    return `${p.month}-${p.day}-${p.year} ${p.hour}:${p.minute} ${p.dayPeriod}`;
   };
 
   const formatDate = (value, placeholder = "—") => {
     const d = toUtcDate(value);
     if (!d) return placeholder;
     const p = partsFor(d, { year: "numeric", month: "2-digit", day: "2-digit" });
-    return `${p.year}-${p.month}-${p.day}`;
+    return `${p.month}-${p.day}-${p.year}`;
   };
 
   return { formatDateTime, formatDate, tenantTimeZone };

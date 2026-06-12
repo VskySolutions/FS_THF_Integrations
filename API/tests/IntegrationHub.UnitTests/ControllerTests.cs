@@ -121,18 +121,38 @@ public class UsersControllerTests
     private readonly Mock<IAuditTrailService> _audit = new();
     private readonly Mock<IRoleRepository> _roles = new();
     private readonly Mock<IPersonRepository> _persons = new();
+    private readonly Mock<ITenantRepository> _tenants = new();
 
-    private UsersController Create() => new(_users.Object, _hasher.Object, _refreshTokens.Object, _unitOfWork.Object, _audit.Object, _roles.Object, _persons.Object);
+    private UsersController Create() => new(_users.Object, _hasher.Object, _refreshTokens.Object, _unitOfWork.Object, _audit.Object, _roles.Object, _persons.Object, _tenants.Object);
+
+    /// <summary>Mocks an existing person for the promote-to-user flow and returns its id.</summary>
+    private Guid SetupPerson(string email = "p@t.com", bool isUser = false)
+    {
+        var personId = Guid.NewGuid();
+        _persons.Setup(p => p.GetByIdAsync(personId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Person
+            {
+                Id = personId,
+                PersonCode = "PER-TEST",
+                FirstName = "Test",
+                LastName = "Person",
+                DisplayName = "Test Person",
+                PrimaryEmail = email,
+                UserId = isUser ? Guid.NewGuid() : null,
+            });
+        return personId;
+    }
 
     [Fact]
     public async Task Super_admin_creates_user_returns_201_with_temp_password()
     {
+        var personId = SetupPerson();
         _users.Setup(u => u.EmailExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
         _hasher.Setup(h => h.GenerateTemporaryPassword()).Returns("Temp123!");
         _hasher.Setup(h => h.Hash(It.IsAny<string>())).Returns(("h", "s"));
 
         var controller = Create().WithUser(Guid.NewGuid(), Roles.SuperAdmin);
-        var result = await controller.Create(new CreateUserRequest { Email = "n@t.com", DisplayName = "N", Role = "Operator", TenantId = Guid.NewGuid() }, default);
+        var result = await controller.Create(new CreateUserRequest { PersonId = personId, Email = "n@t.com", Role = "Operator", TenantId = Guid.NewGuid() }, default);
 
         var obj = result.Should().BeOfType<ObjectResult>().Subject;
         obj.StatusCode.Should().Be(StatusCodes.Status201Created);
@@ -140,12 +160,50 @@ public class UsersControllerTests
     }
 
     [Fact]
+    public async Task Person_not_found_is_not_found()
+    {
+        var controller = Create().WithUser(Guid.NewGuid(), Roles.SuperAdmin);
+        var result = await controller.Create(new CreateUserRequest { PersonId = Guid.NewGuid(), Email = "n@t.com", Role = "Operator", TenantId = Guid.NewGuid() }, default);
+
+        result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public async Task Person_already_a_user_is_conflict()
+    {
+        var personId = SetupPerson(isUser: true);
+
+        var controller = Create().WithUser(Guid.NewGuid(), Roles.SuperAdmin);
+        var result = await controller.Create(new CreateUserRequest { PersonId = personId, Email = "n@t.com", Role = "Operator", TenantId = Guid.NewGuid() }, default);
+
+        result.Should().BeOfType<ConflictObjectResult>();
+    }
+
+    [Fact]
+    public async Task Email_defaults_from_person_when_omitted()
+    {
+        var personId = SetupPerson(email: "from-person@t.com");
+        string? checkedEmail = null;
+        _users.Setup(u => u.EmailExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback<string, CancellationToken>((e, _) => checkedEmail = e).ReturnsAsync(false);
+        _hasher.Setup(h => h.GenerateTemporaryPassword()).Returns("Temp123!");
+        _hasher.Setup(h => h.Hash(It.IsAny<string>())).Returns(("h", "s"));
+
+        var controller = Create().WithUser(Guid.NewGuid(), Roles.SuperAdmin);
+        var result = await controller.Create(new CreateUserRequest { PersonId = personId, Role = "Operator", TenantId = Guid.NewGuid() }, default);
+
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status201Created);
+        checkedEmail.Should().Be("from-person@t.com");
+    }
+
+    [Fact]
     public async Task Duplicate_email_is_conflict()
     {
+        var personId = SetupPerson();
         _users.Setup(u => u.EmailExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
 
         var controller = Create().WithUser(Guid.NewGuid(), Roles.SuperAdmin);
-        var result = await controller.Create(new CreateUserRequest { Email = "dup@t.com", DisplayName = "N", Role = "Operator", TenantId = Guid.NewGuid() }, default);
+        var result = await controller.Create(new CreateUserRequest { PersonId = personId, Email = "dup@t.com", Role = "Operator", TenantId = Guid.NewGuid() }, default);
 
         result.Should().BeOfType<ConflictObjectResult>();
     }
@@ -155,6 +213,7 @@ public class UsersControllerTests
     {
         var tenantId = Guid.NewGuid();
         var roleId = Guid.NewGuid();
+        var personId = SetupPerson();
         UserTenantRole? captured = null;
         _users.Setup(u => u.EmailExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
         _users.Setup(u => u.AddAssignmentAsync(It.IsAny<UserTenantRole>(), It.IsAny<CancellationToken>()))
@@ -166,7 +225,7 @@ public class UsersControllerTests
 
         var controller = Create().WithUser(Guid.NewGuid(), Roles.SuperAdmin);
         var result = await controller.Create(
-            new CreateUserRequest { Email = "n@t.com", DisplayName = "N", RoleId = roleId, TenantId = tenantId }, default);
+            new CreateUserRequest { PersonId = personId, Email = "n@t.com", RoleId = roleId, TenantId = tenantId }, default);
 
         result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status201Created);
         captured.Should().NotBeNull();
@@ -179,6 +238,7 @@ public class UsersControllerTests
     {
         var tenantId = Guid.NewGuid();
         var roleId = Guid.NewGuid();
+        var personId = SetupPerson();
         _users.Setup(u => u.EmailExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
         _hasher.Setup(h => h.GenerateTemporaryPassword()).Returns("Temp123!");
         _hasher.Setup(h => h.Hash(It.IsAny<string>())).Returns(("h", "s"));
@@ -189,7 +249,7 @@ public class UsersControllerTests
 
         var controller = Create().WithUser(Guid.NewGuid(), Roles.SuperAdmin);
         var result = await controller.Create(
-            new CreateUserRequest { Email = "n@t.com", DisplayName = "N", RoleId = roleId, TenantId = tenantId }, default);
+            new CreateUserRequest { PersonId = personId, Email = "n@t.com", RoleId = roleId, TenantId = tenantId }, default);
 
         result.Should().BeOfType<BadRequestObjectResult>();
     }
@@ -198,7 +258,7 @@ public class UsersControllerTests
     public async Task Tenant_admin_cannot_create_super_admin()
     {
         var controller = Create().WithUser(Guid.NewGuid(), Roles.TenantAdmin, Guid.NewGuid());
-        var result = await controller.Create(new CreateUserRequest { Email = "n@t.com", DisplayName = "N", Role = "SuperAdmin" }, default);
+        var result = await controller.Create(new CreateUserRequest { PersonId = Guid.NewGuid(), Email = "n@t.com", Role = "SuperAdmin" }, default);
 
         result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
     }
@@ -311,11 +371,73 @@ public class UsersControllerTests
             .ReturnsAsync((Array.Empty<User>(), 0));
         _users.Setup(u => u.GetFullNamesAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<Guid, string>());
+        _tenants.Setup(t => t.ListAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<Tenant>());
 
         var controller = Create().WithUser(Guid.NewGuid(), Roles.TenantAdmin, tenantId);
         await controller.List(1, 20, default);
 
         _users.Verify(u => u.ListAsync(tenantId, 1, 20, It.IsAny<CancellationToken>()), Times.Once);
+    }
+}
+
+// Person (CRM master record) management: create + soft-delete guards.
+public class PersonsControllerTests
+{
+    private readonly Mock<IPersonRepository> _persons = new();
+    private readonly Mock<IAddressRepository> _addresses = new();
+    private readonly Mock<IUserRepository> _users = new();
+    private readonly Mock<IUnitOfWork> _unitOfWork = new();
+    private readonly Mock<IAuditTrailService> _audit = new();
+
+    private PersonsController Create() => new(_persons.Object, _addresses.Object, _users.Object, _unitOfWork.Object, _audit.Object);
+
+    [Fact]
+    public async Task Create_person_returns_201()
+    {
+        var controller = Create().WithUser(Guid.NewGuid(), Roles.SuperAdmin);
+        var result = await controller.Create(
+            new IntegrationHub.Api.Models.Persons.CreatePersonRequest { FirstName = "Ada", LastName = "Lovelace", PrimaryEmail = "ada@t.com" }, default);
+
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status201Created);
+        _persons.Verify(p => p.AddAsync(It.IsAny<Person>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Create_person_without_name_is_bad_request()
+    {
+        var controller = Create().WithUser(Guid.NewGuid(), Roles.SuperAdmin);
+        var result = await controller.Create(
+            new IntegrationHub.Api.Models.Persons.CreatePersonRequest { FirstName = "", LastName = "" }, default);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task Delete_person_linked_to_user_is_conflict()
+    {
+        var id = Guid.NewGuid();
+        _persons.Setup(p => p.GetByIdAsync(id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Person { Id = id, FirstName = "A", LastName = "B", UserId = Guid.NewGuid() });
+
+        var controller = Create().WithUser(Guid.NewGuid(), Roles.SuperAdmin);
+        var result = await controller.Delete(id, default);
+
+        result.Should().BeOfType<ConflictObjectResult>();
+        _persons.Verify(p => p.Remove(It.IsAny<Person>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Delete_unlinked_person_soft_deletes()
+    {
+        var id = Guid.NewGuid();
+        _persons.Setup(p => p.GetByIdAsync(id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Person { Id = id, FirstName = "A", LastName = "B", UserId = null });
+
+        var controller = Create().WithUser(Guid.NewGuid(), Roles.SuperAdmin);
+        var result = await controller.Delete(id, default);
+
+        result.Should().BeOfType<OkObjectResult>();
+        _persons.Verify(p => p.Remove(It.IsAny<Person>()), Times.Once);
     }
 }
 

@@ -46,6 +46,7 @@ const sections = [
     label: "Administration",
     items: [
       { label: "Tenants", icon: "o_apartment", to: "/tenants", permissions: [Permissions.TenantsWrite] },
+      { label: "Person", icon: "o_badge", to: "/persons", permissions: [Permissions.PersonsRead] },
       { label: "Users", icon: "o_group", to: "/users", permissions: [Permissions.UsersRead] },
       { label: "Roles", icon: "o_admin_panel_settings", to: "/roles", permissions: [Permissions.RolesWrite] }
     ]

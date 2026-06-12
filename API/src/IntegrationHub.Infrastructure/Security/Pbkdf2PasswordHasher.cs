@@ -37,8 +37,33 @@ internal sealed class Pbkdf2PasswordHasher : IPasswordHasher
 
     public string GenerateTemporaryPassword()
     {
-        // 18 random bytes → URL-safe-ish base64; guaranteed to satisfy complexity below.
-        var raw = Convert.ToBase64String(RandomNumberGenerator.GetBytes(18));
-        return $"Aa1{raw}";
+        // A standard-length (16) strong password: guaranteed lower/upper/digit/special, with
+        // ambiguous characters (0/O/1/l/I) omitted for readability. 16 chars keeps it within the
+        // change-password form's field limit while remaining strong.
+        const string lower = "abcdefghijkmnopqrstuvwxyz";   // no 'l'
+        const string upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";     // no 'I', 'O'
+        const string digits = "23456789";                    // no '0', '1'
+        const string special = "!@#$%^&*-_?";
+        const string all = lower + upper + digits + special;
+        const int length = 16;
+
+        var chars = new char[length];
+        chars[0] = lower[RandomNumberGenerator.GetInt32(lower.Length)];
+        chars[1] = upper[RandomNumberGenerator.GetInt32(upper.Length)];
+        chars[2] = digits[RandomNumberGenerator.GetInt32(digits.Length)];
+        chars[3] = special[RandomNumberGenerator.GetInt32(special.Length)];
+        for (var i = 4; i < length; i++)
+        {
+            chars[i] = all[RandomNumberGenerator.GetInt32(all.Length)];
+        }
+
+        // Fisher–Yates shuffle so the guaranteed characters aren't always in the first positions.
+        for (var i = length - 1; i > 0; i--)
+        {
+            var j = RandomNumberGenerator.GetInt32(i + 1);
+            (chars[i], chars[j]) = (chars[j], chars[i]);
+        }
+
+        return new string(chars);
     }
 }

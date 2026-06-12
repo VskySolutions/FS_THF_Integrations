@@ -17,6 +17,9 @@ public class Person : AuditableEntity
     /// <summary>Back-reference to the owning user (the FK lives on <see cref="User.PersonId"/>).</summary>
     public Guid? UserId { get; set; }
 
+    /// <summary>Owning tenant for this person (optional; platform-level persons have none).</summary>
+    public Guid? TenantId { get; set; }
+
     public Guid? ProfileMediaId { get; set; }
 
     public Guid? AddressId { get; set; }
@@ -77,4 +80,5 @@ public class Person : AuditableEntity
     // ---- Navigations ----
     public Address? Address { get; set; }
     public Media? ProfileMedia { get; set; }
+    public Tenant? Tenant { get; set; }
 }

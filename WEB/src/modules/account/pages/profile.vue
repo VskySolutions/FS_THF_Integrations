@@ -68,13 +68,9 @@
             <q-input v-model="form.secondaryEmail" outlined dense stack-label hide-bottom-space type="email" label="Alternate Email" class="col-12 col-sm-6" />
 
             <div class="col-12 section-subhead">Phone</div>
-            <app-select
-              v-model="phoneCountry" :options="dialCodeOptions" label="Phone Country" use-input
-              class="col-12 col-sm-4" @filter="filterDialCodes"
-            />
-            <q-input
-              v-model="form.mobileNumber" outlined dense stack-label hide-bottom-space label="Mobile Number" class="col-12 col-sm-8"
-              :error="!!mobileError" :error-message="mobileError" @blur="validateMobile"
+            <app-phone-input
+              v-model="form.mobileNumber" v-model:country="form.phoneCountryCode"
+              label="Mobile Number" country-label="Phone Country" :dense="true" class="col-12"
             />
             <q-input v-model="form.alternateMobileNumber" outlined dense stack-label hide-bottom-space label="Alternate Mobile" class="col-12 col-sm-6" />
           </q-card-section>
@@ -202,8 +198,8 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
-import { Country, State, City } from "country-state-city";
-import { isValidPhoneNumber, parsePhoneNumber } from "libphonenumber-js";
+import { State, City } from "country-state-city";
+import { useCountries, orderedCountries, countryOption, countryNameOption } from "composables/useCountries";
 import validator from "validator";
 import { Cropper } from "vue-advanced-cropper";
 import "vue-advanced-cropper/dist/style.css";
@@ -212,6 +208,7 @@ import { useAuthStore } from "stores/auth";
 import { useNotify } from "composables/useNotify";
 import AppBreadcrumbs from "components/common/AppBreadcrumbs.vue";
 import AppSelect from "components/common/AppSelect.vue";
+import AppPhoneInput from "components/common/AppPhoneInput.vue";
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -223,11 +220,9 @@ const genderOptions = ["Male", "Female", "Other", "Prefer not to say"].map((g) =
 const maritalOptions = ["Single", "Married", "Divorced", "Widowed", "Separated"].map((m) => ({ label: m, value: m }));
 
 // ---- Geographic data (country-state-city) ----
-const allCountries = Country.getAllCountries();
-const countryOption = (c) => ({ label: c.name, value: c.isoCode });
-const countryOptions = ref(allCountries.map(countryOption));
-const countryNameOptions = ref(allCountries.map((c) => ({ label: c.name, value: c.name })));
-const dialCodeOptions = ref(allCountries.map((c) => ({ label: `${c.flag} ${c.name} (+${c.phonecode})`, value: c.isoCode })));
+const { allCountries } = useCountries();
+const countryOptions = ref(orderedCountries.map(countryOption));
+const countryNameOptions = ref(orderedCountries.map(countryNameOption));
 const stateOptions = ref([]);
 const cityOptions = ref([]);
 let allStates = [];
@@ -237,9 +232,8 @@ const filterFactory = (source, target) => (val, update) => {
   const needle = (val || "").toLowerCase();
   update(() => { target.value = source().filter((o) => o.label.toLowerCase().includes(needle)); });
 };
-const filterCountries = filterFactory(() => allCountries.map(countryOption), countryOptions);
-const filterCountryNames = filterFactory(() => allCountries.map((c) => ({ label: c.name, value: c.name })), countryNameOptions);
-const filterDialCodes = filterFactory(() => allCountries.map((c) => ({ label: `${c.flag} ${c.name} (+${c.phonecode})`, value: c.isoCode })), dialCodeOptions);
+const filterCountries = filterFactory(() => orderedCountries.map(countryOption), countryOptions);
+const filterCountryNames = filterFactory(() => orderedCountries.map(countryNameOption), countryNameOptions);
 const filterStates = (val, update) => {
   const needle = (val || "").toLowerCase();
   update(() => { stateOptions.value = allStates.filter((o) => o.label.toLowerCase().includes(needle)); });
@@ -275,7 +269,6 @@ const onStateChange = (stateCode) => {
 const loading = ref(true);
 const saving = ref(false);
 const profile = ref(null);
-const phoneCountry = ref(null);
 const form = reactive({
   firstName: "",
   middleName: "",
@@ -289,6 +282,7 @@ const form = reactive({
   primaryEmail: "",
   secondaryEmail: "",
   mobileNumber: "",
+  phoneCountryCode: null,
   alternateMobileNumber: "",
   emergencyContactName: "",
   emergencyContactRelationship: "",
@@ -327,12 +321,12 @@ const load = async () => {
     form.primaryEmail = p.primaryEmail || "";
     form.secondaryEmail = p.secondaryEmail || "";
     form.mobileNumber = p.mobileNumber || "";
+    form.phoneCountryCode = p.countryCode || null;
     form.alternateMobileNumber = p.alternateMobileNumber || "";
     form.emergencyContactName = p.emergencyContactName || "";
     form.emergencyContactRelationship = p.emergencyContactRelationship || "";
     form.emergencyContactNumber = p.emergencyContactNumber || "";
     form.profileMediaId = p.profileMediaId || null;
-    phoneCountry.value = countryFromDial(p.countryCode);
     if (p.profileMediaUrl) previewUrl.value = mediaApi.absoluteUrl(p.profileMediaUrl);
     if (p.address) {
       address.countryCode = p.address.countryCode || null;
@@ -354,21 +348,6 @@ const load = async () => {
     notify.error(getApiErrorMessage(err));
   } finally {
     loading.value = false;
-  }
-};
-
-const countryFromDial = (dial) => {
-  if (!dial) return null;
-  const normalized = String(dial).replace("+", "");
-  return allCountries.find((c) => c.phonecode === normalized)?.isoCode || null;
-};
-
-// ---- Phone validation (libphonenumber-js) ----
-const mobileError = ref("");
-const validateMobile = () => {
-  mobileError.value = "";
-  if (form.mobileNumber && phoneCountry.value && !isValidPhoneNumber(form.mobileNumber, phoneCountry.value)) {
-    mobileError.value = "Enter a valid phone number for the selected country.";
   }
 };
 
@@ -425,21 +404,15 @@ const removeImage = () => {
 
 // ---- Save ----
 const save = async () => {
-  validateMobile();
   validatePostal();
-  if (mobileError.value || postalError.value) {
+  if (postalError.value) {
     notify.error("Please fix the highlighted fields.");
     return;
   }
 
-  // Normalise phone to E.164 when valid.
-  let mobile = form.mobileNumber;
-  let dialCode = null;
-  const selected = allCountries.find((c) => c.isoCode === phoneCountry.value);
-  if (selected) dialCode = `+${selected.phonecode}`;
-  if (mobile && phoneCountry.value && isValidPhoneNumber(mobile, phoneCountry.value)) {
-    mobile = parsePhoneNumber(mobile, phoneCountry.value).number; // E.164
-  }
+  // AppPhoneInput already normalises the mobile to E.164 and tracks its dial code.
+  const mobile = form.mobileNumber;
+  const dialCode = form.phoneCountryCode || null;
 
   const countryName = allCountries.find((c) => c.isoCode === address.countryCode)?.name || address.countryName;
   const stateName = allStates.find((s) => s.value === address.stateCode)?.label || address.stateName;

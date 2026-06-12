@@ -71,7 +71,7 @@ const load = async () => {
     const report = await adminApi.health();
     overall.value = report?.status || null;
     components.value = report?.components || [];
-    checkedAt.value = date.formatDate(Date.now(), "HH:mm:ss");
+    checkedAt.value = date.formatDate(Date.now(), "hh:mm:ss A");
   } catch {
     error.value = true;
   } finally {

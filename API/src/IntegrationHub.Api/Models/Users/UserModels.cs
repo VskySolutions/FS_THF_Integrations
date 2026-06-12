@@ -2,11 +2,14 @@ namespace IntegrationHub.Api.Models.Users;
 
 public sealed class CreateUserRequest
 {
-    public string Email { get; set; } = string.Empty;
-    public string FirstName { get; set; } = string.Empty;
-    public string LastName { get; set; } = string.Empty;
+    /// <summary>The existing Person to promote to a login account. Required (people are created first).</summary>
+    public Guid PersonId { get; set; }
+    /// <summary>Login email/username. Defaults to the person's primary email when omitted.</summary>
+    public string? Email { get; set; }
+    /// <summary>Optional phone; when supplied it is written back to the person's mobile number.</summary>
     public string? PhoneNumber { get; set; }
-    public string? DisplayName { get; set; }
+    /// <summary>Optional dial code for <see cref="PhoneNumber"/>, written back to the person.</summary>
+    public string? CountryCode { get; set; }
     /// <summary>Target tenant. Ignored for Tenant Admins (forced to their active tenant).</summary>
     public Guid? TenantId { get; set; }
     /// <summary>Legacy fixed-tier role. Optional when <see cref="RoleId"/> is supplied.</summary>
@@ -56,6 +59,7 @@ public sealed record UserSummary(
     string LastName,
     string FullName,
     string? PhoneNumber,
+    string? TenantName,
     bool IsActive,
     string? CreatedBy,
     string? UpdatedBy,

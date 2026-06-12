@@ -115,7 +115,7 @@ const stats = computed(() => [
   { label: "Pending retry", value: counts.value.pendingRetry, icon: "o_replay", color: "orange" }
 ]);
 
-const today = () => date.formatDate(Date.now(), "YYYY-MM-DD");
+const today = () => date.formatDate(Date.now(), "MM-DD-YYYY");
 
 const loadStats = async () => {
   if (!canViewStats.value) return;

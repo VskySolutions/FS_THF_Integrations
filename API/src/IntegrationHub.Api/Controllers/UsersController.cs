@@ -33,6 +33,7 @@ public sealed class UsersController : ControllerBase
     private readonly IAuditTrailService _audit;
     private readonly IRoleRepository _roles;
     private readonly IPersonRepository _persons;
+    private readonly ITenantRepository _tenants;
 
     public UsersController(
         IUserRepository users,
@@ -41,7 +42,8 @@ public sealed class UsersController : ControllerBase
         IUnitOfWork unitOfWork,
         IAuditTrailService audit,
         IRoleRepository roles,
-        IPersonRepository persons)
+        IPersonRepository persons,
+        ITenantRepository tenants)
     {
         _users = users;
         _passwordHasher = passwordHasher;
@@ -50,6 +52,7 @@ public sealed class UsersController : ControllerBase
         _audit = audit;
         _roles = roles;
         _persons = persons;
+        _tenants = tenants;
     }
 
     [HttpPost("/api/admin/users")]
@@ -92,39 +95,58 @@ public sealed class UsersController : ControllerBase
             }
         }
 
-        if (await _users.EmailExistsAsync(request.Email, cancellationToken))
+        // A user is created by promoting an existing Person master record (WO-61).
+        var person = await _persons.GetByIdAsync(request.PersonId, cancellationToken);
+        if (person is null)
+        {
+            return NotFound(ApiResponseFactory.NotFound("Person not found."));
+        }
+
+        if (person.UserId is not null)
         {
             return Conflict(ApiResponseFactory.Error(
-                ApiErrorCodes.DuplicateIdentifier, "Email already in use.", request.Email));
+                ApiErrorCodes.DuplicateIdentifier, "Person is already a user.", person.PersonCode));
+        }
+
+        var email = string.IsNullOrWhiteSpace(request.Email) ? person.PrimaryEmail : request.Email;
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            return BadRequest(ApiResponseFactory.Error(
+                ApiErrorCodes.ValidationFailed, "Validation failed.", "An email is required (the person has none)."));
+        }
+
+        if (await _users.EmailExistsAsync(email, cancellationToken))
+        {
+            return Conflict(ApiResponseFactory.Error(
+                ApiErrorCodes.DuplicateIdentifier, "Email already in use.", email));
         }
 
         var temporaryPassword = _passwordHasher.GenerateTemporaryPassword();
         var (hash, salt) = _passwordHasher.Hash(temporaryPassword);
 
-        var fullName = string.Join(" ", new[] { request.FirstName, request.LastName }.Where(s => !string.IsNullOrWhiteSpace(s)));
-        var displayName = string.IsNullOrWhiteSpace(fullName) ? (request.DisplayName ?? string.Empty) : fullName;
-
-        // Personal profile data lives on the Person master record (WO-61).
         var userId = Guid.NewGuid();
-        var person = new Person
+
+        // Link the person to the new account and refresh its contact details from the request.
+        person.UserId = userId;
+        if (!string.IsNullOrWhiteSpace(request.PhoneNumber))
         {
-            Id = Guid.NewGuid(),
-            PersonCode = await GeneratePersonCodeAsync(cancellationToken),
-            UserId = userId,
-            FirstName = request.FirstName,
-            LastName = request.LastName,
-            DisplayName = displayName,
-            MobileNumber = request.PhoneNumber,
-            PrimaryEmail = request.Email,
-            IsActive = true,
-        };
-        await _persons.AddAsync(person, cancellationToken);
+            person.MobileNumber = request.PhoneNumber;
+        }
+        if (!string.IsNullOrWhiteSpace(request.CountryCode))
+        {
+            person.CountryCode = request.CountryCode;
+        }
+        if (string.IsNullOrWhiteSpace(person.PrimaryEmail))
+        {
+            person.PrimaryEmail = email;
+        }
+        _persons.Update(person);
 
         var user = new User
         {
             Id = userId,
-            Email = request.Email,
-            DisplayName = displayName,
+            Email = email,
+            DisplayName = person.FullName,
             PersonId = person.Id,
             PasswordHash = hash,
             Salt = salt,
@@ -172,10 +194,24 @@ public sealed class UsersController : ControllerBase
         var (items, total) = await _users.ListAsync(tenantFilter, page, limit, cancellationToken);
 
         var names = await ResolveActorNamesAsync(items.SelectMany(u => new[] { u.CreatedById, u.UpdatedById }), cancellationToken);
+
+        // Resolve tenant names for the assignment(s) shown in the list.
+        var allTenants = await _tenants.ListAsync(cancellationToken);
+        var tenantNames = allTenants.ToDictionary(t => t.Id, t => t.Name);
+        string? TenantNamesFor(User u)
+        {
+            var distinct = u.TenantRoles
+                .Select(r => tenantNames.TryGetValue(r.TenantId, out var name) ? name : null)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Distinct()
+                .ToList();
+            return distinct.Count == 0 ? null : string.Join(", ", distinct);
+        }
+
         var summaries = items.Select(u => new UserSummary(
             u.Id, u.Email,
             u.Person?.FirstName ?? string.Empty, u.Person?.LastName ?? string.Empty,
-            u.Person?.FullName ?? u.DisplayName, u.Person?.MobileNumber, u.IsActive,
+            u.Person?.FullName ?? u.DisplayName, u.Person?.MobileNumber, TenantNamesFor(u), u.IsActive,
             NameOf(names, u.CreatedById), NameOf(names, u.UpdatedById), u.CreatedOnUtc, u.UpdatedOnUtc));
         return Ok(ApiResponseFactory.Paginated(summaries, "Users retrieved.", page, limit, total));
     }
@@ -560,21 +596,6 @@ public sealed class UsersController : ControllerBase
             user.IsActive,
             user.MustChangePassword,
             user.TenantRoles.Select(r => new TenantAssignmentDto(r.TenantId, r.Role.ToString(), r.RoleId, r.RoleEntity?.Name)).ToList());
-    }
-
-    /// <summary>Generates a unique business person code (e.g. PER-AB12CD34EF).</summary>
-    private async Task<string> GeneratePersonCodeAsync(CancellationToken cancellationToken)
-    {
-        for (var attempt = 0; attempt < 5; attempt++)
-        {
-            var code = "PER-" + Guid.NewGuid().ToString("N")[..10].ToUpperInvariant();
-            if (!await _persons.PersonCodeExistsAsync(code, cancellationToken))
-            {
-                return code;
-            }
-        }
-
-        return "PER-" + Guid.NewGuid().ToString("N").ToUpperInvariant();
     }
 
     private async Task<IReadOnlyDictionary<Guid, string>> ResolveActorNamesAsync(IEnumerable<Guid?> ids, CancellationToken cancellationToken)

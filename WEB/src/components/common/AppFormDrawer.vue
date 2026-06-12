@@ -4,9 +4,12 @@
     side="right"
     overlay
     bordered
-    :width="width"
+    :width="currentWidth"
     class="app-form-drawer column no-wrap"
   >
+    <!-- Drag handle: resize the drawer; the chosen width persists until logout. -->
+    <div class="app-form-drawer__resizer" @mousedown="startResize" @dblclick="resetWidth" />
+
     <!-- Fixed header -->
     <div class="row items-center q-pa-md bg-primary text-white">
       <div class="text-h6">{{ title }}</div>
@@ -40,7 +43,8 @@
 </template>
 
 <script setup>
-import { computed, watch } from "vue";
+import { computed, ref, watch, onBeforeUnmount } from "vue";
+import { LocalStorage } from "quasar";
 import { useTenantStore } from "stores/tenant";
 import { usePreferences } from "composables/usePreferences";
 
@@ -49,7 +53,6 @@ const props = defineProps({
   title: { type: String, default: "" },
   saveLabel: { type: String, default: "Save" },
   saving: { type: Boolean, default: false },
-  width: { type: Number, default: 460 },
   // When set, the form's draft is auto-persisted under this key.
   draftKey: { type: String, default: "" },
   draft: { type: Object, default: null }
@@ -59,6 +62,50 @@ const emit = defineEmits(["update:modelValue", "submit", "cancel", "restore-draf
 
 const tenantStore = useTenantStore();
 const prefs = props.draftKey ? usePreferences(props.draftKey) : null;
+
+// ---- Resizable width ----
+// The user can drag the left edge to resize. The width is shared across all drawers and stored
+// in LocalStorage, which auth.clearSession() wipes on logout — so it persists until the user logs out.
+// Sizes are viewport-relative: 50% by default, never below 30%.
+const WIDTH_KEY = "appDrawerWidth";
+const viewport = () => (typeof window !== "undefined" ? window.innerWidth : 1200);
+const minWidth = () => Math.round(viewport() * 0.30);
+const maxWidth = () => Math.round(viewport() * 0.95);
+const defaultWidth = () => Math.round(viewport() * 0.50);
+const clampWidth = (w) => Math.min(maxWidth(), Math.max(minWidth(), w));
+
+const storedWidth = Number(LocalStorage.getItem(WIDTH_KEY));
+const currentWidth = ref(clampWidth(storedWidth > 0 ? storedWidth : defaultWidth()));
+
+let startX = 0;
+let startWidth = 0;
+
+const onResizeMove = (e) => {
+  // Right-side drawer grows as the pointer moves left.
+  currentWidth.value = clampWidth(startWidth + (startX - e.clientX));
+};
+
+const stopResize = () => {
+  document.removeEventListener("mousemove", onResizeMove);
+  document.removeEventListener("mouseup", stopResize);
+  document.body.style.userSelect = "";
+  LocalStorage.set(WIDTH_KEY, currentWidth.value);
+};
+
+const startResize = (e) => {
+  startX = e.clientX;
+  startWidth = currentWidth.value;
+  document.body.style.userSelect = "none";
+  document.addEventListener("mousemove", onResizeMove);
+  document.addEventListener("mouseup", stopResize);
+};
+
+const resetWidth = () => {
+  currentWidth.value = defaultWidth();
+  LocalStorage.set(WIDTH_KEY, currentWidth.value);
+};
+
+onBeforeUnmount(stopResize);
 
 const open = computed({
   get: () => props.modelValue,
@@ -116,5 +163,20 @@ defineExpose({ clearDraft });
 <style scoped>
 .app-form-drawer {
   height: 100%;
+}
+.app-form-drawer__resizer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 6px;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+.app-form-drawer__resizer:hover {
+  background: var(--q-primary);
+  opacity: 0.4;
 }
 </style>

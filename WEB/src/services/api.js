@@ -88,9 +88,20 @@ export const tenantApi = {
   testMaconomyConfig: (id) => api.post(`/api/admin/tenants/${id}/maconomy-config/test`).then(unwrap)
 };
 
+export const personApi = {
+  list: (params) => api.get("/api/admin/persons", { params }).then(envelope),
+  get: (id) => api.get(`/api/admin/persons/${id}`).then(unwrap),
+  create: (payload) => api.post("/api/admin/persons", payload).then(unwrap),
+  update: (id, payload) => api.put(`/api/admin/persons/${id}`, payload).then(unwrap),
+  remove: (id) => api.delete(`/api/admin/persons/${id}`).then(envelope),
+  // Lightweight options for the user-create Person dropdown (each carries isUser).
+  selectable: () => api.get("/api/admin/persons/selectable").then(unwrap)
+};
+
 export const userApi = {
   list: (params) => api.get("/api/admin/users", { params }).then(envelope),
   get: (id) => api.get(`/api/admin/users/${id}`).then(unwrap),
+  // payload: { personId, email?, phoneNumber?, countryCode?, tenantId, roleId } — promotes a Person to a login account.
   create: (payload) => api.post("/api/admin/users", payload).then(unwrap),
   update: (id, payload) => api.put(`/api/admin/users/${id}`, payload).then(unwrap),
   setStatus: (id, isActive) => api.put(`/api/admin/users/${id}/status`, { isActive }).then(unwrap),

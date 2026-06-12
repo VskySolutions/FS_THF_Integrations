@@ -62,5 +62,13 @@ internal sealed class PersonConfiguration : IEntityTypeConfiguration<Person>
             .WithMany()
             .HasForeignKey(p => p.ProfileMediaId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        // Owning tenant (optional). Restrict so a tenant cannot be removed out from under its persons.
+        builder.HasOne(p => p.Tenant)
+            .WithMany()
+            .HasForeignKey(p => p.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(p => p.TenantId);
     }
 }

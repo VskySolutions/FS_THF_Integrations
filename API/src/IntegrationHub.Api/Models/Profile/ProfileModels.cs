@@ -99,6 +99,7 @@ public sealed record PersonProfileResponse(
     Guid Id,
     string PersonCode,
     Guid? UserId,
+    Guid? TenantId,
     string FirstName,
     string? MiddleName,
     string LastName,

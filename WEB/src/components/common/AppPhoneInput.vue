@@ -1,0 +1,134 @@
+<template>
+  <div class="row q-col-gutter-sm">
+    <app-select
+      v-model="iso"
+      :options="dialCodeOptions"
+      :label="countryLabel"
+      use-input
+      :clearable="false"
+      :dense="dense"
+      class="col-12 col-sm-5"
+      @filter="filterDialCodes"
+    />
+    <q-input
+      :model-value="display"
+      :label="label"
+      :error="!!localError"
+      :error-message="localError"
+      :disable="disable"
+      :readonly="readonly"
+      outlined
+      :dense="dense"
+      stack-label
+      hide-bottom-space
+      class="col-12 col-sm-7"
+      @update:model-value="onInput"
+      @blur="onBlur"
+    />
+  </div>
+</template>
+
+<script setup>
+// Reusable phone field: a country dial-code dropdown + number input. The number is formatted
+// as-you-type using the selected country's pattern (libphonenumber-js AsYouType — e.g. US shows
+// "(213) 373-4253") while the stored model value is normalised to E.164 once valid. Used on every
+// phone field across the app so behaviour, formatting and storage stay identical.
+import { ref, watch } from "vue";
+import { AsYouType, isValidPhoneNumber, parsePhoneNumber } from "libphonenumber-js";
+import { orderedCountries, dialCodeOption, isoFromDial, dialFromIso, DEFAULT_COUNTRY_ISO } from "composables/useCountries";
+import AppSelect from "components/common/AppSelect.vue";
+
+const props = defineProps({
+  // The phone number (stored value; normalised to E.164 when valid).
+  modelValue: { type: String, default: "" },
+  // Dial code for the number, e.g. "+91" (matches Person.CountryCode storage). May be null.
+  country: { type: String, default: null },
+  label: { type: String, default: "Phone Number" },
+  countryLabel: { type: String, default: "Country" },
+  dense: { type: Boolean, default: true },
+  disable: { type: Boolean, default: false },
+  readonly: { type: Boolean, default: false },
+  // Default ISO country used when none is supplied (uppercase ISO-2).
+  defaultCountry: { type: String, default: DEFAULT_COUNTRY_ISO }
+});
+
+const emit = defineEmits(["update:modelValue", "update:country", "blur", "update:valid"]);
+
+// US + India are pinned on top (see useCountries); US is the default selection.
+const dialCodeOptions = ref(orderedCountries.map(dialCodeOption));
+
+const filterDialCodes = (val, update) => {
+  const needle = (val || "").toLowerCase();
+  update(() => { dialCodeOptions.value = orderedCountries.filter((c) => dialCodeOption(c).label.toLowerCase().includes(needle)).map(dialCodeOption); });
+};
+
+const iso = ref(isoFromDial(props.country) || props.defaultCountry);
+const display = ref(""); // the formatted national number shown in the input
+const localError = ref("");
+let lastEmitted = props.modelValue || "";
+
+// Render a stored value (E.164 or partial) into the country's national pattern for display.
+const formatNational = (val, region) => {
+  if (!val) return "";
+  try {
+    if (isValidPhoneNumber(val, region)) return parsePhoneNumber(val, region).formatNational();
+  } catch { /* fall through to as-you-type */ }
+  return new AsYouType(region).input(String(val));
+};
+
+display.value = formatNational(props.modelValue, iso.value);
+
+// External value changes (e.g. a record loads) — reformat, unless it is our own echo.
+watch(() => props.modelValue, (v) => {
+  if ((v || "") === (lastEmitted || "")) return;
+  display.value = formatNational(v, iso.value);
+});
+
+watch(() => props.country, (v) => { const next = isoFromDial(v); if (next && next !== iso.value) iso.value = next; });
+
+watch(iso, (region) => {
+  emit("update:country", dialFromIso(region));
+  // Reformat the current input under the new country's pattern.
+  display.value = new AsYouType(region).input(display.value);
+  emitValue();
+  if (display.value) validate();
+}, { immediate: false });
+
+// Emit the stored value: E.164 when valid, otherwise the typed (formatted) value.
+const emitValue = () => {
+  let stored = display.value;
+  try {
+    if (isValidPhoneNumber(display.value, iso.value)) {
+      stored = parsePhoneNumber(display.value, iso.value).number;
+    }
+  } catch { /* keep the raw value */ }
+  lastEmitted = stored;
+  emit("update:modelValue", stored);
+};
+
+const onInput = (val) => {
+  // Format as the user types using the selected country's pattern.
+  display.value = new AsYouType(iso.value).input(val || "");
+  emitValue();
+  validate();
+};
+
+const validate = () => {
+  localError.value = "";
+  if (display.value && iso.value && !isValidPhoneNumber(display.value, iso.value)) {
+    localError.value = "Enter a valid phone number for the selected country.";
+  }
+  const valid = !localError.value;
+  emit("update:valid", valid);
+  return valid;
+};
+
+const onBlur = (e) => {
+  // Keep the national display, but ensure the stored value is E.164 when valid.
+  if (validate()) emitValue();
+  emit("blur", e);
+};
+
+// Allow parents to force validation at submit time.
+defineExpose({ validate });
+</script>

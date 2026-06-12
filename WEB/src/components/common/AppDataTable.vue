@@ -24,11 +24,23 @@
         <q-btn flat round dense icon="o_view_column">
           <q-tooltip>Columns</q-tooltip>
           <q-menu>
-            <q-list dense style="min-width: 180px;">
-              <q-item-label header class="text-grey-7">Show columns</q-item-label>
-              <q-item v-for="col in toggleableColumns" :key="col.name" tag="label" clickable>
+            <q-list dense style="min-width: 230px;">
+              <q-item-label header class="text-grey-7">Show columns — drag to reorder</q-item-label>
+              <q-item
+                v-for="(col, index) in orderedToggleableColumns"
+                :key="col.name"
+                draggable="true"
+                :class="['app-col-item', { 'app-col-item--over': overIndex === index, 'app-col-item--drag': dragIndex === index }]"
+                @dragstart="onColDragStart(index, $event)"
+                @dragover.prevent="onColDragOver(index)"
+                @drop.prevent="onColDrop(index)"
+                @dragend="onColDragEnd"
+              >
+                <q-item-section side class="app-col-item__handle">
+                  <q-icon name="o_drag_indicator" class="text-grey-6" />
+                </q-item-section>
                 <q-item-section side>
-                  <q-checkbox v-model="visibleColumnNames" :val="col.name" dense />
+                  <q-checkbox v-model="visibleColumnNames" :val="col.name" dense @click.stop />
                 </q-item-section>
                 <q-item-section>{{ col.label }}</q-item-section>
               </q-item>
@@ -81,6 +93,7 @@
 import { computed, ref, watch, useSlots, toRef } from "vue";
 import { usePreferences } from "composables/usePreferences";
 import useColumnResize from "composables/dataTable/useColumnResize.js";
+import useColumnOrder from "composables/dataTable/useColumnOrder.js";
 
 const props = defineProps({
   rows: { type: Array, default: () => [] },
@@ -175,8 +188,34 @@ const effectiveVisibleColumns = computed(() => {
 
 watch(visibleColumnNames, (val) => prefs?.set("visibleColumns", val), { deep: true });
 
+// ---- Column ordering (drag-to-reorder in the columns menu, persisted) ----
+const columnsRefForOrder = toRef(props, "columns");
+const { reorder, resetOrder, orderColumns } = useColumnOrder({
+  columns: columnsRefForOrder,
+  initialOrder: prefs?.get("columnOrder", null),
+  saveOrderState: (o) => prefs?.set("columnOrder", o)
+});
+
+// Toggleable columns shown in the menu, in the user's chosen order.
+const orderedToggleableColumns = computed(() => orderColumns(toggleableColumns.value));
+
+const dragIndex = ref(null);
+const overIndex = ref(null);
+const onColDragStart = (i, e) => {
+  dragIndex.value = i;
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+};
+const onColDragOver = (i) => { overIndex.value = i; };
+const onColDrop = (i) => {
+  if (dragIndex.value !== null) reorder(dragIndex.value, i);
+  dragIndex.value = null;
+  overIndex.value = null;
+};
+const onColDragEnd = () => { dragIndex.value = null; overIndex.value = null; };
+
 const resetColumns = () => {
   visibleColumnNames.value = defaultColumnNames();
+  resetOrder();
 };
 
 // ---- Column resizing (persisted) ----
@@ -193,12 +232,15 @@ const columnStyle = (name) => {
   return w ? { width: `${w}px`, minWidth: `${w}px` } : {};
 };
 
-// Apply widths to body cells too, so columns line up with the resized headers.
-const effectiveColumns = computed(() =>
-  props.columns.map((c) => {
+// Apply widths to body cells too, so columns line up with the resized headers, then apply the
+// user's chosen column order (the "actions" column always sinks last).
+const effectiveColumns = computed(() => {
+  const withWidths = props.columns.map((c) => {
     const w = resizeWidths.value?.[c.name];
     return w ? { ...c, style: `width:${w}px;min-width:${w}px;` } : c;
-  }));
+  });
+  return orderColumns(withWidths);
+});
 
 // Slots other than the ones defined here are forwarded straight to QTable.
 const slots = useSlots();
@@ -240,5 +282,20 @@ const forwardedSlots = computed(() =>
   text-align: left;
   width: 1%;
   white-space: nowrap;
+}
+
+/* Draggable column-reorder rows in the columns menu. */
+.app-col-item {
+  cursor: grab;
+}
+.app-col-item__handle {
+  min-width: 0;
+  padding-right: 4px;
+}
+.app-col-item--drag {
+  opacity: 0.5;
+}
+.app-col-item--over {
+  border-top: 2px solid var(--q-primary);
 }
 </style>

@@ -56,7 +56,7 @@ public sealed class ProfileController : ControllerBase
         var person = await _persons.GetByUserIdAsync(userId.Value, cancellationToken);
         return person is null
             ? NotFound(ApiResponseFactory.NotFound("Profile not found."))
-            : Ok(ApiResponseFactory.Success(Map(person), "Profile retrieved."));
+            : Ok(ApiResponseFactory.Success(PersonProfileMapper.Map(person), "Profile retrieved."));
     }
 
     [HttpPut("/api/users/me/profile")]
@@ -87,7 +87,7 @@ public sealed class ProfileController : ControllerBase
         var person = await _persons.GetByUserIdAsync(userId, cancellationToken);
         return person is null
             ? NotFound(ApiResponseFactory.NotFound("Profile not found."))
-            : Ok(ApiResponseFactory.Success(Map(person), "Profile retrieved."));
+            : Ok(ApiResponseFactory.Success(PersonProfileMapper.Map(person), "Profile retrieved."));
     }
 
     [HttpPut("/api/admin/users/{userId:guid}/profile")]
@@ -175,7 +175,7 @@ public sealed class ProfileController : ControllerBase
 
         // Re-load to project the latest address/media navigations.
         var refreshed = await _persons.GetByIdAsync(person.Id, cancellationToken) ?? person;
-        return Ok(ApiResponseFactory.Success(Map(refreshed), "Profile updated."));
+        return Ok(ApiResponseFactory.Success(PersonProfileMapper.Map(refreshed), "Profile updated."));
     }
 
     private async Task UpsertAddressAsync(Person person, AddressInput input, CancellationToken cancellationToken)
@@ -238,22 +238,4 @@ public sealed class ProfileController : ControllerBase
         if (p.AddressId.HasValue) filled++;
         return (int)Math.Round(filled * 100.0 / total);
     }
-
-    private static PersonProfileResponse Map(Person p) => new(
-        p.Id, p.PersonCode, p.UserId,
-        p.FirstName, p.MiddleName, p.LastName, p.DisplayName, p.FullName,
-        p.PreferredName, p.Gender, p.DateOfBirth, p.MaritalStatus, p.Nationality, p.TimeZone, p.Language,
-        p.PrimaryEmail, p.SecondaryEmail, p.MobileNumber, p.CountryCode, p.AlternateMobileNumber,
-        p.EmergencyContactName, p.EmergencyContactRelationship, p.EmergencyContactNumber,
-        p.EmployeeCode, p.JobTitle, p.Department, p.Organization,
-        p.LinkedInUrl, p.TwitterUrl, p.FacebookUrl, p.InstagramUrl, p.WebsiteUrl,
-        p.ProfileCompletionPercentage, p.IsProfileVerified, p.LastProfileUpdatedOn, p.Notes,
-        p.ProfileMediaId, p.ProfileMedia?.PublicUrl,
-        p.Address is null ? null : MapAddress(p.Address));
-
-    private static AddressResponse MapAddress(Address a) => new(
-        a.Id, a.AddressType.ToString(), a.AddressLine1, a.AddressLine2, a.Landmark, a.Area,
-        a.BuildingName, a.FloorNumber, a.UnitNumber, a.CountryCode, a.CountryName, a.StateCode,
-        a.StateName, a.CityCode, a.CityName, a.PostalCode, a.Latitude, a.Longitude,
-        a.IsValidated, a.ValidationSource);
 }

@@ -52,7 +52,7 @@ export default function useFilters () {
   }
 
   function toDate (value, format) {
-    return value ? date.formatDate(value, format || "MM/DD/YYYY") : "";
+    return value ? date.formatDate(value, format || "MM-DD-YYYY") : "";
   }
 
   function toMonthYear (value, precisons) {
@@ -64,7 +64,7 @@ export default function useFilters () {
   }
 
   function toDateTime (value, format) {
-    return value ? date.formatDate(value, format || "MM/DD/YYYY hh:mm A") : "";
+    return value ? date.formatDate(value, format || "MM-DD-YYYY hh:mm A") : "";
   }
 
   function truncate (value, length) {

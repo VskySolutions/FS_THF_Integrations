@@ -73,25 +73,27 @@
       </template>
     </app-data-table>
 
-    <!-- Create user -->
+    <!-- Create user (promote an existing Person to a login account) -->
     <app-form-drawer v-model="formOpen" title="Create User" :saving="saving" @submit="submitForm" @cancel="resetForm">
       <q-form ref="formRef" greedy>
+        <app-select
+          v-model="form.personId" :options="personOptions" label="Person *" class="q-mb-md"
+          :loading="loadingPersons" :clearable="false" :disable="personLocked" use-input
+          hint="Persons already linked to a user are disabled."
+          @filter="filterPersons" @update:model-value="onPersonChange"
+        >
+          <template #after>
+            <q-btn round dense flat icon="o_add" color="primary" :disable="personLocked" @click="personDialogOpen = true">
+              <q-tooltip>Add a new person</q-tooltip>
+            </q-btn>
+          </template>
+        </app-select>
         <q-input
-          v-model="form.email" outlined stack-label hide-bottom-space type="email" label="Email *" class="q-mb-md"
+          v-model="form.email" outlined stack-label hide-bottom-space type="email" label="Username *" class="q-mb-md"
+          hint="The user signs in with this email."
           :error="!!emailError" :error-message="emailError"
-          :rules="[(v) => !!v || 'Email is required', (v) => /.+@.+\..+/.test(v) || 'Enter a valid email']"
+          :rules="[(v) => !!v || 'Username is required', (v) => /.+@.+\..+/.test(v) || 'Enter a valid email']"
         />
-        <div class="row q-col-gutter-md q-mb-md">
-          <q-input
-            v-model="form.firstName" outlined stack-label hide-bottom-space label="First Name *" class="col"
-            :rules="[(v) => !!v || 'First name is required']"
-          />
-          <q-input
-            v-model="form.lastName" outlined stack-label hide-bottom-space label="Last Name *" class="col"
-            :rules="[(v) => !!v || 'Last name is required']"
-          />
-        </div>
-        <q-input v-model="form.phoneNumber" outlined stack-label hide-bottom-space label="Phone Number" class="q-mb-md" />
         <app-select
           v-if="canChooseTenant" v-model="form.tenantId" :options="tenantOptions" label="Tenant *"
           :loading="loadingTenants" class="q-mb-md" :clearable="false" @update:model-value="onTenantChange"
@@ -100,15 +102,19 @@
       </q-form>
     </app-form-drawer>
 
+    <!-- Quick-add Person (the "+" beside the Person dropdown) -->
+    <person-form-dialog v-model="personDialogOpen" @created="onPersonCreated" />
+
     <temp-password-dialog v-model="tempPwOpen" :password="tempPassword" />
   </q-page>
 </template>
 
 <script setup>
-import { ref, reactive, computed } from "vue";
-import { userApi, tenantApi, roleApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
-import { useTenantStore } from "stores/tenant";
+import { ref, reactive, computed, onMounted } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import { userApi, personApi, roleApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
 import { usePermissions, Permissions } from "composables/usePermissions";
+import { useTenantOptions } from "composables/useTenantOptions";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
@@ -119,18 +125,22 @@ import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppSelect from "components/common/AppSelect.vue";
+import PersonFormDialog from "components/person/PersonFormDialog.vue";
 import TempPasswordDialog from "components/temp_password_dialog.vue";
+
+const route = useRoute();
+const router = useRouter();
 
 const notify = useNotify();
 const { confirm } = useConfirm();
-const tenantStore = useTenantStore();
 const { has } = usePermissions();
-// Only platform admins (tenants.write) choose a target tenant; others create within their own.
-const canChooseTenant = computed(() => has(Permissions.TenantsWrite));
+// Only platform/super admins (tenants.write) choose a target tenant; others create within their own.
+const { canChooseTenant, activeTenantId, tenantOptions, loadingTenants, loadTenants } = useTenantOptions();
 const canCreate = computed(() => has(Permissions.UsersWrite));
 const fmt = useDateFormat();
 
 const columns = [
+  { name: "tenantName", label: "Tenant", field: "tenantName", align: "left", sortable: true, default: true },
   { name: "fullName", label: "Name", field: "fullName", align: "left", sortable: true, default: true },
   { name: "email", label: "Email", field: "email", align: "left", sortable: true, default: true },
   { name: "phoneNumber", label: "Phone", field: "phoneNumber", align: "left", sortable: true },
@@ -172,27 +182,78 @@ const formOpen = ref(false);
 const saving = ref(false);
 const emailError = ref("");
 const formRef = ref(null);
-const form = reactive({ email: "", firstName: "", lastName: "", phoneNumber: "", roleId: null, tenantId: null });
-const tenantOptions = ref([]);
-const loadingTenants = ref(false);
+const form = reactive({ personId: null, email: "", roleId: null, tenantId: null });
+const personDialogOpen = ref(false);
 const roleOptions = ref([]);
 const loadingRoles = ref(false);
 
-// The tenant the user is being created in: chosen by platform admins, else the caller's own.
-const targetTenantId = computed(() => (canChooseTenant.value ? form.tenantId : tenantStore.activeTenantId));
+// ---- Person dropdown (the user is created by promoting an existing person) ----
+const allPersons = ref([]);
+const personOptions = ref([]);
+const loadingPersons = ref(false);
+const personLocked = ref(false); // locked when opened via "Convert to User" deep-link
 
-const loadTenants = async () => {
-  if (!canChooseTenant.value || tenantOptions.value.length) return;
-  loadingTenants.value = true;
+const personOption = (p) => ({
+  label: p.primaryEmail ? `${p.fullName} — ${p.primaryEmail}` : p.fullName,
+  value: p.id,
+  disable: p.isUser // already a user: cannot promote again
+});
+
+const loadPersons = async () => {
+  loadingPersons.value = true;
   try {
-    const resp = await tenantApi.list({ page: 1, limit: 100 });
-    tenantOptions.value = (resp?.data || []).map((t) => ({ label: t.name, value: t.tenantId }));
-  } catch {
-    // non-fatal
+    const people = await personApi.selectable();
+    allPersons.value = people || [];
+    personOptions.value = allPersons.value.map(personOption);
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
   } finally {
-    loadingTenants.value = false;
+    loadingPersons.value = false;
   }
 };
+
+const filterPersons = (val, update) => {
+  const needle = (val || "").toLowerCase();
+  update(() => {
+    personOptions.value = allPersons.value
+      .filter((p) => personOption(p).label.toLowerCase().includes(needle))
+      .map(personOption);
+  });
+};
+
+// Pre-fill the username from the chosen person (person is the source of truth), and for tenant
+// choosers default the user's tenant to the person's owning tenant.
+const onPersonChange = (personId) => {
+  const p = allPersons.value.find((x) => x.id === personId);
+  if (!p) return;
+  form.email = p.primaryEmail || "";
+  if (canChooseTenant.value && p.tenantId) {
+    form.tenantId = p.tenantId;
+    loadRoles();
+  }
+};
+
+// A person was just created via the inline "+" dialog: add it, select it, and prefill.
+const onPersonCreated = (detail) => {
+  const p = detail?.profile;
+  if (!p) return;
+  const item = {
+    id: p.id,
+    fullName: p.fullName,
+    primaryEmail: p.primaryEmail,
+    mobileNumber: p.mobileNumber,
+    countryCode: p.countryCode,
+    tenantId: p.tenantId,
+    isUser: false
+  };
+  allPersons.value = [item, ...allPersons.value.filter((x) => x.id !== p.id)];
+  personOptions.value = allPersons.value.map(personOption);
+  form.personId = p.id;
+  onPersonChange(p.id);
+};
+
+// The tenant the user is being created in: chosen by platform admins, else the caller's own.
+const targetTenantId = computed(() => (canChooseTenant.value ? form.tenantId : activeTenantId.value));
 
 // Role options come from the tenant's assignable roles (system roles + the tenant's custom roles).
 const loadRoles = async () => {
@@ -217,31 +278,48 @@ const onTenantChange = (tenantId) => {
 };
 
 const resetForm = () => {
+  form.personId = null;
   form.email = "";
-  form.firstName = "";
-  form.lastName = "";
-  form.phoneNumber = "";
   form.roleId = null;
   form.tenantId = null;
   roleOptions.value = [];
   emailError.value = "";
+  personLocked.value = false;
 };
 
-const openCreate = async () => {
+const openCreate = async (presetPersonId = null) => {
   resetForm();
-  if (canChooseTenant.value) {
-    await loadTenants();
-  } else {
-    await loadRoles();
+  await Promise.all([
+    loadPersons(),
+    canChooseTenant.value ? loadTenants() : loadRoles()
+  ]);
+  if (presetPersonId) {
+    form.personId = presetPersonId;
+    personLocked.value = true;
+    onPersonChange(presetPersonId);
   }
   formOpen.value = true;
 };
+
+// "Convert to User" from the People list deep-links here with ?personId=...
+onMounted(() => {
+  const presetPersonId = route.query.personId;
+  if (presetPersonId && canCreate.value) {
+    openCreate(presetPersonId);
+    // Drop the query param so a refresh doesn't re-open the drawer.
+    router.replace({ query: {} });
+  }
+});
 
 const tempPwOpen = ref(false);
 const tempPassword = ref("");
 
 const submitForm = async ({ clearDraft } = {}) => {
   emailError.value = "";
+  if (!form.personId) {
+    notify.error("Select a person.");
+    return;
+  }
   if (!(await formRef.value?.validate())) return;
   if (!form.roleId) {
     notify.error("Select a role.");
@@ -255,11 +333,8 @@ const submitForm = async ({ clearDraft } = {}) => {
   saving.value = true;
   try {
     const payload = {
+      personId: form.personId,
       email: form.email,
-      firstName: form.firstName,
-      lastName: form.lastName,
-      phoneNumber: form.phoneNumber,
-      displayName: `${form.firstName} ${form.lastName}`,
       roleId: form.roleId,
       tenantId
     };
@@ -285,7 +360,7 @@ const submitForm = async ({ clearDraft } = {}) => {
 const setStatus = async (row, isActive) => {
   const ok = await confirm({
     title: isActive ? "Activate user" : "Deactivate user",
-    message: `${isActive ? "Activate" : "Deactivate"} ${row.displayName}?`,
+    message: `${isActive ? "Activate" : "Deactivate"} ${row.fullName}?`,
     type: isActive ? "primary" : "danger"
   });
   if (!ok) return;
@@ -319,7 +394,7 @@ const bulkSetStatus = async (sel, isActive) => {
 const resetPassword = async (row) => {
   const ok = await confirm({
     title: "Reset password",
-    message: `Generate a new temporary password for ${row.displayName}? Their current sessions will end.`,
+    message: `Generate a new temporary password for ${row.fullName}? Their current sessions will end.`,
     confirmLabel: "Reset",
     type: "danger"
   });

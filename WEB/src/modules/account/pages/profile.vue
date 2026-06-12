@@ -1,181 +1,170 @@
 <template>
   <q-page padding>
-    <app-breadcrumbs :items="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'Profile' }]" />
-    <div class="q-mx-auto" style="max-width: 860px;">
-      <div class="row items-center q-mb-md">
-        <div class="text-h5 text-weight-bold">My Profile</div>
-        <q-space />
-        <q-chip v-if="profile" dense color="blue-grey-1" text-color="blue-grey-8" :label="`${profile.profileCompletionPercentage}% complete`" />
-      </div>
-
-      <div v-if="loading" class="row flex-center q-pa-xl"><q-spinner color="primary" size="40px" /></div>
-
-      <template v-else>
-        <!-- Profile image -->
-        <q-card flat bordered class="account-card q-mb-md">
-          <q-card-section class="row items-center q-gutter-md">
-            <q-avatar size="96px" color="grey-3" text-color="grey-8">
-              <img v-if="previewUrl" :src="previewUrl" alt="Profile">
-              <q-icon v-else name="o_person" size="48px" />
-            </q-avatar>
-            <div class="column q-gutter-sm">
-              <div class="text-subtitle1 text-weight-medium">Profile picture</div>
-              <div class="row q-gutter-sm">
-                <q-btn outline no-caps color="primary" icon="o_upload" label="Upload" @click="pickImage" />
-                <q-btn v-if="previewUrl" flat no-caps color="negative" icon="o_delete" label="Remove" @click="removeImage" />
-              </div>
-            </div>
-          </q-card-section>
-          <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileSelected">
-        </q-card>
-
-        <!-- Personal details -->
-        <q-card flat bordered class="account-card q-mb-md">
-          <q-card-section class="row items-center q-gutter-sm">
-            <q-icon name="o_badge" color="primary" size="sm" />
-            <div class="text-subtitle1 text-weight-medium">Personal details</div>
-          </q-card-section>
-          <q-separator />
-          <q-card-section class="row q-col-gutter-md">
-            <div class="col-12 section-subhead">Name</div>
-            <q-input v-model="form.firstName" outlined dense stack-label hide-bottom-space label="First Name" class="col-12 col-sm-6" />
-            <q-input v-model="form.middleName" outlined dense stack-label hide-bottom-space label="Middle Name" class="col-12 col-sm-6" />
-            <q-input v-model="form.lastName" outlined dense stack-label hide-bottom-space label="Last Name" class="col-12 col-sm-6" />
-            <q-input v-model="form.preferredName" outlined dense stack-label hide-bottom-space label="Preferred Name" class="col-12 col-sm-6" />
-            <q-input v-model="form.displayName" outlined dense stack-label hide-bottom-space label="Display Name" class="col-12 col-sm-6" />
-
-            <div class="col-12 section-subhead">Demographics</div>
-            <app-select v-model="form.gender" :options="genderOptions" label="Gender" class="col-12 col-sm-6" />
-            <q-input v-model="form.dateOfBirth" outlined dense stack-label hide-bottom-space type="date" label="Date of Birth" class="col-12 col-sm-6" />
-            <app-select v-model="form.maritalStatus" :options="maritalOptions" label="Marital Status" class="col-12 col-sm-6" />
-            <app-select
-              v-model="form.nationality" :options="countryNameOptions" label="Nationality"
-              use-input class="col-12 col-sm-6" @filter="filterCountryNames"
-            />
-          </q-card-section>
-        </q-card>
-
-        <!-- Contact details -->
-        <q-card flat bordered class="account-card q-mb-md">
-          <q-card-section class="row items-center q-gutter-sm">
-            <q-icon name="o_contact_mail" color="primary" size="sm" />
-            <div class="text-subtitle1 text-weight-medium">Contact details</div>
-          </q-card-section>
-          <q-separator />
-          <q-card-section class="row q-col-gutter-md">
-            <div class="col-12 section-subhead">Email</div>
-            <q-input v-model="form.primaryEmail" outlined dense stack-label hide-bottom-space type="email" label="Personal Email" class="col-12 col-sm-6" />
-            <q-input v-model="form.secondaryEmail" outlined dense stack-label hide-bottom-space type="email" label="Alternate Email" class="col-12 col-sm-6" />
-
-            <div class="col-12 section-subhead">Phone</div>
-            <app-phone-input
-              v-model="form.mobileNumber" v-model:country="form.phoneCountryCode"
-              label="Mobile Number" country-label="Phone Country" :dense="true" class="col-12"
-            />
-            <q-input v-model="form.alternateMobileNumber" outlined dense stack-label hide-bottom-space label="Alternate Mobile" class="col-12 col-sm-6" />
-          </q-card-section>
-        </q-card>
-
-        <!-- Emergency contact -->
-        <q-card flat bordered class="account-card q-mb-md">
-          <q-card-section class="row items-center q-gutter-sm">
-            <q-icon name="o_emergency" color="primary" size="sm" />
-            <div class="text-subtitle1 text-weight-medium">Emergency contact</div>
-          </q-card-section>
-          <q-separator />
-          <q-card-section class="row q-col-gutter-md">
-            <q-input v-model="form.emergencyContactName" outlined dense stack-label hide-bottom-space label="Contact Name" class="col-12 col-sm-4" />
-            <q-input v-model="form.emergencyContactRelationship" outlined dense stack-label hide-bottom-space label="Relationship" class="col-12 col-sm-4" />
-            <q-input v-model="form.emergencyContactNumber" outlined dense stack-label hide-bottom-space label="Contact Number" class="col-12 col-sm-4" />
-          </q-card-section>
-        </q-card>
-
-        <!-- Address -->
-        <q-card flat bordered class="account-card q-mb-md">
-          <q-card-section class="row items-center q-gutter-sm">
-            <q-icon name="o_location_on" color="primary" size="sm" />
-            <div class="text-subtitle1 text-weight-medium">Address</div>
-          </q-card-section>
-          <q-separator />
-          <q-card-section class="row q-col-gutter-md">
-            <div class="col-12 section-subhead">Location</div>
-            <app-select
-              v-model="address.countryCode" :options="countryOptions" label="Country" use-input
-              class="col-12 col-sm-4" @filter="filterCountries" @update:model-value="onCountryChange"
-            />
-            <app-select
-              v-model="address.stateCode" :options="stateOptions" label="State / Province" use-input
-              class="col-12 col-sm-4" :disable="!address.countryCode" @filter="filterStates" @update:model-value="onStateChange"
-            />
-            <app-select
-              v-model="address.cityName" :options="cityOptions" label="City" use-input
-              class="col-12 col-sm-4" :disable="!address.stateCode" @filter="filterCities"
-            />
-            <q-input
-              v-model="address.postalCode" outlined dense stack-label hide-bottom-space label="Postal Code" class="col-12 col-sm-4"
-              :error="!!postalError" :error-message="postalError" @blur="validatePostal"
-            />
-
-            <div class="col-12 section-subhead">Street address</div>
-            <q-input v-model="address.addressLine1" outlined dense stack-label hide-bottom-space label="Address Line 1" class="col-12 col-sm-8" />
-            <q-input v-model="address.addressLine2" outlined dense stack-label hide-bottom-space label="Address Line 2" class="col-12 col-sm-6" />
-            <q-input v-model="address.landmark" outlined dense stack-label hide-bottom-space label="Landmark" class="col-12 col-sm-6" />
-            <q-input v-model="address.buildingName" outlined dense stack-label hide-bottom-space label="Building / Complex" class="col-12 col-sm-4" />
-            <q-input v-model="address.floorNumber" outlined dense stack-label hide-bottom-space label="Floor" class="col-12 col-sm-4" />
-            <q-input v-model="address.unitNumber" outlined dense stack-label hide-bottom-space label="Unit / Suite" class="col-12 col-sm-4" />
-          </q-card-section>
-        </q-card>
-
-        <div class="row justify-end q-mb-lg">
-          <q-btn unelevated no-caps color="primary" label="Save profile" :loading="saving" @click="save" />
-        </div>
+    <app-detail-header
+      :items="[
+        { label: 'Home', icon: 'o_home', to: '/' },
+        { label: 'My Account', to: { name: 'account' } },
+        { label: 'My Profile' }
+      ]"
+      :back-to="{ name: 'account' }"
+    >
+      <template #actions>
+        <q-chip v-if="profile" dense color="blue-1" text-color="primary" class="text-weight-medium">
+          {{ profile.profileCompletionPercentage }}% complete
+        </q-chip>
       </template>
+    </app-detail-header>
 
-      <!-- Tenant assignments -->
-      <q-card flat bordered class="account-card q-mb-md">
-        <q-card-section class="text-subtitle1 text-weight-medium">Tenant assignments</q-card-section>
+    <div v-if="loading" class="row flex-center q-pa-xl"><q-spinner color="primary" size="40px" /></div>
+
+    <template v-else>
+      <!-- Profile image -->
+      <q-card flat bordered class="profile-card q-mb-md">
+        <q-card-section class="text-subtitle1 text-weight-medium">Profile picture</q-card-section>
         <q-separator />
-        <q-list separator>
-          <q-item v-for="t in assignments" :key="t.tenantId">
-            <q-item-section>
-              <q-item-label>{{ t.name || t.identifier }}</q-item-label>
-              <q-item-label caption>{{ t.identifier }}</q-item-label>
-            </q-item-section>
-            <q-item-section side><q-badge color="primary" class="text-capitalize">{{ t.role }}</q-badge></q-item-section>
-          </q-item>
-          <q-item v-if="!assignments.length"><q-item-section class="text-grey-6">No assignments.</q-item-section></q-item>
-        </q-list>
+        <q-card-section class="row items-center q-gutter-md">
+          <q-avatar size="96px" color="grey-3" text-color="grey-8">
+            <img v-if="previewUrl" :src="previewUrl" alt="Profile">
+            <q-icon v-else name="o_person" size="48px" />
+          </q-avatar>
+          <div class="column q-gutter-sm">
+            <div class="row q-gutter-sm">
+              <q-btn outline no-caps color="primary" icon="o_upload" label="Upload" @click="pickImage" />
+              <q-btn v-if="previewUrl" flat no-caps color="negative" icon="o_delete" label="Remove" @click="removeImage" />
+            </div>
+          </div>
+        </q-card-section>
+        <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileSelected">
       </q-card>
 
-      <!-- Password change -->
-      <q-card flat bordered class="account-card">
-        <q-card-section class="row items-center q-gutter-sm">
-          <q-icon name="o_lock" color="primary" size="sm" />
-          <div class="text-subtitle1 text-weight-medium">Change password</div>
+      <!-- Personal details -->
+      <q-card flat bordered class="profile-card q-mb-md">
+        <q-card-section class="text-subtitle1 text-weight-medium">Personal details</q-card-section>
+        <q-separator />
+        <q-card-section class="row q-col-gutter-md">
+          <div class="col-12 section-subhead">Name</div>
+          <app-text-field v-model="form.firstName" label="First Name" class="col-12 col-sm-6" />
+          <app-text-field v-model="form.middleName" label="Middle Name" class="col-12 col-sm-6" />
+          <app-text-field v-model="form.lastName" label="Last Name" class="col-12 col-sm-6" />
+          <app-text-field v-model="form.preferredName" label="Preferred Name" class="col-12 col-sm-6" />
+          <app-text-field v-model="form.displayName" label="Display Name" class="col-12 col-sm-6" />
+
+          <div class="col-12 section-subhead">Demographics</div>
+          <app-select v-model="form.gender" :options="genderOptions" label="Gender" class="col-12 col-sm-6" />
+          <app-date-field v-model="form.dateOfBirth" label="Date of Birth" class="col-12 col-sm-6" />
+          <app-select v-model="form.maritalStatus" :options="maritalOptions" label="Marital Status" class="col-12 col-sm-6" />
+          <app-select
+            v-model="form.nationality" :options="countryNameOptions" label="Nationality"
+            use-input class="col-12 col-sm-6" @filter="filterCountryNames"
+          />
+        </q-card-section>
+      </q-card>
+
+      <!-- Contact details -->
+      <q-card flat bordered class="profile-card q-mb-md">
+        <q-card-section class="text-subtitle1 text-weight-medium">Contact details</q-card-section>
+        <q-separator />
+        <q-card-section class="row q-col-gutter-md">
+          <div class="col-12 section-subhead">Email</div>
+          <app-text-field v-model="form.primaryEmail" type="email" label="Personal Email" class="col-12 col-sm-6" />
+          <app-text-field v-model="form.secondaryEmail" type="email" label="Alternate Email" class="col-12 col-sm-6" />
+
+          <div class="col-12 section-subhead">Phone</div>
+          <app-phone-input
+            v-model="form.mobileNumber" v-model:country="form.phoneCountryCode"
+            label="Mobile Number" country-label="Phone Country" :dense="true" class="col-12"
+          />
+          <app-text-field v-model="form.alternateMobileNumber" label="Alternate Mobile" class="col-12 col-sm-6" />
+        </q-card-section>
+      </q-card>
+
+      <!-- Emergency contact -->
+      <q-card flat bordered class="profile-card q-mb-md">
+        <q-card-section class="text-subtitle1 text-weight-medium">Emergency contact</q-card-section>
+        <q-separator />
+        <q-card-section class="row q-col-gutter-md">
+          <app-text-field v-model="form.emergencyContactName" label="Contact Name" class="col-12 col-sm-4" />
+          <app-text-field v-model="form.emergencyContactRelationship" label="Relationship" class="col-12 col-sm-4" />
+          <app-text-field v-model="form.emergencyContactNumber" label="Contact Number" class="col-12 col-sm-4" />
+        </q-card-section>
+      </q-card>
+
+      <!-- Address -->
+      <q-card flat bordered class="profile-card q-mb-md">
+        <q-card-section class="text-subtitle1 text-weight-medium">Address</q-card-section>
+        <q-separator />
+        <q-card-section class="row q-col-gutter-md">
+          <div class="col-12 section-subhead">Location</div>
+          <app-select
+            v-model="address.countryCode" :options="countryOptions" label="Country" use-input
+            class="col-12 col-sm-4" @filter="filterCountries" @update:model-value="onCountryChange"
+          />
+          <app-select
+            v-model="address.stateCode" :options="stateOptions" label="State / Province" use-input
+            class="col-12 col-sm-4" :disable="!address.countryCode" @filter="filterStates" @update:model-value="onStateChange"
+          />
+          <app-select
+            v-model="address.cityName" :options="cityOptions" label="City" use-input
+            class="col-12 col-sm-4" :disable="!address.stateCode" @filter="filterCities"
+          />
+          <app-text-field
+            v-model="address.postalCode" label="Postal Code" class="col-12 col-sm-4"
+            :error="!!postalError" :error-message="postalError" @blur="validatePostal"
+          />
+
+          <div class="col-12 section-subhead">Street address</div>
+          <app-text-field v-model="address.addressLine1" label="Address Line 1" class="col-12 col-sm-8" />
+          <app-text-field v-model="address.addressLine2" label="Address Line 2" class="col-12 col-sm-6" />
+          <app-text-field v-model="address.landmark" label="Landmark" class="col-12 col-sm-6" />
+          <app-text-field v-model="address.buildingName" label="Building / Complex" class="col-12 col-sm-4" />
+          <app-text-field v-model="address.floorNumber" label="Floor" class="col-12 col-sm-4" />
+          <app-text-field v-model="address.unitNumber" label="Unit / Suite" class="col-12 col-sm-4" />
+        </q-card-section>
+      </q-card>
+
+      <div class="row justify-end q-mb-lg">
+        <q-btn unelevated no-caps color="primary" label="Save profile" :loading="saving" @click="save" />
+      </div>
+    </template>
+
+    <!-- Tenant assignments -->
+    <q-card flat bordered class="profile-card q-mb-md">
+      <q-card-section class="text-subtitle1 text-weight-medium">Tenant assignments</q-card-section>
+      <q-separator />
+      <q-list separator>
+        <q-item v-for="t in assignments" :key="t.tenantId">
+          <q-item-section>
+            <q-item-label>{{ t.name || t.identifier }}</q-item-label>
+            <q-item-label caption>{{ t.identifier }}</q-item-label>
+          </q-item-section>
+          <q-item-section side><q-badge color="primary" class="text-capitalize">{{ t.role }}</q-badge></q-item-section>
+        </q-item>
+        <q-item v-if="!assignments.length"><q-item-section class="text-grey-6">No assignments.</q-item-section></q-item>
+      </q-list>
+    </q-card>
+
+    <!-- Password change -->
+    <q-card flat bordered class="profile-card">
+      <q-card-section class="text-subtitle1 text-weight-medium">Change password</q-card-section>
+      <q-separator />
+      <q-form ref="pwForm" greedy @submit.prevent.stop="changePassword">
+        <q-card-section class="row q-col-gutter-md">
+          <app-text-field
+            v-model="pw.current" label="Current Password *" type="password" class="col-12"
+            :rules="[(v) => !!v || 'Current password is required']"
+          />
+          <app-text-field v-model="pw.next" label="New Password *" type="password" class="col-12" :rules="passwordRules" />
+          <app-text-field
+            v-model="pw.confirm" label="Confirm Password *" type="password" class="col-12"
+            :rules="[(v) => !!v || 'Please confirm', (v) => v === pw.next || 'Passwords do not match']"
+          />
         </q-card-section>
         <q-separator />
-        <q-form ref="pwForm" greedy @submit.prevent.stop="changePassword">
-          <q-card-section>
-            <q-input
-              v-model="pw.current" outlined stack-label hide-bottom-space label="Current Password *" type="password" class="q-mb-md"
-              :rules="[(v) => !!v || 'Current password is required']"
-            />
-            <q-input
-              v-model="pw.next" outlined stack-label hide-bottom-space label="New Password *" type="password" class="q-mb-md"
-              :rules="passwordRules"
-            />
-            <q-input
-              v-model="pw.confirm" outlined stack-label hide-bottom-space label="Confirm Password *" type="password"
-              :rules="[(v) => !!v || 'Please confirm', (v) => v === pw.next || 'Passwords do not match']"
-            />
-          </q-card-section>
-          <q-separator />
-          <q-card-actions align="right">
-            <q-btn unelevated no-caps color="primary" label="Update password" type="submit" :loading="savingPw" />
-          </q-card-actions>
-        </q-form>
-      </q-card>
-    </div>
+        <q-card-actions align="right">
+          <q-btn unelevated no-caps color="primary" label="Update password" type="submit" :loading="savingPw" />
+        </q-card-actions>
+      </q-form>
+    </q-card>
 
     <!-- Image crop dialog -->
     <q-dialog v-model="cropOpen">
@@ -206,8 +195,10 @@ import "vue-advanced-cropper/dist/style.css";
 import { authApi, profileApi, mediaApi, getApiErrorMessage } from "services/api";
 import { useAuthStore } from "stores/auth";
 import { useNotify } from "composables/useNotify";
-import AppBreadcrumbs from "components/common/AppBreadcrumbs.vue";
+import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import AppSelect from "components/common/AppSelect.vue";
+import AppTextField from "components/common/AppTextField.vue";
+import AppDateField from "components/common/AppDateField.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
 
 const router = useRouter();
@@ -503,8 +494,8 @@ onMounted(load);
 </script>
 
 <style scoped>
-.account-card {
-  border-radius: 16px;
+.profile-card {
+  border-radius: 12px;
 }
 .section-subhead {
   font-size: 11px;

@@ -27,9 +27,6 @@ internal sealed class RetryQueueEntryConfiguration : IEntityTypeConfiguration<Re
         builder.Property(r => r.LastError)
             .HasMaxLength(2000);
 
-        builder.Property(r => r.CreatedAtUtc)
-            .IsRequired();
-
         // The RetryJobScheduler polls for due, pending entries.
         builder.HasIndex(r => new { r.Status, r.NextRetryDate });
         builder.HasIndex(r => r.JobId);

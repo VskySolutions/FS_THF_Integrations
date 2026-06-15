@@ -85,7 +85,6 @@ internal sealed class RetryQueueManager : IRetryQueueManager
                 NextRetryDate = nextRetryDate,
                 Status = RetryStatus.Pending,
                 LastError = reason,
-                CreatedAtUtc = DateTime.UtcNow,
             }, cancellationToken);
         }
         else

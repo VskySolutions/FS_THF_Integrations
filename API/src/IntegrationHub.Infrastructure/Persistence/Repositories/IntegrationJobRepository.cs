@@ -48,8 +48,8 @@ internal sealed class IntegrationJobRepository : IIntegrationJobRepository
         if (tenantId is { } tid) { query = query.Where(j => j.TenantId == tid); }
         if (status is { } st) { query = query.Where(j => j.Status == st); }
         if (!string.IsNullOrWhiteSpace(interfaceName)) { query = query.Where(j => j.InterfaceName == interfaceName); }
-        if (fromDate is { } from) { query = query.Where(j => j.CreatedAtUtc >= from); }
-        if (toDate is { } to) { query = query.Where(j => j.CreatedAtUtc <= to); }
+        if (fromDate is { } from) { query = query.Where(j => j.CreatedOnUtc >= from); }
+        if (toDate is { } to) { query = query.Where(j => j.CreatedOnUtc <= to); }
 
         var total = await query.CountAsync(cancellationToken);
         var items = await query.OrderByDescending(j => j.UpdatedOnUtc)

@@ -132,7 +132,6 @@ public sealed class ConcurController : ControllerBase
             SourceSystem = SystemName.Concur,
             TargetSystem = SystemName.Maconomy,
             Status = IntegrationJobStatus.Created,
-            CreatedAtUtc = DateTime.UtcNow,
         };
         await _jobs.AddAsync(job, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken); // TenantId stamped from ITenantContext

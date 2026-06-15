@@ -89,7 +89,7 @@ public sealed class AdminController : ControllerBase
             direction = j.Direction.ToString(),
             sourceSystem = j.SourceSystem.ToString(), targetSystem = j.TargetSystem.ToString(),
             flowLabel = IntegrationFlows.Label(j.SourceSystem, j.TargetSystem, j.InterfaceName),
-            createdDate = j.CreatedAtUtc, processedDate = j.CompletedAtUtc,
+            createdDate = j.CreatedOnUtc, processedDate = j.CompletedAtUtc,
             createdBy = NameOf(names, j.CreatedById), updatedBy = NameOf(names, j.UpdatedById),
             createdOnUtc = j.CreatedOnUtc, updatedOnUtc = j.UpdatedOnUtc,
         });
@@ -110,7 +110,7 @@ public sealed class AdminController : ControllerBase
         var names = await ResolveActorNamesAsync(items.SelectMany(l => new[] { l.CreatedById, l.UpdatedById }), cancellationToken);
         var entries = items.Select(l => new
         {
-            l.Id, jobId = l.JobId, level = l.Level, l.Message, createdDate = l.CreatedAtUtc,
+            l.Id, jobId = l.JobId, level = l.Level, l.Message, createdDate = l.CreatedOnUtc,
             createdBy = NameOf(names, l.CreatedById), updatedBy = NameOf(names, l.UpdatedById), updatedOnUtc = l.UpdatedOnUtc,
         });
         return Ok(ApiResponseFactory.Paginated(entries, "Logs retrieved.", page, limit, total));

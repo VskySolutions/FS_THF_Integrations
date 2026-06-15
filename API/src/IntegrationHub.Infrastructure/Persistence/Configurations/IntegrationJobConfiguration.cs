@@ -42,12 +42,9 @@ internal sealed class IntegrationJobConfiguration : IEntityTypeConfiguration<Int
         builder.Property(j => j.ErrorMessage)
             .HasMaxLength(2000);
 
-        builder.Property(j => j.CreatedAtUtc)
-            .IsRequired();
-
         builder.HasIndex(j => j.Status);
         builder.HasIndex(j => j.CorrelationId);
-        builder.HasIndex(j => j.CreatedAtUtc);
+        builder.HasIndex(j => j.CreatedOnUtc);
         builder.HasIndex(j => j.TenantId);
 
         builder.HasOne<Tenant>()

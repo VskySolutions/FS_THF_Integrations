@@ -147,5 +147,5 @@ public sealed class VendorPaymentImportIntegrationService
     }
 
     private Task LogAsync(IntegrationJob job, string level, string message, CancellationToken cancellationToken)
-        => _logs.AddAsync(new IntegrationLog { JobId = job.Id, Level = level, Message = message, CreatedAtUtc = DateTime.UtcNow }, cancellationToken);
+        => _logs.AddAsync(new IntegrationLog { JobId = job.Id, Level = level, Message = message }, cancellationToken);
 }

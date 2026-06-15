@@ -30,9 +30,6 @@ public class RetryQueueEntry : AuditableEntity
     /// <summary>Error message from the attempt that triggered this retry.</summary>
     public string? LastError { get; set; }
 
-    /// <summary>UTC timestamp when this retry entry was created.</summary>
-    public DateTime CreatedAtUtc { get; set; }
-
     /// <summary>Navigation to the job awaiting retry.</summary>
     public IntegrationJob? Job { get; set; }
 }

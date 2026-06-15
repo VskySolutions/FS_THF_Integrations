@@ -16,7 +16,6 @@ internal static class TestData
             SourceSystem = SystemName.Concur,
             TargetSystem = SystemName.Maconomy,
             Status = status,
-            CreatedAtUtc = DateTime.UtcNow,
         };
 
     public static User User(string email = "user@test.local", bool isActive = true, int tokenVersion = 1, bool mustChangePassword = false)

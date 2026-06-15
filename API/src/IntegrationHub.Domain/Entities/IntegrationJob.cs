@@ -39,9 +39,6 @@ public class IntegrationJob : AuditableEntity
     /// <summary>Most recent error message, if the job has failed.</summary>
     public string? ErrorMessage { get; set; }
 
-    /// <summary>UTC timestamp when the job was created.</summary>
-    public DateTime CreatedAtUtc { get; set; }
-
     /// <summary>UTC timestamp when the job began executing.</summary>
     public DateTime? StartedAtUtc { get; set; }
 

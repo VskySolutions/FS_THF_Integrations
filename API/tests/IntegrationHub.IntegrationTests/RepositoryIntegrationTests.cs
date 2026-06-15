@@ -38,7 +38,6 @@ public class RepositoryIntegrationTests
             SourceSystem = SystemName.Concur,
             TargetSystem = SystemName.Maconomy,
             Status = IntegrationJobStatus.Created,
-            CreatedAtUtc = DateTime.UtcNow,
         };
         await jobs.AddAsync(job);
         await unitOfWork.SaveChangesAsync();

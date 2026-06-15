@@ -40,10 +40,4 @@ public class MappingConfiguration : AuditableEntity
 
     /// <summary>Monotonically increasing version number for this interface mapping.</summary>
     public int Version { get; set; } = 1;
-
-    /// <summary>UTC timestamp when this configuration was created.</summary>
-    public DateTime CreatedAtUtc { get; set; }
-
-    /// <summary>UTC timestamp when this configuration was last updated.</summary>
-    public DateTime? UpdatedAtUtc { get; set; }
 }

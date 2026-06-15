@@ -121,7 +121,6 @@ public sealed class FlowMappingsController : ControllerBase
             _mappings.Remove(row);
         }
 
-        var now = DateTime.UtcNow;
         foreach (var f in fields)
         {
             await _mappings.AddAsync(new MappingConfiguration
@@ -136,7 +135,6 @@ public sealed class FlowMappingsController : ControllerBase
                 TransformationRule = string.IsNullOrWhiteSpace(f.TransformationRule) ? null : f.TransformationRule.Trim(),
                 IsActive = true,
                 Version = 1,
-                CreatedAtUtc = now,
             }, cancellationToken);
         }
 

@@ -166,6 +166,5 @@ public sealed class ExpenseImportIntegrationService
             JobId = job.Id,
             Level = level,
             Message = message,
-            CreatedAtUtc = DateTime.UtcNow,
         }, cancellationToken);
 }

@@ -19,7 +19,7 @@ internal sealed class IntegrationLogRepository : IIntegrationLogRepository
     public async Task<IReadOnlyList<IntegrationLog>> ListByJobIdAsync(Guid jobId, CancellationToken cancellationToken = default)
         => await _dbContext.IntegrationLogs
             .Where(l => l.JobId == jobId)
-            .OrderBy(l => l.CreatedAtUtc)
+            .OrderBy(l => l.CreatedOnUtc)
             .ToListAsync(cancellationToken);
 
     public async Task<(IReadOnlyList<IntegrationLog> Items, int Total)> QueryAsync(
@@ -30,8 +30,8 @@ internal sealed class IntegrationLogRepository : IIntegrationLogRepository
         if (tenantId is { } tid) { query = query.Where(l => l.TenantId == tid); }
         if (jobId is { } jid) { query = query.Where(l => l.JobId == jid); }
         if (!string.IsNullOrWhiteSpace(level)) { query = query.Where(l => l.Level == level); }
-        if (fromDate is { } from) { query = query.Where(l => l.CreatedAtUtc >= from); }
-        if (toDate is { } to) { query = query.Where(l => l.CreatedAtUtc <= to); }
+        if (fromDate is { } from) { query = query.Where(l => l.CreatedOnUtc >= from); }
+        if (toDate is { } to) { query = query.Where(l => l.CreatedOnUtc <= to); }
 
         var total = await query.CountAsync(cancellationToken);
         var items = await query.OrderByDescending(l => l.UpdatedOnUtc)

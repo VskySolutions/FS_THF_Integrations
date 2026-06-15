@@ -27,9 +27,6 @@ public class IntegrationLog : AuditableEntity
     /// <summary>Serialized response payload received from the external system.</summary>
     public string? ResponsePayload { get; set; }
 
-    /// <summary>UTC timestamp when the entry was recorded.</summary>
-    public DateTime CreatedAtUtc { get; set; }
-
     /// <summary>Navigation to the owning job.</summary>
     public IntegrationJob? Job { get; set; }
 }

@@ -26,9 +26,6 @@ internal sealed class IntegrationLogConfiguration : IEntityTypeConfiguration<Int
         builder.Property(l => l.RequestPayload);
         builder.Property(l => l.ResponsePayload);
 
-        builder.Property(l => l.CreatedAtUtc)
-            .IsRequired();
-
         builder.HasIndex(l => l.JobId);
         builder.HasIndex(l => l.TenantId);
 

@@ -46,9 +46,6 @@ internal sealed class MappingConfigurationConfiguration : IEntityTypeConfigurati
         builder.Property(m => m.Version)
             .IsRequired();
 
-        builder.Property(m => m.CreatedAtUtc)
-            .IsRequired();
-
         // Transformer resolves active rules for a (source, destination) pair + flow; admin lists by tenant + flow.
         builder.HasIndex(m => new { m.SourceSystem, m.TargetSystem, m.InterfaceName, m.IsActive });
         builder.HasIndex(m => new { m.TenantId, m.InterfaceName });

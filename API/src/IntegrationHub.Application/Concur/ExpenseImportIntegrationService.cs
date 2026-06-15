@@ -87,7 +87,7 @@ public sealed class ExpenseImportIntegrationService
                 continue;
             }
 
-            var transform = await _transformer.TransformAsync(report, cancellationToken);
+            var transform = await _transformer.TransformAsync(report, job.InterfaceName, cancellationToken);
             if (!transform.Success || transform.Payload is null)
             {
                 validationFailures++;

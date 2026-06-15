@@ -21,6 +21,7 @@ export const Permissions = Object.freeze({
   JobsRead: "jobs.read",
   JobsTrigger: "jobs.trigger",
   JobsRetry: "jobs.retry",
+  JobsDelete: "jobs.delete",
   JobsSchedule: "jobs.schedule",
   LogsRead: "logs.read",
   HealthRead: "health.read"

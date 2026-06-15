@@ -4,6 +4,7 @@ using IntegrationHub.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace IntegrationHub.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(IntegrationHubDbContext))]
-    partial class IntegrationHubDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260615124756_AddMappingTemplateInterfaceName")]
+    partial class AddMappingTemplateInterfaceName
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -234,6 +237,9 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid?>("MappingTemplateId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("SourceSystem")
                         .IsRequired()
@@ -471,6 +477,9 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                     b.Property<string>("MappingJson")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<Guid?>("MappingTemplateId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("SourceField")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -507,11 +516,91 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "InterfaceName");
+                    b.HasIndex("TenantId");
 
-                    b.HasIndex("SourceSystem", "TargetSystem", "InterfaceName", "IsActive");
+                    b.HasIndex("InterfaceName", "IsActive");
+
+                    b.HasIndex("MappingTemplateId", "IsActive");
+
+                    b.HasIndex("SourceSystem", "TargetSystem", "IsActive");
 
                     b.ToTable("MappingConfigurations", (string)null);
+                });
+
+            modelBuilder.Entity("IntegrationHub.Domain.Entities.MappingTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("Deleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("InterfaceName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("SourceSystem")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("TargetSystem")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "SourceSystem", "TargetSystem", "InterfaceName")
+                        .IsUnique()
+                        .HasFilter("[IsDefault] = 1 AND [Deleted] = 0");
+
+                    b.HasIndex("TenantId", "SourceSystem", "TargetSystem", "IsActive");
+
+                    b.ToTable("MappingTemplates", (string)null);
                 });
 
             modelBuilder.Entity("IntegrationHub.Domain.Entities.Media", b =>
@@ -1248,7 +1337,7 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("DataProtectionKeys", (string)null);
+                    b.ToTable("DataProtectionKeys");
                 });
 
             modelBuilder.Entity("IntegrationHub.Domain.Entities.AuditTrailEntry", b =>
@@ -1295,6 +1384,22 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("IntegrationHub.Domain.Entities.MappingConfiguration", b =>
+                {
+                    b.HasOne("IntegrationHub.Domain.Entities.MappingTemplate", "Template")
+                        .WithMany("Fields")
+                        .HasForeignKey("MappingTemplateId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("IntegrationHub.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Template");
+                });
+
+            modelBuilder.Entity("IntegrationHub.Domain.Entities.MappingTemplate", b =>
                 {
                     b.HasOne("IntegrationHub.Domain.Entities.Tenant", null)
                         .WithMany()
@@ -1386,6 +1491,11 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IntegrationHub.Domain.Entities.IntegrationJob", b =>
                 {
                     b.Navigation("Logs");
+                });
+
+            modelBuilder.Entity("IntegrationHub.Domain.Entities.MappingTemplate", b =>
+                {
+                    b.Navigation("Fields");
                 });
 
             modelBuilder.Entity("IntegrationHub.Domain.Entities.Tenant", b =>

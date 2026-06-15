@@ -239,10 +239,11 @@ public class TenantApiConfigurationServiceTests
 public class ConcurExpenseTransformerTests
 {
     [Fact]
-    public async Task Falls_back_to_source_values_when_no_mappings()
+    public async Task Falls_back_to_source_values_when_no_flow_mappings()
     {
         var mappings = new Mock<IMappingConfigurationRepository>();
-        mappings.Setup(m => m.GetActiveByPairAsync(SystemName.Concur, SystemName.Maconomy, It.IsAny<CancellationToken>()))
+        // No field rules configured for the tenant's (Concur, Maconomy) + ExpenseImport flow.
+        mappings.Setup(m => m.GetActiveForFlowAsync(SystemName.Concur, SystemName.Maconomy, "ExpenseImport", It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<MappingConfiguration>());
 
         var transformer = new ConcurExpenseTransformer(mappings.Object, new TransformationRuleEvaluator());
@@ -250,11 +251,43 @@ public class ConcurExpenseTransformerTests
             "R1", "E1", "Approved", DateTime.UtcNow, 100m, "USD",
             new[] { new IntegrationHub.Application.Abstractions.Connectors.Concur.ConcurExpenseLine("L1", "Meals", 50m, null, "lunch") });
 
-        var result = await transformer.TransformAsync(source);
+        var result = await transformer.TransformAsync(source, "ExpenseImport");
 
         result.Success.Should().BeTrue();
         result.Payload!.ReportId.Should().Be("R1");
         result.Payload.TotalAmount.Should().Be(100m);
         result.Payload.Lines.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task Applies_rules_for_the_flow()
+    {
+        var mappings = new Mock<IMappingConfigurationRepository>();
+        // The tenant's ExpenseImport flow maps CurrencyCode → a renamed value via lookup.
+        mappings.Setup(m => m.GetActiveForFlowAsync(SystemName.Concur, SystemName.Maconomy, "ExpenseImport", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[]
+            {
+                new MappingConfiguration
+                {
+                    Id = Guid.NewGuid(),
+                    InterfaceName = "ExpenseImport",
+                    SourceSystem = SystemName.Concur,
+                    TargetSystem = SystemName.Maconomy,
+                    SourceField = "CurrencyCode",
+                    DestinationField = "CurrencyCode",
+                    TransformationRule = "lookup:USD=Dollar;default=Other",
+                    IsActive = true,
+                },
+            });
+
+        var transformer = new ConcurExpenseTransformer(mappings.Object, new TransformationRuleEvaluator());
+        var source = new IntegrationHub.Application.Abstractions.Connectors.Concur.ConcurExpenseReport(
+            "R1", "E1", "Approved", DateTime.UtcNow, 100m, "USD",
+            Array.Empty<IntegrationHub.Application.Abstractions.Connectors.Concur.ConcurExpenseLine>());
+
+        var result = await transformer.TransformAsync(source, "ExpenseImport");
+
+        result.Success.Should().BeTrue();
+        result.Payload!.CurrencyCode.Should().Be("Dollar");
     }
 }

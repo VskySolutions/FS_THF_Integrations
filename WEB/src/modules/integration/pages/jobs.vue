@@ -46,10 +46,20 @@
         >
           <template #bulk-actions="{ selected: sel }">
             <q-btn flat dense no-caps color="primary" icon="o_replay" label="Retry" @click="bulkRetry(sel.filter((r) => isRetryable(r.status)))" />
+            <q-btn v-if="has(Permissions.JobsDelete)" flat dense no-caps color="negative" icon="o_delete" label="Delete" @click="bulkDelete(sel.filter((r) => isDeletable(r.status)))" />
           </template>
 
           <template #body-cell-status="cell">
             <q-td :props="cell"><q-badge :color="statusColor(cell.value)">{{ cell.value }}</q-badge></q-td>
+          </template>
+          <template #body-cell-direction="cell">
+            <q-td :props="cell">
+              <q-badge outline :color="directionColor(cell.value)">
+                <q-icon :name="cell.value === 'Outbound' ? 'o_north_east' : 'o_south_west'" size="14px" class="q-mr-xs" />
+                {{ cell.value || "—" }}
+              </q-badge>
+              <q-tooltip v-if="cell.row.sourceSystem">{{ cell.row.sourceSystem }} → {{ cell.row.targetSystem }}</q-tooltip>
+            </q-td>
           </template>
           <template #body-cell-actions="cell">
             <q-td :props="cell" class="text-right">
@@ -61,6 +71,12 @@
                 :disable="!isRetryable(cell.row.status)" @click="retry(cell.row.jobId)"
               >
                 <q-tooltip>{{ isRetryable(cell.row.status) ? "Retry" : "Job cannot be retried in this state" }}</q-tooltip>
+              </q-btn>
+              <q-btn
+                v-if="has(Permissions.JobsDelete)" flat round dense color="negative" icon="o_delete"
+                :disable="!isDeletable(cell.row.status)" @click="deleteJob(cell.row)"
+              >
+                <q-tooltip>{{ isDeletable(cell.row.status) ? "Delete" : "Queued or running jobs can't be deleted" }}</q-tooltip>
               </q-btn>
             </q-td>
           </template>
@@ -189,7 +205,24 @@
         <template #avatar><q-icon name="o_error" color="negative" /></template>
         Credentials are not configured. Configure them under Tenants → Credentials before importing.
       </q-banner>
-      <app-select v-model="triggerFlow" :options="flowOptions" label="Flow type *" :clearable="false" />
+      <app-select
+        v-if="canChooseTriggerTenant" v-model="triggerTenantId" :options="triggerTenantOptions" label="Tenant *"
+        class="q-mb-md" :loading="loadingTriggerTenants" :clearable="false"
+        :error="triggerTouched && !triggerTenantId" error-message="Select a tenant."
+      />
+
+      <app-select v-model="triggerFlow" :options="flowOptions" label="Flow *" :clearable="false" />
+
+      <div class="q-mt-md">
+        <div class="text-caption text-grey-7 q-mb-xs">This import will run</div>
+        <div class="row items-center q-gutter-xs">
+          <q-badge color="blue-grey" label="Concur" />
+          <q-icon name="o_arrow_forward" size="18px" class="text-grey-7" />
+          <q-badge color="primary" label="Maconomy" />
+          <q-chip dense square color="grey-3" text-color="grey-8">Inbound</q-chip>
+        </div>
+        <div class="text-caption text-grey-6 q-mt-xs">The flow's field mappings (configured under Mapping Configuration) are applied automatically.</div>
+      </div>
     </app-form-drawer>
   </q-page>
 </template>
@@ -202,6 +235,7 @@ import { jobApi, logApi, scheduleApi, getApiErrorMessage, getApiErrorCode, ApiEr
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { usePermissions, Permissions } from "composables/usePermissions";
+import { useTenantStore } from "stores/tenant";
 
 import AppDataTable from "components/common/AppDataTable.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
@@ -213,6 +247,8 @@ import AppListHeader from "components/common/AppListHeader.vue";
 
 const notify = useNotify();
 const { confirm } = useConfirm();
+// Only super/platform admins see jobs across tenants — and so get the Tenant column.
+const { canChooseTenant } = useTenantOptions();
 
 const tab = ref("jobs");
 
@@ -230,12 +266,20 @@ const statusColor = (status) => ({
 }[status] || "grey");
 
 const isRetryable = (status) => ["Failed", "PermanentlyFailed"].includes(status);
+// Queued/running jobs are in-flight and can't be deleted (would orphan a background execution).
+const isDeletable = (status) => !["Created", "Running"].includes(status);
+const directionColor = (direction) => (direction === "Outbound" ? "deep-purple" : "teal");
 const { formatDateTime: formatDate } = useDateFormat();
 
 // ---- Jobs ----
-const jobColumns = [
+const jobColumns = computed(() => [
+  ...(canChooseTenant.value
+    ? [{ name: "tenantName", label: "Tenant", field: (r) => r.tenantName || "—", align: "left", sortable: true, default: true }]
+    : []),
   { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true },
   { name: "interfaceName", label: "Interface", field: "interfaceName", align: "left", sortable: true, default: true },
+  { name: "flowLabel", label: "Flow", field: (r) => r.flowLabel || r.interfaceName, align: "left", sortable: true, default: true },
+  { name: "direction", label: "Direction", field: "direction", align: "left", sortable: true, default: true },
   { name: "sourceSystem", label: "Source", field: "sourceSystem", align: "left", default: true },
   { name: "targetSystem", label: "Target", field: "targetSystem", align: "left", default: true },
   { name: "createdDate", label: "Created", field: (r) => formatDate(r.createdDate), align: "left", sortable: true, default: true },
@@ -244,7 +288,7 @@ const jobColumns = [
   { name: "updatedBy", label: "Updated By", field: "updatedBy", align: "left", sortable: true },
   { name: "updatedOnUtc", label: "Updated", field: (r) => formatDate(r.updatedOnUtc), align: "left", sortable: true },
   { name: "actions", label: "Actions", field: "actions", align: "right" }
-];
+]);
 const jobs = ref([]);
 const loadingJobs = ref(false);
 const jobsTotal = ref(0);
@@ -348,6 +392,46 @@ const bulkRetry = async (sel) => {
   }
 };
 
+const deleteJob = async (row) => {
+  const ok = await confirm({
+    title: "Delete job",
+    message: `Delete this ${row.interfaceName} job? It will be removed from the job history.`,
+    confirmLabel: "Delete",
+    type: "danger"
+  });
+  if (!ok) return;
+  try {
+    await jobApi.remove(row.jobId);
+    notify.success("Job deleted.");
+    loadJobs();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  }
+};
+
+const bulkDelete = async (sel) => {
+  const rows = sel || [];
+  if (!rows.length) {
+    notify.error("No deletable jobs selected (queued/running jobs can't be deleted).");
+    return;
+  }
+  const ok = await confirm({
+    title: "Delete jobs",
+    message: `Delete ${rows.length} job(s) from history? This cannot be undone.`,
+    confirmLabel: "Delete",
+    type: "danger"
+  });
+  if (!ok) return;
+  try {
+    await Promise.all(rows.map((r) => jobApi.remove(r.jobId)));
+    notify.success("Jobs deleted.");
+    selectedJobs.value = [];
+    loadJobs();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  }
+};
+
 // ---- Detail ----
 const detailOpen = ref(false);
 const detailFields = ref([]);
@@ -355,8 +439,11 @@ const detailLogs = ref([]);
 const openDetail = async (row) => {
   detailFields.value = [
     { label: "Job ID", value: row.jobId },
+    ...(canChooseTenant.value ? [{ label: "Tenant", value: row.tenantName || "—" }] : []),
     { label: "Interface", value: row.interfaceName },
     { label: "Status", value: row.status },
+    { label: "Direction", value: row.direction },
+    { label: "Flow", value: row.flowLabel || row.interfaceName },
     { label: "Source", value: row.sourceSystem },
     { label: "Target", value: row.targetSystem },
     { label: "Created", value: formatDate(row.createdDate) },
@@ -434,25 +521,51 @@ const submitSchedule = async ({ clearDraft } = {}) => {
 };
 
 // ---- Trigger import ----
+const tenantStore = useTenantStore();
 const triggerOpen = ref(false);
 const triggering = ref(false);
 const credBanner = ref(false);
+const triggerTouched = ref(false);
+// Super admins choose which tenant to import for; others run for their active tenant.
+const {
+  canChooseTenant: canChooseTriggerTenant,
+  tenantOptions: triggerTenantOptions,
+  loadingTenants: loadingTriggerTenants,
+  loadTenants: loadTriggerTenants
+} = useTenantOptions();
+const triggerTenantId = ref(null);
+// The user picks a flow; the server resolves that (tenant, flow) field set automatically.
 const triggerFlow = ref("expenses");
 const flowOptions = [
   { label: "Expense Reports", value: "expenses" },
   { label: "Vendor Invoices", value: "invoices" },
   { label: "Vendor Payments", value: "payments" }
 ];
-const openTrigger = () => { credBanner.value = false; triggerFlow.value = "expenses"; triggerOpen.value = true; };
+
+const openTrigger = () => {
+  credBanner.value = false;
+  triggerTouched.value = false;
+  triggerFlow.value = "expenses";
+  if (canChooseTriggerTenant.value) {
+    loadTriggerTenants();
+    triggerTenantId.value = tenantStore.activeTenantId;
+  }
+  triggerOpen.value = true;
+};
 
 const submitTrigger = async () => {
-  const ok = await confirm({ title: "Trigger import", message: "Queue this import for the active tenant?", confirmLabel: "Queue" });
+  triggerTouched.value = true;
+  if (canChooseTriggerTenant.value && !triggerTenantId.value) {
+    notify.error("Select a tenant.");
+    return;
+  }
+  const fn = { expenses: jobApi.importExpenses, invoices: jobApi.importInvoices, payments: jobApi.importPayments }[triggerFlow.value];
+  const ok = await confirm({ title: "Trigger import", message: "Queue this import for the selected tenant?", confirmLabel: "Queue" });
   if (!ok) return;
   triggering.value = true;
   credBanner.value = false;
   try {
-    const fn = { expenses: jobApi.importExpenses, invoices: jobApi.importInvoices, payments: jobApi.importPayments }[triggerFlow.value];
-    const resp = await fn();
+    const resp = await fn(canChooseTriggerTenant.value ? triggerTenantId.value : undefined);
     const jobId = resp?.data?.jobId;
     notify.success(jobId ? `Import queued (job ${jobId}).` : "Import queued.");
     triggerOpen.value = false;

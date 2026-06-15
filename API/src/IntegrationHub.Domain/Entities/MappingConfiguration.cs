@@ -14,7 +14,7 @@ public class MappingConfiguration : AuditableEntity
     /// <summary>Owning tenant (tenant-scoped mapping rules).</summary>
     public Guid TenantId { get; set; }
 
-    /// <summary>Interface/flow this mapping applies to (optional).</summary>
+    /// <summary>The flow/interface this field rule belongs to (e.g. "ExpenseImport"); scopes the rule to a job flow.</summary>
     public string InterfaceName { get; set; } = string.Empty;
 
     /// <summary>System the source field originates from.</summary>

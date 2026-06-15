@@ -36,6 +36,7 @@ public static class Permissions
     public const string JobsRead = "jobs.read";
     public const string JobsTrigger = "jobs.trigger";
     public const string JobsRetry = "jobs.retry";
+    public const string JobsDelete = "jobs.delete";
     /// <summary>Manage recurring job schedules (platform-global; Super-Admin only by default).</summary>
     public const string JobsSchedule = "jobs.schedule";
     public const string LogsRead = "logs.read";
@@ -51,7 +52,7 @@ public static class Permissions
         UsersRead, UsersWrite, UsersResetPassword,
         RolesRead, RolesWrite, RolesAssign,
         MappingsRead, MappingsWrite,
-        JobsRead, JobsTrigger, JobsRetry, JobsSchedule, LogsRead,
+        JobsRead, JobsTrigger, JobsRetry, JobsDelete, JobsSchedule, LogsRead,
         HealthRead
     };
 
@@ -67,7 +68,7 @@ public static class Permissions
         UsersRead, UsersWrite, UsersResetPassword,
         RolesRead,
         MappingsRead, MappingsWrite,
-        JobsRead, JobsTrigger, JobsRetry, JobsSchedule, LogsRead,
+        JobsRead, JobsTrigger, JobsRetry, JobsDelete, JobsSchedule, LogsRead,
         HealthRead
     };
 

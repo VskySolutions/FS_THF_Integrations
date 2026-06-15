@@ -505,7 +505,6 @@ public class TenantsControllerTests
 {
     private readonly Mock<ITenantRepository> _tenants = new();
     private readonly Mock<ITenantApiConfigurationRepository> _configs = new();
-    private readonly Mock<IMappingConfigurationRepository> _mappings = new();
     private readonly Mock<IIntegrationJobRepository> _jobs = new();
     private readonly Mock<IUserRepository> _users = new();
     private readonly Mock<ICredentialEncryptionService> _encryption = new();
@@ -516,7 +515,7 @@ public class TenantsControllerTests
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
 
     private TenantsController Create() => new(
-        _tenants.Object, _configs.Object, _mappings.Object, _jobs.Object, _users.Object, _encryption.Object,
+        _tenants.Object, _configs.Object, _jobs.Object, _users.Object, _encryption.Object,
         _tenantContext.Object, _concur.Object, _maconomy.Object, _audit.Object, _unitOfWork.Object);
 
     [Fact]

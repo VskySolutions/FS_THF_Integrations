@@ -7,7 +7,7 @@ namespace IntegrationHub.Application.Connectors;
 
 /// <summary>
 /// Base class for transformers. On each invocation it reads the active
-/// <c>MappingConfiguration</c> rows for the (source, destination) system pair (fresh, no
+/// <c>MappingConfiguration</c> rows for the (source, destination) pair + flow (fresh, no
 /// caching), applies each rule via <see cref="ITransformationRuleEvaluator"/>, and projects
 /// the result. Missing optional fields are omitted; missing required fields produce a
 /// <see cref="TransformationError"/> (AC-COF-002.3, AC-COF-005.4).
@@ -38,9 +38,10 @@ public abstract class TransformerBase<TSource, TDest> : ITransformer<TSource, TD
     /// <summary>Builds the typed destination payload from the mapped field dictionary.</summary>
     protected abstract TDest BuildDestination(IReadOnlyDictionary<string, object?> mappedFields, TSource source);
 
-    public async Task<TransformResult<TDest>> TransformAsync(TSource source, CancellationToken cancellationToken = default)
+    public async Task<TransformResult<TDest>> TransformAsync(TSource source, string interfaceName, CancellationToken cancellationToken = default)
     {
-        var mappings = await _mappingRepository.GetActiveByPairAsync(SourceSystem, DestinationSystem, cancellationToken);
+        // Field rules for the tenant's (source, destination) pair + flow; empty → per-field defaults.
+        var mappings = await _mappingRepository.GetActiveForFlowAsync(SourceSystem, DestinationSystem, interfaceName, cancellationToken);
         var sourceFields = ExtractFields(source);
         var mapped = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         var errors = new List<TransformationError>();

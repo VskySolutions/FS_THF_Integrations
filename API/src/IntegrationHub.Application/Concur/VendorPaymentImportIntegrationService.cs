@@ -98,7 +98,7 @@ public sealed class VendorPaymentImportIntegrationService
                 continue;
             }
 
-            var transform = await _transformer.TransformAsync(payment, cancellationToken);
+            var transform = await _transformer.TransformAsync(payment, job.InterfaceName, cancellationToken);
             if (!transform.Success || transform.Payload is null)
             {
                 invalid++;

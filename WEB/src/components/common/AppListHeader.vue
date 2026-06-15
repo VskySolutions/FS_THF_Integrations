@@ -21,6 +21,9 @@
         <q-badge v-if="filterCount" floating color="primary">{{ filterCount }}</q-badge>
       </q-btn>
 
+      <!-- Extra page-specific actions (e.g. a secondary "Add Bulk" button), shown before Add. -->
+      <slot name="actions" />
+
       <q-btn v-if="showAdd" unelevated no-caps color="primary" :icon="addIcon" :label="addLabel" :disable="addDisable" @click="$emit('add')" />
 
       <q-btn v-if="showBack" flat no-caps color="primary" icon="o_arrow_back" label="Back" @click="$emit('back')" />

@@ -153,22 +153,24 @@ export const mediaApi = {
   absoluteUrl: (publicUrl) => (publicUrl ? `${process.env.API_BASE_URL || ""}${publicUrl}` : null)
 };
 
-export const mappingApi = {
-  list: (tenantId, params) => api.get(`/api/admin/tenants/${tenantId}/mappings`, { params }).then(envelope),
-  create: (tenantId, payload) => api.post(`/api/admin/tenants/${tenantId}/mappings`, payload).then(unwrap),
-  update: (tenantId, mappingId, payload) =>
-    api.put(`/api/admin/tenants/${tenantId}/mappings/${mappingId}`, payload).then(unwrap),
-  remove: (tenantId, mappingId) =>
-    api.delete(`/api/admin/tenants/${tenantId}/mappings/${mappingId}`).then(envelope)
+// Field mappings scoped per tenant + flow (e.g. ExpenseImport). One field set per flow.
+export const flowMappingApi = {
+  list: (tenantId) => api.get(`/api/admin/tenants/${tenantId}/flow-mappings`).then(unwrap),
+  get: (tenantId, interfaceName) => api.get(`/api/admin/tenants/${tenantId}/flow-mappings/${interfaceName}`).then(unwrap),
+  save: (tenantId, interfaceName, fields) => api.put(`/api/admin/tenants/${tenantId}/flow-mappings/${interfaceName}`, { fields }).then(unwrap),
+  clear: (tenantId, interfaceName) => api.delete(`/api/admin/tenants/${tenantId}/flow-mappings/${interfaceName}`).then(envelope)
 };
 
 export const jobApi = {
-  importExpenses: () => api.post("/api/concur/expenses/import").then(envelope),
-  importInvoices: () => api.post("/api/concur/invoices/import").then(envelope),
-  importPayments: () => api.post("/api/concur/payments/import").then(envelope),
+  // The flow's field mappings are resolved server-side from the tenant + flow rules.
+  // tenantId is optional: Super Admins target a tenant; others run for their active tenant.
+  importExpenses: (tenantId) => api.post("/api/concur/expenses/import", null, { params: tenantId ? { tenantId } : undefined }).then(envelope),
+  importInvoices: (tenantId) => api.post("/api/concur/invoices/import", null, { params: tenantId ? { tenantId } : undefined }).then(envelope),
+  importPayments: (tenantId) => api.post("/api/concur/payments/import", null, { params: tenantId ? { tenantId } : undefined }).then(envelope),
   list: (params) => api.get("/api/admin/jobs", { params }).then(envelope),
   retry: (jobId) => api.post(`/api/admin/retry/${jobId}`).then(unwrap),
-  retries: (params) => api.get("/api/admin/retries", { params }).then(envelope)
+  retries: (params) => api.get("/api/admin/retries", { params }).then(envelope),
+  remove: (jobId) => api.delete(`/api/admin/jobs/${jobId}`).then(envelope)
 };
 
 export const logApi = {

@@ -17,6 +17,9 @@ internal sealed class IntegrationJobRepository : IIntegrationJobRepository
     public Task<IntegrationJob?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
         => _dbContext.IntegrationJobs.FirstOrDefaultAsync(j => j.Id == id, cancellationToken);
 
+    public Task<IntegrationJob?> GetByIdUnscopedAsync(Guid id, CancellationToken cancellationToken = default)
+        => _dbContext.IntegrationJobs.IgnoreQueryFilters().FirstOrDefaultAsync(j => j.Id == id && !j.Deleted, cancellationToken);
+
     public async Task<IReadOnlyList<IntegrationJob>> ListByStatusAsync(IntegrationJobStatus status, CancellationToken cancellationToken = default)
         => await _dbContext.IntegrationJobs
             .Where(j => j.Status == status)
@@ -28,6 +31,9 @@ internal sealed class IntegrationJobRepository : IIntegrationJobRepository
 
     public void Update(IntegrationJob job)
         => _dbContext.IntegrationJobs.Update(job);
+
+    public void Remove(IntegrationJob job)
+        => _dbContext.IntegrationJobs.Remove(job);
 
     public Task<bool> HasActiveJobsAsync(Guid tenantId, CancellationToken cancellationToken = default)
         => _dbContext.IntegrationJobs.IgnoreQueryFilters()

@@ -33,18 +33,17 @@
 
       <template #body-cell-actions="cell">
         <q-td :props="cell" class="text-right">
-          <q-btn flat round dense icon="o_more_vert">
+          <q-btn flat round dense color="primary" icon="o_edit" @click="openEdit(cell.row)">
+            <q-tooltip>{{ cell.row.isSystem ? "Edit permissions" : "Edit" }}</q-tooltip>
+          </q-btn>
+          <q-btn v-if="!cell.row.isSystem" flat round dense icon="o_more_vert">
             <q-menu auto-close>
               <q-list style="min-width: 180px;">
-                <q-item clickable @click="openEdit(cell.row)">
-                  <q-item-section avatar><q-icon name="o_visibility" /></q-item-section>
-                  <q-item-section>{{ cell.row.isSystem ? "View" : "Edit" }}</q-item-section>
-                </q-item>
-                <q-item v-if="!cell.row.isSystem" clickable @click="openTenants(cell.row)">
+                <q-item clickable @click="openTenants(cell.row)">
                   <q-item-section avatar><q-icon name="o_apartment" /></q-item-section>
                   <q-item-section>Manage Tenants</q-item-section>
                 </q-item>
-                <q-item v-if="!cell.row.isSystem" clickable @click="removeRole(cell.row)">
+                <q-item clickable @click="removeRole(cell.row)">
                   <q-item-section avatar><q-icon name="o_delete" color="negative" /></q-item-section>
                   <q-item-section class="text-negative">Delete</q-item-section>
                 </q-item>
@@ -57,27 +56,28 @@
 
     <!-- Create / edit role -->
     <app-form-drawer
-      v-model="formOpen" :title="editingId ? (readOnly ? 'Role' : 'Edit Role') : 'Create Role'"
-      :saving="saving" :save-label="readOnly ? 'Close' : 'Save'" @submit="submitForm" @cancel="formOpen = false"
+      v-model="formOpen" :title="editingId ? 'Edit Role' : 'Create Role'"
+      :saving="saving" save-label="Save" @submit="submitForm" @cancel="resetForm"
     >
       <q-form ref="formRef" greedy>
         <q-input
           v-model="form.name" outlined stack-label hide-bottom-space label="Name *" class="q-mb-md"
-          :readonly="readOnly" :rules="[(v) => !!v || 'Name is required']"
+          :readonly="nameLocked" :hint="nameLocked ? 'System role names are fixed; permissions can still be tuned.' : undefined"
+          :rules="[(v) => !!v || 'Name is required']"
         />
         <q-input
           v-model="form.description" outlined stack-label hide-bottom-space label="Description" class="q-mb-md"
-          type="textarea" autogrow :readonly="readOnly"
+          type="textarea" autogrow
         />
         <app-select
           v-model="form.permissions" :options="permissionOptions" label="Permissions" multiple
-          :loading="loadingPermissions" :readonly="readOnly"
+          :loading="loadingPermissions"
         />
       </q-form>
     </app-form-drawer>
 
     <!-- Tenant availability -->
-    <app-form-drawer v-model="tenantsOpen" title="Available to tenants" :saving="tenantsSaving" @submit="submitTenants" @cancel="tenantsOpen = false">
+    <app-form-drawer v-model="tenantsOpen" title="Available to tenants" :saving="tenantsSaving" @submit="submitTenants" @cancel="resetTenants">
       <div class="text-body2 text-grey-7 q-mb-md">Select the tenants this role can be assigned within.</div>
       <app-select
         v-model="selectedTenantIds" :options="tenantOptions" label="Tenants" multiple
@@ -143,12 +143,12 @@ const formOpen = ref(false);
 const saving = ref(false);
 const formRef = ref(null);
 const editingId = ref(null);
-const readOnly = ref(false);
+const nameLocked = ref(false); // system role names are fixed, but permissions are still editable
 const form = reactive({ name: "", description: "", permissions: [] });
 
 const resetForm = () => {
   editingId.value = null;
-  readOnly.value = false;
+  nameLocked.value = false;
   form.name = "";
   form.description = "";
   form.permissions = [];
@@ -164,7 +164,7 @@ const openEdit = async (row) => {
   resetForm();
   await loadPermissions();
   editingId.value = row.id;
-  readOnly.value = !!row.isSystem; // system roles are managed by seeding
+  nameLocked.value = !!row.isSystem; // system role names are fixed; permissions stay editable
   try {
     const role = await roleApi.get(row.id);
     form.name = role.name;
@@ -178,10 +178,6 @@ const openEdit = async (row) => {
 };
 
 const submitForm = async ({ clearDraft } = {}) => {
-  if (readOnly.value) {
-    formOpen.value = false;
-    return;
-  }
   if (!(await formRef.value?.validate())) return;
   saving.value = true;
   try {
@@ -231,6 +227,13 @@ const loadingTenants = ref(false);
 const selectedTenantIds = ref([]);
 const originalTenantIds = ref([]);
 const tenantsRoleId = ref(null);
+
+// Clear the tenant-availability editor (closing/cancelling discards the selection).
+const resetTenants = () => {
+  tenantsRoleId.value = null;
+  selectedTenantIds.value = [];
+  originalTenantIds.value = [];
+};
 
 const openTenants = async (row) => {
   tenantsRoleId.value = row.id;

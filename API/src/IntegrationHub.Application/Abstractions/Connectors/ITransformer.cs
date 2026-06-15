@@ -16,6 +16,9 @@ public interface ITransformer<TSource, TDest>
     /// <summary>Destination system of the mapped payload.</summary>
     SystemName DestinationSystem { get; }
 
-    /// <summary>Transforms a source payload into the destination schema.</summary>
-    Task<TransformResult<TDest>> TransformAsync(TSource source, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Transforms a source payload into the destination schema, applying the tenant's active field
+    /// rules for the (source, destination) pair + <paramref name="interfaceName"/> flow.
+    /// </summary>
+    Task<TransformResult<TDest>> TransformAsync(TSource source, string interfaceName, CancellationToken cancellationToken = default);
 }

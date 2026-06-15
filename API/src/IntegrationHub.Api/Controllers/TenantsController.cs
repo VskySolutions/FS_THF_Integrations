@@ -33,7 +33,6 @@ public sealed class TenantsController : ControllerBase
 {
     private readonly ITenantRepository _tenants;
     private readonly ITenantApiConfigurationRepository _configs;
-    private readonly IMappingConfigurationRepository _mappings;
     private readonly IIntegrationJobRepository _jobs;
     private readonly IUserRepository _users;
     private readonly ICredentialEncryptionService _encryption;
@@ -46,7 +45,6 @@ public sealed class TenantsController : ControllerBase
     public TenantsController(
         ITenantRepository tenants,
         ITenantApiConfigurationRepository configs,
-        IMappingConfigurationRepository mappings,
         IIntegrationJobRepository jobs,
         IUserRepository users,
         ICredentialEncryptionService encryption,
@@ -58,7 +56,6 @@ public sealed class TenantsController : ControllerBase
     {
         _tenants = tenants;
         _configs = configs;
-        _mappings = mappings;
         _jobs = jobs;
         _users = users;
         _encryption = encryption;
@@ -277,139 +274,6 @@ public sealed class TenantsController : ControllerBase
             new CredentialTestResponse(result.Success, result.Success ? "Connected." : result.ErrorMessage ?? "Failed."), "Test complete."));
     }
 
-    // ---- Mapping configuration CRUD (Tenant Admin or above, own tenant) ----
-
-    [HttpGet("{id:guid}/mappings")]
-    [RequirePermission(Permissions.MappingsRead)]
-    public async Task<IActionResult> ListMappings(
-        Guid id,
-        [FromQuery] int page = 1,
-        [FromQuery] int limit = 20,
-        [FromQuery] string? sourceSystem = null,
-        [FromQuery] string? destinationSystem = null,
-        [FromQuery] string? search = null,
-        CancellationToken cancellationToken = default)
-    {
-        var guard = await EnsureScopeAsync(id, cancellationToken);
-        if (guard is not null)
-        {
-            return guard;
-        }
-
-        page = Math.Max(1, page);
-        limit = Math.Clamp(limit, 1, 100);
-
-        SystemName? source = Enum.TryParse<SystemName>(sourceSystem, ignoreCase: true, out var src) ? src : null;
-        SystemName? destination = Enum.TryParse<SystemName>(destinationSystem, ignoreCase: true, out var dst) ? dst : null;
-        var (items, total) = await _mappings.ListByTenantAsync(id, source, destination, search, page, limit, cancellationToken);
-        var names = await ResolveActorNamesAsync(items.SelectMany(m => new[] { m.CreatedById, m.UpdatedById }), cancellationToken);
-        var mapped = items.Select(m => Map(m, NameOf(names, m.CreatedById), NameOf(names, m.UpdatedById)));
-        return Ok(ApiResponseFactory.Paginated(mapped, "Mappings retrieved.", page, limit, total));
-    }
-
-    [HttpPost("{id:guid}/mappings")]
-    [RequirePermission(Permissions.MappingsWrite)]
-    public async Task<IActionResult> CreateMapping(Guid id, [FromBody] CreateMappingRequest request, CancellationToken cancellationToken)
-    {
-        var guard = await EnsureScopeAsync(id, cancellationToken);
-        if (guard is not null)
-        {
-            return guard;
-        }
-
-        var source = Enum.Parse<SystemName>(request.SourceSystem);
-        var destination = Enum.Parse<SystemName>(request.DestinationSystem);
-
-        // Replace an existing active mapping for the same field rather than duplicating (AC-TNT-012.6).
-        var existing = await _mappings.GetActiveForFieldAsync(id, source, destination, request.SourceField, cancellationToken);
-        if (existing is not null)
-        {
-            existing.DestinationField = request.DestinationField;
-            existing.TransformationRule = request.TransformationRule;
-            existing.IsActive = request.IsActive;
-            existing.UpdatedAtUtc = DateTime.UtcNow;
-            _mappings.Update(existing);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-            return Ok(ApiResponseFactory.Success(Map(existing), "Mapping replaced."));
-        }
-
-        var mapping = new MappingConfiguration
-        {
-            Id = Guid.NewGuid(),
-            TenantId = id,
-            SourceSystem = source,
-            TargetSystem = destination,
-            SourceField = request.SourceField,
-            DestinationField = request.DestinationField,
-            TransformationRule = request.TransformationRule,
-            IsActive = request.IsActive,
-            Version = 1,
-            CreatedAtUtc = DateTime.UtcNow,
-        };
-        await _mappings.AddAsync(mapping, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        return StatusCode(StatusCodes.Status201Created, ApiResponseFactory.Success(Map(mapping), "Mapping created."));
-    }
-
-    [HttpPut("{id:guid}/mappings/{mappingId:guid}")]
-    [RequirePermission(Permissions.MappingsWrite)]
-    public async Task<IActionResult> UpdateMapping(Guid id, Guid mappingId, [FromBody] UpdateMappingRequest request, CancellationToken cancellationToken)
-    {
-        var guard = await EnsureScopeAsync(id, cancellationToken);
-        if (guard is not null)
-        {
-            return guard;
-        }
-
-        var mapping = await _mappings.GetByIdForTenantAsync(mappingId, id, cancellationToken);
-        if (mapping is null)
-        {
-            return NotFound(ApiResponseFactory.NotFound("Mapping not found."));
-        }
-
-        if (request.DestinationField is not null)
-        {
-            mapping.DestinationField = request.DestinationField;
-        }
-
-        if (request.TransformationRule is not null)
-        {
-            mapping.TransformationRule = request.TransformationRule;
-        }
-
-        if (request.IsActive is { } active)
-        {
-            mapping.IsActive = active;
-        }
-
-        mapping.UpdatedAtUtc = DateTime.UtcNow;
-        _mappings.Update(mapping);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        return Ok(ApiResponseFactory.Success(Map(mapping), "Mapping updated."));
-    }
-
-    [HttpDelete("{id:guid}/mappings/{mappingId:guid}")]
-    [RequirePermission(Permissions.MappingsWrite)]
-    public async Task<IActionResult> DeleteMapping(Guid id, Guid mappingId, CancellationToken cancellationToken)
-    {
-        var guard = await EnsureScopeAsync(id, cancellationToken);
-        if (guard is not null)
-        {
-            return guard;
-        }
-
-        var mapping = await _mappings.GetByIdForTenantAsync(mappingId, id, cancellationToken);
-        if (mapping is null)
-        {
-            return NotFound(ApiResponseFactory.NotFound("Mapping not found."));
-        }
-
-        _mappings.Remove(mapping);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-        return Ok(ApiResponseFactory.Success(new { message = "Mapping deleted." }, "Mapping deleted."));
-    }
 
     // ---- helpers ----
 
@@ -487,11 +351,6 @@ public sealed class TenantsController : ControllerBase
 
         return null;
     }
-
-    private static MappingResponse Map(MappingConfiguration m, string? createdBy = null, string? updatedBy = null) => new(
-        m.Id, m.SourceSystem.ToString(), m.TargetSystem.ToString(),
-        m.SourceField, m.DestinationField, m.TransformationRule, m.IsActive,
-        createdBy, updatedBy, m.CreatedOnUtc, m.UpdatedOnUtc);
 
     private async Task<IReadOnlyDictionary<Guid, string>> ResolveActorNamesAsync(IEnumerable<Guid?> ids, CancellationToken cancellationToken)
         => await _users.GetFullNamesAsync(ids.Where(id => id.HasValue).Select(id => id!.Value), cancellationToken);

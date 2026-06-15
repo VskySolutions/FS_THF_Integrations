@@ -46,12 +46,44 @@ public class ApiIntegrationTests
     }
 
     [Fact]
+    public async Task Flow_mapping_save_then_get_round_trips()
+    {
+        var client = _factory.CreateClient();
+        var token = await LoginAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var tenantsResponse = await client.GetAsync("/api/admin/tenants?page=1&limit=1");
+        tenantsResponse.EnsureSuccessStatusCode();
+        using var tenantsDoc = JsonDocument.Parse(await tenantsResponse.Content.ReadAsStringAsync());
+        var tenantId = tenantsDoc.RootElement.GetProperty("data")[0].GetProperty("tenantId").GetString();
+
+        var saveResponse = await client.PutAsJsonAsync($"/api/admin/tenants/{tenantId}/flow-mappings/ExpenseImport", new
+        {
+            fields = new[]
+            {
+                new { sourceField = "ReportId", destinationField = "ReportNumber", transformationRule = (string?)null },
+                new { sourceField = "CurrencyCode", destinationField = "Currency", transformationRule = "lookup:USD=Dollar;default=Other" },
+            },
+        });
+        saveResponse.EnsureSuccessStatusCode();
+
+        var getResponse = await client.GetAsync($"/api/admin/tenants/{tenantId}/flow-mappings/ExpenseImport");
+        getResponse.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+        var data = doc.RootElement.GetProperty("data");
+        data.GetProperty("interfaceName").GetString().Should().Be("ExpenseImport");
+        data.GetProperty("sourceSystem").GetString().Should().Be("Concur");
+        data.GetProperty("fields").GetArrayLength().Should().Be(2);
+    }
+
+    [Fact]
     public async Task Concur_import_with_auth_returns_202_and_jobId()
     {
         var client = _factory.CreateClient();
         var token = await LoginAsync(client);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
+        // The flow's field mappings are resolved server-side; no body is required.
         var response = await client.PostAsync("/api/concur/expenses/import", content: null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);

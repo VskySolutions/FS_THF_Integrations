@@ -1,6 +1,9 @@
+using IntegrationHub.Api.Integrations;
 using IntegrationHub.Api.Security;
+using IntegrationHub.Application.Abstractions.Auditing;
 using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Application.Abstractions.Retry;
+using IntegrationHub.Domain.Entities;
 using IntegrationHub.Domain.Enums;
 using IntegrationHub.Shared.Contracts;
 using IntegrationHub.Shared.Security;
@@ -31,6 +34,9 @@ public sealed class AdminController : ControllerBase
     private readonly IRetryQueueRepository _retries;
     private readonly IRetryQueueManager _retryManager;
     private readonly IUserRepository _users;
+    private readonly ITenantRepository _tenants;
+    private readonly IAuditTrailService _audit;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly HealthCheckService _healthChecks;
 
     public AdminController(
@@ -39,6 +45,9 @@ public sealed class AdminController : ControllerBase
         IRetryQueueRepository retries,
         IRetryQueueManager retryManager,
         IUserRepository users,
+        ITenantRepository tenants,
+        IAuditTrailService audit,
+        IUnitOfWork unitOfWork,
         HealthCheckService healthChecks)
     {
         _jobs = jobs;
@@ -46,6 +55,9 @@ public sealed class AdminController : ControllerBase
         _retries = retries;
         _retryManager = retryManager;
         _users = users;
+        _tenants = tenants;
+        _audit = audit;
+        _unitOfWork = unitOfWork;
         _healthChecks = healthChecks;
     }
 
@@ -68,10 +80,15 @@ public sealed class AdminController : ControllerBase
 
         var (items, total) = await _jobs.QueryAsync(ResolveTenant(tenantId), statusFilter, interfaceName, fromDate, toDate, page, limit, cancellationToken);
         var names = await ResolveActorNamesAsync(items.SelectMany(j => new[] { j.CreatedById, j.UpdatedById }), cancellationToken);
+        var tenantNames = (await _tenants.ListAsync(cancellationToken)).ToDictionary(t => t.Id, t => t.Name);
         var summaries = items.Select(j => new
         {
-            jobId = j.Id, j.TenantId, j.InterfaceName, status = j.Status.ToString(),
+            jobId = j.Id, j.TenantId,
+            tenantName = tenantNames.TryGetValue(j.TenantId, out var tname) ? tname : null,
+            j.InterfaceName, status = j.Status.ToString(),
+            direction = j.Direction.ToString(),
             sourceSystem = j.SourceSystem.ToString(), targetSystem = j.TargetSystem.ToString(),
+            flowLabel = IntegrationFlows.Label(j.SourceSystem, j.TargetSystem, j.InterfaceName),
             createdDate = j.CreatedAtUtc, processedDate = j.CompletedAtUtc,
             createdBy = NameOf(names, j.CreatedById), updatedBy = NameOf(names, j.UpdatedById),
             createdOnUtc = j.CreatedOnUtc, updatedOnUtc = j.UpdatedOnUtc,
@@ -136,6 +153,35 @@ public sealed class AdminController : ControllerBase
         }
 
         return Ok(ApiResponseFactory.Success(new { jobId, status = "Enqueued" }, "Job re-enqueued."));
+    }
+
+    [HttpDelete("jobs/{jobId:guid}")]
+    [RequirePermission(Permissions.JobsDelete)]
+    public async Task<IActionResult> DeleteJob(Guid jobId, CancellationToken cancellationToken)
+    {
+        var job = await _jobs.GetByIdUnscopedAsync(jobId, cancellationToken);
+        if (job is null)
+        {
+            return NotFound(ApiResponseFactory.Error(ApiErrorCodes.JobNotFound, "Job not found.", jobId.ToString()));
+        }
+
+        // Tenant Admins may only delete their own tenant's jobs; Super Admins may delete any.
+        if (!User.IsSuperAdmin() && job.TenantId != User.GetActiveTenantId())
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden("Not permitted for this tenant."));
+        }
+
+        // In-flight jobs cannot be deleted (would orphan a running background execution).
+        if (job.Status is IntegrationJobStatus.Created or IntegrationJobStatus.Running)
+        {
+            return StatusCode(StatusCodes.Status409Conflict,
+                ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, "A job that is queued or running cannot be deleted.", job.Status.ToString()));
+        }
+
+        _jobs.Remove(job);
+        await _audit.AddAsync(nameof(IntegrationJob), job.Id.ToString(), "Deleted", details: job.InterfaceName, cancellationToken: cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return Ok(ApiResponseFactory.Success(new { message = "Job deleted." }, "Job deleted."));
     }
 
     /// <summary>Super Admins may target any tenant (or all); others are pinned to their active tenant.</summary>

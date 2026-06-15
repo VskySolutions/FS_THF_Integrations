@@ -13,9 +13,15 @@ public interface IIntegrationJobRepository
 
     Task<IReadOnlyList<IntegrationJob>> ListByStatusAsync(IntegrationJobStatus status, CancellationToken cancellationToken = default);
 
+    /// <summary>Fetches a job by id across all tenants (ignores the ambient tenant filter) for admin actions like delete.</summary>
+    Task<IntegrationJob?> GetByIdUnscopedAsync(Guid id, CancellationToken cancellationToken = default);
+
     Task AddAsync(IntegrationJob job, CancellationToken cancellationToken = default);
 
     void Update(IntegrationJob job);
+
+    /// <summary>Removes (soft-deletes) a job.</summary>
+    void Remove(IntegrationJob job);
 
     /// <summary>True if the tenant has any Created/Running jobs (blocks tenant archive).</summary>
     Task<bool> HasActiveJobsAsync(Guid tenantId, CancellationToken cancellationToken = default);

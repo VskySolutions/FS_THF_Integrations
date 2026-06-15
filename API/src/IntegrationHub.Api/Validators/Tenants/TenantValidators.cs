@@ -42,17 +42,3 @@ public sealed class MaconomyCredentialsRequestValidator : AbstractValidator<Maco
         RuleFor(x => x.Password).NotEmpty();
     }
 }
-
-public sealed class CreateMappingRequestValidator : AbstractValidator<CreateMappingRequest>
-{
-    public CreateMappingRequestValidator()
-    {
-        RuleFor(x => x.SourceSystem).Must(BeSystem).WithMessage("Invalid source system.");
-        RuleFor(x => x.DestinationSystem).Must(BeSystem).WithMessage("Invalid destination system.");
-        RuleFor(x => x.SourceField).NotEmpty().MaximumLength(200);
-        RuleFor(x => x.DestinationField).NotEmpty().MaximumLength(200);
-        RuleFor(x => x.TransformationRule).MaximumLength(2000);
-    }
-
-    private static bool BeSystem(string value) => Enum.TryParse<SystemName>(value, ignoreCase: false, out _);
-}

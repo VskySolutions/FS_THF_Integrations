@@ -27,7 +27,7 @@ public static class BootstrapSeeder
 
         // If any user already exists, the platform is initialized.
         if (await users.EmailExistsAsync(GetValue(configuration, "Email", "admin@integrationhub.local"), cancellationToken)
-            || (await users.ListAsync(null, null, null, 1, 1, cancellationToken)).Total > 0)
+            || (await users.ListAsync(null, null, null, null, null, null, null, 1, 1, cancellationToken)).Total > 0)
         {
             return;
         }

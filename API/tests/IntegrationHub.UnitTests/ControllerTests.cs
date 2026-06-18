@@ -379,7 +379,7 @@ public class UsersControllerTests
     public async Task Tenant_admin_list_is_scoped_to_their_tenant()
     {
         var tenantId = Guid.NewGuid();
-        _users.Setup(u => u.ListAsync(It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<bool?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+        _users.Setup(u => u.ListAsync(It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<bool?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Array.Empty<User>(), 0));
         _users.Setup(u => u.GetFullNamesAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<Guid, string>());
@@ -388,7 +388,7 @@ public class UsersControllerTests
         var controller = Create().WithUser(Guid.NewGuid(), Roles.TenantAdmin, tenantId);
         await controller.List(1, 20, default);
 
-        _users.Verify(u => u.ListAsync(tenantId, null, null, 1, 20, It.IsAny<CancellationToken>()), Times.Once);
+        _users.Verify(u => u.ListAsync(tenantId, null, null, null, null, null, null, 1, 20, It.IsAny<CancellationToken>()), Times.Once);
     }
 }
 

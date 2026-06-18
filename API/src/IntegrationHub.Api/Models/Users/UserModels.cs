@@ -60,6 +60,7 @@ public sealed record UserSummary(
     string FullName,
     string? PhoneNumber,
     string? TenantName,
+    IReadOnlyList<string> Roles,
     bool IsActive,
     string? CreatedBy,
     string? UpdatedBy,

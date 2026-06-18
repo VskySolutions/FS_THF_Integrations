@@ -19,10 +19,14 @@ public interface IUserRepository
 
     /// <summary>
     /// Paginated user list. When <paramref name="tenantId"/> is set, only that tenant's users;
-    /// optional <paramref name="search"/> (email/name) and <paramref name="isActive"/> filters are
-    /// applied server-side so pagination/totals reflect the filtered set.
+    /// optional <paramref name="search"/> (email/name), <paramref name="isActive"/>, and per-column
+    /// <paramref name="name"/>/<paramref name="email"/>/<paramref name="phone"/>/<paramref name="role"/>
+    /// (role name) filters are applied server-side so pagination/totals reflect the filtered set.
     /// </summary>
-    Task<(IReadOnlyList<User> Items, int Total)> ListAsync(Guid? tenantId, string? search, bool? isActive, int page, int limit, CancellationToken cancellationToken = default);
+    Task<(IReadOnlyList<User> Items, int Total)> ListAsync(
+        Guid? tenantId, string? search, bool? isActive,
+        string? name, string? email, string? phone, string? role,
+        int page, int limit, CancellationToken cancellationToken = default);
 
     Task AddAsync(User user, CancellationToken cancellationToken = default);
 

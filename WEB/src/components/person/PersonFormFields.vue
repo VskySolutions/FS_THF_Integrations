@@ -34,7 +34,7 @@
     <div class="section-subhead">Contact</div>
     <div class="row q-col-gutter-md q-mb-md">
       <app-text-field
-        v-model="form.primaryEmail" type="email" label="Primary Email" class="col-12"
+        v-model="form.primaryEmail" type="email" label="Primary Email *" class="col-12"
         :disable="disable" :rules="emailRules"
       />
       <app-phone-input
@@ -72,7 +72,10 @@ defineProps({
 });
 
 const genderOptions = ["Male", "Female", "Other", "Prefer not to say"].map((g) => ({ label: g, value: g }));
-const emailRules = [(v) => !v || /.+@.+\..+/.test(v) || "Enter a valid email"];
+const emailRules = [
+  (v) => !!v || "Primary email is required",
+  (v) => /.+@.+\..+/.test(v) || "Enter a valid email"
+];
 </script>
 
 <style scoped>

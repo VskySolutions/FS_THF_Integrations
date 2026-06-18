@@ -191,6 +191,10 @@ public sealed class UsersController : ControllerBase
         [FromQuery] string? search = null,
         [FromQuery] Guid? tenantId = null,
         [FromQuery] bool? isActive = null,
+        [FromQuery] string? name = null,
+        [FromQuery] string? email = null,
+        [FromQuery] string? phone = null,
+        [FromQuery] string? role = null,
         CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
@@ -198,7 +202,7 @@ public sealed class UsersController : ControllerBase
 
         // Super Admins may filter by any tenant; everyone else is scoped to their active tenant.
         Guid? tenantFilter = User.IsSuperAdmin() ? tenantId : User.GetActiveTenantId();
-        var (items, total) = await _users.ListAsync(tenantFilter, search, isActive, page, limit, cancellationToken);
+        var (items, total) = await _users.ListAsync(tenantFilter, search, isActive, name, email, phone, role, page, limit, cancellationToken);
 
         var names = await ResolveActorNamesAsync(items.SelectMany(u => new[] { u.CreatedById, u.UpdatedById }), cancellationToken);
 
@@ -215,10 +219,18 @@ public sealed class UsersController : ControllerBase
             return distinct.Count == 0 ? null : string.Join(", ", distinct);
         }
 
+        // The distinct role names held by the user (RBAC role name, falling back to the legacy tier).
+        static IReadOnlyList<string> RolesFor(User u) => u.TenantRoles
+            .Select(r => r.RoleEntity?.Name ?? r.Role.ToString())
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            .Distinct()
+            .OrderBy(n => n)
+            .ToList();
+
         var summaries = items.Select(u => new UserSummary(
             u.Id, u.Email,
             u.Person?.FirstName ?? string.Empty, u.Person?.LastName ?? string.Empty,
-            u.Person?.FullName ?? u.DisplayName, u.Person?.MobileNumber, TenantNamesFor(u), u.IsActive,
+            u.Person?.FullName ?? u.DisplayName, u.Person?.MobileNumber, TenantNamesFor(u), RolesFor(u), u.IsActive,
             NameOf(names, u.CreatedById), NameOf(names, u.UpdatedById), u.CreatedOnUtc, u.UpdatedOnUtc));
         return Ok(ApiResponseFactory.Paginated(summaries, "Users retrieved.", page, limit, total));
     }

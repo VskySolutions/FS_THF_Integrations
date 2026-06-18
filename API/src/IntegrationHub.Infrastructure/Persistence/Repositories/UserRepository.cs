@@ -59,7 +59,9 @@ internal sealed class UserRepository : IUserRepository
     }
 
     public async Task<(IReadOnlyList<User> Items, int Total)> ListAsync(
-        Guid? tenantId, string? search, bool? isActive, int page, int limit, CancellationToken cancellationToken = default)
+        Guid? tenantId, string? search, bool? isActive,
+        string? name, string? email, string? phone, string? role,
+        int page, int limit, CancellationToken cancellationToken = default)
     {
         var query = _dbContext.Users.Include(u => u.TenantRoles).ThenInclude(r => r.RoleEntity)
             .Include(u => u.Person).AsQueryable();
@@ -77,6 +79,28 @@ internal sealed class UserRepository : IUserRepository
         if (isActive is { } active)
         {
             query = query.Where(u => u.IsActive == active);
+        }
+        // Per-column "contains" filters (paired with the list's per-column filter drawer).
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            var t = name.Trim();
+            query = query.Where(u => u.Person != null &&
+                (u.Person.FirstName.Contains(t) || u.Person.LastName.Contains(t) || u.Person.DisplayName.Contains(t)));
+        }
+        if (!string.IsNullOrWhiteSpace(email))
+        {
+            var t = email.Trim();
+            query = query.Where(u => u.Email.Contains(t));
+        }
+        if (!string.IsNullOrWhiteSpace(phone))
+        {
+            var t = phone.Trim();
+            query = query.Where(u => u.Person != null && u.Person.MobileNumber != null && u.Person.MobileNumber.Contains(t));
+        }
+        if (!string.IsNullOrWhiteSpace(role))
+        {
+            var t = role.Trim();
+            query = query.Where(u => u.TenantRoles.Any(r => r.RoleEntity != null && r.RoleEntity.Name.Contains(t)));
         }
 
         var total = await query.CountAsync(cancellationToken);

@@ -115,13 +115,24 @@ const rowsPerPageOptions = [10, 20, 50, 100];
 const prefs = props.pageKey ? usePreferences(props.pageKey) : null;
 
 const innerPagination = ref({
-  sortBy: prefs?.get("sortBy", props.defaultSortBy) ?? props.defaultSortBy,
-  descending: prefs?.get("descending", props.defaultDescending) ?? props.defaultDescending,
   page: 1,
   rowsPerPage: prefs?.get("pageSize", 20) ?? 20,
+  sortBy: props.defaultSortBy,
+  descending: props.defaultDescending,
   rowsNumber: props.totalRecords,
   ...(props.pagination || {})
 });
+
+// Persisted sort state (cookie) must survive a refresh. A controlled `pagination` prop
+// (e.g. useListTable always initialises sortBy=null) would otherwise clobber it via the spread
+// above, so re-apply the saved sort here. Only applied when a value was actually saved, so an
+// unsorted list keeps its default/server order rather than being forced to sort.
+if (prefs) {
+  const savedSortBy = prefs.get("sortBy", undefined);
+  if (savedSortBy !== undefined) innerPagination.value.sortBy = savedSortBy;
+  const savedDescending = prefs.get("descending", undefined);
+  if (savedDescending !== undefined) innerPagination.value.descending = savedDescending;
+}
 
 const innerSelected = ref([]);
 watch(innerSelected, (val) => emit("update:selected", val));

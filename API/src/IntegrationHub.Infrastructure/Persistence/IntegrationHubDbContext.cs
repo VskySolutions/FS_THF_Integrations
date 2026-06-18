@@ -65,6 +65,12 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
 
     public DbSet<Media> Media => Set<Media>();
 
+    public DbSet<CustomerRequest> CustomerRequests => Set<CustomerRequest>();
+
+    public DbSet<CustomerAuditEntry> CustomerAuditEntries => Set<CustomerAuditEntry>();
+
+    public DbSet<CustomerDocument> CustomerDocuments => Set<CustomerDocument>();
+
     /// <summary>Data Protection key ring storage (Multi-Tenancy ADR-002).</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
@@ -82,6 +88,9 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
         modelBuilder.Entity<RetryQueueEntry>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<AuditTrailEntry>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<MappingConfiguration>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<CustomerRequest>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<CustomerAuditEntry>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<CustomerDocument>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
 
         // Soft-delete filters for the non-tenant-scoped entities.
         modelBuilder.Entity<Tenant>().HasQueryFilter(e => !e.Deleted);
@@ -180,6 +189,15 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
                     break;
                 case MappingConfiguration mapping when mapping.TenantId == Guid.Empty:
                     mapping.TenantId = _tenantContext.TenantId;
+                    break;
+                case CustomerRequest customer when customer.TenantId == Guid.Empty:
+                    customer.TenantId = _tenantContext.TenantId;
+                    break;
+                case CustomerAuditEntry auditEntry when auditEntry.TenantId == Guid.Empty:
+                    auditEntry.TenantId = _tenantContext.TenantId;
+                    break;
+                case CustomerDocument document when document.TenantId == Guid.Empty:
+                    document.TenantId = _tenantContext.TenantId;
                     break;
             }
         }

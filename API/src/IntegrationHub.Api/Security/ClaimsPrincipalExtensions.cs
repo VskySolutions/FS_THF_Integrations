@@ -17,4 +17,13 @@ public static class ClaimsPrincipalExtensions
 
     public static bool IsSuperAdmin(this ClaimsPrincipal principal)
         => string.Equals(principal.GetRole(), Roles.SuperAdmin, StringComparison.Ordinal);
+
+    /// <summary>
+    /// True when the caller holds the given permission — either via an explicit permission claim or,
+    /// as a fallback (API-key/pre-RBAC callers), via the seeded permission set for their system role.
+    /// Mirrors <see cref="PermissionAuthorizationHandler"/>.
+    /// </summary>
+    public static bool HasPermission(this ClaimsPrincipal principal, string permission)
+        => principal.HasClaim(ClaimTypeNames.Permission, permission)
+            || Permissions.ForSystemRole(principal.GetRole()).Contains(permission);
 }

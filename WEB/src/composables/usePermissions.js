@@ -24,7 +24,9 @@ export const Permissions = Object.freeze({
   JobsDelete: "jobs.delete",
   JobsSchedule: "jobs.schedule",
   LogsRead: "logs.read",
-  HealthRead: "health.read"
+  HealthRead: "health.read",
+  CustomersReview: "customers.review",
+  CustomersApprove: "customers.approve"
 });
 
 // Reactive permission checks for the active tenant. `has`/`hasAny` read the auth store's

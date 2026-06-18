@@ -88,6 +88,9 @@ public static class DependencyInjection
         services.AddScoped<IPersonRepository, PersonRepository>();
         services.AddScoped<IAddressRepository, AddressRepository>();
         services.AddScoped<IMediaRepository, MediaRepository>();
+        services.AddScoped<ICustomerRequestRepository, CustomerRequestRepository>();
+        services.AddScoped<ICustomerAuditRepository, CustomerAuditRepository>();
+        services.AddScoped<ICustomerDocumentRepository, CustomerDocumentRepository>();
         services.AddSingleton<ITransformationRuleEvaluator, Connectors.TransformationRuleEvaluator>();
         return services;
     }
@@ -141,6 +144,10 @@ public static class DependencyInjection
         services.AddScoped<Jobs.ExpenseImportJob>();
         services.AddScoped<Jobs.InvoiceImportJob>();
         services.AddScoped<Jobs.VendorPaymentImportJob>();
+
+        // On-demand Customer → Maconomy sync job + its dispatcher.
+        services.AddScoped<Jobs.CustomerSyncJob>();
+        services.AddScoped<Application.Abstractions.Customers.ICustomerSyncDispatcher, Jobs.CustomerSyncDispatcher>();
         return services;
     }
 }

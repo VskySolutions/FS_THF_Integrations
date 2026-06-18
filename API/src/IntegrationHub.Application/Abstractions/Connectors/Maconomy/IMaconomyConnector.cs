@@ -32,4 +32,10 @@ public interface IMaconomyConnector
     Task<ConnectorResult<MaconomyWriteResult>> WriteVendorInvoiceAsync(MaconomyVendorInvoice invoice, CancellationToken cancellationToken = default);
 
     Task<ConnectorResult<MaconomyWriteResult>> WriteVendorPaymentAsync(MaconomyVendorPayment payment, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Creates a customer master record in Maconomy from a Customer Request payload. On success
+    /// <see cref="MaconomyWriteResult.EntityId"/> carries the Maconomy customer number.
+    /// </summary>
+    Task<ConnectorResult<MaconomyWriteResult>> CreateCustomerAsync(MaconomyCustomer customer, CancellationToken cancellationToken = default);
 }

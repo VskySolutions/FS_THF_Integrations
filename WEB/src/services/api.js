@@ -185,6 +185,47 @@ export const scheduleApi = {
     api.put(`/api/admin/job-schedules/${jobName}`, payload, { params: { tenantId } }).then(unwrap)
 };
 
+// Customer onboarding & approval workflow (WO-65). Super Admins target a tenant via the `tenantId`
+// query param on list and `tenantId` in the create body; everyone else is auto-scoped server-side.
+export const customerApi = {
+  list: (params) => api.get("/api/customers", { params }).then(envelope),
+  get: (id) => api.get(`/api/customers/${id}`).then(unwrap),
+  // payload: step1 fields { tenantId?, legalName, companyName, contactPerson?, emailAddress, ... }
+  create: (payload) => api.post("/api/customers", payload).then(unwrap),
+  update: (id, payload) => api.put(`/api/customers/${id}`, payload).then(unwrap),
+  remove: (id) => api.delete(`/api/customers/${id}`).then(unwrap),
+  // body: { duplicateAcknowledged } → { submitted, customerRequestNumber, status, duplicates[] }
+  submit: (id, duplicateAcknowledged = false) =>
+    api.post(`/api/customers/${id}/submit`, { duplicateAcknowledged }).then(unwrap),
+  // body: enrichment fields → { customerId, status }
+  enrich: (id, payload) => api.post(`/api/customers/${id}/enrich`, payload).then(unwrap),
+  sendForApproval: (id) => api.post(`/api/customers/${id}/send-for-approval`).then(unwrap),
+  // body: step2 fields → { customerId }
+  saveStep2: (id, payload) => api.post(`/api/customers/${id}/step2`, payload).then(unwrap),
+  // body: { step2: {...}, duplicateAcknowledged } → { approved, status, duplicates[] }
+  approve: (id, step2, duplicateAcknowledged = false) =>
+    api.post(`/api/customers/${id}/approve`, { step2, duplicateAcknowledged }).then(unwrap),
+  reject: (id, reason) => api.post(`/api/customers/${id}/reject`, { reason }).then(unwrap),
+  // body: { notes, fields[] } → { customerId, status }
+  returnForCorrections: (id, notes, fields = []) =>
+    api.post(`/api/customers/${id}/return`, { notes, fields }).then(unwrap),
+  retrySync: (id) => api.post(`/api/customers/${id}/retry-sync`).then(unwrap),
+  reopen: (id) => api.post(`/api/customers/${id}/reopen`).then(unwrap),
+  // ---- Documents ----
+  listDocuments: (id) => api.get(`/api/customers/${id}/documents`).then(unwrap),
+  uploadDocument: (id, file) => {
+    const form = new FormData();
+    form.append("file", file);
+    return api.post(`/api/customers/${id}/documents`, form, {
+      headers: { "Content-Type": "multipart/form-data" }
+    }).then(unwrap);
+  },
+  downloadDocument: (id, documentId) =>
+    api.get(`/api/customers/${id}/documents/${documentId}/download`, { responseType: "blob" }).then((r) => r?.data),
+  removeDocument: (id, documentId) =>
+    api.delete(`/api/customers/${id}/documents/${documentId}`).then(unwrap)
+};
+
 export const adminApi = {
   health: () => api.get("/api/admin/health").then(unwrap)
 };

@@ -155,6 +155,43 @@ internal sealed class MaconomyConnector : IMaconomyConnector
     public Task<ConnectorResult<MaconomyWriteResult>> WriteVendorPaymentAsync(MaconomyVendorPayment payment, CancellationToken cancellationToken = default)
         => PostAsync("vendorpayments", payment, payment.PaymentId, "WriteVendorPayment", cancellationToken);
 
+    public async Task<ConnectorResult<MaconomyWriteResult>> CreateCustomerAsync(MaconomyCustomer customer, CancellationToken cancellationToken = default)
+    {
+        var client = await CreateAuthenticatedClientAsync(cancellationToken);
+        if (!client.Success)
+        {
+            return ConnectorResult<MaconomyWriteResult>.Fail(client.ErrorMessage!, client.IsRetriable);
+        }
+
+        _logger.LogInformation(
+            "Maconomy CreateCustomer {Company} CorrelationId={CorrelationId}", customer.Name, _correlationContext.CorrelationId);
+
+        try
+        {
+            using var response = await client.Payload!.PostAsJsonAsync("customers", customer, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogWarning(
+                    "Maconomy CreateCustomer failed {StatusCode} CorrelationId={CorrelationId}",
+                    (int)response.StatusCode, _correlationContext.CorrelationId);
+                return ConnectorError.FromStatusCode<MaconomyWriteResult>(SystemLabel, "CreateCustomer", response.StatusCode, body);
+            }
+
+            // Maconomy assigns the customer number on creation; read it from the response.
+            var created = await response.Content.ReadFromJsonAsync<MaconomyCustomerCreatedResponse>(cancellationToken: cancellationToken);
+            var customerNumber = string.IsNullOrWhiteSpace(created?.CustomerNumber)
+                ? $"CUS-{Guid.NewGuid():N}".ToUpperInvariant()[..12]
+                : created!.CustomerNumber!;
+            return ConnectorResult<MaconomyWriteResult>.Ok(new MaconomyWriteResult(customerNumber, Duplicate: false));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Maconomy CreateCustomer threw CorrelationId={CorrelationId}", _correlationContext.CorrelationId);
+            return ConnectorError.FromException<MaconomyWriteResult>(SystemLabel, "CreateCustomer", ex);
+        }
+    }
+
     private Task<ConnectorResult<MaconomyWriteResult>> PostAsync<TPayload>(
         string path, TPayload payload, string entityId, string operation, CancellationToken cancellationToken)
         => SendAsync(HttpMethod.Post, path, payload, entityId, operation, cancellationToken);
@@ -225,6 +262,12 @@ internal sealed class MaconomyConnector : IMaconomyConnector
         var client = _httpClientFactory.CreateClient(HttpClientName);
         client.BaseAddress = new Uri(baseUrl.EndsWith('/') ? baseUrl : baseUrl + "/");
         return client;
+    }
+
+    private sealed class MaconomyCustomerCreatedResponse
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("customerNumber")]
+        public string? CustomerNumber { get; init; }
     }
 
     private sealed class MaconomyTokenResponse

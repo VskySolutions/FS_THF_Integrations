@@ -22,6 +22,7 @@ import userRoutes from "modules/user/routes";
 import roleRoutes from "modules/role/routes";
 import integrationRoutes from "modules/integration/routes";
 import mappingRoutes from "modules/mapping/routes";
+import customerRoutes from "modules/customer/routes";
 
 routes.push(...accountRoutes);
 routes.push(...authRoutes);
@@ -31,6 +32,7 @@ routes.push(...userRoutes);
 routes.push(...roleRoutes);
 routes.push(...integrationRoutes);
 routes.push(...mappingRoutes);
+routes.push(...customerRoutes);
 
 export default route(function ({ store }) {
   const createHistory = process.env.SERVER

@@ -35,6 +35,10 @@ public static class DependencyInjection
         services.AddScoped<InvoiceValidator>();
         services.AddScoped<PaymentValidator>();
 
+        // Customer Management workflow services.
+        services.AddScoped<Abstractions.Customers.ICustomerApprovalService, Customers.CustomerApprovalService>();
+        services.AddScoped<Abstractions.Customers.ICustomerDuplicateChecker, Customers.CustomerDuplicateChecker>();
+
         return services;
     }
 }

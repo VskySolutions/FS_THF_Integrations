@@ -14,5 +14,11 @@ public static class ApiErrorCodes
     public const string ActiveJobsExist = "ACTIVE_JOBS_EXIST";
     public const string JobNotFound = "JOB_NOT_FOUND";
     public const string CredentialsNotConfigured = "CREDENTIALS_NOT_CONFIGURED";
+
+    // Permission Groups
+    public const string DuplicateGroupName = "DUPLICATE_GROUP_NAME";
+    public const string PermissionCeilingExceeded = "PERMISSION_CEILING_EXCEEDED";
+    public const string GroupInUse = "GROUP_IN_USE";
+
     public const string InternalError = "INTERNAL_ERROR";
 }

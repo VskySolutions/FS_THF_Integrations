@@ -74,6 +74,12 @@
           :loading="loadingPermissions"
         />
       </q-form>
+
+      <!-- Role ↔ Permission Group composition (WO-70): only for an existing role. -->
+      <template v-if="editingId">
+        <q-separator class="q-my-md" />
+        <role-permission-groups-panel :role-id="editingId" />
+      </template>
     </app-form-drawer>
 
     <!-- Tenant availability -->
@@ -99,6 +105,7 @@ import AppDataTable from "components/common/AppDataTable.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppSelect from "components/common/AppSelect.vue";
+import RolePermissionGroupsPanel from "modules/permission-group/components/RolePermissionGroupsPanel.vue";
 
 const notify = useNotify();
 const { confirm } = useConfirm();

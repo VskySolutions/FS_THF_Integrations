@@ -81,8 +81,10 @@ internal sealed class JwtTokenService : IJwtTokenService
 
     /// <summary>
     /// The user's effective permissions in the active tenant: the full catalogue for a Super Admin
-    /// (assigned anywhere), otherwise the active tenant assignment's RBAC role permissions, falling
-    /// back to the seeded set for the legacy enum when no RBAC role is linked.
+    /// (assigned anywhere), otherwise the active tenant assignment's RBAC role permissions — the union
+    /// of the role's direct keys and the group-derived cache (<see cref="Role.EffectivePermissions"/>,
+    /// Permission Groups feature) — falling back to the seeded set for the legacy enum when the role
+    /// carries no keys from either source.
     /// </summary>
     private static IReadOnlyList<string> ResolvePermissions(User user, Guid activeTenantId)
     {
@@ -97,9 +99,17 @@ internal sealed class JwtTokenService : IJwtTokenService
             return Array.Empty<string>();
         }
 
-        if (assignment.RoleEntity is { Permissions.Count: > 0 } roleEntity)
+        if (assignment.RoleEntity is { } roleEntity)
         {
-            return roleEntity.Permissions;
+            // Direct role permissions ∪ permissions contributed by composed Permission Groups.
+            var effective = roleEntity.Permissions
+                .Concat(roleEntity.EffectivePermissions)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (effective.Count > 0)
+            {
+                return effective;
+            }
         }
 
         return Permissions.ForSystemRole(assignment.Role.ToString());

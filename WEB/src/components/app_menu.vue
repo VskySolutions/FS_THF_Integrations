@@ -47,9 +47,16 @@ const sections = [
     items: [
       { label: "Tenants", icon: "o_apartment", to: "/tenants", permissions: [Permissions.TenantsWrite] },
       { label: "Person", icon: "o_badge", to: "/persons", permissions: [Permissions.PersonsRead] },
-      { label: "Users", icon: "o_group", to: "/users", permissions: [Permissions.UsersRead] },
-      { label: "Roles", icon: "o_admin_panel_settings", to: "/roles", permissions: [Permissions.RolesWrite] },
       { label: "Customers", icon: "o_groups", to: "/customers", permissions: null }
+    ]
+  },
+  {
+    key: "access-management",
+    label: "Access Management",
+    items: [
+      { label: "Permission Groups", icon: "o_workspaces", to: "/permission-groups", permissions: [Permissions.GroupsManage] },
+      { label: "Roles", icon: "o_admin_panel_settings", to: "/roles", permissions: [Permissions.RolesWrite] },
+      { label: "Users", icon: "o_group", to: "/users", permissions: [Permissions.UsersRead] }
     ]
   },
   {

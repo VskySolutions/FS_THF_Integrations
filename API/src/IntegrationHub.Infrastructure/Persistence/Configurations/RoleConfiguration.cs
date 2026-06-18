@@ -23,6 +23,9 @@ internal sealed class RoleConfiguration : IEntityTypeConfiguration<Role>
         builder.Property(r => r.Permissions)
             .HasMaxLength(4000);
 
+        // Denormalised cache of group-derived permission keys (Permission Groups, ADR-002).
+        builder.Property(r => r.EffectivePermissionsJson);
+
         builder.HasIndex(r => r.Name).IsUnique().HasFilter("[Deleted] = 0");
     }
 }

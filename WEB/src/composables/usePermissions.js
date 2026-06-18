@@ -16,6 +16,7 @@ export const Permissions = Object.freeze({
   RolesRead: "roles.read",
   RolesWrite: "roles.write",
   RolesAssign: "roles.assign",
+  GroupsManage: "groups.manage",
   MappingsRead: "mappings.read",
   MappingsWrite: "mappings.write",
   JobsRead: "jobs.read",

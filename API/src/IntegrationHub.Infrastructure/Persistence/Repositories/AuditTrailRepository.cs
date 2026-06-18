@@ -1,5 +1,6 @@
 using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Domain.Entities;
+using Microsoft.EntityFrameworkCore;
 
 namespace IntegrationHub.Infrastructure.Persistence.Repositories;
 
@@ -19,4 +20,12 @@ internal sealed class AuditTrailRepository : IAuditTrailRepository
 
     public async Task AddAsync(AuditTrailEntry entry, CancellationToken cancellationToken = default)
         => await _dbContext.AuditTrail.AddAsync(entry, cancellationToken);
+
+    public async Task<IReadOnlyList<AuditTrailEntry>> ListByEntityAsync(string entityName, string entityId, int limit = 100, CancellationToken cancellationToken = default)
+        => await _dbContext.AuditTrail
+            .IgnoreQueryFilters()
+            .Where(e => e.EntityName == entityName && e.EntityId == entityId && !e.Deleted)
+            .OrderByDescending(e => e.CreatedDate)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
 }

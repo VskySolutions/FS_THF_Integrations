@@ -47,6 +47,10 @@ public static class Permissions
     /// <summary>Complete Step 2 Maconomy fields and approve/reject/return Customer Requests (Customer Approver).</summary>
     public const string CustomersApprove = "customers.approve";
 
+    // Permission Groups (RBAC composition layer)
+    /// <summary>Create, edit, and compose Permission Groups (and compose them into roles).</summary>
+    public const string GroupsManage = "groups.manage";
+
     // Platform
     public const string HealthRead = "health.read";
 
@@ -60,6 +64,7 @@ public static class Permissions
         MappingsRead, MappingsWrite,
         JobsRead, JobsTrigger, JobsRetry, JobsDelete, JobsSchedule, LogsRead,
         CustomersReview, CustomersApprove,
+        GroupsManage,
         HealthRead
     };
 
@@ -78,6 +83,8 @@ public static class Permissions
         JobsRead, JobsTrigger, JobsRetry, JobsDelete, JobsSchedule, LogsRead,
         // Tenant Admins act as both Customer Role User and Customer Approver, and may retry/reopen.
         CustomersReview, CustomersApprove,
+        // Tenant Admins manage Permission Groups within their own tenant.
+        GroupsManage,
         HealthRead
     };
 

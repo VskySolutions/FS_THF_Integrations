@@ -39,6 +39,9 @@ public static class DependencyInjection
         services.AddScoped<Abstractions.Customers.ICustomerApprovalService, Customers.CustomerApprovalService>();
         services.AddScoped<Abstractions.Customers.ICustomerDuplicateChecker, Customers.CustomerDuplicateChecker>();
 
+        // Permission Groups: effective-permission cache computation.
+        services.AddScoped<Abstractions.Security.IPermissionGroupEffectivePermissionService, Security.PermissionGroupEffectivePermissionService>();
+
         return services;
     }
 }

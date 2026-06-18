@@ -13,6 +13,8 @@ export const ApiErrorCodes = Object.freeze({
   Forbidden: "FORBIDDEN",
   NotFound: "NOT_FOUND",
   DuplicateIdentifier: "DUPLICATE_IDENTIFIER",
+  DuplicateGroupName: "DUPLICATE_GROUP_NAME",
+  PermissionCeilingExceeded: "PERMISSION_CEILING_EXCEEDED",
   TenantInactive: "TENANT_INACTIVE",
   TenantNotFound: "TENANT_NOT_FOUND",
   TenantArchived: "TENANT_ARCHIVED",
@@ -129,7 +131,33 @@ export const roleApi = {
   assignToTenant: (tenantId, roleId) =>
     api.post(`/api/admin/tenants/${tenantId}/roles`, { roleId }).then(unwrap),
   unassignFromTenant: (tenantId, roleId) =>
-    api.delete(`/api/admin/tenants/${tenantId}/roles/${roleId}`).then(envelope)
+    api.delete(`/api/admin/tenants/${tenantId}/roles/${roleId}`).then(envelope),
+  // ---- Role ↔ Permission Group composition (WO-70) ----
+  // The role's assigned groups + the role's effective permission set.
+  getGroups: (roleId) => api.get(`/api/admin/roles/${roleId}/groups`).then(unwrap),
+  assignGroups: (roleId, groupIds) => api.post(`/api/admin/roles/${roleId}/groups`, { groupIds }).then(unwrap),
+  removeGroup: (roleId, groupId) => api.delete(`/api/admin/roles/${roleId}/groups/${groupId}`).then(unwrap),
+  // Union of effective permissions for a role → { permissions, sources }.
+  previewPermissions: (roleId) => api.get(`/api/admin/roles/${roleId}/permissions/preview`).then(unwrap)
+};
+
+// Permission Groups (WO-70): the RBAC composition layer (Permission Keys → Groups → Roles → Users).
+// Tenant-scoped with a Super Admin `tenantId` override (query on list, body on create); everyone
+// else is auto-scoped server-side. Mutations require `groups.manage`.
+export const permissionGroupApi = {
+  list: (params) => api.get("/api/admin/permission-groups", { params }).then(envelope),
+  get: (id) => api.get(`/api/admin/permission-groups/${id}`).then(unwrap),
+  // payload: { tenantId?, name, description?, permissionKeys[] }
+  create: (payload) => api.post("/api/admin/permission-groups", payload).then(unwrap),
+  // payload: { name, description?, permissionKeys[] }
+  update: (id, payload) => api.put(`/api/admin/permission-groups/${id}`, payload).then(unwrap),
+  setStatus: (id, isActive) => api.put(`/api/admin/permission-groups/${id}/status`, { isActive }).then(unwrap),
+  remove: (id) => api.delete(`/api/admin/permission-groups/${id}`).then(envelope),
+  // ---- Templates ----
+  templates: () => api.get("/api/admin/permission-groups/templates").then(unwrap),
+  createTemplate: (payload) => api.post("/api/admin/permission-groups/templates", payload).then(unwrap),
+  // Full permission key catalogue (string[]) — drives the key picker.
+  permissionCatalog: () => api.get("/api/admin/permissions").then(unwrap)
 };
 
 export const profileApi = {

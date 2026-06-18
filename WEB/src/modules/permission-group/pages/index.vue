@@ -1,0 +1,267 @@
+<template>
+  <q-page padding>
+    <app-list-header
+      :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'Permission Groups' }]"
+      :search="search"
+      show-search
+      search-placeholder="Search group name or description"
+      show-filters
+      :filter-count="filterChips.length"
+      show-add
+      add-label="Create Group"
+      show-back
+      @update:search="search = $event"
+      @filters="filterOpen = true"
+      @add="openCreate"
+      @back="$router.back()"
+    >
+      <template #actions>
+        <q-btn outline no-caps color="primary" icon="o_dashboard_customize" label="Use Template" @click="openTemplatePicker" />
+        <app-select
+          v-if="canChooseTenant" v-model="selectedTenantId" :options="tenantOptions" label="Tenant"
+          :loading="loadingTenants" :clearable="true" style="min-width: 220px;"
+        />
+      </template>
+    </app-list-header>
+
+    <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="onClearFilters">
+      <app-column-filters v-model="filters" :columns="filterableColumns" />
+      <q-toggle v-model="filters.usedByRoles" label="Used by roles only" left-label color="primary" />
+    </app-filter-drawer>
+
+    <app-data-table
+      page-key="permission-groups"
+      row-key="id"
+      title="All permission groups"
+      :rows="rows"
+      :columns="columns"
+      :loading="loading"
+      :total-records="totalRecords"
+      :pagination="pagination"
+      default-sort-by="name"
+      :default-descending="false"
+      selectable
+      @request="onRequest"
+      @refresh="load"
+      @update:selected="selected = $event"
+    >
+      <template #body-cell-status="cell">
+        <q-td :props="cell">
+          <q-badge :color="cell.value ? 'positive' : 'grey'">{{ cell.value ? "Active" : "Inactive" }}</q-badge>
+        </q-td>
+      </template>
+
+      <template #body-cell-actions="cell">
+        <q-td :props="cell" class="text-right">
+          <q-btn flat round dense color="primary" icon="o_visibility" :to="{ name: 'permission_group_detail', params: { id: cell.row.id } }">
+            <q-tooltip>View</q-tooltip>
+          </q-btn>
+          <q-btn flat round dense icon="o_more_vert">
+            <q-menu auto-close>
+              <q-list style="min-width: 190px;">
+                <q-item clickable :to="{ name: 'permission_group_detail', params: { id: cell.row.id } }">
+                  <q-item-section avatar><q-icon name="o_visibility" /></q-item-section>
+                  <q-item-section>View</q-item-section>
+                </q-item>
+                <q-item clickable @click="openEdit(cell.row)">
+                  <q-item-section avatar><q-icon name="o_edit" /></q-item-section>
+                  <q-item-section>Edit</q-item-section>
+                </q-item>
+                <q-item clickable @click="toggleStatus(cell.row)">
+                  <q-item-section avatar><q-icon :name="cell.row.isActive ? 'o_toggle_off' : 'o_toggle_on'" /></q-item-section>
+                  <q-item-section>{{ cell.row.isActive ? "Deactivate" : "Activate" }}</q-item-section>
+                </q-item>
+                <q-separator />
+                <q-item clickable @click="removeGroup(cell.row)">
+                  <q-item-section avatar><q-icon name="o_delete" color="negative" /></q-item-section>
+                  <q-item-section class="text-negative">Delete</q-item-section>
+                </q-item>
+              </q-list>
+            </q-menu>
+          </q-btn>
+        </q-td>
+      </template>
+
+      <template #no-data>
+        <div class="full-width column flex-center q-pa-xl text-grey-6">
+          <q-icon name="o_workspaces" size="40px" class="q-mb-sm" />
+          <div class="text-subtitle1 q-mb-xs">No permission groups yet</div>
+          <div class="q-mb-md">Create your first group to start composing roles from reusable permission sets.</div>
+          <q-btn unelevated no-caps color="primary" icon="o_add" label="Create Group" @click="openCreate" />
+        </div>
+      </template>
+    </app-data-table>
+
+    <!-- Template picker: choose a template (or start blank) before opening the form drawer. -->
+    <q-dialog v-model="templateOpen">
+      <q-card style="min-width: 420px; max-width: 92vw;">
+        <q-card-section class="text-h6">Start from a template</q-card-section>
+        <q-separator />
+        <q-card-section>
+          <div class="text-body2 text-grey-7 q-mb-sm">Pick a template to pre-fill the group, or start from scratch.</div>
+          <q-list v-if="templates.length" bordered separator>
+            <q-item v-for="t in templates" :key="t.id" clickable @click="chooseTemplate(t)">
+              <q-item-section avatar><q-icon name="o_dashboard_customize" color="primary" /></q-item-section>
+              <q-item-section>
+                <q-item-label>{{ t.name }}</q-item-label>
+                <q-item-label caption>{{ t.description || "—" }} · {{ (t.permissionKeys || []).length }} keys</q-item-label>
+              </q-item-section>
+            </q-item>
+          </q-list>
+          <div v-else class="text-grey-6">No templates available.</div>
+        </q-card-section>
+        <q-separator />
+        <q-card-actions align="right">
+          <q-btn flat no-caps color="grey-8" label="Cancel" @click="templateOpen = false" />
+          <q-btn unelevated no-caps color="primary" label="Start Blank" @click="chooseTemplate(null)" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <permission-group-form-drawer
+      ref="formDrawer" v-model="formOpen" :tenant-id="selectedTenantId" :group-id="editingId" :template="pendingTemplate"
+      @saved="onSaved"
+    />
+  </q-page>
+</template>
+
+<script setup>
+import { ref, computed, watch } from "vue";
+import { debounce } from "quasar";
+import { permissionGroupApi, getApiErrorMessage } from "services/api";
+import { useTenantStore } from "stores/tenant";
+import { useTenantOptions } from "composables/useTenantOptions";
+import { useNotify } from "composables/useNotify";
+import { useConfirm } from "composables/useConfirm";
+import { useListTable } from "composables/useListTable";
+import { useColumnFilters } from "composables/useColumnFilters";
+
+import AppDataTable from "components/common/AppDataTable.vue";
+import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
+import AppColumnFilters from "components/common/AppColumnFilters.vue";
+import AppListHeader from "components/common/AppListHeader.vue";
+import AppSelect from "components/common/AppSelect.vue";
+import PermissionGroupFormDrawer from "modules/permission-group/components/PermissionGroupFormDrawer.vue";
+
+const notify = useNotify();
+const { confirm } = useConfirm();
+const tenantStore = useTenantStore();
+const { canChooseTenant, tenantOptions, loadingTenants, loadTenants } = useTenantOptions();
+
+// Super admins scope the list to a chosen tenant; others are auto-scoped server-side.
+const selectedTenantId = ref(null);
+
+const STATUS_OPTIONS = [
+  { label: "Active", value: "true" },
+  { label: "Inactive", value: "false" }
+];
+const CATEGORY_OPTIONS = [
+  "Tenants", "Users", "Access", "Customers", "Mappings", "Jobs", "Schedules", "System"
+].map((c) => ({ label: c, value: c }));
+
+const columns = computed(() => [
+  { name: "name", label: "Group Name", field: "name", align: "left", sortable: true, default: true, filterable: false },
+  { name: "description", label: "Description", field: "description", align: "left", default: true, filterable: false },
+  { name: "permissionCount", label: "Permission Count", field: "permissionCount", align: "left", sortable: true, default: true, filterable: false },
+  { name: "rolesUsingCount", label: "Roles Using", field: "rolesUsingCount", align: "left", sortable: true, default: true, filterable: false },
+  { name: "status", label: "Status", field: "isActive", align: "left", sortable: true, default: true, filterOptions: STATUS_OPTIONS },
+  { name: "category", label: "Category", field: "category", align: "left", default: false, filterOptions: CATEGORY_OPTIONS },
+  ...(canChooseTenant.value ? [{ name: "tenantName", label: "Tenant", field: "tenantName", align: "left", sortable: true, default: true, filterable: false }] : []),
+  { name: "actions", label: "Actions", field: "actions", align: "right" }
+]);
+
+const { rows, loading, totalRecords, selected, search, filterOpen, pagination, load, onRequest } = useListTable({
+  fetcher: ({ page, limit }) =>
+    permissionGroupApi.list({
+      page,
+      limit,
+      search: search.value || undefined,
+      isActive: filters.status != null ? filters.status === "true" : undefined,
+      usedByRoles: filters.usedByRoles || undefined,
+      category: filters.category || undefined,
+      tenantId: (canChooseTenant.value && selectedTenantId.value) ? selectedTenantId.value : undefined
+    }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),
+  onError: (err) => notify.error(getApiErrorMessage(err))
+});
+
+const { filters, filterableColumns, filterChips, removeFilter, clearFilters } = useColumnFilters(columns, rows, { server: true });
+// "Used by roles only" is a toggle outside the column-filter set; reset it alongside the rest.
+const onClearFilters = () => { clearFilters(); filters.usedByRoles = false; };
+const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);
+watch([search, filters], reload, { deep: true });
+watch(selectedTenantId, () => { pagination.value.page = 1; load(); });
+
+if (canChooseTenant.value) {
+  loadTenants();
+  selectedTenantId.value = tenantStore.activeTenantId;
+}
+
+// ---- Create / Edit ----
+const formOpen = ref(false);
+const editingId = ref(null);
+const pendingTemplate = ref(null);
+const formDrawer = ref(null);
+
+const openCreate = () => {
+  editingId.value = null;
+  pendingTemplate.value = null;
+  formOpen.value = true;
+};
+
+const openEdit = (row) => {
+  editingId.value = row.id;
+  pendingTemplate.value = null;
+  formOpen.value = true;
+};
+
+const onSaved = () => { formOpen.value = false; load(); };
+
+// ---- Template picker ----
+const templateOpen = ref(false);
+const templates = ref([]);
+
+const openTemplatePicker = async () => {
+  templateOpen.value = true;
+  try {
+    templates.value = await permissionGroupApi.templates() || [];
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  }
+};
+
+const chooseTemplate = (template) => {
+  templateOpen.value = false;
+  editingId.value = null;
+  pendingTemplate.value = template;
+  formOpen.value = true;
+};
+
+// ---- Activate / Deactivate ----
+const toggleStatus = async (row) => {
+  try {
+    await permissionGroupApi.setStatus(row.id, !row.isActive);
+    notify.success(row.isActive ? "Group deactivated." : "Group activated.");
+    load();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  }
+};
+
+// ---- Delete ----
+const removeGroup = async (row) => {
+  const ok = await confirm({
+    title: "Delete permission group",
+    message: `Delete "${row.name}"? Roles using it will lose its permissions. This cannot be undone.`,
+    confirmLabel: "Delete",
+    type: "danger"
+  });
+  if (!ok) return;
+  try {
+    await permissionGroupApi.remove(row.id);
+    notify.success("Permission group deleted.");
+    load();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  }
+};
+</script>

@@ -91,6 +91,7 @@ public static class DependencyInjection
         services.AddScoped<ICustomerRequestRepository, CustomerRequestRepository>();
         services.AddScoped<ICustomerAuditRepository, CustomerAuditRepository>();
         services.AddScoped<ICustomerDocumentRepository, CustomerDocumentRepository>();
+        services.AddScoped<IPermissionGroupRepository, PermissionGroupRepository>();
         services.AddSingleton<ITransformationRuleEvaluator, Connectors.TransformationRuleEvaluator>();
         return services;
     }

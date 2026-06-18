@@ -12,5 +12,8 @@ public enum SystemName
     Concur = 1,
 
     /// <summary>Deltek Maconomy ERP system.</summary>
-    Maconomy = 2
+    Maconomy = 2,
+
+    /// <summary>The IntegrationHub platform itself — the source for internally-originated flows (e.g. Customer onboarding).</summary>
+    Platform = 3
 }

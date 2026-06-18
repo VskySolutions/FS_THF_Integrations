@@ -2,6 +2,7 @@ using global::Hangfire;
 using IntegrationHub.Application.Abstractions.Connectors.Maconomy;
 using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Application.Abstractions.Tenancy;
+using IntegrationHub.Application.Customers;
 using IntegrationHub.Domain.Entities;
 using IntegrationHub.Domain.Enums;
 using Microsoft.Extensions.Logging;
@@ -11,9 +12,15 @@ namespace IntegrationHub.Infrastructure.Jobs;
 /// <summary>
 /// On-demand Hangfire job that synchronises an approved <see cref="CustomerRequest"/> to Maconomy
 /// using the existing <see cref="IMaconomyConnector"/>. Triggered by the approval service on final
-/// approval (and by a manual Retry Sync). Reconstructs the tenant context from the payload, resolves
-/// the tenant's Maconomy credentials (immediate non-retriable failure if absent), pushes the customer
-/// master record, and records the outcome. Transient failures are retried with incremental backoff.
+/// approval (and by a manual Retry Sync). Reconstructs the tenant context from the payload, records
+/// an <see cref="IntegrationJob"/> (so the run is visible in Integration Jobs), resolves the tenant's
+/// Maconomy credentials (immediate non-retriable failure if absent), pushes the customer master
+/// record, and records the outcome. Transient failures are retried with incremental backoff.
+/// <para>
+/// A sync only runs for a request in <see cref="CustomerRequestStatus.SyncInProgress"/> — the state
+/// set when a request is fully <b>Approved</b> (or a Failed sync is manually retried). Requests in
+/// any other state are skipped, so only approved customers are ever pushed to Maconomy.
+/// </para>
 /// </summary>
 public sealed class CustomerSyncJob
 {
@@ -24,8 +31,11 @@ public sealed class CustomerSyncJob
     private readonly ITenantRepository _tenants;
     private readonly ICustomerRequestRepository _requests;
     private readonly ICustomerAuditRepository _audit;
+    private readonly IIntegrationJobRepository _jobs;
+    private readonly IIntegrationLogRepository _logs;
     private readonly ITenantApiConfigurationService _configurationService;
     private readonly IMaconomyConnector _maconomy;
+    private readonly ICustomerMaconomyMapper _mapper;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IBackgroundJobClient _backgroundJobs;
     private readonly ILogger<CustomerSyncJob> _logger;
@@ -35,8 +45,11 @@ public sealed class CustomerSyncJob
         ITenantRepository tenants,
         ICustomerRequestRepository requests,
         ICustomerAuditRepository audit,
+        IIntegrationJobRepository jobs,
+        IIntegrationLogRepository logs,
         ITenantApiConfigurationService configurationService,
         IMaconomyConnector maconomy,
+        ICustomerMaconomyMapper mapper,
         IUnitOfWork unitOfWork,
         IBackgroundJobClient backgroundJobs,
         ILogger<CustomerSyncJob> logger)
@@ -45,8 +58,11 @@ public sealed class CustomerSyncJob
         _tenants = tenants;
         _requests = requests;
         _audit = audit;
+        _jobs = jobs;
+        _logs = logs;
         _configurationService = configurationService;
         _maconomy = maconomy;
+        _mapper = mapper;
         _unitOfWork = unitOfWork;
         _backgroundJobs = backgroundJobs;
         _logger = logger;
@@ -71,18 +87,33 @@ public sealed class CustomerSyncJob
             return;
         }
 
+        // Only an Approved (then queued) request syncs. Anything else is skipped — guards against
+        // syncing a customer that has not been fully approved.
+        if (request.Status != CustomerRequestStatus.SyncInProgress)
+        {
+            _logger.LogWarning(
+                "CustomerSyncJob: request {Request} is {Status}, not awaiting sync — skipping.", request.Id, request.Status);
+            return;
+        }
+
+        // Record an Integration Job for this run so it appears in /jobs and logs.
+        var job = await CreateJobAsync(request, cancellationToken);
         await AppendAuditAsync(request, CustomerAuditActionType.SyncStarted, "Maconomy synchronisation started.", cancellationToken);
 
         // REQ-CUS-016.2: missing credentials → immediate, non-retriable failure.
         var config = await _configurationService.GetMaconomyConfigAsync(cancellationToken);
         if (config is null)
         {
-            await FailAsync(request, "Maconomy credentials not configured for tenant", retriable: false, cancellationToken);
+            await FailAsync(request, job, "Maconomy credentials not configured for tenant", terminal: true, cancellationToken);
             return;
         }
 
         request.SyncAttempts++;
-        var result = await _maconomy.CreateCustomerAsync(BuildPayload(request), cancellationToken);
+        job.AttemptCount = request.SyncAttempts;
+
+        // Build the payload via the tenant's configurable CustomerSync field mapping (defaults applied for unmapped fields).
+        var payload = await _mapper.BuildAsync(request, cancellationToken);
+        var result = await _maconomy.CreateCustomerAsync(payload, cancellationToken);
 
         if (result.Success)
         {
@@ -91,6 +122,8 @@ public sealed class CustomerSyncJob
             request.LastSyncError = null;
             await AppendAuditAsync(request, CustomerAuditActionType.Synced,
                 $"Synced to Maconomy as customer {request.MaconomyCustomerNumber}.", cancellationToken);
+            await CompleteJobAsync(job, IntegrationJobStatus.Completed, null,
+                $"Customer synced to Maconomy as {request.MaconomyCustomerNumber}.", cancellationToken);
             _requests.Update(request);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             _logger.LogInformation("CustomerSyncJob: request {Request} synced as {Number}", request.Id, request.MaconomyCustomerNumber);
@@ -104,51 +137,70 @@ public sealed class CustomerSyncJob
             request.LastSyncError = result.ErrorMessage;
             await AppendAuditAsync(request, CustomerAuditActionType.SyncFailed,
                 $"Attempt {request.SyncAttempts} failed: {result.ErrorMessage}. Retrying in {delay.TotalMinutes:N0} min.", cancellationToken);
+            // This run's job is a (retry-eligible) failure; the rescheduled run records its own job.
+            await CompleteJobAsync(job, IntegrationJobStatus.Failed, result.ErrorMessage,
+                $"Attempt {request.SyncAttempts} failed; retrying in {delay.TotalMinutes:N0} min.", cancellationToken);
             _requests.Update(request);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            _backgroundJobs.Schedule<CustomerSyncJob>(job => job.RunAsync(request.Id, tenantId, CancellationToken.None), delay);
+            _backgroundJobs.Schedule<CustomerSyncJob>(j => j.RunAsync(request.Id, tenantId, CancellationToken.None), delay);
             return;
         }
 
-        await FailAsync(request, result.ErrorMessage ?? "Maconomy sync failed.", retriable: result.IsRetriable, cancellationToken);
+        await FailAsync(request, job, result.ErrorMessage ?? "Maconomy sync failed.", terminal: true, cancellationToken);
     }
 
-    private async Task FailAsync(CustomerRequest request, string error, bool retriable, CancellationToken cancellationToken)
+    private async Task FailAsync(CustomerRequest request, IntegrationJob job, string error, bool terminal, CancellationToken cancellationToken)
     {
         request.Status = CustomerRequestStatus.Failed;
         request.LastSyncError = error;
         await AppendAuditAsync(request, CustomerAuditActionType.SyncFailed,
-            retriable ? $"Sync failed after {request.SyncAttempts} attempt(s): {error}" : error, cancellationToken);
+            request.SyncAttempts > 0 ? $"Sync failed after {request.SyncAttempts} attempt(s): {error}" : error, cancellationToken);
+        await CompleteJobAsync(job, terminal ? IntegrationJobStatus.PermanentlyFailed : IntegrationJobStatus.Failed, error,
+            $"Sync failed: {error}", cancellationToken);
         _requests.Update(request);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         // Tenant Admin notification is surfaced via the audit trail + structured log (no email channel in MVP).
         _logger.LogError("CustomerSyncJob: request {Request} for tenant {Tenant} marked Failed: {Error}", request.Id, request.TenantId, error);
     }
 
-    private static MaconomyCustomer BuildPayload(CustomerRequest r) => new(
-        Name: r.CompanyName,
-        LegalName: r.LegalName,
-        ContactPerson: r.ContactPerson,
-        Email: r.EmailAddress,
-        Phone: r.PhoneNumber,
-        Website: r.Website,
-        Country: r.Country,
-        State: r.StateProvince,
-        City: r.City,
-        AddressLine1: r.AddressLine1,
-        AddressLine2: r.AddressLine2,
-        PostalCode: r.PostalCode,
-        TaxNumber: r.TaxNumber,
-        RegistrationNumber: r.RegistrationNumber,
-        BusinessUnit: r.BusinessUnit,
-        Currency: r.Currency,
-        CustomerGroup: r.CustomerGroup,
-        PaymentTerms: r.PaymentTerms,
-        CreditLimit: r.CreditLimit,
-        Industry: r.Industry,
-        InvoiceLanguage: r.InvoiceLanguage,
-        BillingEmail: r.BillingEmail);
+    private async Task<IntegrationJob> CreateJobAsync(CustomerRequest request, CancellationToken cancellationToken)
+    {
+        var job = new IntegrationJob
+        {
+            Id = Guid.NewGuid(),
+            TenantId = request.TenantId,
+            InterfaceName = CustomerMaconomyMapper.InterfaceName, // "CustomerSync"
+            Direction = IntegrationDirection.Outbound,
+            SourceSystem = SystemName.Platform,
+            TargetSystem = SystemName.Maconomy,
+            Status = IntegrationJobStatus.Running,
+            AttemptCount = request.SyncAttempts + 1,
+            StartedAtUtc = DateTime.UtcNow,
+        };
+        await _jobs.AddAsync(job, cancellationToken);
+        await LogAsync(job, "Information", $"Customer sync started for request {request.CustomerRequestNumber ?? request.Id.ToString()}.", cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return job;
+    }
+
+    private async Task CompleteJobAsync(IntegrationJob job, IntegrationJobStatus status, string? error, string message, CancellationToken cancellationToken)
+    {
+        job.Status = status;
+        job.ErrorMessage = error;
+        job.CompletedAtUtc = DateTime.UtcNow;
+        _jobs.Update(job);
+        await LogAsync(job, status == IntegrationJobStatus.Completed ? "Information" : "Error", message, cancellationToken);
+    }
+
+    private Task LogAsync(IntegrationJob job, string level, string message, CancellationToken cancellationToken)
+        => _logs.AddAsync(new IntegrationLog
+        {
+            TenantId = job.TenantId,
+            JobId = job.Id,
+            Level = level,
+            Message = message,
+        }, cancellationToken);
 
     private Task AppendAuditAsync(CustomerRequest request, CustomerAuditActionType action, string notes, CancellationToken cancellationToken)
         => _audit.AddAsync(new CustomerAuditEntry

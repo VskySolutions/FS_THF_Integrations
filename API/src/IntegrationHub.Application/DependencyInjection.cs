@@ -38,6 +38,8 @@ public static class DependencyInjection
         // Customer Management workflow services.
         services.AddScoped<Abstractions.Customers.ICustomerApprovalService, Customers.CustomerApprovalService>();
         services.AddScoped<Abstractions.Customers.ICustomerDuplicateChecker, Customers.CustomerDuplicateChecker>();
+        // Customer → Maconomy field mapping (applies the tenant's CustomerSync flow mapping rules).
+        services.AddScoped<Customers.ICustomerMaconomyMapper, Customers.CustomerMaconomyMapper>();
 
         // Permission Groups: effective-permission cache computation.
         services.AddScoped<Abstractions.Security.IPermissionGroupEffectivePermissionService, Security.PermissionGroupEffectivePermissionService>();

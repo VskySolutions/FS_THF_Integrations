@@ -5,6 +5,7 @@ using Hangfire.States;
 using IntegrationHub.Application.Abstractions.Connectors.Maconomy;
 using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Application.Abstractions.Tenancy;
+using IntegrationHub.Application.Customers;
 using IntegrationHub.Domain.Entities;
 using IntegrationHub.Domain.Enums;
 using IntegrationHub.Infrastructure.Jobs;
@@ -22,13 +23,17 @@ public class CustomerSyncJobTests
     private readonly Mock<ICustomerRequestRepository> _requests = new();
     private readonly Mock<ICustomerAuditRepository> _audit = new();
     private readonly Mock<ITenantApiConfigurationService> _config = new();
+    private readonly Mock<IIntegrationJobRepository> _jobs = new();
+    private readonly Mock<IIntegrationLogRepository> _logs = new();
     private readonly Mock<IMaconomyConnector> _maconomy = new();
+    private readonly Mock<ICustomerMaconomyMapper> _mapper = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IBackgroundJobClient> _backgroundJobs = new();
 
     private CustomerSyncJob Create() => new(
         _tenantContext.Object, _tenants.Object, _requests.Object, _audit.Object,
-        _config.Object, _maconomy.Object, _unitOfWork.Object, _backgroundJobs.Object,
+        _jobs.Object, _logs.Object, _config.Object, _maconomy.Object, _mapper.Object,
+        _unitOfWork.Object, _backgroundJobs.Object,
         NullLogger<CustomerSyncJob>.Instance);
 
     private (Guid TenantId, CustomerRequest Request) Arrange(CustomerRequestStatus status = CustomerRequestStatus.SyncInProgress, int syncAttempts = 0)
@@ -48,6 +53,12 @@ public class CustomerSyncJobTests
         };
         _tenants.Setup(t => t.GetByIdAsync(tenant.Id, It.IsAny<CancellationToken>())).ReturnsAsync(tenant);
         _requests.Setup(r => r.GetByIdForTenantAsync(request.Id, tenant.Id, It.IsAny<CancellationToken>())).ReturnsAsync(request);
+        // The mapper builds the Maconomy payload from the request (real mapping is unit-tested separately).
+        _mapper.Setup(m => m.BuildAsync(request, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MaconomyCustomer(
+                request.CompanyName, request.LegalName, null, request.EmailAddress, null, null,
+                request.Country, null, null, request.AddressLine1, null, null,
+                null, null, null, null, null, null, null, null, null, null));
         return (tenant.Id, request);
     }
 
@@ -65,7 +76,20 @@ public class CustomerSyncJobTests
         _audit.Verify(a => a.AddAsync(It.Is<CustomerAuditEntry>(e => e.ActionType == CustomerAuditActionType.SyncFailed), It.IsAny<CancellationToken>()), Times.Once);
         _maconomy.Verify(m => m.CreateCustomerAsync(It.IsAny<MaconomyCustomer>(), It.IsAny<CancellationToken>()), Times.Never);
         _backgroundJobs.Verify(b => b.Create(It.IsAny<Job>(), It.IsAny<ScheduledState>()), Times.Never);
-        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        // An Integration Job is recorded for the (failed) run so it appears in /jobs.
+        _jobs.Verify(j => j.AddAsync(It.Is<IntegrationJob>(i => i.InterfaceName == "CustomerSync" && i.Direction == IntegrationDirection.Outbound), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Non_approved_request_is_skipped_without_syncing_or_recording_a_job()
+    {
+        var (tenantId, request) = Arrange(status: CustomerRequestStatus.PendingApproval);
+
+        await Create().RunAsync(request.Id, tenantId, default);
+
+        request.Status.Should().Be(CustomerRequestStatus.PendingApproval);
+        _maconomy.Verify(m => m.CreateCustomerAsync(It.IsAny<MaconomyCustomer>(), It.IsAny<CancellationToken>()), Times.Never);
+        _jobs.Verify(j => j.AddAsync(It.IsAny<IntegrationJob>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -84,7 +108,9 @@ public class CustomerSyncJobTests
         request.LastSyncError.Should().BeNull();
         request.SyncAttempts.Should().Be(1);
         _requests.Verify(r => r.Update(request), Times.Once);
-        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        // Save on job creation + save on completion.
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
+        _jobs.Verify(j => j.AddAsync(It.Is<IntegrationJob>(i => i.InterfaceName == "CustomerSync"), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

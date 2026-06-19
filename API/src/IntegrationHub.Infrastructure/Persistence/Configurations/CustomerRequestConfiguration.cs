@@ -24,12 +24,6 @@ internal sealed class CustomerRequestConfiguration : IEntityTypeConfiguration<Cu
         builder.Property(c => c.EmailAddress).IsRequired().HasMaxLength(256);
         builder.Property(c => c.PhoneNumber).HasMaxLength(32);
         builder.Property(c => c.Website).HasMaxLength(512);
-        builder.Property(c => c.Country).IsRequired().HasMaxLength(100);
-        builder.Property(c => c.StateProvince).HasMaxLength(100);
-        builder.Property(c => c.City).HasMaxLength(100);
-        builder.Property(c => c.AddressLine1).IsRequired().HasMaxLength(256);
-        builder.Property(c => c.AddressLine2).HasMaxLength(256);
-        builder.Property(c => c.PostalCode).HasMaxLength(32);
 
         // Enrichment: Business Information
         builder.Property(c => c.InternalCustomerCategory).HasMaxLength(128);
@@ -69,6 +63,12 @@ internal sealed class CustomerRequestConfiguration : IEntityTypeConfiguration<Cu
         builder.HasOne(c => c.Tenant)
             .WithMany()
             .HasForeignKey(c => c.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Shared, reusable address record (the common Address table). No cascade — addresses are shared.
+        builder.HasOne(c => c.Address)
+            .WithMany()
+            .HasForeignKey(c => c.AddressId)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasMany(c => c.AuditEntries)

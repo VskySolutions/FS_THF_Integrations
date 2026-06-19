@@ -20,11 +20,11 @@ vi.mock("composables/useTenantOptions", () => ({ useTenantOptions: () => tenantS
 
 import CustomerFormDrawer from "modules/customer/components/CustomerFormDrawer.vue";
 
-// AppFormDrawer stub: exposes clearDraft, re-emits submit, renders the body slot.
+// AppFormDrawer stub: exposes clearDraft, re-emits submit, renders the body + footer-actions slots.
 const clearDraft = vi.fn();
 const AppFormDrawerStub = {
   emits: ["submit", "cancel", "restore-draft"],
-  template: "<div class='app-form-drawer'><slot /><button class='do-submit' @click='$emit(\"submit\", { clearDraft })' /></div>",
+  template: "<div class='app-form-drawer'><slot /><slot name='footer-actions' /><button class='do-submit' @click='$emit(\"submit\", { clearDraft })' /></div>",
   setup () { return { clearDraft }; }
 };
 

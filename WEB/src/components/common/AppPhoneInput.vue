@@ -62,7 +62,14 @@ const filterDialCodes = (val, update) => {
   update(() => { dialCodeOptions.value = orderedCountries.filter((c) => dialCodeOption(c).label.toLowerCase().includes(needle)).map(dialCodeOption); });
 };
 
-const iso = ref(isoFromDial(props.country) || props.defaultCountry);
+// When no dial code is supplied separately (e.g. the value is a bare E.164 string), infer the
+// country from the number itself so the dropdown + as-you-type pattern match the stored value.
+const isoFromNumber = (val) => {
+  if (!val) return null;
+  try { return parsePhoneNumber(String(val))?.country || null; } catch { return null; }
+};
+
+const iso = ref(isoFromDial(props.country) || isoFromNumber(props.modelValue) || props.defaultCountry);
 const display = ref(""); // the formatted national number shown in the input
 const localError = ref("");
 let lastEmitted = props.modelValue || "";
@@ -81,6 +88,11 @@ display.value = formatNational(props.modelValue, iso.value);
 // External value changes (e.g. a record loads) — reformat, unless it is our own echo.
 watch(() => props.modelValue, (v) => {
   if ((v || "") === (lastEmitted || "")) return;
+  // With no separately-stored dial code, sync the dropdown to the loaded number's country.
+  if (!props.country) {
+    const derived = isoFromNumber(v);
+    if (derived && derived !== iso.value) iso.value = derived;
+  }
   display.value = formatNational(v, iso.value);
 });
 

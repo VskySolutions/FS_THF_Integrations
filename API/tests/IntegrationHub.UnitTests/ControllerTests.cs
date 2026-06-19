@@ -129,17 +129,19 @@ public class UsersControllerTests
     private Guid SetupPerson(string email = "p@t.com", bool isUser = false)
     {
         var personId = Guid.NewGuid();
-        _persons.Setup(p => p.GetByIdAsync(personId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Person
-            {
-                Id = personId,
-                PersonCode = "PER-TEST",
-                FirstName = "Test",
-                LastName = "Person",
-                DisplayName = "Test Person",
-                PrimaryEmail = email,
-                UserId = isUser ? Guid.NewGuid() : null,
-            });
+        var person = new Person
+        {
+            Id = personId,
+            PersonCode = "PER-TEST",
+            FirstName = "Test",
+            LastName = "Person",
+            DisplayName = "Test Person",
+            PrimaryEmail = email,
+            UserId = isUser ? Guid.NewGuid() : null,
+        };
+        // The controller loads the person scoped (Tenant Admin) or unscoped (Super Admin) — stub both.
+        _persons.Setup(p => p.GetByIdAsync(personId, It.IsAny<CancellationToken>())).ReturnsAsync(person);
+        _persons.Setup(p => p.GetByIdUnscopedAsync(personId, It.IsAny<CancellationToken>())).ReturnsAsync(person);
         return personId;
     }
 
@@ -428,7 +430,8 @@ public class PersonsControllerTests
     public async Task Delete_person_linked_to_user_is_conflict()
     {
         var id = Guid.NewGuid();
-        _persons.Setup(p => p.GetByIdAsync(id, It.IsAny<CancellationToken>()))
+        // Super Admin deletes load the person unscoped (cross-tenant).
+        _persons.Setup(p => p.GetByIdUnscopedAsync(id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Person { Id = id, FirstName = "A", LastName = "B", UserId = Guid.NewGuid() });
 
         var controller = Create().WithUser(Guid.NewGuid(), Roles.SuperAdmin);
@@ -442,7 +445,7 @@ public class PersonsControllerTests
     public async Task Delete_unlinked_person_soft_deletes()
     {
         var id = Guid.NewGuid();
-        _persons.Setup(p => p.GetByIdAsync(id, It.IsAny<CancellationToken>()))
+        _persons.Setup(p => p.GetByIdUnscopedAsync(id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Person { Id = id, FirstName = "A", LastName = "B", UserId = null });
 
         var controller = Create().WithUser(Guid.NewGuid(), Roles.SuperAdmin);

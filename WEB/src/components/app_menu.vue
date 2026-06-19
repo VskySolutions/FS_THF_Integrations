@@ -38,7 +38,7 @@ const sections = [
     key: "overview",
     label: null,
     items: [
-      { label: "Dashboard", icon: "o_dashboard", to: "/", exact: true, permissions: null }
+      { label: "Dashboard", icon: "o_dashboard", to: "/dashboard", permissions: null }
     ]
   },
   {

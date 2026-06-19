@@ -27,8 +27,10 @@
 
     <!-- Fixed footer -->
     <q-separator />
-    <div class="row justify-end q-gutter-sm q-pa-md bg-grey-1">
+    <div class="row justify-end items-center q-gutter-sm q-pa-md bg-grey-1">
       <q-btn flat no-caps color="grey-8" label="Cancel" @click="onCancel" />
+      <!-- Optional extra actions (e.g. "Save as Draft") sit beside the primary action, same row. -->
+      <slot name="footer-actions" />
       <q-btn
         unelevated
         no-caps

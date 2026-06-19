@@ -65,7 +65,9 @@ public sealed class PersonsController : ControllerBase
         {
             Id = Guid.NewGuid(),
             PersonCode = await GeneratePersonCodeAsync(cancellationToken),
-            TenantId = request.TenantId,
+            // A Tenant Admin/Operator can only create within their own tenant; a client-supplied
+            // TenantId is honoured only for Super Admins. (Falls back to active-tenant stamping.)
+            TenantId = User.IsSuperAdmin() ? request.TenantId : User.GetActiveTenantId(),
             FirstName = request.FirstName,
             MiddleName = request.MiddleName,
             LastName = request.LastName,
@@ -102,7 +104,7 @@ public sealed class PersonsController : ControllerBase
         await _audit.AddAsync(nameof(Person), person.Id.ToString(), "Created", details: person.PersonCode, cancellationToken: cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        var created = await _persons.GetByIdAsync(person.Id, cancellationToken) ?? person;
+        var created = await LoadAsync(person.Id, cancellationToken) ?? person;
         return StatusCode(StatusCodes.Status201Created,
             ApiResponseFactory.Success(new PersonDetail(PersonProfileMapper.Map(created), created.UserId is not null), "Person created."));
     }
@@ -121,7 +123,10 @@ public sealed class PersonsController : ControllerBase
         page = Math.Max(1, page);
         limit = Math.Clamp(limit, 1, 100);
 
-        var (items, total) = await _persons.ListAsync(search, tenantId, isUser, isActive, page, limit, cancellationToken);
+        // Super Admins may scope to any tenant; everyone else is pinned to their active tenant by the
+        // ambient query filter (a client-supplied tenantId is ignored for non-Super-Admins).
+        Guid? scopeTenant = User.IsSuperAdmin() && tenantId is { } tid ? tid : null;
+        var (items, total) = await _persons.ListAsync(search, scopeTenant, isUser, isActive, page, limit, cancellationToken);
         var names = await ResolveActorNamesAsync(items.SelectMany(p => new[] { p.CreatedById, p.UpdatedById }), cancellationToken);
         var summaries = items.Select(p => new PersonSummary(
             p.Id, p.PersonCode, p.FullName, p.PrimaryEmail, p.MobileNumber, p.JobTitle,
@@ -147,7 +152,7 @@ public sealed class PersonsController : ControllerBase
     [RequirePermission(Permissions.PersonsRead)]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
-        var person = await _persons.GetByIdAsync(id, cancellationToken);
+        var person = await LoadAsync(id, cancellationToken);
         return person is null
             ? NotFound(ApiResponseFactory.NotFound("Person not found."))
             : Ok(ApiResponseFactory.Success(new PersonDetail(PersonProfileMapper.Map(person), person.UserId is not null), "Person retrieved."));
@@ -157,7 +162,7 @@ public sealed class PersonsController : ControllerBase
     [RequirePermission(Permissions.PersonsWrite)]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdatePersonRequest request, CancellationToken cancellationToken)
     {
-        var person = await _persons.GetByIdAsync(id, cancellationToken);
+        var person = await LoadAsync(id, cancellationToken);
         if (person is null)
         {
             return NotFound(ApiResponseFactory.NotFound("Person not found."));
@@ -200,7 +205,8 @@ public sealed class PersonsController : ControllerBase
         {
             person.IsActive = request.IsActive.Value;
         }
-        if (request.TenantId.HasValue)
+        // Only a Super Admin may move a person to a different tenant.
+        if (request.TenantId.HasValue && User.IsSuperAdmin())
         {
             person.TenantId = request.TenantId;
         }
@@ -228,7 +234,7 @@ public sealed class PersonsController : ControllerBase
         await _audit.AddAsync(nameof(Person), person.Id.ToString(), "Updated", cancellationToken: cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        var refreshed = await _persons.GetByIdAsync(person.Id, cancellationToken) ?? person;
+        var refreshed = await LoadAsync(person.Id, cancellationToken) ?? person;
         return Ok(ApiResponseFactory.Success(new PersonDetail(PersonProfileMapper.Map(refreshed), refreshed.UserId is not null), "Person updated."));
     }
 
@@ -243,7 +249,7 @@ public sealed class PersonsController : ControllerBase
                 ApiResponseFactory.Forbidden("Only a Super Admin can delete persons."));
         }
 
-        var person = await _persons.GetByIdAsync(id, cancellationToken);
+        var person = await LoadAsync(id, cancellationToken);
         if (person is null)
         {
             return NotFound(ApiResponseFactory.NotFound("Person not found."));
@@ -263,6 +269,12 @@ public sealed class PersonsController : ControllerBase
 
         return Ok(ApiResponseFactory.Success(new { id }, "Person deleted."));
     }
+
+    /// <summary>Loads a single person: Super Admins read across tenants; everyone else is tenant-scoped.</summary>
+    private Task<Person?> LoadAsync(Guid id, CancellationToken cancellationToken)
+        => User.IsSuperAdmin()
+            ? _persons.GetByIdUnscopedAsync(id, cancellationToken)
+            : _persons.GetByIdAsync(id, cancellationToken);
 
     private async Task UpsertAddressAsync(Person person, AddressInput input, CancellationToken cancellationToken)
     {

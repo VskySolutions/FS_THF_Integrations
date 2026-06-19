@@ -119,7 +119,7 @@ const login = async () => {
       router.push({ name: "change_password" });
       return;
     }
-    redirectToLanding();
+    redirectToDashboard();
   } catch (err) {
     // AC-UI-001.3 (no field hint) / AC-UI-001.4 (inactive) / AC-UI-001.6 (server error).
     const code = getApiErrorCode(err);
@@ -135,9 +135,10 @@ const login = async () => {
   }
 };
 
-const redirectToLanding = () => {
-  localStorage.setItem("last_route", "/");
-  router.push("/");
+const redirectToDashboard = () => {
+  // The dashboard renders the role-appropriate view (super / tenant / common) internally.
+  localStorage.setItem("last_route", "/dashboard");
+  router.push("/dashboard");
 };
 </script>
 

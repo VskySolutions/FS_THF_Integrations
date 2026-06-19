@@ -58,6 +58,11 @@ builder.Services.AddIntegrationHubHealthChecks();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
+// Dashboard (WO-72): short-lived in-process cache (singleton) + scoped read-model aggregator.
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<IntegrationHub.Api.Dashboard.IDashboardCacheService, IntegrationHub.Api.Dashboard.DashboardCacheService>();
+builder.Services.AddScoped<IntegrationHub.Api.Dashboard.IDashboardQueryService, IntegrationHub.Api.Dashboard.DashboardQueryService>();
+
 // CORS for the browser SPA (WEB/). Allowed origins come from configuration
 // (Cors:AllowedOrigins); falls back to the local Quasar dev server ports.
 const string SpaCorsPolicy = "SpaCors";

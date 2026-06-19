@@ -257,3 +257,23 @@ export const customerApi = {
 export const adminApi = {
   health: () => api.get("/api/admin/health").then(unwrap)
 };
+
+// Dashboard (WO-73). Role-aware analytics endpoints + per-user layout persistence. Tenant-scoped
+// endpoints auto-scope to the active tenant; Super Admins may target a tenant via `tenantId`.
+// `params` carries `{ dateRange, tenantId? }`. All responses use the standard ApiResponse envelope.
+export const dashboardApi = {
+  jobs: (params) => api.get("/api/dashboard/jobs", { params }).then(unwrap),
+  health: () => api.get("/api/dashboard/health").then(unwrap),
+  customers: (params) => api.get("/api/dashboard/customers", { params }).then(unwrap),
+  users: (params) => api.get("/api/dashboard/users", { params }).then(unwrap),
+  // Super Admin platform overview. `forceRefresh` bypasses the server cache via a request header.
+  platform: (params, forceRefresh = false) =>
+    api.get("/api/dashboard/platform", {
+      params,
+      headers: forceRefresh ? { "X-Dashboard-Force-Refresh": "1" } : undefined
+    }).then(unwrap),
+  // Per-user widget layout (order / hidden / collapsed).
+  getLayout: () => api.get("/api/dashboard/layout").then(unwrap),
+  // payload: { widgetOrder, hiddenWidgets, collapsedWidgets }
+  saveLayout: (payload) => api.put("/api/dashboard/layout", payload).then(unwrap)
+};

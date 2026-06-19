@@ -17,6 +17,7 @@ internal sealed class CustomerRequestRepository : ICustomerRequestRepository
     public Task<CustomerRequest?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
         => _dbContext.CustomerRequests
             .Include(c => c.Tenant)
+            .Include(c => c.Address)
             .Include(c => c.Documents)
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
 
@@ -24,6 +25,7 @@ internal sealed class CustomerRequestRepository : ICustomerRequestRepository
         => _dbContext.CustomerRequests
             .IgnoreQueryFilters()
             .Include(c => c.Tenant)
+            .Include(c => c.Address)
             .Include(c => c.Documents)
             .FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId && !c.Deleted, cancellationToken);
 
@@ -31,6 +33,7 @@ internal sealed class CustomerRequestRepository : ICustomerRequestRepository
         => _dbContext.CustomerRequests
             .IgnoreQueryFilters()
             .Include(c => c.Tenant)
+            .Include(c => c.Address)
             .Include(c => c.Documents)
             .FirstOrDefaultAsync(c => c.Id == id && !c.Deleted, cancellationToken);
 

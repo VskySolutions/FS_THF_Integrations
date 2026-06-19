@@ -24,6 +24,7 @@ import integrationRoutes from "modules/integration/routes";
 import mappingRoutes from "modules/mapping/routes";
 import customerRoutes from "modules/customer/routes";
 import permissionGroupRoutes from "modules/permission-group/routes";
+import dashboardRoutes from "modules/dashboard/routes";
 
 routes.push(...accountRoutes);
 routes.push(...authRoutes);
@@ -35,6 +36,7 @@ routes.push(...integrationRoutes);
 routes.push(...mappingRoutes);
 routes.push(...customerRoutes);
 routes.push(...permissionGroupRoutes);
+routes.push(...dashboardRoutes);
 
 export default route(function ({ store }) {
   const createHistory = process.env.SERVER
@@ -56,9 +58,9 @@ export default route(function ({ store }) {
       return next("/auth/login");
     }
 
-    // Already logged in but on an auth page → send to the landing page.
+    // Already logged in but on an auth page → send to the dashboard (role-appropriate view).
     if (token && to.path.startsWith("/auth")) {
-      return next("/");
+      return next("/dashboard");
     }
 
     if (token) {

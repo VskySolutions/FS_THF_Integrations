@@ -22,8 +22,7 @@ public class CustomerMaconomyMapperTests
         CompanyName = "Acme",
         LegalName = "Acme Incorporated",
         EmailAddress = "billing@acme.com",
-        Country = "US",
-        AddressLine1 = "1 Main St",
+        Address = new Address { CountryName = "US", AddressLine1 = "1 Main St" },
         TaxNumber = "TAX-1",
         CreditLimit = 5000m,
     };

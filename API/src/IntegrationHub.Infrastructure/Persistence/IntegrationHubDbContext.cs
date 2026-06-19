@@ -79,6 +79,8 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
 
     public DbSet<PermissionGroupTemplate> PermissionGroupTemplates => Set<PermissionGroupTemplate>();
 
+    public DbSet<DashboardLayout> DashboardLayouts => Set<DashboardLayout>();
+
     /// <summary>Data Protection key ring storage (Multi-Tenancy ADR-002).</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
@@ -100,6 +102,9 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
         modelBuilder.Entity<CustomerAuditEntry>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<CustomerDocument>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<PermissionGroup>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        // Persons are CRM master records owned by a tenant; scope them so a Tenant Admin/Operator never
+        // sees another tenant's people. Self-profile reads bypass this filter via GetByUserIdAsync.
+        modelBuilder.Entity<Person>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
 
         // Soft-delete filters for the non-tenant-scoped entities.
         modelBuilder.Entity<Tenant>().HasQueryFilter(e => !e.Deleted);
@@ -110,10 +115,10 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
         modelBuilder.Entity<JobScheduleConfiguration>().HasQueryFilter(e => !e.Deleted);
         modelBuilder.Entity<Role>().HasQueryFilter(e => !e.Deleted);
         modelBuilder.Entity<TenantRole>().HasQueryFilter(e => !e.Deleted);
-        modelBuilder.Entity<Person>().HasQueryFilter(e => !e.Deleted);
         modelBuilder.Entity<Address>().HasQueryFilter(e => !e.Deleted);
         modelBuilder.Entity<Media>().HasQueryFilter(e => !e.Deleted);
         modelBuilder.Entity<PermissionGroupTemplate>().HasQueryFilter(e => !e.Deleted);
+        modelBuilder.Entity<DashboardLayout>().HasQueryFilter(e => !e.Deleted);
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
@@ -211,6 +216,9 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
                     break;
                 case PermissionGroup permissionGroup when permissionGroup.TenantId == Guid.Empty:
                     permissionGroup.TenantId = _tenantContext.TenantId;
+                    break;
+                case Person person when person.TenantId is null || person.TenantId == Guid.Empty:
+                    person.TenantId = _tenantContext.TenantId;
                     break;
             }
         }

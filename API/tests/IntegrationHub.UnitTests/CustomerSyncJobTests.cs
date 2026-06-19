@@ -47,8 +47,7 @@ public class CustomerSyncJobTests
             CompanyName = "Acme",
             LegalName = "Acme Inc",
             EmailAddress = "a@acme.com",
-            Country = "US",
-            AddressLine1 = "1 St",
+            Address = new Address { CountryName = "US", AddressLine1 = "1 St" },
             SyncAttempts = syncAttempts,
         };
         _tenants.Setup(t => t.GetByIdAsync(tenant.Id, It.IsAny<CancellationToken>())).ReturnsAsync(tenant);
@@ -57,7 +56,7 @@ public class CustomerSyncJobTests
         _mapper.Setup(m => m.BuildAsync(request, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new MaconomyCustomer(
                 request.CompanyName, request.LegalName, null, request.EmailAddress, null, null,
-                request.Country, null, null, request.AddressLine1, null, null,
+                request.Address?.CountryName ?? "", null, null, request.Address?.AddressLine1 ?? "", null, null,
                 null, null, null, null, null, null, null, null, null, null));
         return (tenant.Id, request);
     }

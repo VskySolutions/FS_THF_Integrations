@@ -93,32 +93,8 @@
       <q-card flat bordered class="profile-card q-mb-md">
         <q-card-section class="text-subtitle1 text-weight-medium">Address</q-card-section>
         <q-separator />
-        <q-card-section class="row q-col-gutter-md">
-          <div class="col-12 section-subhead">Location</div>
-          <app-select
-            v-model="address.countryCode" :options="countryOptions" label="Country" use-input
-            class="col-12 col-sm-4" @filter="filterCountries" @update:model-value="onCountryChange"
-          />
-          <app-select
-            v-model="address.stateCode" :options="stateOptions" label="State / Province" use-input
-            class="col-12 col-sm-4" :disable="!address.countryCode" @filter="filterStates" @update:model-value="onStateChange"
-          />
-          <app-select
-            v-model="address.cityName" :options="cityOptions" label="City" use-input
-            class="col-12 col-sm-4" :disable="!address.stateCode" @filter="filterCities"
-          />
-          <app-text-field
-            v-model="address.postalCode" label="Postal Code" class="col-12 col-sm-4"
-            :error="!!postalError" :error-message="postalError" @blur="validatePostal"
-          />
-
-          <div class="col-12 section-subhead">Street address</div>
-          <app-text-field v-model="address.addressLine1" label="Address Line 1" class="col-12 col-sm-8" />
-          <app-text-field v-model="address.addressLine2" label="Address Line 2" class="col-12 col-sm-6" />
-          <app-text-field v-model="address.landmark" label="Landmark" class="col-12 col-sm-6" />
-          <app-text-field v-model="address.buildingName" label="Building / Complex" class="col-12 col-sm-4" />
-          <app-text-field v-model="address.floorNumber" label="Floor" class="col-12 col-sm-4" />
-          <app-text-field v-model="address.unitNumber" label="Unit / Suite" class="col-12 col-sm-4" />
+        <q-card-section>
+          <app-address-fields ref="addressRef" v-model="address" />
         </q-card-section>
       </q-card>
 
@@ -187,9 +163,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
-import { State, City } from "country-state-city";
-import { useCountries, orderedCountries, countryOption, countryNameOption } from "composables/useCountries";
-import validator from "validator";
+import { orderedCountries, countryNameOption } from "composables/useCountries";
 import { Cropper } from "vue-advanced-cropper";
 import "vue-advanced-cropper/dist/style.css";
 import { authApi, profileApi, mediaApi, getApiErrorMessage } from "services/api";
@@ -200,6 +174,7 @@ import AppSelect from "components/common/AppSelect.vue";
 import AppTextField from "components/common/AppTextField.vue";
 import AppDateField from "components/common/AppDateField.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
+import AppAddressFields from "components/common/AppAddressFields.vue";
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -210,51 +185,15 @@ const assignments = computed(() => authStore.user?.tenants || []);
 const genderOptions = ["Male", "Female", "Other", "Prefer not to say"].map((g) => ({ label: g, value: g }));
 const maritalOptions = ["Single", "Married", "Divorced", "Widowed", "Separated"].map((m) => ({ label: m, value: m }));
 
-// ---- Geographic data (country-state-city) ----
-const { allCountries } = useCountries();
-const countryOptions = ref(orderedCountries.map(countryOption));
+// ---- Country options for the Nationality field (address country/state/city now live in
+// AppAddressFields, which owns its own cascade). ----
 const countryNameOptions = ref(orderedCountries.map(countryNameOption));
-const stateOptions = ref([]);
-const cityOptions = ref([]);
-let allStates = [];
-let allCities = [];
-
-const filterFactory = (source, target) => (val, update) => {
+const filterCountryNames = (val, update) => {
   const needle = (val || "").toLowerCase();
-  update(() => { target.value = source().filter((o) => o.label.toLowerCase().includes(needle)); });
-};
-const filterCountries = filterFactory(() => orderedCountries.map(countryOption), countryOptions);
-const filterCountryNames = filterFactory(() => orderedCountries.map(countryNameOption), countryNameOptions);
-const filterStates = (val, update) => {
-  const needle = (val || "").toLowerCase();
-  update(() => { stateOptions.value = allStates.filter((o) => o.label.toLowerCase().includes(needle)); });
-};
-const filterCities = (val, update) => {
-  const needle = (val || "").toLowerCase();
-  update(() => { cityOptions.value = allCities.filter((o) => o.label.toLowerCase().includes(needle)); });
+  update(() => { countryNameOptions.value = orderedCountries.map(countryNameOption).filter((o) => o.label.toLowerCase().includes(needle)); });
 };
 
-const loadStates = (countryCode) => {
-  allStates = State.getStatesOfCountry(countryCode).map((s) => ({ label: s.name, value: s.isoCode }));
-  stateOptions.value = allStates;
-};
-const loadCities = (countryCode, stateCode) => {
-  allCities = City.getCitiesOfState(countryCode, stateCode).map((c) => ({ label: c.name, value: c.name }));
-  cityOptions.value = allCities;
-};
-
-const onCountryChange = (countryCode) => {
-  address.stateCode = null;
-  address.cityName = null;
-  stateOptions.value = [];
-  cityOptions.value = [];
-  if (countryCode) loadStates(countryCode);
-};
-const onStateChange = (stateCode) => {
-  address.cityName = null;
-  cityOptions.value = [];
-  if (address.countryCode && stateCode) loadCities(address.countryCode, stateCode);
-};
+const addressRef = ref(null);
 
 // ---- Form state ----
 const loading = ref(true);
@@ -332,24 +271,12 @@ const load = async () => {
       address.buildingName = p.address.buildingName || "";
       address.floorNumber = p.address.floorNumber || "";
       address.unitNumber = p.address.unitNumber || "";
-      if (address.countryCode) loadStates(address.countryCode);
-      if (address.countryCode && address.stateCode) loadCities(address.countryCode, address.stateCode);
+      // AppAddressFields reloads its own state/city option lists from the country/state codes.
     }
   } catch (err) {
     notify.error(getApiErrorMessage(err));
   } finally {
     loading.value = false;
-  }
-};
-
-// ---- Postal validation (validator) ----
-const postalError = ref("");
-const validatePostal = () => {
-  postalError.value = "";
-  if (!address.postalCode || !address.countryCode) return;
-  const locale = validator.isPostalCodeLocales.includes(address.countryCode) ? address.countryCode : "any";
-  if (!validator.isPostalCode(address.postalCode, locale)) {
-    postalError.value = "Invalid postal code for the selected country.";
   }
 };
 
@@ -395,8 +322,7 @@ const removeImage = () => {
 
 // ---- Save ----
 const save = async () => {
-  validatePostal();
-  if (postalError.value) {
+  if (!addressRef.value?.validate()) {
     notify.error("Please fix the highlighted fields.");
     return;
   }
@@ -405,8 +331,9 @@ const save = async () => {
   const mobile = form.mobileNumber;
   const dialCode = form.phoneCountryCode || null;
 
-  const countryName = allCountries.find((c) => c.isoCode === address.countryCode)?.name || address.countryName;
-  const stateName = allStates.find((s) => s.value === address.stateCode)?.label || address.stateName;
+  // AppAddressFields keeps countryName/stateName in sync with the selected ISO codes.
+  const countryName = address.countryName;
+  const stateName = address.stateName;
 
   const payload = {
     firstName: form.firstName,

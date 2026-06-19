@@ -30,12 +30,9 @@ public class CustomerRequest : AuditableEntity
     public string EmailAddress { get; set; } = string.Empty;
     public string? PhoneNumber { get; set; }
     public string? Website { get; set; }
-    public string Country { get; set; } = string.Empty;
-    public string? StateProvince { get; set; }
-    public string? City { get; set; }
-    public string AddressLine1 { get; set; } = string.Empty;
-    public string? AddressLine2 { get; set; }
-    public string? PostalCode { get; set; }
+
+    /// <summary>Reference to the shared <see cref="Entities.Address"/> record (the common address table).</summary>
+    public Guid? AddressId { get; set; }
 
     // ---- Enrichment: internal Business Information (customers.review) ----
     public string? InternalCustomerCategory { get; set; }
@@ -99,6 +96,7 @@ public class CustomerRequest : AuditableEntity
 
     // ---- Navigations ----
     public Tenant? Tenant { get; set; }
+    public Address? Address { get; set; }
     public ICollection<CustomerAuditEntry> AuditEntries { get; set; } = new List<CustomerAuditEntry>();
     public ICollection<CustomerDocument> Documents { get; set; } = new List<CustomerDocument>();
 }

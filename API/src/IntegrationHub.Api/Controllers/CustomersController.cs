@@ -36,6 +36,7 @@ public sealed class CustomersController : ControllerBase
     private readonly ICustomerAuditRepository _audit;
     private readonly ICustomerDocumentRepository _documents;
     private readonly ITenantRepository _tenants;
+    private readonly IAddressRepository _addresses;
     private readonly ICustomerApprovalService _approval;
     private readonly ICustomerDuplicateChecker _duplicates;
     private readonly IUnitOfWork _unitOfWork;
@@ -46,6 +47,7 @@ public sealed class CustomersController : ControllerBase
         ICustomerAuditRepository audit,
         ICustomerDocumentRepository documents,
         ITenantRepository tenants,
+        IAddressRepository addresses,
         ICustomerApprovalService approval,
         ICustomerDuplicateChecker duplicates,
         IUnitOfWork unitOfWork,
@@ -55,6 +57,7 @@ public sealed class CustomersController : ControllerBase
         _audit = audit;
         _documents = documents;
         _tenants = tenants;
+        _addresses = addresses;
         _approval = approval;
         _duplicates = duplicates;
         _unitOfWork = unitOfWork;
@@ -138,13 +141,14 @@ public sealed class CustomersController : ControllerBase
             EmailAddress = body.EmailAddress.Trim(),
             PhoneNumber = body.PhoneNumber?.Trim(),
             Website = body.Website?.Trim(),
-            Country = body.Country.Trim(),
-            StateProvince = body.StateProvince?.Trim(),
-            City = body.City?.Trim(),
-            AddressLine1 = body.AddressLine1.Trim(),
-            AddressLine2 = body.AddressLine2?.Trim(),
-            PostalCode = body.PostalCode?.Trim(),
         };
+
+        // The address lives in the shared Address table, linked via AddressId.
+        var address = new Address { Id = Guid.NewGuid() };
+        ApplyAddress(address, body.Country, body.StateProvince, body.City, body.AddressLine1, body.AddressLine2, body.PostalCode);
+        await _addresses.AddAsync(address, cancellationToken);
+        request.AddressId = address.Id;
+        request.Address = address;
 
         await _requests.AddAsync(request, cancellationToken);
         await AppendAuditAsync(request, CustomerAuditActionType.Created, "Draft created.", cancellationToken);
@@ -175,12 +179,7 @@ public sealed class CustomersController : ControllerBase
         request.EmailAddress = body.EmailAddress.Trim();
         request.PhoneNumber = body.PhoneNumber?.Trim();
         request.Website = body.Website?.Trim();
-        request.Country = body.Country.Trim();
-        request.StateProvince = body.StateProvince?.Trim();
-        request.City = body.City?.Trim();
-        request.AddressLine1 = body.AddressLine1.Trim();
-        request.AddressLine2 = body.AddressLine2?.Trim();
-        request.PostalCode = body.PostalCode?.Trim();
+        await UpsertAddressAsync(request, body.Country, body.StateProvince, body.City, body.AddressLine1, body.AddressLine2, body.PostalCode, cancellationToken);
         _requests.Update(request);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -604,6 +603,45 @@ public sealed class CustomersController : ControllerBase
             ? _requests.GetByIdUnscopedAsync(id, cancellationToken)
             : _requests.GetByIdAsync(id, cancellationToken);
 
+    /// <summary>Creates the linked Address on first edit, otherwise updates it in place (shared Address table).</summary>
+    private async Task UpsertAddressAsync(
+        CustomerRequest request, string country, string? state, string? city,
+        string addressLine1, string? addressLine2, string? postalCode, CancellationToken cancellationToken)
+    {
+        var address = request.AddressId is { } addressId
+            ? await _addresses.GetByIdAsync(addressId, cancellationToken)
+            : null;
+
+        var isNew = address is null;
+        address ??= new Address { Id = Guid.NewGuid() };
+        ApplyAddress(address, country, state, city, addressLine1, addressLine2, postalCode);
+
+        if (isNew)
+        {
+            await _addresses.AddAsync(address, cancellationToken);
+            request.AddressId = address.Id;
+            request.Address = address;
+        }
+        else
+        {
+            _addresses.Update(address);
+        }
+    }
+
+    /// <summary>Maps the Customer Request's Step 1 location fields onto a shared <see cref="Address"/> record.</summary>
+    private static void ApplyAddress(
+        Address address, string country, string? state, string? city,
+        string addressLine1, string? addressLine2, string? postalCode)
+    {
+        address.AddressType = AddressType.Office;
+        address.CountryName = country.Trim();
+        address.StateName = state?.Trim();
+        address.CityName = city?.Trim();
+        address.AddressLine1 = addressLine1.Trim();
+        address.AddressLine2 = addressLine2?.Trim();
+        address.PostalCode = postalCode?.Trim();
+    }
+
     /// <summary>Resolves and validates the target tenant for a create: a Super Admin's chosen tenant, otherwise the active tenant.</summary>
     private async Task<(Guid TenantId, IActionResult? Error)> ResolveTargetTenantAsync(Guid? requested, CancellationToken cancellationToken)
     {
@@ -662,12 +700,12 @@ public sealed class CustomersController : ControllerBase
             EmailAddress = c.EmailAddress,
             PhoneNumber = c.PhoneNumber,
             Website = c.Website,
-            Country = c.Country,
-            StateProvince = c.StateProvince,
-            City = c.City,
-            AddressLine1 = c.AddressLine1,
-            AddressLine2 = c.AddressLine2,
-            PostalCode = c.PostalCode,
+            Country = c.Address?.CountryName ?? string.Empty,
+            StateProvince = c.Address?.StateName,
+            City = c.Address?.CityName,
+            AddressLine1 = c.Address?.AddressLine1 ?? string.Empty,
+            AddressLine2 = c.Address?.AddressLine2,
+            PostalCode = c.Address?.PostalCode,
             InternalCustomerCategory = c.InternalCustomerCategory,
             Territory = c.Territory,
             PracticeArea = c.PracticeArea,

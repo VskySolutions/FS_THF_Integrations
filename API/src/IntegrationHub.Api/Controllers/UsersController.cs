@@ -95,8 +95,11 @@ public sealed class UsersController : ControllerBase
             }
         }
 
-        // A user is created by promoting an existing Person master record (WO-61).
-        var person = await _persons.GetByIdAsync(request.PersonId, cancellationToken);
+        // A user is created by promoting an existing Person master record (WO-61). Super Admins may
+        // promote a person from any tenant; Tenant Admins are restricted to their own by the tenant filter.
+        var person = User.IsSuperAdmin()
+            ? await _persons.GetByIdUnscopedAsync(request.PersonId, cancellationToken)
+            : await _persons.GetByIdAsync(request.PersonId, cancellationToken);
         if (person is null)
         {
             return NotFound(ApiResponseFactory.NotFound("Person not found."));

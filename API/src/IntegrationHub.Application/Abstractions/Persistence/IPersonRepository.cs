@@ -5,8 +5,11 @@ namespace IntegrationHub.Application.Abstractions.Persistence;
 /// <summary>Data access for the CRM <see cref="Person"/> master record (WO-61).</summary>
 public interface IPersonRepository
 {
-    /// <summary>Loads a person with its primary address and profile media.</summary>
+    /// <summary>Loads a person with its primary address and profile media, scoped to the active tenant.</summary>
     Task<Person?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>Loads a person ignoring the tenant filter — for cross-tenant Super Admin access.</summary>
+    Task<Person?> GetByIdUnscopedAsync(Guid id, CancellationToken cancellationToken = default);
 
     Task<Person?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
 

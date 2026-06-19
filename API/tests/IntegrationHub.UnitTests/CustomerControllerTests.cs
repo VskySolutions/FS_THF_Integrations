@@ -24,13 +24,14 @@ public class CustomerControllerTests
     private readonly Mock<ICustomerAuditRepository> _audit = new();
     private readonly Mock<ICustomerDocumentRepository> _documents = new();
     private readonly Mock<ITenantRepository> _tenants = new();
+    private readonly Mock<IAddressRepository> _addresses = new();
     private readonly Mock<ICustomerApprovalService> _approval = new();
     private readonly Mock<ICustomerDuplicateChecker> _duplicates = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IWebHostEnvironment> _environment = new();
 
     private CustomersController Create() => new(
-        _requests.Object, _audit.Object, _documents.Object, _tenants.Object,
+        _requests.Object, _audit.Object, _documents.Object, _tenants.Object, _addresses.Object,
         _approval.Object, _duplicates.Object, _unitOfWork.Object, _environment.Object);
 
     /// <summary>Builds a controller with the given identity claims (subject + role + optional tenant + explicit permissions).</summary>
@@ -68,8 +69,7 @@ public class CustomerControllerTests
             CompanyName = "Acme",
             LegalName = "Acme Inc",
             EmailAddress = "a@acme.com",
-            Country = "US",
-            AddressLine1 = "1 St",
+            Address = new Address { CountryName = "US", AddressLine1 = "1 St" },
             TaxNumber = "TAX-1",
             RegistrationNumber = "REG-1",
             BusinessUnit = "BU-1",

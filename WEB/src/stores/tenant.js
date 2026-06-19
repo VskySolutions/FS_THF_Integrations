@@ -63,12 +63,15 @@ export const useTenantStore = defineStore("tenant", {
       try {
         const resp = await authApi.switchTenant(tenantId);
         const data = resp?.data;
+        const { useAuthStore } = await import("stores/auth");
         if (data?.accessToken) {
-          const { useAuthStore } = await import("stores/auth");
           useAuthStore()._setTokens(data.accessToken, null);
         }
         this.setActiveTenant(tenantId);
         this.hasUnsavedForm = false;
+        // Refresh the profile so the displayed role reflects the user's current (RBAC) role for this
+        // tenant — switching reuses the login assignments otherwise, which can show a stale role.
+        try { await useAuthStore().loadProfile(); } catch { /* non-fatal: keep cached assignments */ }
         return true;
       } finally {
         this.loading = false;

@@ -31,7 +31,7 @@
               >
                 <q-item-section>
                   <q-item-label>{{ t.name || t.identifier }}</q-item-label>
-                  <q-item-label caption class="text-capitalize">{{ t.role }}</q-item-label>
+                  <q-item-label caption class="text-capitalize">{{ t.roleName || t.role }}</q-item-label>
                 </q-item-section>
                 <q-item-section v-if="t.tenantId === activeTenantId" side>
                   <q-icon name="o_check" color="primary" />

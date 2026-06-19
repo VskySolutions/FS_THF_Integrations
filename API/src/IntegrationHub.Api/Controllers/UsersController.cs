@@ -564,21 +564,15 @@ public sealed class UsersController : ControllerBase
     }
 
     /// <summary>
-    /// Determines the <see cref="UserTenantRole.RoleId"/> to persist and enforces tenant availability:
-    /// custom roles must be made available to the tenant (via <see cref="TenantRole"/>); system roles
-    /// are universal. Enum-driven assignments link to the matching seeded system role when present.
+    /// Determines the <see cref="UserTenantRole.RoleId"/> to persist. Every role (system or custom) is
+    /// universally assignable, so an RBAC role resolves directly to its id; enum-driven assignments link
+    /// to the matching seeded system role when present.
     /// </summary>
     private async Task<(Guid? RoleId, IActionResult? Error)> ResolveAssignmentRoleIdAsync(
         UserRole role, Role? roleEntity, Guid tenantId, CancellationToken cancellationToken)
     {
         if (roleEntity is not null)
         {
-            if (!roleEntity.IsSystem && await _roles.GetTenantRoleAsync(tenantId, roleEntity.Id, cancellationToken) is null)
-            {
-                return (null, BadRequest(ApiResponseFactory.Error(
-                    ApiErrorCodes.ValidationFailed, "Validation failed.", "Role is not available to this tenant.")));
-            }
-
             return (roleEntity.Id, null);
         }
 

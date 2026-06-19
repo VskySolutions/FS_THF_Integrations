@@ -20,5 +20,6 @@ public enum CustomerAuditActionType
     SyncFailed = 12,
     DuplicateAcknowledged = 13,
     DocumentUploaded = 14,
-    DocumentRemoved = 15
+    DocumentRemoved = 15,
+    RevertedToReviewer = 16
 }

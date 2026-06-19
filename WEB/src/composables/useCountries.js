@@ -14,8 +14,9 @@ const rest = all.filter((c) => !PINNED_ISO.includes(c.isoCode));
 /** All countries with US then India pinned on top. */
 export const orderedCountries = [...pinned, ...rest];
 
-/** Dial-code option, e.g. "🇺🇸 United States (+1)" → value is the ISO-2 code. */
-export const dialCodeOption = (c) => ({ label: `${c.flag} ${c.name} (+${c.phonecode})`, value: c.isoCode });
+/** Dial-code option, e.g. "United States (+1)" → value is the ISO-2 code. The flag emoji is omitted
+ *  because on Windows it renders as the two-letter ISO code, which looks like a duplicate. */
+export const dialCodeOption = (c) => ({ label: `${c.name} (+${c.phonecode})`, value: c.isoCode });
 
 /** Country option keyed by ISO-2 code. */
 export const countryOption = (c) => ({ label: c.name, value: c.isoCode });

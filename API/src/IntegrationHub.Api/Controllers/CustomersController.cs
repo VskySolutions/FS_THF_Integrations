@@ -39,6 +39,7 @@ public sealed class CustomersController : ControllerBase
     private readonly IAddressRepository _addresses;
     private readonly ICustomerApprovalService _approval;
     private readonly ICustomerDuplicateChecker _duplicates;
+    private readonly IUserRepository _users;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IWebHostEnvironment _environment;
 
@@ -50,6 +51,7 @@ public sealed class CustomersController : ControllerBase
         IAddressRepository addresses,
         ICustomerApprovalService approval,
         ICustomerDuplicateChecker duplicates,
+        IUserRepository users,
         IUnitOfWork unitOfWork,
         IWebHostEnvironment environment)
     {
@@ -60,6 +62,7 @@ public sealed class CustomersController : ControllerBase
         _addresses = addresses;
         _approval = approval;
         _duplicates = duplicates;
+        _users = users;
         _unitOfWork = unitOfWork;
         _environment = environment;
     }
@@ -92,8 +95,9 @@ public sealed class CustomersController : ControllerBase
             statusFilter = parsed;
         }
 
+        // Drafts are visible only to their creator.
         var (items, total) = await _requests.ListAsync(
-            search, scopeTenant, statusFilter, submittedById, fromUtc, toUtc, Math.Max(1, page), Math.Clamp(limit, 1, 100), cancellationToken);
+            search, scopeTenant, statusFilter, submittedById, fromUtc, toUtc, User.GetUserId(), Math.Max(1, page), Math.Clamp(limit, 1, 100), cancellationToken);
 
         var data = items.Select(c => new CustomerSummaryResponse(
             c.Id, c.CustomerRequestNumber, c.CompanyName, c.LegalName, c.Status.ToString(),
@@ -115,12 +119,16 @@ public sealed class CustomersController : ControllerBase
         }
 
         var auditTrail = await _audit.ListByCustomerAsync(id, cancellationToken);
-        return Ok(ApiResponseFactory.Success(ToDetail(request, auditTrail), "Customer request retrieved."));
+        // Resolve the actor ids to display names for the change-history "performed by" column.
+        var actorNames = await _users.GetFullNamesAsync(
+            auditTrail.Where(a => a.PerformedById.HasValue).Select(a => a.PerformedById!.Value), cancellationToken);
+        return Ok(ApiResponseFactory.Success(ToDetail(request, auditTrail, actorNames), "Customer request retrieved."));
     }
 
     // ---- Create (Draft) ----
 
     [HttpPost]
+    [RequirePermission(Permissions.CustomersDataEntry)]
     [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status201Created)]
     public async Task<IActionResult> Create([FromBody] CreateCustomerRequest body, CancellationToken cancellationToken)
     {
@@ -135,6 +143,8 @@ public sealed class CustomersController : ControllerBase
             Id = Guid.NewGuid(),
             TenantId = tenantId,
             Status = CustomerRequestStatus.Draft,
+            // The Customer Request Number is assigned at creation (so even Drafts carry a reference).
+            CustomerRequestNumber = await NextCustomerRequestNumberAsync(tenantId, cancellationToken),
             LegalName = body.LegalName.Trim(),
             CompanyName = body.CompanyName.Trim(),
             ContactPerson = body.ContactPerson?.Trim(),
@@ -161,6 +171,7 @@ public sealed class CustomersController : ControllerBase
     // ---- Update (Draft / Returned) ----
 
     [HttpPut("{id:guid}")]
+    [RequirePermission(Permissions.CustomersDataEntry)]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateCustomerRequest body, CancellationToken cancellationToken)
     {
         var request = await LoadAsync(id, cancellationToken);
@@ -189,6 +200,7 @@ public sealed class CustomersController : ControllerBase
     // ---- Submit ----
 
     [HttpPost("{id:guid}/submit")]
+    [RequirePermission(Permissions.CustomersDataEntry)]
     [ProducesResponseType<ApiResponse<SubmitCustomerResponse>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Submit(Guid id, [FromBody] SubmitCustomerRequest body, CancellationToken cancellationToken)
     {
@@ -217,12 +229,16 @@ public sealed class CustomersController : ControllerBase
                 $"Acknowledged {dupes.Count} potential Step 1 duplicate(s).", cancellationToken);
         }
 
-        // Assign the Customer Request Number on first submission only.
+        // The number is assigned at creation; assign one here only as a fallback for any legacy draft
+        // created before that change.
         if (string.IsNullOrEmpty(request.CustomerRequestNumber))
         {
-            var year = DateTime.UtcNow.Year;
-            var seq = await _requests.CountForYearAsync(request.TenantId, year, cancellationToken) + 1;
-            request.CustomerRequestNumber = $"CUS-{year}-{seq:D6}";
+            request.CustomerRequestNumber = await NextCustomerRequestNumberAsync(request.TenantId, cancellationToken);
+        }
+
+        // Stamp the submitter on the first submission.
+        if (request.SubmittedOnUtc is null)
+        {
             request.SubmittedById = User.GetUserId();
             request.SubmittedOnUtc = DateTime.UtcNow;
         }
@@ -288,6 +304,15 @@ public sealed class CustomersController : ControllerBase
             return Conflict(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, "Only a reviewed request can be sent for approval.", request.Status.ToString()));
         }
 
+        // The mandatory Step 2 Maconomy fields must be completed before the approver receives it.
+        var missing = _approval.GetMissingMandatoryStep2Fields(request);
+        if (missing.Count > 0)
+        {
+            return BadRequest(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed,
+                "Complete the mandatory Maconomy fields before sending for approval.",
+                $"Missing: {string.Join(", ", missing)}."));
+        }
+
         request.Status = CustomerRequestStatus.PendingApproval;
         _requests.Update(request);
         await AppendAuditAsync(request, CustomerAuditActionType.SentForApproval, "Sent for approval.", cancellationToken);
@@ -299,17 +324,29 @@ public sealed class CustomersController : ControllerBase
     // ---- Save Step 2 without approving (customers.approve) ----
 
     [HttpPost("{id:guid}/step2")]
-    [RequirePermission(Permissions.CustomersApprove)]
     public async Task<IActionResult> SaveStep2(Guid id, [FromBody] Step2Fields body, CancellationToken cancellationToken)
     {
+        // Step 2 is filled by the reviewer (review stage) and may be amended by the approver (approve stage).
+        var canReview = User.HasPermission(Permissions.CustomersReview);
+        var canApprove = User.HasPermission(Permissions.CustomersApprove);
+        if (!canReview && !canApprove)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden("You cannot edit Step 2 fields."));
+        }
+
         var request = await LoadAsync(id, cancellationToken);
         if (request is null)
         {
             return NotFound(ApiResponseFactory.NotFound("Customer request not found."));
         }
-        if (request.Status is not (CustomerRequestStatus.PendingApproval or CustomerRequestStatus.PartiallyApproved))
+
+        var reviewerStage = request.Status is CustomerRequestStatus.Submitted or CustomerRequestStatus.UnderReview;
+        var approverStage = request.Status is CustomerRequestStatus.PendingApproval or CustomerRequestStatus.PartiallyApproved;
+        var allowed = (reviewerStage && canReview) || (approverStage && canApprove);
+        if (!allowed)
         {
-            return Conflict(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, "Step 2 can only be edited while awaiting approval.", request.Status.ToString()));
+            return Conflict(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed,
+                "Step 2 can only be edited by the reviewer (under review) or the approver (awaiting approval).", request.Status.ToString()));
         }
 
         ApplyStep2(request, body);
@@ -369,11 +406,11 @@ public sealed class CustomersController : ControllerBase
             "Customer request approved."));
     }
 
-    // ---- Reject (customers.approve) ----
+    // ---- Revert to reviewer (customers.approve): send an awaiting-approval request back to the reviewer ----
 
-    [HttpPost("{id:guid}/reject")]
+    [HttpPost("{id:guid}/revert-to-reviewer")]
     [RequirePermission(Permissions.CustomersApprove)]
-    public async Task<IActionResult> Reject(Guid id, [FromBody] RejectCustomerRequest body, CancellationToken cancellationToken)
+    public async Task<IActionResult> RevertToReviewer(Guid id, [FromBody] RevertToReviewerRequest body, CancellationToken cancellationToken)
     {
         var request = await LoadAsync(id, cancellationToken);
         if (request is null)
@@ -383,26 +420,31 @@ public sealed class CustomersController : ControllerBase
 
         try
         {
-            await _approval.RejectAsync(request, body.Reason, User.GetUserId(), ActorName(), cancellationToken);
+            await _approval.RevertToReviewerAsync(request, body.Notes, User.GetUserId(), ActorName(), cancellationToken);
         }
         catch (CustomerWorkflowException ex)
         {
             return BadRequest(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, ex.Message, ex.Details));
         }
 
-        return Ok(ApiResponseFactory.Success(new { customerId = request.Id, status = request.Status.ToString() }, "Customer request rejected."));
+        return Ok(ApiResponseFactory.Success(new { customerId = request.Id, status = request.Status.ToString() }, "Customer request reverted to the reviewer."));
     }
 
-    // ---- Return for corrections (customers.approve) ----
+    // ---- Return for corrections (customers.review): send a request under review back to data entry ----
 
     [HttpPost("{id:guid}/return")]
-    [RequirePermission(Permissions.CustomersApprove)]
+    [RequirePermission(Permissions.CustomersReview)]
     public async Task<IActionResult> Return(Guid id, [FromBody] ReturnCustomerRequest body, CancellationToken cancellationToken)
     {
         var request = await LoadAsync(id, cancellationToken);
         if (request is null)
         {
             return NotFound(ApiResponseFactory.NotFound("Customer request not found."));
+        }
+        if (request.Status is not (CustomerRequestStatus.Submitted or CustomerRequestStatus.UnderReview))
+        {
+            return Conflict(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed,
+                "Only a Submitted or Under Review request can be returned to data entry.", request.Status.ToString()));
         }
 
         try
@@ -414,7 +456,7 @@ public sealed class CustomersController : ControllerBase
             return BadRequest(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, ex.Message, ex.Details));
         }
 
-        return Ok(ApiResponseFactory.Success(new { customerId = request.Id, status = request.Status.ToString() }, "Customer request returned for corrections."));
+        return Ok(ApiResponseFactory.Success(new { customerId = request.Id, status = request.Status.ToString() }, "Customer request returned to data entry."));
     }
 
     // ---- Retry sync (customers.approve / admin) ----
@@ -473,6 +515,7 @@ public sealed class CustomersController : ControllerBase
     // ---- Delete (Draft only) ----
 
     [HttpDelete("{id:guid}")]
+    [RequirePermission(Permissions.CustomersDataEntry)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         var request = await LoadAsync(id, cancellationToken);
@@ -598,10 +641,20 @@ public sealed class CustomersController : ControllerBase
     // ---- Helpers ----
 
     /// <summary>Loads a request the caller may access: Super Admins see any tenant; others are tenant-scoped.</summary>
-    private Task<CustomerRequest?> LoadAsync(Guid id, CancellationToken cancellationToken)
-        => User.IsSuperAdmin()
-            ? _requests.GetByIdUnscopedAsync(id, cancellationToken)
-            : _requests.GetByIdAsync(id, cancellationToken);
+    private async Task<CustomerRequest?> LoadAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var request = User.IsSuperAdmin()
+            ? await _requests.GetByIdUnscopedAsync(id, cancellationToken)
+            : await _requests.GetByIdAsync(id, cancellationToken);
+
+        // A Draft is private to its creator — hide it from everyone else (treat as not found).
+        if (request is { Status: CustomerRequestStatus.Draft } && request.CreatedById != User.GetUserId())
+        {
+            return null;
+        }
+
+        return request;
+    }
 
     /// <summary>Creates the linked Address on first edit, otherwise updates it in place (shared Address table).</summary>
     private async Task UpsertAddressAsync(
@@ -642,6 +695,14 @@ public sealed class CustomersController : ControllerBase
         address.PostalCode = postalCode?.Trim();
     }
 
+    /// <summary>Next per-tenant, per-year Customer Request Number (e.g. CUS-2026-000042), assigned at creation.</summary>
+    private async Task<string> NextCustomerRequestNumberAsync(Guid tenantId, CancellationToken cancellationToken)
+    {
+        var year = DateTime.UtcNow.Year;
+        var seq = await _requests.CountForYearAsync(tenantId, year, cancellationToken) + 1;
+        return $"CUS-{year}-{seq:D6}";
+    }
+
     /// <summary>Resolves and validates the target tenant for a create: a Super Admin's chosen tenant, otherwise the active tenant.</summary>
     private async Task<(Guid TenantId, IActionResult? Error)> ResolveTargetTenantAsync(Guid? requested, CancellationToken cancellationToken)
     {
@@ -679,13 +740,18 @@ public sealed class CustomersController : ControllerBase
         request.BillingEmail = step2.BillingEmail?.Trim();
     }
 
-    private CustomerDetailResponse ToDetail(CustomerRequest c, IReadOnlyList<CustomerAuditEntry> auditTrail)
+    private CustomerDetailResponse ToDetail(CustomerRequest c, IReadOnlyList<CustomerAuditEntry> auditTrail, IReadOnlyDictionary<Guid, string> actorNames)
     {
         var canApprove = User.HasPermission(Permissions.CustomersApprove);
         var canReview = User.HasPermission(Permissions.CustomersReview);
+        var canDataEntry = User.HasPermission(Permissions.CustomersDataEntry);
         var isAdmin = User.IsSuperAdmin() || canApprove;
         var unlocked = ParseUnlocked(c.UnlockedFields);
         var editable = c.Status is CustomerRequestStatus.Draft or CustomerRequestStatus.Returned;
+        var reviewStage = c.Status is CustomerRequestStatus.Submitted or CustomerRequestStatus.UnderReview;
+        var approveStage = c.Status is CustomerRequestStatus.PendingApproval or CustomerRequestStatus.PartiallyApproved;
+        // Step 2 is owned by the reviewer (review stage) and amendable by the approver (approve stage).
+        var canSeeStep2 = canReview || canApprove;
 
         return new CustomerDetailResponse
         {
@@ -715,8 +781,8 @@ public sealed class CustomersController : ControllerBase
             CustomerType = c.CustomerType,
             BusinessSegment = c.BusinessSegment,
             RiskCategory = c.RiskCategory,
-            // Step 2 is hidden entirely for callers without customers.approve (ADR-001).
-            Step2 = canApprove ? new Step2Fields
+            // Step 2 is visible to the reviewer and the approver (both work it); hidden from others.
+            Step2 = canSeeStep2 ? new Step2Fields
             {
                 TaxNumber = c.TaxNumber,
                 RegistrationNumber = c.RegistrationNumber,
@@ -742,22 +808,28 @@ public sealed class CustomersController : ControllerBase
             LastSyncError = c.LastSyncError,
             CreatedOnUtc = c.CreatedOnUtc,
             UpdatedOnUtc = c.UpdatedOnUtc,
-            MissingStep2Fields = canApprove ? _approval.GetMissingMandatoryStep2Fields(c) : Array.Empty<string>(),
+            MissingStep2Fields = canSeeStep2 ? _approval.GetMissingMandatoryStep2Fields(c) : Array.Empty<string>(),
             AuditTrail = auditTrail.Select(a => new CustomerAuditEntryResponse(
-                a.Id, a.ActionType.ToString(), a.PerformedById, a.PerformedBy, a.PerformedOnUtc, a.Notes, a.FieldsAffected)).ToList(),
+                a.Id, a.ActionType.ToString(), a.PerformedById,
+                // Prefer the resolved full name; fall back to the stored value.
+                a.PerformedById is { } pid && actorNames.TryGetValue(pid, out var name) ? name : a.PerformedBy,
+                a.PerformedOnUtc, a.Notes, a.FieldsAffected)).ToList(),
             Documents = c.Documents.Where(d => !d.Deleted).Select(ToDocument).ToList(),
             Actions = new CustomerActions
             {
-                CanEdit = editable,
-                CanDelete = c.Status == CustomerRequestStatus.Draft,
-                CanSubmit = editable,
-                CanEnrich = canReview && c.Status is CustomerRequestStatus.Submitted or CustomerRequestStatus.UnderReview,
-                CanSendForApproval = canReview && c.Status is CustomerRequestStatus.Submitted or CustomerRequestStatus.UnderReview,
-                CanViewStep2 = canApprove,
-                CanEditStep2 = canApprove && c.Status is CustomerRequestStatus.PendingApproval or CustomerRequestStatus.PartiallyApproved,
-                CanApprove = canApprove && c.Status is CustomerRequestStatus.PendingApproval or CustomerRequestStatus.PartiallyApproved,
-                CanReject = canApprove && c.Status is CustomerRequestStatus.PendingApproval or CustomerRequestStatus.PartiallyApproved,
-                CanReturn = canApprove && c.Status is CustomerRequestStatus.PendingApproval or CustomerRequestStatus.PartiallyApproved,
+                // Data entry: create / edit Step 1 / submit / delete drafts.
+                CanEdit = editable && canDataEntry,
+                CanDelete = canDataEntry && c.Status == CustomerRequestStatus.Draft,
+                CanSubmit = editable && canDataEntry,
+                // Reviewer: enrich, fill Step 2, send for approval, or return to data entry.
+                CanEnrich = canReview && reviewStage,
+                CanSendForApproval = canReview && reviewStage,
+                CanReturn = canReview && reviewStage,
+                CanViewStep2 = canSeeStep2,
+                CanEditStep2 = (canReview && reviewStage) || (canApprove && approveStage),
+                // Approver: approve, or revert to the reviewer.
+                CanApprove = canApprove && approveStage,
+                CanRevertToReviewer = canApprove && approveStage,
                 CanRetrySync = isAdmin && c.Status == CustomerRequestStatus.Failed,
                 CanReopen = isAdmin && c.Status == CustomerRequestStatus.Rejected,
             },

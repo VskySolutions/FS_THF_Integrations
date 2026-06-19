@@ -84,6 +84,12 @@ public sealed class RejectCustomerRequest
     public string Reason { get; set; } = string.Empty;
 }
 
+/// <summary>Approver sends an awaiting-approval request back to the reviewer, with optional notes.</summary>
+public sealed class RevertToReviewerRequest
+{
+    public string? Notes { get; set; }
+}
+
 public sealed class ReturnCustomerRequest
 {
     public string Notes { get; set; } = string.Empty;
@@ -210,7 +216,9 @@ public sealed record CustomerActions
     public bool CanViewStep2 { get; init; }
     public bool CanEditStep2 { get; init; }
     public bool CanApprove { get; init; }
-    public bool CanReject { get; init; }
+    /// <summary>Approver sends the request back to the reviewer (replaces the old Reject action).</summary>
+    public bool CanRevertToReviewer { get; init; }
+    /// <summary>Reviewer returns the request to data entry.</summary>
     public bool CanReturn { get; init; }
     public bool CanRetrySync { get; init; }
     public bool CanReopen { get; init; }

@@ -43,10 +43,10 @@ describe("customerApi", () => {
     expect(http.post).toHaveBeenCalledWith("/api/customers/c1/approve", { step2: { taxNumber: "T" }, duplicateAcknowledged: true });
   });
 
-  it("reject and return send the expected bodies", async () => {
-    await customerApi.reject("c1", "bad data");
+  it("revert-to-reviewer and return send the expected bodies", async () => {
+    await customerApi.revertToReviewer("c1", "needs another look");
     await customerApi.returnForCorrections("c1", "fix it", ["legalName"]);
-    expect(http.post).toHaveBeenCalledWith("/api/customers/c1/reject", { reason: "bad data" });
+    expect(http.post).toHaveBeenCalledWith("/api/customers/c1/revert-to-reviewer", { notes: "needs another look" });
     expect(http.post).toHaveBeenCalledWith("/api/customers/c1/return", { notes: "fix it", fields: ["legalName"] });
   });
 

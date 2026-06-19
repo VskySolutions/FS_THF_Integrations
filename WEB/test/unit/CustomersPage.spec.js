@@ -43,6 +43,10 @@ const tenantState = {
 vi.mock("composables/useTenantOptions", () => ({ useTenantOptions: () => tenantState }));
 
 vi.mock("stores/tenant", () => ({ useTenantStore: () => ({ activeTenantId: "t1" }) }));
+vi.mock("composables/usePermissions", () => ({
+  usePermissions: () => ({ has: () => true, hasAny: () => true }),
+  Permissions: { CustomersDataEntry: "customers.dataEntry" }
+}));
 vi.mock("composables/useNotify", () => ({ useNotify: () => ({ success: vi.fn(), error: vi.fn() }) }));
 vi.mock("composables/useConfirm", () => ({ useConfirm: () => ({ confirm: vi.fn() }) }));
 vi.mock("composables/useDateFormat", () => ({ useDateFormat: () => ({ formatDateTime: (v) => v || "—" }) }));

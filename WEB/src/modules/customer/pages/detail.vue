@@ -15,194 +15,190 @@
     <div v-if="loading" class="row flex-center q-pa-xl"><q-spinner color="primary" size="40px" /></div>
 
     <template v-else-if="detail">
-      <!-- Status + workflow meta -->
-      <q-card flat bordered class="customer-card q-mb-md">
-        <q-card-section class="text-subtitle1 text-weight-medium">Status</q-card-section>
+      <q-card flat bordered class="customer-card">
+        <q-tabs v-model="activeTab" align="left" no-caps active-color="primary" indicator-color="primary" class="text-grey-7">
+          <q-tab name="basic" icon="o_assignment_ind" label="Basic Information" />
+          <q-tab v-if="showReviewTab" name="review" icon="o_fact_check" label="Review" />
+          <q-tab name="history" icon="o_history" label="Status &amp; Change History" />
+        </q-tabs>
         <q-separator />
-        <q-card-section>
-          <div class="row items-center q-gutter-sm q-mb-md">
-            <q-badge :color="statusColor(detail.status)" class="text-subtitle2">{{ statusLabel(detail.status) }}</q-badge>
-            <q-chip
-              v-if="detail.status === 'Synced' && detail.maconomyCustomerNumber"
-              square color="positive" text-color="white" icon="o_verified"
-              class="text-weight-bold maconomy-chip"
-            >
-              Maconomy Customer #: {{ detail.maconomyCustomerNumber }}
-            </q-chip>
-          </div>
 
-          <q-banner v-if="detail.status === 'Failed' && detail.lastSyncError" dense rounded class="bg-red-1 text-red-9 q-mb-sm">
-            <template #avatar><q-icon name="o_error" color="negative" /></template>
-            Last sync error: {{ detail.lastSyncError }}
-          </q-banner>
-          <q-banner v-if="detail.status === 'Returned' && detail.returnNotes" dense rounded class="bg-orange-1 text-orange-9 q-mb-sm">
-            <template #avatar><q-icon name="o_assignment_return" color="warning" /></template>
-            Returned for corrections: {{ detail.returnNotes }}
-          </q-banner>
-          <q-banner v-if="detail.status === 'Rejected' && detail.rejectionReason" dense rounded class="bg-red-1 text-red-9 q-mb-sm">
-            <template #avatar><q-icon name="o_block" color="negative" /></template>
-            Rejected: {{ detail.rejectionReason }}
-          </q-banner>
+        <q-tab-panels v-model="activeTab" animated>
+          <!-- Tab 1: Basic Information -->
+          <q-tab-panel name="basic">
+            <div class="row items-center q-mb-md">
+              <div class="text-subtitle1 text-weight-medium">Basic Information</div>
+              <q-space />
+              <q-btn
+                v-if="detail.actions.canEdit"
+                unelevated no-caps color="primary" label="Save" icon="o_save"
+                :loading="savingStep1" @click="saveStep1"
+              />
+            </div>
+            <div class="row q-col-gutter-md">
+              <app-text-field v-model="step1.legalName" label="Legal Name" class="col-12 col-sm-6" :readonly="!detail.actions.canEdit" />
+              <app-text-field v-model="step1.companyName" label="Company Name" class="col-12 col-sm-6" :readonly="!detail.actions.canEdit" />
+              <app-text-field v-model="step1.contactPerson" label="Contact Person" class="col-12 col-sm-6" :readonly="!detail.actions.canEdit" />
+              <app-text-field v-model="step1.emailAddress" label="Email Address" class="col-12 col-sm-6" :readonly="!detail.actions.canEdit" />
+              <app-text-field v-model="step1.phoneNumber" label="Phone Number" class="col-12 col-sm-6" :readonly="!detail.actions.canEdit" />
+              <app-text-field v-model="step1.website" label="Website" class="col-12 col-sm-6" :readonly="!detail.actions.canEdit" />
+              <app-text-field v-model="step1.country" label="Country" class="col-12 col-sm-6" :readonly="!detail.actions.canEdit" />
+              <app-text-field v-model="step1.stateProvince" label="State / Province" class="col-12 col-sm-6" :readonly="!detail.actions.canEdit" />
+              <app-text-field v-model="step1.city" label="City" class="col-12 col-sm-6" :readonly="!detail.actions.canEdit" />
+              <app-text-field v-model="step1.postalCode" label="Postal Code" class="col-12 col-sm-6" :readonly="!detail.actions.canEdit" />
+              <app-text-field v-model="step1.addressLine1" label="Address Line 1" class="col-12" :readonly="!detail.actions.canEdit" />
+              <app-text-field v-model="step1.addressLine2" label="Address Line 2" class="col-12" :readonly="!detail.actions.canEdit" />
+            </div>
+          </q-tab-panel>
 
-          <q-timeline color="primary" layout="comfortable">
-            <q-timeline-entry
-              v-for="stage in stages"
-              :key="stage.key"
-              :title="stage.label"
-              :icon="stageReached(stage.key) ? 'o_check_circle' : 'o_radio_button_unchecked'"
-              :color="stageReached(stage.key) ? 'positive' : 'grey-5'"
-            />
-          </q-timeline>
-        </q-card-section>
+          <!-- Tab 2: Review (reviewer / approver) — Business Information, Maconomy Fields, Documents -->
+          <q-tab-panel v-if="showReviewTab" name="review">
+            <!-- Business Information -->
+            <div class="row items-center q-mb-sm">
+              <div class="text-subtitle1 text-weight-medium">Business Information</div>
+              <q-space />
+              <q-btn
+                v-if="detail.actions.canEnrich"
+                unelevated no-caps color="primary" label="Save" icon="o_save"
+                :loading="savingEnrich" @click="saveEnrichment"
+              />
+            </div>
+            <div class="row q-col-gutter-md q-mb-lg">
+              <app-text-field v-model="enrich.internalCustomerCategory" label="Internal Customer Category" placeholder="e.g. Key Account" hint="Internal classification used for reporting." class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
+              <app-text-field v-model="enrich.territory" label="Territory" placeholder="e.g. EMEA" hint="Sales territory or region this customer belongs to." class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
+              <app-text-field v-model="enrich.practiceArea" label="Practice Area" placeholder="e.g. Consulting" hint="Practice or service area owning the account." class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
+              <app-text-field v-model="enrich.salesRepresentative" label="Sales Representative" placeholder="e.g. Jane Doe" hint="Name of the owning sales representative." class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
+              <app-text-field v-model="enrich.enrichmentPaymentTerms" label="Payment Terms" placeholder="e.g. Net 30" hint="Agreed payment terms (internal reference)." class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
+              <app-text-field v-model="enrich.creditTerms" label="Credit Terms" placeholder="e.g. 30 days" hint="Credit period granted to the customer." class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
+              <app-text-field v-model="enrich.customerType" label="Customer Type" placeholder="e.g. Direct" hint="Direct, Partner, Reseller, etc." class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
+              <app-text-field v-model="enrich.businessSegment" label="Business Segment" placeholder="e.g. Enterprise" hint="Market segment (SMB, Mid-market, Enterprise…)." class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
+              <app-text-field v-model="enrich.riskCategory" label="Risk Category" placeholder="e.g. Low" hint="Risk rating: Low, Medium or High." class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
+            </div>
+
+            <q-separator class="q-mb-md" />
+
+            <!-- Maconomy Fields -->
+            <div class="row items-center q-mb-sm">
+              <div class="text-subtitle1 text-weight-medium">Maconomy Fields</div>
+              <q-space />
+              <q-btn
+                v-if="detail.actions.canEditStep2"
+                unelevated no-caps color="primary" label="Save" icon="o_save"
+                :loading="savingStep2" @click="saveStep2"
+              />
+            </div>
+            <div class="row q-col-gutter-md q-mb-lg">
+              <app-text-field v-model="step2.taxNumber" label="Tax Number *" placeholder="e.g. GB123456789" hint="Mandatory. Tax / VAT registration number." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
+              <app-text-field v-model="step2.registrationNumber" label="Registration Number *" placeholder="e.g. 12345678" hint="Mandatory. Company registration number." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
+              <app-text-field v-model="step2.businessUnit" label="Business Unit *" placeholder="e.g. UK-Operations" hint="Mandatory. Maconomy business unit to post against." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
+              <app-text-field v-model="step2.currency" label="Currency *" placeholder="e.g. USD" hint="Mandatory. 3-letter ISO currency code." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
+              <app-text-field v-model="step2.customerGroup" label="Customer Group" placeholder="e.g. Standard" hint="Maconomy customer group for grouping/reporting." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
+              <app-text-field v-model="step2.paymentTerms" label="Payment Terms *" placeholder="e.g. Net 30" hint="Mandatory. Maconomy payment terms code." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
+              <app-text-field v-model="step2.creditLimit" type="number" label="Credit Limit" placeholder="e.g. 50000" hint="Approved credit limit (numeric, in the chosen currency)." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
+              <app-text-field v-model="step2.industry" label="Industry" placeholder="e.g. Manufacturing" hint="Customer's primary industry." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
+              <app-text-field v-model="step2.invoiceLanguage" label="Invoice Language" placeholder="e.g. English" hint="Language Maconomy should use for invoices." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
+              <app-text-field v-model="step2.billingEmail" label="Billing Email" placeholder="e.g. billing@acme.com" hint="Email address invoices and billing notices are sent to." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
+            </div>
+
+            <q-separator class="q-mb-md" />
+
+            <!-- Documents -->
+            <div class="text-subtitle1 text-weight-medium q-mb-sm">Documents</div>
+            <q-list bordered separator class="rounded-borders">
+              <q-item v-for="doc in documents" :key="doc.id">
+                <q-item-section avatar><q-icon name="o_description" color="grey-7" /></q-item-section>
+                <q-item-section>
+                  <q-item-label>{{ doc.fileName }}</q-item-label>
+                  <q-item-label caption>{{ formatSize(doc.fileSizeBytes) }} · {{ fmt.formatDateTime(doc.uploadedOnUtc) }}</q-item-label>
+                </q-item-section>
+                <q-item-section side class="row no-wrap">
+                  <q-btn flat round dense color="primary" icon="o_download" @click="downloadDoc(doc)"><q-tooltip>Download</q-tooltip></q-btn>
+                  <q-btn flat round dense color="negative" icon="o_delete" @click="removeDoc(doc)"><q-tooltip>Remove</q-tooltip></q-btn>
+                </q-item-section>
+              </q-item>
+              <q-item v-if="!documents.length"><q-item-section class="text-grey-6">No documents uploaded.</q-item-section></q-item>
+            </q-list>
+            <div class="row items-end q-col-gutter-md q-mt-sm">
+              <q-file
+                v-model="docFile" outlined dense stack-label class="col" label="Upload a document"
+                :accept="acceptExtensions" hint="Allowed: pdf, doc, docx, xls, xlsx, csv, txt, png, jpg, jpeg"
+              >
+                <template #prepend><q-icon name="o_attach_file" /></template>
+              </q-file>
+              <q-btn unelevated no-caps color="primary" label="Upload" icon="o_upload" :loading="uploading" :disable="!docFile" @click="uploadDoc" />
+            </div>
+          </q-tab-panel>
+
+          <!-- Tab 3: Status & Change History -->
+          <q-tab-panel name="history">
+            <div class="row items-center q-gutter-sm q-mb-md">
+              <q-badge :color="statusColor(detail.status)" class="text-subtitle2">{{ statusLabel(detail.status) }}</q-badge>
+              <q-chip
+                v-if="detail.status === 'Synced' && detail.maconomyCustomerNumber"
+                square color="positive" text-color="white" icon="o_verified"
+                class="text-weight-bold maconomy-chip"
+              >
+                Maconomy Customer #: {{ detail.maconomyCustomerNumber }}
+              </q-chip>
+            </div>
+
+            <q-banner v-if="detail.status === 'Failed' && detail.lastSyncError" dense rounded class="bg-red-1 text-red-9 q-mb-sm">
+              <template #avatar><q-icon name="o_error" color="negative" /></template>
+              Last sync error: {{ detail.lastSyncError }}
+            </q-banner>
+            <q-banner v-if="detail.status === 'Returned' && detail.returnNotes" dense rounded class="bg-orange-1 text-orange-9 q-mb-sm">
+              <template #avatar><q-icon name="o_assignment_return" color="warning" /></template>
+              Returned for corrections: {{ detail.returnNotes }}
+            </q-banner>
+            <q-banner v-if="detail.status === 'Rejected' && detail.rejectionReason" dense rounded class="bg-red-1 text-red-9 q-mb-sm">
+              <template #avatar><q-icon name="o_block" color="negative" /></template>
+              Rejected: {{ detail.rejectionReason }}
+            </q-banner>
+
+            <q-timeline color="primary" layout="comfortable">
+              <q-timeline-entry
+                v-for="stage in stages"
+                :key="stage.key"
+                :title="stage.label"
+                :icon="stageReached(stage.key) ? 'o_check_circle' : 'o_radio_button_unchecked'"
+                :color="stageReached(stage.key) ? 'positive' : 'grey-5'"
+              />
+            </q-timeline>
+
+            <q-separator class="q-my-md" />
+
+            <div class="text-subtitle1 text-weight-medium q-mb-sm">Change history</div>
+            <q-list bordered separator class="rounded-borders">
+              <q-item v-for="entry in detail.auditTrail" :key="entry.id">
+                <q-item-section avatar><q-icon name="o_history" color="grey-7" /></q-item-section>
+                <q-item-section>
+                  <q-item-label>{{ entry.actionType }}</q-item-label>
+                  <q-item-label caption>
+                    {{ entry.performedBy }} · {{ fmt.formatDateTime(entry.performedOnUtc) }}
+                    <template v-if="entry.notes"> — {{ entry.notes }}</template>
+                  </q-item-label>
+                </q-item-section>
+              </q-item>
+              <q-item v-if="!detail.auditTrail || !detail.auditTrail.length">
+                <q-item-section class="text-grey-6">No activity yet.</q-item-section>
+              </q-item>
+            </q-list>
+          </q-tab-panel>
+        </q-tab-panels>
       </q-card>
 
-      <!-- Step 1: Basic Information -->
-      <q-card flat bordered class="customer-card q-mb-md">
-        <q-card-section class="row items-center text-subtitle1 text-weight-medium">
-          Basic Information
-          <q-space />
-          <q-btn
-            v-if="detail.actions.canEdit"
-            unelevated no-caps color="primary" label="Save" icon="o_save"
-            :loading="savingStep1" @click="saveStep1"
-          />
-        </q-card-section>
-        <q-separator />
-        <q-card-section class="row q-col-gutter-md">
-          <app-text-field v-model="step1.legalName" label="Legal Name" class="col-12 col-sm-6" :readonly="!detail.actions.canEdit" />
-          <app-text-field v-model="step1.companyName" label="Company Name" class="col-12 col-sm-6" :readonly="!detail.actions.canEdit" />
-          <app-text-field v-model="step1.contactPerson" label="Contact Person" class="col-12 col-sm-6" :readonly="!detail.actions.canEdit" />
-          <app-text-field v-model="step1.emailAddress" label="Email Address" class="col-12 col-sm-6" :readonly="!detail.actions.canEdit" />
-          <app-text-field v-model="step1.phoneNumber" label="Phone Number" class="col-12 col-sm-6" :readonly="!detail.actions.canEdit" />
-          <app-text-field v-model="step1.website" label="Website" class="col-12 col-sm-6" :readonly="!detail.actions.canEdit" />
-          <app-text-field v-model="step1.country" label="Country" class="col-12 col-sm-6" :readonly="!detail.actions.canEdit" />
-          <app-text-field v-model="step1.stateProvince" label="State / Province" class="col-12 col-sm-6" :readonly="!detail.actions.canEdit" />
-          <app-text-field v-model="step1.city" label="City" class="col-12 col-sm-6" :readonly="!detail.actions.canEdit" />
-          <app-text-field v-model="step1.postalCode" label="Postal Code" class="col-12 col-sm-6" :readonly="!detail.actions.canEdit" />
-          <app-text-field v-model="step1.addressLine1" label="Address Line 1" class="col-12" :readonly="!detail.actions.canEdit" />
-          <app-text-field v-model="step1.addressLine2" label="Address Line 2" class="col-12" :readonly="!detail.actions.canEdit" />
+      <!-- Separate bottom action bar: the workflow actions for the caller's role/state. -->
+      <q-card v-if="hasActions" flat bordered class="customer-action-bar q-mt-md">
+        <q-card-section class="row justify-end items-center q-gutter-sm">
+          <q-btn v-if="detail.actions.canSubmit" unelevated no-caps color="primary" icon="o_send" label="Submit for Approval" :loading="submitting" @click="submitForReview" />
+          <q-btn v-if="detail.actions.canReopen" outline no-caps color="primary" icon="o_lock_open" label="Reopen" :loading="busy" @click="reopen" />
+          <q-btn v-if="detail.actions.canRetrySync" outline no-caps color="primary" icon="o_sync" label="Retry Sync" :loading="busy" @click="retrySync" />
+          <q-btn v-if="detail.actions.canSendForApproval" unelevated no-caps color="primary" icon="o_send" label="Send for Approval" :loading="sending" @click="sendForApproval" />
+          <q-btn v-if="detail.actions.canReturn" outline no-caps color="warning" icon="o_assignment_return" label="Return to Data Entry" @click="returnOpen = true" />
+          <q-btn v-if="detail.actions.canRevertToReviewer" outline no-caps color="warning" icon="o_undo" label="Revert to Reviewer" @click="revertOpen = true" />
+          <q-btn v-if="detail.actions.canApprove" unelevated no-caps color="positive" icon="o_check_circle" label="Approve" @click="openApprove" />
         </q-card-section>
       </q-card>
-
-      <!-- Enrichment: Business Information -->
-      <q-card v-if="showEnrichment" flat bordered class="customer-card q-mb-md">
-        <q-card-section class="row items-center text-subtitle1 text-weight-medium">
-          Business Information
-          <q-space />
-          <q-btn
-            v-if="detail.actions.canEnrich"
-            unelevated no-caps color="primary" label="Save" icon="o_save"
-            :loading="savingEnrich" class="q-mr-sm" @click="saveEnrichment"
-          />
-          <q-btn
-            v-if="detail.actions.canSendForApproval"
-            outline no-caps color="primary" label="Send for Approval" icon="o_send"
-            :loading="sending" @click="sendForApproval"
-          />
-        </q-card-section>
-        <q-separator />
-        <q-card-section class="row q-col-gutter-md">
-          <app-text-field v-model="enrich.internalCustomerCategory" label="Internal Customer Category" class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
-          <app-text-field v-model="enrich.territory" label="Territory" class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
-          <app-text-field v-model="enrich.practiceArea" label="Practice Area" class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
-          <app-text-field v-model="enrich.salesRepresentative" label="Sales Representative" class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
-          <app-text-field v-model="enrich.enrichmentPaymentTerms" label="Payment Terms" class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
-          <app-text-field v-model="enrich.creditTerms" label="Credit Terms" class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
-          <app-text-field v-model="enrich.customerType" label="Customer Type" class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
-          <app-text-field v-model="enrich.businessSegment" label="Business Segment" class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
-          <app-text-field v-model="enrich.riskCategory" label="Risk Category" class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
-        </q-card-section>
-      </q-card>
-
-      <!-- Step 2: Maconomy Fields (only when present) -->
-      <q-card v-if="detail.step2 !== null" flat bordered class="customer-card q-mb-md">
-        <q-card-section class="row items-center text-subtitle1 text-weight-medium">
-          Maconomy Fields
-          <q-space />
-          <q-btn
-            v-if="detail.actions.canEditStep2"
-            unelevated no-caps color="primary" label="Save Step 2" icon="o_save"
-            :loading="savingStep2" @click="saveStep2"
-          />
-        </q-card-section>
-        <q-separator />
-        <q-card-section class="row q-col-gutter-md">
-          <app-text-field v-model="step2.taxNumber" label="Tax Number *" class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
-          <app-text-field v-model="step2.registrationNumber" label="Registration Number *" class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
-          <app-text-field v-model="step2.businessUnit" label="Business Unit *" class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
-          <app-text-field v-model="step2.currency" label="Currency *" class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
-          <app-text-field v-model="step2.customerGroup" label="Customer Group" class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
-          <app-text-field v-model="step2.paymentTerms" label="Payment Terms *" class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
-          <app-text-field v-model="step2.creditLimit" type="number" label="Credit Limit" class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
-          <app-text-field v-model="step2.industry" label="Industry" class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
-          <app-text-field v-model="step2.invoiceLanguage" label="Invoice Language" class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
-          <app-text-field v-model="step2.billingEmail" label="Billing Email" class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
-        </q-card-section>
-      </q-card>
-
-      <!-- Documents -->
-      <q-card flat bordered class="customer-card q-mb-md">
-        <q-card-section class="text-subtitle1 text-weight-medium">Documents</q-card-section>
-        <q-separator />
-        <q-list separator>
-          <q-item v-for="doc in documents" :key="doc.id">
-            <q-item-section avatar><q-icon name="o_description" color="grey-7" /></q-item-section>
-            <q-item-section>
-              <q-item-label>{{ doc.fileName }}</q-item-label>
-              <q-item-label caption>{{ formatSize(doc.fileSizeBytes) }} · {{ fmt.formatDateTime(doc.uploadedOnUtc) }}</q-item-label>
-            </q-item-section>
-            <q-item-section side class="row no-wrap">
-              <q-btn flat round dense color="primary" icon="o_download" @click="downloadDoc(doc)">
-                <q-tooltip>Download</q-tooltip>
-              </q-btn>
-              <q-btn flat round dense color="negative" icon="o_delete" @click="removeDoc(doc)">
-                <q-tooltip>Remove</q-tooltip>
-              </q-btn>
-            </q-item-section>
-          </q-item>
-          <q-item v-if="!documents.length"><q-item-section class="text-grey-6">No documents uploaded.</q-item-section></q-item>
-        </q-list>
-        <q-separator />
-        <q-card-section class="row items-end q-col-gutter-md">
-          <q-file
-            v-model="docFile" outlined dense stack-label class="col" label="Upload a document"
-            :accept="acceptExtensions" hint="Allowed: pdf, doc, docx, xls, xlsx, csv, txt, png, jpg, jpeg"
-          >
-            <template #prepend><q-icon name="o_attach_file" /></template>
-          </q-file>
-          <q-btn unelevated no-caps color="primary" label="Upload" icon="o_upload" :loading="uploading" :disable="!docFile" @click="uploadDoc" />
-        </q-card-section>
-      </q-card>
-
-      <!-- Audit Trail -->
-      <q-card flat bordered class="customer-card q-mb-md">
-        <q-card-section class="text-subtitle1 text-weight-medium">Audit Trail</q-card-section>
-        <q-separator />
-        <q-list separator>
-          <q-item v-for="entry in detail.auditTrail" :key="entry.id">
-            <q-item-section avatar><q-icon name="o_history" color="grey-7" /></q-item-section>
-            <q-item-section>
-              <q-item-label>{{ entry.actionType }}</q-item-label>
-              <q-item-label caption>
-                {{ entry.performedBy }} · {{ fmt.formatDateTime(entry.performedOnUtc) }}
-                <template v-if="entry.notes"> — {{ entry.notes }}</template>
-              </q-item-label>
-            </q-item-section>
-          </q-item>
-          <q-item v-if="!detail.auditTrail || !detail.auditTrail.length">
-            <q-item-section class="text-grey-6">No activity yet.</q-item-section>
-          </q-item>
-        </q-list>
-      </q-card>
-
-      <!-- Action row -->
-      <div v-if="hasActions" class="row justify-end q-gutter-sm q-mb-lg">
-        <q-btn v-if="detail.actions.canReopen" outline no-caps color="primary" icon="o_lock_open" label="Reopen" :loading="busy" @click="reopen" />
-        <q-btn v-if="detail.actions.canRetrySync" outline no-caps color="primary" icon="o_sync" label="Retry Sync" :loading="busy" @click="retrySync" />
-        <q-btn v-if="detail.actions.canReturn" outline no-caps color="warning" icon="o_assignment_return" label="Return for Corrections" @click="returnOpen = true" />
-        <q-btn v-if="detail.actions.canReject" outline no-caps color="negative" icon="o_block" label="Reject" @click="rejectOpen = true" />
-        <q-btn v-if="detail.actions.canApprove" unelevated no-caps color="positive" icon="o_check_circle" label="Approve" @click="openApprove" />
-      </div>
     </template>
 
     <!-- Approve dialog: Step 2 fields (all mandatory) -->
@@ -245,18 +241,18 @@
       </q-card>
     </q-dialog>
 
-    <!-- Reject dialog -->
-    <q-dialog v-model="rejectOpen" persistent>
+    <!-- Revert to reviewer dialog -->
+    <q-dialog v-model="revertOpen" persistent>
       <q-card style="min-width: 380px; max-width: 90vw;">
-        <q-card-section class="text-h6">Reject customer</q-card-section>
+        <q-card-section class="text-h6">Revert to reviewer</q-card-section>
         <q-separator />
         <q-card-section>
-          <q-input v-model="rejectReason" outlined dense type="textarea" autogrow label="Reason *" :rules="req" />
+          <q-input v-model="revertNotes" outlined dense type="textarea" autogrow label="Notes (optional)" hint="Tell the reviewer what to revisit." />
         </q-card-section>
         <q-separator />
         <q-card-actions align="right">
-          <q-btn flat no-caps color="grey-8" label="Cancel" @click="rejectOpen = false" />
-          <q-btn unelevated no-caps color="negative" label="Reject" :loading="busy" :disable="!rejectReason" @click="submitReject" />
+          <q-btn flat no-caps color="grey-8" label="Cancel" @click="revertOpen = false" />
+          <q-btn unelevated no-caps color="warning" label="Revert to Reviewer" :loading="busy" @click="submitRevert" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -264,7 +260,7 @@
     <!-- Return for corrections dialog -->
     <q-dialog v-model="returnOpen" persistent>
       <q-card style="min-width: 420px; max-width: 90vw;">
-        <q-card-section class="text-h6">Return for corrections</q-card-section>
+        <q-card-section class="text-h6">Return to data entry</q-card-section>
         <q-separator />
         <q-card-section>
           <q-input v-model="returnNotes" outlined dense type="textarea" autogrow label="Notes *" :rules="req" class="q-mb-md" />
@@ -303,6 +299,11 @@ const loading = ref(true);
 const detail = ref(null);
 const documents = ref([]);
 
+// Active tab; reviewers/approvers default to the Review tab, everyone else to Basic Information.
+const activeTab = ref("basic");
+let tabInitialised = false;
+const showReviewTab = computed(() => !!detail.value?.actions?.canViewStep2);
+
 const req = [(v) => !!v || "Required"];
 
 // ---- Step 1 (basic information) ----
@@ -316,11 +317,6 @@ const ENRICH_FIELDS = ["internalCustomerCategory", "territory", "practiceArea", 
 // ---- Step 2 (Maconomy fields) ----
 const step2 = reactive({});
 const STEP2_FIELDS = ["taxNumber", "registrationNumber", "businessUnit", "currency", "customerGroup", "paymentTerms", "creditLimit", "industry", "invoiceLanguage", "billingEmail"];
-
-const showEnrichment = computed(() => {
-  const a = detail.value?.actions || {};
-  return a.canEnrich || a.canSendForApproval || ENRICH_FIELDS.some((f) => enrich[f]);
-});
 
 const STAGE_ORDER = stages.map((s) => s.key);
 const stageReached = (stageKey) => {
@@ -342,9 +338,10 @@ const stageReached = (stageKey) => {
   return STAGE_ORDER.indexOf(stageKey) <= reachedIndex;
 };
 
+// The bottom action bar shows whenever the caller has any workflow action available.
 const hasActions = computed(() => {
   const a = detail.value?.actions || {};
-  return a.canApprove || a.canReject || a.canReturn || a.canRetrySync || a.canReopen;
+  return a.canSubmit || a.canSendForApproval || a.canReturn || a.canRevertToReviewer || a.canApprove || a.canReopen || a.canRetrySync;
 });
 
 const fill = (target, source, fields) => {
@@ -360,6 +357,11 @@ const load = async () => {
     fill(enrich, d, ENRICH_FIELDS);
     fill(step2, d.step2 || {}, STEP2_FIELDS);
     documents.value = d.documents || [];
+    // Pick the default tab once (don't yank the user off their tab on subsequent reloads).
+    if (!tabInitialised) {
+      activeTab.value = d.actions?.canViewStep2 ? "review" : "basic";
+      tabInitialised = true;
+    }
   } catch (err) {
     notify.error(getApiErrorMessage(err));
   } finally {
@@ -384,6 +386,32 @@ const saveStep1 = async () => {
   }
 };
 
+// ---- Submit for review (data entry) ----
+const submitting = ref(false);
+const submitForReview = async () => {
+  submitting.value = true;
+  try {
+    let result = await customerApi.submit(customerId, false);
+    if (result?.submitted === false) {
+      const dupes = result?.duplicates || [];
+      const names = dupes.map((d) => d.companyName).filter(Boolean).join(", ");
+      const ok = await confirm({
+        title: "Possible duplicates",
+        message: `We found ${dupes.length} similar customer(s)${names ? `: ${names}` : ""}. Submit anyway?`,
+        confirmLabel: "Submit anyway"
+      });
+      if (!ok) { submitting.value = false; return; }
+      result = await customerApi.submit(customerId, true);
+    }
+    notify.success("Submitted for review.");
+    load();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    submitting.value = false;
+  }
+};
+
 // ---- Enrichment save / send ----
 const savingEnrich = ref(false);
 const saveEnrichment = async () => {
@@ -401,10 +429,39 @@ const saveEnrichment = async () => {
   }
 };
 
+// Mandatory Maconomy (Step 2) fields that must be present before approval (mirrors the backend).
+const MANDATORY_STEP2 = [
+  { key: "taxNumber", label: "Tax Number" },
+  { key: "registrationNumber", label: "Registration Number" },
+  { key: "businessUnit", label: "Business Unit" },
+  { key: "currency", label: "Currency" },
+  { key: "paymentTerms", label: "Payment Terms" }
+];
+
 const sending = ref(false);
 const sendForApproval = async () => {
+  // 1) Block until the mandatory Maconomy fields are filled (jump to the Review tab to fix them).
+  const missing = MANDATORY_STEP2.filter((f) => !String(step2[f.key] ?? "").trim()).map((f) => f.label);
+  if (missing.length) {
+    notify.error(`Complete the mandatory Maconomy fields first: ${missing.join(", ")}.`);
+    activeTab.value = "review";
+    return;
+  }
+
+  // 2) Confirm before handing the record to the approver.
+  const ok = await confirm({
+    title: "Send for approval",
+    message: "Send this customer to the approver? You won't be able to edit it unless it's sent back to you.",
+    confirmLabel: "Send for Approval"
+  });
+  if (!ok) return;
+
   sending.value = true;
   try {
+    // Persist any unsaved Step 2 edits so the approver sees exactly what was reviewed.
+    if (detail.value?.actions?.canEditStep2) {
+      await customerApi.saveStep2(customerId, buildStep2(step2));
+    }
     await customerApi.sendForApproval(customerId);
     notify.success("Sent for approval.");
     load();
@@ -502,7 +559,7 @@ const removeDoc = async (doc) => {
   }
 };
 
-// ---- Action row ----
+// ---- Action bar ----
 const busy = ref(false);
 
 // Approve
@@ -543,17 +600,16 @@ const submitApprove = async () => {
   }
 };
 
-// Reject
-const rejectOpen = ref(false);
-const rejectReason = ref("");
-const submitReject = async () => {
-  if (!rejectReason.value) return;
+// Revert to reviewer (approver sends an awaiting-approval request back to the reviewer)
+const revertOpen = ref(false);
+const revertNotes = ref("");
+const submitRevert = async () => {
   busy.value = true;
   try {
-    await customerApi.reject(customerId, rejectReason.value);
-    rejectOpen.value = false;
-    rejectReason.value = "";
-    notify.success("Customer rejected.");
+    await customerApi.revertToReviewer(customerId, revertNotes.value || null);
+    revertOpen.value = false;
+    revertNotes.value = "";
+    notify.success("Reverted to the reviewer.");
     load();
   } catch (err) {
     notify.error(getApiErrorMessage(err));
@@ -562,7 +618,7 @@ const submitReject = async () => {
   }
 };
 
-// Return for corrections
+// Return for corrections (reviewer sends the record back to data entry)
 const returnOpen = ref(false);
 const returnNotes = ref("");
 const returnFields = ref([]);
@@ -575,7 +631,7 @@ const submitReturn = async () => {
     returnOpen.value = false;
     returnNotes.value = "";
     returnFields.value = [];
-    notify.success("Returned for corrections.");
+    notify.success("Returned to data entry.");
     load();
   } catch (err) {
     notify.error(getApiErrorMessage(err));
@@ -618,7 +674,8 @@ onMounted(load);
 </script>
 
 <style scoped>
-.customer-card {
+.customer-card,
+.customer-action-bar {
   border-radius: 12px;
 }
 .maconomy-chip {

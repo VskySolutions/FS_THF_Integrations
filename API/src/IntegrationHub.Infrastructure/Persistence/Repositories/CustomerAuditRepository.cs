@@ -20,6 +20,6 @@ internal sealed class CustomerAuditRepository : ICustomerAuditRepository
         => await _dbContext.CustomerAuditEntries
             .IgnoreQueryFilters()
             .Where(a => a.CustomerRequestId == customerRequestId && !a.Deleted)
-            .OrderBy(a => a.PerformedOnUtc)
+            .OrderByDescending(a => a.PerformedOnUtc)
             .ToListAsync(cancellationToken);
 }

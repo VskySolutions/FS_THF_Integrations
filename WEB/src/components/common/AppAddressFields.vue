@@ -120,16 +120,25 @@ const loadCities = (countryCode, stateCode) => {
 const onCountryChange = () => { address.value.stateCode = null; address.value.cityName = null; };
 const onStateChange = () => { address.value.cityName = null; };
 
-// Keep option lists + resolved names in sync with the model (initial mount and external loads alike).
-watch(() => address.value.countryCode, (code) => {
-  address.value.countryName = allCountries.find((c) => c.isoCode === code)?.name || null;
-  if (code) loadStates(code); else { allStates = []; stateOptions.value = []; }
-}, { immediate: true });
+// Resolve the country/state display names from the selected ISO codes and (re)load the dependent
+// option lists. countryName/stateName must always track the codes so callers can persist names.
+const syncCountry = () => {
+  const a = address.value;
+  a.countryName = allCountries.find((c) => c.isoCode === a.countryCode)?.name || null;
+  if (a.countryCode) loadStates(a.countryCode); else { allStates = []; stateOptions.value = []; }
+};
+const syncState = () => {
+  const a = address.value;
+  a.stateName = a.stateCode ? (State.getStateByCodeAndCountry(a.stateCode, a.countryCode)?.name || null) : null;
+  if (a.countryCode && a.stateCode) loadCities(a.countryCode, a.stateCode); else { allCities = []; cityOptions.value = []; }
+};
 
-watch(() => [address.value.countryCode, address.value.stateCode], ([code, state]) => {
-  address.value.stateName = state ? (State.getStateByCodeAndCountry(state, code)?.name || null) : null;
-  if (code && state) loadCities(code, state); else { allCities = []; cityOptions.value = []; }
-}, { immediate: true });
+watch(() => address.value.countryCode, syncCountry);
+watch(() => [address.value.countryCode, address.value.stateCode], syncState);
+// Also resync when the bound object itself is swapped (e.g. a parent form reset / draft restore):
+// the codes may carry the same values on the fresh object, so the value-watchers above wouldn't fire
+// and countryName/stateName would be left null. Runs immediately on mount too.
+watch(() => address.value, () => { syncCountry(); syncState(); }, { immediate: true });
 
 // ---- Locale-aware postal validation ----
 const postalError = ref("");

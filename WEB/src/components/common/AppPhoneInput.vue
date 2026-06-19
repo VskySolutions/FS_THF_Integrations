@@ -13,10 +13,12 @@
     <q-input
       :model-value="display"
       :label="label"
+      :placeholder="exampleNational"
       :error="!!localError"
       :error-message="localError"
       :disable="disable"
       :readonly="readonly"
+      autocomplete="off"
       outlined
       :dense="dense"
       stack-label
@@ -33,8 +35,9 @@
 // as-you-type using the selected country's pattern (libphonenumber-js AsYouType — e.g. US shows
 // "(213) 373-4253") while the stored model value is normalised to E.164 once valid. Used on every
 // phone field across the app so behaviour, formatting and storage stay identical.
-import { ref, watch } from "vue";
-import { AsYouType, isValidPhoneNumber, parsePhoneNumber } from "libphonenumber-js";
+import { ref, computed, watch } from "vue";
+import { AsYouType, isValidPhoneNumber, parsePhoneNumber, getExampleNumber } from "libphonenumber-js";
+import examples from "libphonenumber-js/mobile/examples";
 import { orderedCountries, dialCodeOption, isoFromDial, dialFromIso, DEFAULT_COUNTRY_ISO } from "composables/useCountries";
 import AppSelect from "components/common/AppSelect.vue";
 
@@ -73,6 +76,12 @@ const iso = ref(isoFromDial(props.country) || isoFromNumber(props.modelValue) ||
 const display = ref(""); // the formatted national number shown in the input
 const localError = ref("");
 let lastEmitted = props.modelValue || "";
+
+// An example mobile number for the selected country, in national format (e.g. US → "(201) 555-0123").
+// Drives the input placeholder and the "expected format" hint in the validation message.
+const exampleNational = computed(() => {
+  try { return getExampleNumber(iso.value, examples)?.formatNational() || ""; } catch { return ""; }
+});
 
 // Render a stored value (E.164 or partial) into the country's national pattern for display.
 const formatNational = (val, region) => {
@@ -128,7 +137,9 @@ const onInput = (val) => {
 const validate = () => {
   localError.value = "";
   if (display.value && iso.value && !isValidPhoneNumber(display.value, iso.value)) {
-    localError.value = "Enter a valid phone number for the selected country.";
+    localError.value = exampleNational.value
+      ? `Enter a valid phone number for the selected country (e.g. ${exampleNational.value}).`
+      : "Enter a valid phone number for the selected country.";
   }
   const valid = !localError.value;
   emit("update:valid", valid);

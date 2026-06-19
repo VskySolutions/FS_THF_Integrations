@@ -14,6 +14,7 @@
     :use-chips="chips"
     :readonly="readonly"
     :disable="disable"
+    :autocomplete="autocomplete"
     outlined
     stack-label
     hide-bottom-space
@@ -71,7 +72,9 @@ const props = defineProps({
   // Render selections as chips/badges; defaults on for multi-select.
   useChips: { type: Boolean, default: undefined },
   readonly: { type: Boolean, default: false },
-  disable: { type: Boolean, default: false }
+  disable: { type: Boolean, default: false },
+  // Disable the browser's autofill on the filter input by default (opt back in with "on").
+  autocomplete: { type: String, default: "off" }
 });
 
 const emit = defineEmits(["update:modelValue"]);

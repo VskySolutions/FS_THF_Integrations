@@ -61,7 +61,14 @@
               <q-item-label caption class="text-capitalize">{{ a.roleName || a.role }}</q-item-label>
             </q-item-section>
             <q-item-section side>
-              <q-btn flat round dense color="negative" icon="o_delete" @click="removeAssignment(a)" />
+              <div class="row items-center no-wrap">
+                <q-btn flat round dense color="primary" icon="o_manage_accounts" @click="openChangeRole(a)">
+                  <q-tooltip>Change role</q-tooltip>
+                </q-btn>
+                <q-btn flat round dense color="negative" icon="o_delete" @click="removeAssignment(a)">
+                  <q-tooltip>Remove</q-tooltip>
+                </q-btn>
+              </div>
             </q-item-section>
           </q-item>
           <q-item v-if="!visibleAssignments.length">
@@ -72,11 +79,11 @@
     </div>
 
     <!-- Add assignment -->
-    <app-form-drawer v-model="assignOpen" title="Add assignment" :saving="assignSaving" @submit="submitAssign" @cancel="assignOpen = false">
+    <app-form-drawer v-model="assignOpen" :title="assignTitle" :saving="assignSaving" @submit="submitAssign" @cancel="assignOpen = false">
       <q-form ref="assignForm" greedy>
         <app-select
           v-if="isPlatformAdmin" v-model="assign.tenantId" :options="tenantOptions" :loading="loadingTenants"
-          label="Tenant *" class="q-mb-md" :clearable="false" @update:model-value="onAssignTenantChange"
+          label="Tenant *" class="q-mb-md" :clearable="false" :disable="assignMode === 'edit'" @update:model-value="onAssignTenantChange"
         />
         <app-select v-model="assign.roleId" :options="roleOptions" :loading="loadingRoles" label="Role *" :clearable="false" />
       </q-form>
@@ -232,6 +239,9 @@ const assignOpen = ref(false);
 const assignSaving = ref(false);
 const assignForm = ref(null);
 const assign = reactive({ tenantId: null, roleId: null });
+// "add" = new tenant assignment; "edit" = change the role on an existing assignment (tenant locked).
+const assignMode = ref("add");
+const assignTitle = computed(() => (assignMode.value === "edit" ? "Change role" : "Add assignment"));
 
 const onAssignTenantChange = (tenantId) => {
   assign.tenantId = tenantId;
@@ -239,7 +249,18 @@ const onAssignTenantChange = (tenantId) => {
   loadRoles(assign.tenantId);
 };
 
+// Change the role on an existing assignment: pre-fill the tenant (locked) + current role, then reuse
+// the assign endpoint which updates the existing assignment in place.
+const openChangeRole = async (a) => {
+  assignMode.value = "edit";
+  assign.tenantId = a.tenantId;
+  await loadRoles(a.tenantId);
+  assign.roleId = a.roleId || null;
+  assignOpen.value = true;
+};
+
 const openAssign = async () => {
+  assignMode.value = "add";
   assign.roleId = null;
   if (isPlatformAdmin.value) {
     assign.tenantId = null;

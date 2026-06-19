@@ -182,13 +182,13 @@ public sealed class RolesController : ControllerBase
             return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden("Not permitted for this tenant."));
         }
 
-        // Roles assignable within the tenant: the system roles (Super Admin only when the caller is
-        // one — it is platform-wide, not tenant-scoped) plus the custom roles made available to the
-        // tenant. This is the authoritative source for the user role pickers.
+        // Every role is assignable (all system + all custom roles) — this is the authoritative source
+        // for the user role pickers. The only exception is the platform-wide Super Admin system role,
+        // which stays hidden from non-Super-Admin callers.
         var all = await _roles.ListAsync(cancellationToken);
-        var systemRoles = all.Where(r => r.IsSystem && (User.IsSuperAdmin() || r.Name != Roles.SuperAdmin));
-        var tenantRoles = await _roles.ListByTenantAsync(tenantId, cancellationToken);
-        var assignable = systemRoles.Concat(tenantRoles).DistinctBy(r => r.Id).OrderBy(r => r.Name);
+        var assignable = all
+            .Where(r => User.IsSuperAdmin() || !(r.IsSystem && r.Name == Roles.SuperAdmin))
+            .OrderBy(r => r.Name);
 
         return Ok(ApiResponseFactory.Success(assignable.Select(ToSummary), "Tenant roles retrieved."));
     }

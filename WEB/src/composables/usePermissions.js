@@ -26,6 +26,7 @@ export const Permissions = Object.freeze({
   JobsSchedule: "jobs.schedule",
   LogsRead: "logs.read",
   HealthRead: "health.read",
+  CustomersDataEntry: "customers.dataEntry",
   CustomersReview: "customers.review",
   CustomersApprove: "customers.approve"
 });

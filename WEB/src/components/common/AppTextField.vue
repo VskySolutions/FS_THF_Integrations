@@ -12,6 +12,7 @@
     :autogrow="autogrow"
     :mask="mask"
     :clearable="clearable"
+    :autocomplete="autocomplete"
     outlined
     :dense="dense"
     stack-label
@@ -45,7 +46,9 @@ const props = defineProps({
   autogrow: { type: Boolean, default: false },
   mask: { type: String, default: undefined },
   clearable: { type: Boolean, default: false },
-  dense: { type: Boolean, default: true }
+  dense: { type: Boolean, default: true },
+  // Browser autofill is disabled by default across the app; pass a value (e.g. "on") to opt back in.
+  autocomplete: { type: String, default: "off" }
 });
 
 const emit = defineEmits(["update:modelValue", "blur"]);

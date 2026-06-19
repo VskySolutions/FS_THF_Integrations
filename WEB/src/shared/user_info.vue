@@ -18,7 +18,19 @@
           <q-item-section>
             <q-item-label class="text-subtitle1 text-weight-medium text-capitalize">{{ displayName }}</q-item-label>
             <q-item-label caption>{{ email }}</q-item-label>
-            <q-item-label v-if="role" caption class="text-capitalize">{{ role }}</q-item-label>
+            <q-item-label v-if="role" caption class="text-capitalize user-card__role">
+              {{ role }}
+              <q-icon v-if="permissions.length" name="o_info" size="14px" class="q-ml-xs cursor-pointer" />
+              <q-tooltip v-if="permissions.length" anchor="bottom left" self="top left" max-width="340px" class="bg-grey-9 text-white">
+                <div class="text-weight-medium q-mb-xs">Permissions ({{ permissions.length }})</div>
+                <div class="user-card__perms">
+                  <div v-for="p in permissions" :key="p">{{ prettyPermission(p) }}</div>
+                </div>
+              </q-tooltip>
+            </q-item-label>
+            <q-item-label v-if="tenantName" caption class="row items-center no-wrap">
+              <q-icon name="o_apartment" size="14px" class="q-mr-xs" />{{ tenantName }}
+            </q-item-label>
           </q-item-section>
         </q-item>
         <q-separator class="q-mb-sm" />
@@ -74,6 +86,19 @@ const displayName = computed(() => authStore.user?.displayName || authStore.user
 const email = computed(() => authStore.user?.email || "");
 const role = computed(() => tenantStore.activeRole);
 
+// Active tenant name (falls back to its identifier) shown under the role.
+const tenantName = computed(() => tenantStore.activeTenant?.name || tenantStore.activeTenant?.identifier || "");
+
+// All effective permissions for the active tenant (decoded from the JWT), sorted for the tooltip.
+const permissions = computed(() => [...(authStore.permissions || [])].sort());
+
+// "users.reset_password" → "Users · Reset password" for a readable tooltip.
+const prettyPermission = (p) => p
+  .split(".")
+  .map((seg) => seg.replace(/_/g, " "))
+  .map((seg) => seg.charAt(0).toUpperCase() + seg.slice(1))
+  .join(" · ");
+
 const onLogout = async () => {
   await authStore.logout();
   router.replace({ name: "login" });
@@ -84,3 +109,22 @@ const onLogoutAll = async () => {
   router.replace({ name: "login" });
 };
 </script>
+
+<style scoped>
+.user-card__role {
+  display: flex;
+  align-items: center;
+}
+/* Compact two-column list so even a Super Admin's full permission set stays readable in the tooltip. */
+.user-card__perms {
+  columns: 2;
+  column-gap: 16px;
+  font-size: 12px;
+  line-height: 1.5;
+  text-transform: none;
+}
+.user-card__perms > div {
+  break-inside: avoid;
+  white-space: nowrap;
+}
+</style>

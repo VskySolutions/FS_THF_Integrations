@@ -233,8 +233,9 @@ export const customerApi = {
   // body: { step2: {...}, duplicateAcknowledged } → { approved, status, duplicates[] }
   approve: (id, step2, duplicateAcknowledged = false) =>
     api.post(`/api/customers/${id}/approve`, { step2, duplicateAcknowledged }).then(unwrap),
-  reject: (id, reason) => api.post(`/api/customers/${id}/reject`, { reason }).then(unwrap),
-  // body: { notes, fields[] } → { customerId, status }
+  // Approver sends an awaiting-approval request back to the reviewer. body: { notes? }
+  revertToReviewer: (id, notes = null) => api.post(`/api/customers/${id}/revert-to-reviewer`, { notes }).then(unwrap),
+  // Reviewer returns a request under review to data entry. body: { notes, fields[] } → { customerId, status }
   returnForCorrections: (id, notes, fields = []) =>
     api.post(`/api/customers/${id}/return`, { notes, fields }).then(unwrap),
   retrySync: (id) => api.post(`/api/customers/${id}/retry-sync`).then(unwrap),

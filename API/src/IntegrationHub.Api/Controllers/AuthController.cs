@@ -207,6 +207,8 @@ public sealed class AuthController : ControllerBase
                 tenant?.Identifier ?? string.Empty,
                 tenant?.Name ?? string.Empty,
                 assignment.Role.ToString(),
+                // The RBAC role name (custom roles); falls back to the legacy enum for display.
+                assignment.RoleEntity?.Name ?? assignment.Role.ToString(),
                 tenant?.TimeZoneId ?? "UTC"));
         }
 

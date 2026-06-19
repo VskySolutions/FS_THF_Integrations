@@ -17,7 +17,8 @@ export const useTenantStore = defineStore("tenant", {
       state.assignments.find((t) => t.tenantId === state.activeTenantId) || state.assignments[0] || null,
     activeRole: (state) => {
       const t = state.assignments.find((x) => x.tenantId === state.activeTenantId);
-      return t?.role || null;
+      // Prefer the RBAC role name (custom roles); fall back to the legacy enum role.
+      return t?.roleName || t?.role || null;
     },
     hasMultipleTenants: (state) => state.assignments.length > 1
   },

@@ -104,6 +104,20 @@ public sealed class CustomerApprovalService : ICustomerApprovalService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task RevertToReviewerAsync(CustomerRequest request, string? notes, Guid? actorId, string? actorName, CancellationToken cancellationToken = default)
+    {
+        if (request.Status is not (CustomerRequestStatus.PendingApproval or CustomerRequestStatus.PartiallyApproved))
+        {
+            throw new CustomerWorkflowException("Only a request awaiting approval can be reverted to the reviewer.", $"Current status: {request.Status}.");
+        }
+
+        request.Status = CustomerRequestStatus.UnderReview;
+        request.CurrentApprovalStage = 0;
+        await AppendAuditAsync(request, CustomerAuditActionType.RevertedToReviewer, actorId, actorName,
+            string.IsNullOrWhiteSpace(notes) ? "Reverted to reviewer." : notes.Trim(), cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task ReturnAsync(CustomerRequest request, string notes, IReadOnlyList<string> fields, Guid? actorId, string? actorName, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(notes))

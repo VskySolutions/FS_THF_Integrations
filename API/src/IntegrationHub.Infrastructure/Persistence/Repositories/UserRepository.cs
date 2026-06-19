@@ -13,10 +13,27 @@ internal sealed class UserRepository : IUserRepository
         _dbContext = dbContext;
     }
 
-    public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
-        => _dbContext.Users.Include(u => u.TenantRoles).ThenInclude(r => r.RoleEntity)
-            .Include(u => u.Person)
+    public async Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var user = await _dbContext.Users.Include(u => u.TenantRoles).ThenInclude(r => r.RoleEntity)
             .FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
+
+        await LoadPersonAsync(user, cancellationToken);
+        return user;
+    }
+
+    // Person carries a tenant query filter, which EF would also apply to an Include — hiding a user's
+    // linked profile (and blanking their name) whenever the person's tenant differs from the active
+    // one or is unset. Load it explicitly with the filter ignored; user-level tenant scoping is
+    // enforced by the controller, so this only ever surfaces the user's own profile.
+    private async Task LoadPersonAsync(User? user, CancellationToken cancellationToken)
+    {
+        if (user?.PersonId is { } personId)
+        {
+            user.Person = await _dbContext.Persons.IgnoreQueryFilters()
+                .FirstOrDefaultAsync(p => p.Id == personId && !p.Deleted, cancellationToken);
+        }
+    }
 
     public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
         => _dbContext.Users.Include(u => u.TenantRoles).ThenInclude(r => r.RoleEntity)
@@ -63,11 +80,17 @@ internal sealed class UserRepository : IUserRepository
         string? name, string? email, string? phone, string? role,
         int page, int limit, CancellationToken cancellationToken = default)
     {
-        var query = _dbContext.Users.Include(u => u.TenantRoles).ThenInclude(r => r.RoleEntity)
-            .Include(u => u.Person).AsQueryable();
+        // Ignore query filters (the Person tenant filter would otherwise blank the name / drop the row
+        // for users whose person tenant differs or is unset) and re-apply the soft-delete predicates.
+        var query = _dbContext.Users
+            .IgnoreQueryFilters()
+            .Where(u => !u.Deleted)
+            .Include(u => u.TenantRoles.Where(r => !r.Deleted)).ThenInclude(r => r.RoleEntity)
+            .Include(u => u.Person)
+            .AsQueryable();
         if (tenantId is { } id)
         {
-            query = query.Where(u => u.TenantRoles.Any(r => r.TenantId == id));
+            query = query.Where(u => u.TenantRoles.Any(r => r.TenantId == id && !r.Deleted));
         }
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -100,7 +123,7 @@ internal sealed class UserRepository : IUserRepository
         if (!string.IsNullOrWhiteSpace(role))
         {
             var t = role.Trim();
-            query = query.Where(u => u.TenantRoles.Any(r => r.RoleEntity != null && r.RoleEntity.Name.Contains(t)));
+            query = query.Where(u => u.TenantRoles.Any(r => !r.Deleted && r.RoleEntity != null && r.RoleEntity.Name.Contains(t)));
         }
 
         var total = await query.CountAsync(cancellationToken);

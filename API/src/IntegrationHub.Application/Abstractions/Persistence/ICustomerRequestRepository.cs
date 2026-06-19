@@ -25,6 +25,7 @@ public interface ICustomerRequestRepository
         Guid? submittedById,
         DateTime? fromUtc,
         DateTime? toUtc,
+        Guid? draftViewerId,
         int page,
         int limit,
         CancellationToken cancellationToken = default);

@@ -8,6 +8,7 @@
     :error-message="errorMessage"
     :disable="disable"
     :readonly="readonly"
+    :autocomplete="autocomplete"
     outlined
     :dense="dense"
     stack-label
@@ -27,7 +28,9 @@ const props = defineProps({
   errorMessage: { type: String, default: "" },
   disable: { type: Boolean, default: false },
   readonly: { type: Boolean, default: false },
-  dense: { type: Boolean, default: true }
+  dense: { type: Boolean, default: true },
+  // Browser autofill is disabled by default across the app; pass "on" to opt back in.
+  autocomplete: { type: String, default: "off" }
 });
 
 const emit = defineEmits(["update:modelValue"]);

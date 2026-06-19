@@ -44,6 +44,7 @@ internal sealed class CustomerRequestRepository : ICustomerRequestRepository
         Guid? submittedById,
         DateTime? fromUtc,
         DateTime? toUtc,
+        Guid? draftViewerId,
         int page,
         int limit,
         CancellationToken cancellationToken = default)
@@ -81,6 +82,11 @@ internal sealed class CustomerRequestRepository : ICustomerRequestRepository
         {
             query = query.Where(c => c.CreatedOnUtc <= to);
         }
+        // Draft records are private to their creator: hide other users' drafts.
+        if (draftViewerId is { } viewer)
+        {
+            query = query.Where(c => c.Status != CustomerRequestStatus.Draft || c.CreatedById == viewer);
+        }
 
         var total = await query.CountAsync(cancellationToken);
         var items = await query
@@ -108,10 +114,12 @@ internal sealed class CustomerRequestRepository : ICustomerRequestRepository
                 c.TaxNumber != null && c.TaxNumber == taxNumber)
             .ToListAsync(cancellationToken);
 
+    // Numbers are assigned at creation, so the per-year sequence counts numbered requests by their
+    // creation year (includes Drafts) — the basis for the next CUS-{year}-{seq} value.
     public Task<int> CountForYearAsync(Guid tenantId, int year, CancellationToken cancellationToken = default)
         => _dbContext.CustomerRequests
             .IgnoreQueryFilters()
-            .CountAsync(c => c.TenantId == tenantId && c.CustomerRequestNumber != null && c.SubmittedOnUtc != null && c.SubmittedOnUtc!.Value.Year == year, cancellationToken);
+            .CountAsync(c => c.TenantId == tenantId && c.CustomerRequestNumber != null && c.CreatedOnUtc.Year == year, cancellationToken);
 
     public async Task AddAsync(CustomerRequest request, CancellationToken cancellationToken = default)
         => await _dbContext.CustomerRequests.AddAsync(request, cancellationToken);

@@ -7,7 +7,7 @@
       search-placeholder="Search company, legal name or number"
       show-filters
       :filter-count="filterChips.length"
-      show-add
+      :show-add="canDataEntry"
       add-label="Add Customer"
       show-back
       @update:search="search = $event"
@@ -42,6 +42,12 @@
       @refresh="load"
       @update:selected="selected = $event"
     >
+      <!-- Bulk actions are status-aware: only shown when the selection has eligible rows. -->
+      <template v-if="canDataEntry" #bulk-actions="{ selected: sel }">
+        <q-btn v-if="sel.some(canSubmit)" flat dense no-caps color="primary" icon="o_send" label="Submit for Approval" @click="bulkSubmit(sel)" />
+        <q-btn v-if="sel.some(canDelete)" flat dense no-caps color="negative" icon="o_delete" label="Delete" @click="bulkDelete(sel)" />
+      </template>
+
       <template #body-cell-status="cell">
         <q-td :props="cell">
           <q-badge :color="statusColor(cell.value)">{{ statusLabel(cell.value) }}</q-badge>
@@ -51,7 +57,7 @@
       <template #body-cell-actions="cell">
         <q-td :props="cell" class="text-right">
           <q-btn flat round dense color="primary" icon="o_visibility" :to="{ name: 'customer_detail', params: { id: cell.row.id } }">
-            <q-tooltip>View</q-tooltip>
+            <q-tooltip>View / Manage</q-tooltip>
           </q-btn>
           <q-btn v-if="canEdit(cell.row) || canDelete(cell.row)" flat round dense icon="o_more_vert">
             <q-menu auto-close>
@@ -95,6 +101,7 @@ import { debounce } from "quasar";
 import { customerApi, getApiErrorMessage } from "services/api";
 import { useTenantStore } from "stores/tenant";
 import { useTenantOptions } from "composables/useTenantOptions";
+import { usePermissions, Permissions } from "composables/usePermissions";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
@@ -114,6 +121,9 @@ const { confirm } = useConfirm();
 const fmt = useDateFormat();
 const tenantStore = useTenantStore();
 const { canChooseTenant, tenantOptions, loadingTenants, loadTenants } = useTenantOptions();
+const { has } = usePermissions();
+// Customer data-entry capability gates create / submit / delete (the data-entry stage of the workflow).
+const canDataEntry = computed(() => has(Permissions.CustomersDataEntry));
 const { customerStatusColor: statusColor, customerStatusLabel: statusLabel } = useCustomerStatus();
 
 // Super admins scope the list to a chosen tenant via the dropdown; the value is the tenantId sent
@@ -159,9 +169,10 @@ onMounted(() => {
   }
 });
 
-// Draft and Returned customers are editable from the detail page; only Draft customers may be deleted.
+// Draft and Returned customers are editable/submittable; only Draft customers may be deleted.
 const canEdit = (row) => row.status === "Draft" || row.status === "Returned";
-const canDelete = (row) => row.status === "Draft";
+const canSubmit = (row) => canDataEntry.value && (row.status === "Draft" || row.status === "Returned");
+const canDelete = (row) => canDataEntry.value && row.status === "Draft";
 
 // ---- Create ----
 const formOpen = ref(false);
@@ -179,6 +190,62 @@ const removeCustomer = async (row) => {
   try {
     await customerApi.remove(row.id);
     notify.success("Customer deleted.");
+    load();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  }
+};
+
+// Bulk submit for approval from the multi-select toolbar. Only Draft/Returned customers are
+// submittable; records flagged as potential duplicates are left unsubmitted for individual review.
+const bulkSubmit = async (sel) => {
+  const submittable = sel.filter((r) => canSubmit(r));
+  const skipped = sel.length - submittable.length;
+  if (!submittable.length) {
+    notify.error("Only Draft or Returned customers can be submitted for approval.");
+    return;
+  }
+  const ok = await confirm({
+    title: "Submit for approval",
+    message: `Submit ${submittable.length} customer(s) for approval?${skipped ? ` (${skipped} not in a submittable state will be skipped.)` : ""}`,
+    confirmLabel: "Submit"
+  });
+  if (!ok) return;
+  try {
+    const results = await Promise.all(submittable.map((r) => customerApi.submit(r.id, false)));
+    const submittedCount = results.filter((x) => x?.submitted).length;
+    const dupCount = results.length - submittedCount;
+    selected.value = [];
+    load();
+    if (dupCount) {
+      notify.warning(`${submittedCount} submitted. ${dupCount} flagged as possible duplicate(s) — open them individually to review and confirm.`);
+    } else {
+      notify.success(`${submittedCount} customer(s) submitted for approval.`);
+    }
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  }
+};
+
+// Bulk delete from the multi-select toolbar. Only Draft customers are deletable; non-drafts are skipped.
+const bulkDelete = async (sel) => {
+  const deletable = sel.filter((r) => canDelete(r));
+  const skipped = sel.length - deletable.length;
+  if (!deletable.length) {
+    notify.error("Only Draft customers can be deleted.");
+    return;
+  }
+  const ok = await confirm({
+    title: "Delete customers",
+    message: `Delete ${deletable.length} draft customer(s)?${skipped ? ` (${skipped} non-draft will be skipped.)` : ""} This cannot be undone.`,
+    confirmLabel: "Delete",
+    type: "danger"
+  });
+  if (!ok) return;
+  try {
+    await Promise.all(deletable.map((r) => customerApi.remove(r.id)));
+    notify.success("Customers deleted.");
+    selected.value = [];
     load();
   } catch (err) {
     notify.error(getApiErrorMessage(err));

@@ -35,6 +35,12 @@ public interface ICustomerApprovalService
     /// <summary>Rejects the request with a mandatory reason. Persists and audits.</summary>
     Task RejectAsync(CustomerRequest request, string reason, Guid? actorId, string? actorName, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Sends an awaiting-approval request back to the reviewer (status → Under Review), resetting the
+    /// approval stage and recording optional notes. Persists and audits.
+    /// </summary>
+    Task RevertToReviewerAsync(CustomerRequest request, string? notes, Guid? actorId, string? actorName, CancellationToken cancellationToken = default);
+
     /// <summary>Returns the request for corrections, unlocking the identified fields. Persists and audits.</summary>
     Task ReturnAsync(CustomerRequest request, string notes, IReadOnlyList<string> fields, Guid? actorId, string? actorName, CancellationToken cancellationToken = default);
 }

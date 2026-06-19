@@ -236,24 +236,28 @@ public class UsersControllerTests
     }
 
     [Fact]
-    public async Task Create_with_custom_roleId_not_available_to_tenant_is_bad_request()
+    public async Task Create_with_custom_roleId_assigns_regardless_of_tenant_availability()
     {
+        // Custom roles are now universally assignable (no per-tenant availability gate).
         var tenantId = Guid.NewGuid();
         var roleId = Guid.NewGuid();
         var personId = SetupPerson();
+        UserTenantRole? captured = null;
         _users.Setup(u => u.EmailExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _users.Setup(u => u.AddAssignmentAsync(It.IsAny<UserTenantRole>(), It.IsAny<CancellationToken>()))
+            .Callback<UserTenantRole, CancellationToken>((a, _) => captured = a);
         _hasher.Setup(h => h.GenerateTemporaryPassword()).Returns("Temp123!");
         _hasher.Setup(h => h.Hash(It.IsAny<string>())).Returns(("h", "s"));
         _roles.Setup(r => r.GetByIdAsync(roleId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Role { Id = roleId, Name = "Auditor", IsSystem = false });
-        _roles.Setup(r => r.GetTenantRoleAsync(tenantId, roleId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((TenantRole?)null);
 
         var controller = Create().WithUser(Guid.NewGuid(), Roles.SuperAdmin);
         var result = await controller.Create(
             new CreateUserRequest { PersonId = personId, Email = "n@t.com", RoleId = roleId, TenantId = tenantId }, default);
 
-        result.Should().BeOfType<BadRequestObjectResult>();
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status201Created);
+        captured.Should().NotBeNull();
+        captured!.RoleId.Should().Be(roleId);
     }
 
     [Fact]

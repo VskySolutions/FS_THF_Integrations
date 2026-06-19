@@ -27,12 +27,17 @@ public class CustomerControllerTests
     private readonly Mock<IAddressRepository> _addresses = new();
     private readonly Mock<ICustomerApprovalService> _approval = new();
     private readonly Mock<ICustomerDuplicateChecker> _duplicates = new();
+    private readonly Mock<IUserRepository> _users = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IWebHostEnvironment> _environment = new();
 
+    public CustomerControllerTests()
+        => _users.Setup(u => u.GetFullNamesAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, string>());
+
     private CustomersController Create() => new(
         _requests.Object, _audit.Object, _documents.Object, _tenants.Object, _addresses.Object,
-        _approval.Object, _duplicates.Object, _unitOfWork.Object, _environment.Object);
+        _approval.Object, _duplicates.Object, _users.Object, _unitOfWork.Object, _environment.Object);
 
     /// <summary>Builds a controller with the given identity claims (subject + role + optional tenant + explicit permissions).</summary>
     private CustomersController CreateWithUser(Guid userId, string role, Guid? tenantId = null, params string[] permissions)
@@ -85,15 +90,16 @@ public class CustomerControllerTests
         var tenantId = Guid.NewGuid();
         _requests.Setup(r => r.ListAsync(
                 It.IsAny<string?>(), It.IsAny<Guid?>(), It.IsAny<CustomerRequestStatus?>(), It.IsAny<Guid?>(),
-                It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Array.Empty<CustomerRequest>(), 0));
 
-        var controller = CreateWithUser(Guid.NewGuid(), Roles.Operator, tenantId);
+        var userId = Guid.NewGuid();
+        var controller = CreateWithUser(userId, Roles.Operator, tenantId);
         await controller.List(tenantId: Guid.NewGuid(), null, null, null, null, null, 1, 20, default);
 
-        // Non-super-admins are pinned by the ambient filter; the controller passes scopeTenant = null.
+        // Non-super-admins are pinned by the ambient filter (scopeTenant = null); drafts scoped to the caller.
         _requests.Verify(r => r.ListAsync(
-            null, null, null, null, null, null, 1, 20, It.IsAny<CancellationToken>()), Times.Once);
+            null, null, null, null, null, null, userId, 1, 20, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -102,14 +108,15 @@ public class CustomerControllerTests
         var target = Guid.NewGuid();
         _requests.Setup(r => r.ListAsync(
                 It.IsAny<string?>(), It.IsAny<Guid?>(), It.IsAny<CustomerRequestStatus?>(), It.IsAny<Guid?>(),
-                It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Array.Empty<CustomerRequest>(), 0));
 
-        var controller = CreateWithUser(Guid.NewGuid(), Roles.SuperAdmin);
+        var userId = Guid.NewGuid();
+        var controller = CreateWithUser(userId, Roles.SuperAdmin);
         await controller.List(tenantId: target, null, null, null, null, null, 1, 20, default);
 
         _requests.Verify(r => r.ListAsync(
-            null, target, null, null, null, null, 1, 20, It.IsAny<CancellationToken>()), Times.Once);
+            null, target, null, null, null, null, userId, 1, 20, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // ---- Create ----
@@ -132,6 +139,8 @@ public class CustomerControllerTests
         captured.Should().NotBeNull();
         captured!.TenantId.Should().Be(tenantId);
         captured.Status.Should().Be(CustomerRequestStatus.Draft);
+        // The Customer Request Number is assigned at creation (CountForYearAsync mock defaults to 0 → seq 1).
+        captured.CustomerRequestNumber.Should().Be($"CUS-{DateTime.UtcNow.Year}-000001");
     }
 
     [Fact]
@@ -163,7 +172,9 @@ public class CustomerControllerTests
     public async Task Submit_with_unacknowledged_duplicates_returns_not_submitted_and_no_number()
     {
         var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var request = Request(tenantId, CustomerRequestStatus.Draft);
+        request.CreatedById = userId; // a Draft is only loadable by its creator
         _requests.Setup(r => r.GetByIdAsync(request.Id, It.IsAny<CancellationToken>())).ReturnsAsync(request);
         _duplicates.Setup(d => d.CheckStep1Async(tenantId, request, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<CustomerDuplicateMatch>
@@ -171,7 +182,7 @@ public class CustomerControllerTests
                 new(Guid.NewGuid(), "CUS-2026-000001", "Acme", new[] { "Company Name" }),
             });
 
-        var controller = CreateWithUser(Guid.NewGuid(), Roles.Operator, tenantId);
+        var controller = CreateWithUser(userId, Roles.Operator, tenantId);
         var result = await controller.Submit(request.Id, new SubmitCustomerRequest { DuplicateAcknowledged = false }, default);
 
         var data = result.Should().BeOfType<OkObjectResult>().Subject.Value
@@ -186,7 +197,9 @@ public class CustomerControllerTests
     public async Task Submit_acknowledged_assigns_number_and_sets_submitted()
     {
         var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var request = Request(tenantId, CustomerRequestStatus.Draft);
+        request.CreatedById = userId; // a Draft is only loadable by its creator
         _requests.Setup(r => r.GetByIdAsync(request.Id, It.IsAny<CancellationToken>())).ReturnsAsync(request);
         _duplicates.Setup(d => d.CheckStep1Async(tenantId, request, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<CustomerDuplicateMatch>
@@ -195,7 +208,6 @@ public class CustomerControllerTests
             });
         _requests.Setup(r => r.CountForYearAsync(tenantId, It.IsAny<int>(), It.IsAny<CancellationToken>())).ReturnsAsync(41);
 
-        var userId = Guid.NewGuid();
         var controller = CreateWithUser(userId, Roles.Operator, tenantId);
         var result = await controller.Submit(request.Id, new SubmitCustomerRequest { DuplicateAcknowledged = true }, default);
 
@@ -211,13 +223,15 @@ public class CustomerControllerTests
     public async Task Submit_with_no_duplicates_assigns_number()
     {
         var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var request = Request(tenantId, CustomerRequestStatus.Draft);
+        request.CreatedById = userId; // a Draft is only loadable by its creator
         _requests.Setup(r => r.GetByIdAsync(request.Id, It.IsAny<CancellationToken>())).ReturnsAsync(request);
         _duplicates.Setup(d => d.CheckStep1Async(tenantId, request, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<CustomerDuplicateMatch>());
         _requests.Setup(r => r.CountForYearAsync(tenantId, It.IsAny<int>(), It.IsAny<CancellationToken>())).ReturnsAsync(0);
 
-        var controller = CreateWithUser(Guid.NewGuid(), Roles.Operator, tenantId);
+        var controller = CreateWithUser(userId, Roles.Operator, tenantId);
         var result = await controller.Submit(request.Id, new SubmitCustomerRequest(), default);
 
         result.Should().BeOfType<OkObjectResult>().Subject.Value
@@ -289,12 +303,29 @@ public class CustomerControllerTests
         var tenantId = Guid.NewGuid();
         var request = Request(tenantId, CustomerRequestStatus.UnderReview);
         _requests.Setup(r => r.GetByIdAsync(request.Id, It.IsAny<CancellationToken>())).ReturnsAsync(request);
+        // Mandatory Step 2 fields are complete, so sending for approval is allowed.
+        _approval.Setup(a => a.GetMissingMandatoryStep2Fields(request)).Returns(Array.Empty<string>());
 
         var controller = CreateWithUser(Guid.NewGuid(), Roles.TenantAdmin, tenantId, Permissions.CustomersReview);
         var result = await controller.SendForApproval(request.Id, default);
 
         result.Should().BeOfType<OkObjectResult>();
         request.Status.Should().Be(CustomerRequestStatus.PendingApproval);
+    }
+
+    [Fact]
+    public async Task SendForApproval_with_missing_mandatory_step2_is_bad_request()
+    {
+        var tenantId = Guid.NewGuid();
+        var request = Request(tenantId, CustomerRequestStatus.UnderReview);
+        _requests.Setup(r => r.GetByIdAsync(request.Id, It.IsAny<CancellationToken>())).ReturnsAsync(request);
+        _approval.Setup(a => a.GetMissingMandatoryStep2Fields(request)).Returns(new[] { "Tax Number", "Currency" });
+
+        var controller = CreateWithUser(Guid.NewGuid(), Roles.TenantAdmin, tenantId, Permissions.CustomersReview);
+        var result = await controller.SendForApproval(request.Id, default);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        request.Status.Should().Be(CustomerRequestStatus.UnderReview); // unchanged
     }
 
     [Fact]
@@ -317,12 +348,15 @@ public class CustomerControllerTests
     // ---- Permission gating attributes ----
 
     [Theory]
+    [InlineData(nameof(CustomersController.Create), Permissions.CustomersDataEntry)]
+    [InlineData(nameof(CustomersController.Update), Permissions.CustomersDataEntry)]
+    [InlineData(nameof(CustomersController.Submit), Permissions.CustomersDataEntry)]
+    [InlineData(nameof(CustomersController.Delete), Permissions.CustomersDataEntry)]
     [InlineData(nameof(CustomersController.Enrich), Permissions.CustomersReview)]
     [InlineData(nameof(CustomersController.SendForApproval), Permissions.CustomersReview)]
-    [InlineData(nameof(CustomersController.SaveStep2), Permissions.CustomersApprove)]
+    [InlineData(nameof(CustomersController.Return), Permissions.CustomersReview)]
     [InlineData(nameof(CustomersController.Approve), Permissions.CustomersApprove)]
-    [InlineData(nameof(CustomersController.Reject), Permissions.CustomersApprove)]
-    [InlineData(nameof(CustomersController.Return), Permissions.CustomersApprove)]
+    [InlineData(nameof(CustomersController.RevertToReviewer), Permissions.CustomersApprove)]
     [InlineData(nameof(CustomersController.RetrySync), Permissions.CustomersApprove)]
     [InlineData(nameof(CustomersController.Reopen), Permissions.CustomersApprove)]
     public void Workflow_endpoints_require_expected_permission(string methodName, string expectedPermission)

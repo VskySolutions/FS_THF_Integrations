@@ -42,6 +42,8 @@ public static class Permissions
     public const string LogsRead = "logs.read";
 
     // Customer Management workflow
+    /// <summary>Create / enter Customer Requests (Step 1 Basic Information) and save drafts.</summary>
+    public const string CustomersDataEntry = "customers.dataEntry";
     /// <summary>Enrich submitted Customer Requests and send them for approval (Customer Role User).</summary>
     public const string CustomersReview = "customers.review";
     /// <summary>Complete Step 2 Maconomy fields and approve/reject/return Customer Requests (Customer Approver).</summary>
@@ -63,7 +65,7 @@ public static class Permissions
         RolesRead, RolesWrite, RolesAssign,
         MappingsRead, MappingsWrite,
         JobsRead, JobsTrigger, JobsRetry, JobsDelete, JobsSchedule, LogsRead,
-        CustomersReview, CustomersApprove,
+        CustomersDataEntry, CustomersReview, CustomersApprove,
         GroupsManage,
         HealthRead
     };
@@ -81,8 +83,8 @@ public static class Permissions
         RolesRead,
         MappingsRead, MappingsWrite,
         JobsRead, JobsTrigger, JobsRetry, JobsDelete, JobsSchedule, LogsRead,
-        // Tenant Admins act as both Customer Role User and Customer Approver, and may retry/reopen.
-        CustomersReview, CustomersApprove,
+        // Tenant Admins act as Customer data-entry, Customer Role User and Customer Approver.
+        CustomersDataEntry, CustomersReview, CustomersApprove,
         // Tenant Admins manage Permission Groups within their own tenant.
         GroupsManage,
         HealthRead

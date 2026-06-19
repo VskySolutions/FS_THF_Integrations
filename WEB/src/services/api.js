@@ -113,7 +113,21 @@ export const userApi = {
   assignTenantRole: (id, payload) =>
     api.post(`/api/admin/users/${id}/tenant-assignments`, payload).then(unwrap),
   removeTenantRole: (id, tenantId) =>
-    api.delete(`/api/admin/users/${id}/tenant-assignments/${tenantId}`).then(envelope)
+    api.delete(`/api/admin/users/${id}/tenant-assignments/${tenantId}`).then(envelope),
+  // Replace the user's group memberships with the given set of group ids.
+  setGroups: (id, groupIds) => api.put(`/api/admin/users/${id}/groups`, { groupIds }).then(unwrap)
+};
+
+// Tenant-scoped user groups (segmentation/tagging, independent of RBAC roles).
+export const userGroupApi = {
+  list: (search) => api.get("/api/admin/user-groups", { params: { search } }).then(unwrap),
+  // payload: { name, description? } → created (or existing) group
+  create: (payload) => api.post("/api/admin/user-groups", payload).then(unwrap),
+  remove: (id) => api.delete(`/api/admin/user-groups/${id}`).then(envelope),
+  // ---- Members ----
+  members: (id) => api.get(`/api/admin/user-groups/${id}/members`).then(unwrap),
+  addMembers: (id, userIds) => api.post(`/api/admin/user-groups/${id}/members`, { userIds }).then(unwrap),
+  removeMember: (id, userId) => api.delete(`/api/admin/user-groups/${id}/members/${userId}`).then(envelope)
 };
 
 export const roleApi = {

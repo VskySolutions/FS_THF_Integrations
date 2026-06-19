@@ -81,6 +81,10 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
 
     public DbSet<DashboardLayout> DashboardLayouts => Set<DashboardLayout>();
 
+    public DbSet<UserGroup> UserGroups => Set<UserGroup>();
+
+    public DbSet<UserGroupMember> UserGroupMembers => Set<UserGroupMember>();
+
     /// <summary>Data Protection key ring storage (Multi-Tenancy ADR-002).</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
@@ -105,6 +109,9 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
         // Persons are CRM master records owned by a tenant; scope them so a Tenant Admin/Operator never
         // sees another tenant's people. Self-profile reads bypass this filter via GetByUserIdAsync.
         modelBuilder.Entity<Person>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        // User groups + memberships are tenant-scoped so a tenant only ever sees its own groups.
+        modelBuilder.Entity<UserGroup>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<UserGroupMember>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
 
         // Soft-delete filters for the non-tenant-scoped entities.
         modelBuilder.Entity<Tenant>().HasQueryFilter(e => !e.Deleted);
@@ -219,6 +226,12 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
                     break;
                 case Person person when person.TenantId is null || person.TenantId == Guid.Empty:
                     person.TenantId = _tenantContext.TenantId;
+                    break;
+                case UserGroup userGroup when userGroup.TenantId == Guid.Empty:
+                    userGroup.TenantId = _tenantContext.TenantId;
+                    break;
+                case UserGroupMember member when member.TenantId == Guid.Empty:
+                    member.TenantId = _tenantContext.TenantId;
                     break;
             }
         }

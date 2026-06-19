@@ -1,21 +1,22 @@
 <template>
-  <q-list class="app-menu q-py-sm">
+  <q-list class="app-menu q-py-xs">
     <template v-for="(section, index) in visibleSections" :key="section.key">
-      <q-separator v-if="index > 0" class="q-my-sm" />
-      <q-item-label v-if="section.label" header class="text-grey-7 text-weight-medium">
+      <q-separator v-if="index > 0" class="q-my-xs" />
+      <q-item-label v-if="section.label" header class="app-menu__header text-primary text-weight-bold">
         {{ section.label }}
       </q-item-label>
       <q-item
         v-for="item in section.items"
         :key="item.label"
         v-ripple
+        dense
         clickable
         :to="item.to"
         :exact="item.exact"
         active-class="text-primary bg-blue-1"
       >
         <q-item-section avatar>
-          <q-icon :name="item.icon" />
+          <q-icon :name="item.icon" size="20px" />
         </q-item-section>
         <q-item-section>{{ item.label }}</q-item-section>
       </q-item>
@@ -56,7 +57,8 @@ const sections = [
     items: [
       { label: "Permission Groups", icon: "o_workspaces", to: "/permission-groups", permissions: [Permissions.GroupsManage] },
       { label: "Roles", icon: "o_admin_panel_settings", to: "/roles", permissions: [Permissions.RolesWrite] },
-      { label: "Users", icon: "o_group", to: "/users", permissions: [Permissions.UsersRead] }
+      { label: "Users", icon: "o_group", to: "/users", permissions: [Permissions.UsersRead] },
+      { label: "User Groups", icon: "o_groups", to: "/user-groups", permissions: [Permissions.UsersGroupManagement] }
     ]
   },
   {
@@ -91,3 +93,25 @@ const visibleSections = computed(() =>
     .map((section) => ({ ...section, items: section.items.filter((item) => canSee(item.permissions)) }))
     .filter((section) => section.items.length));
 </script>
+
+<style scoped>
+/* Compact spacing — the drawer holds many items. */
+.app-menu :deep(.q-item) {
+  min-height: 34px;
+}
+/* Tighten the icon gutter so icon + label sit close together. */
+.app-menu :deep(.q-item__section--avatar) {
+  min-width: 32px;
+  padding-right: 8px;
+}
+/* Slim, uppercase section headers in the theme colour — made to stand out. */
+.app-menu__header {
+  min-height: auto;
+  padding: 10px 16px 2px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  opacity: 1;
+}
+</style>

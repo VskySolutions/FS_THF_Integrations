@@ -13,6 +13,7 @@ export const Permissions = Object.freeze({
   UsersRead: "users.read",
   UsersWrite: "users.write",
   UsersResetPassword: "users.reset_password",
+  UsersGroupManagement: "users.groupManagement",
   RolesRead: "roles.read",
   RolesWrite: "roles.write",
   RolesAssign: "roles.assign",

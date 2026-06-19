@@ -1,0 +1,336 @@
+<template>
+  <q-page padding>
+    <app-list-header
+      :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'User Groups' }]"
+      :search="search"
+      show-search
+      search-placeholder="Search groups"
+      show-add
+      add-label="Add Group"
+      show-back
+      @update:search="search = $event"
+      @add="openCreate"
+      @back="$router.back()"
+    />
+
+    <div class="row q-col-gutter-md">
+      <!-- Group list -->
+      <div class="col-12 col-md-5">
+        <app-data-table
+          page-key="user-groups"
+          row-key="id"
+          title="All groups"
+          :rows="rows"
+          :columns="columns"
+          :loading="loading"
+          :total-records="totalRecords"
+          :pagination="pagination"
+          default-sort-by="name"
+          :default-descending="false"
+          @request="onRequest"
+          @refresh="load"
+        >
+          <template #body-cell-memberCount="cell">
+            <q-td :props="cell"><q-badge color="blue-1" text-color="primary">{{ cell.value }}</q-badge></q-td>
+          </template>
+
+          <template #body-cell-createdOnUtc="cell">
+            <q-td :props="cell">
+              {{ cell.value }}
+              <q-icon name="o_info" size="14px" color="grey-6" class="q-ml-xs cursor-pointer">
+                <q-tooltip>Created by {{ cell.row.createdBy || "Unknown" }}</q-tooltip>
+              </q-icon>
+            </q-td>
+          </template>
+
+          <template #body-cell-actions="cell">
+            <q-td :props="cell" class="text-right">
+              <q-btn flat round dense color="primary" icon="o_groups" @click="selectGroup(cell.row)">
+                <q-tooltip>View members</q-tooltip>
+              </q-btn>
+              <q-btn flat round dense color="negative" icon="o_delete" @click="removeGroup(cell.row)">
+                <q-tooltip>Delete</q-tooltip>
+              </q-btn>
+            </q-td>
+          </template>
+
+          <template #no-data>
+            <div class="full-width column flex-center q-pa-xl text-grey-6">
+              <q-icon name="o_groups" size="40px" class="q-mb-sm" />
+              <div class="text-subtitle1 q-mb-xs">No groups yet</div>
+              <q-btn unelevated no-caps color="primary" icon="o_add" label="Add Group" @click="openCreate" />
+            </div>
+          </template>
+        </app-data-table>
+      </div>
+
+      <!-- Selected group's members -->
+      <div class="col-12 col-md-7">
+        <q-card v-if="!selectedGroup" flat bordered class="ug-card">
+          <q-card-section class="text-subtitle1 text-weight-medium">Members</q-card-section>
+          <q-separator />
+          <q-card-section class="column flex-center q-pa-xl text-grey-6">
+            <q-icon name="o_groups" size="36px" class="q-mb-sm" />
+            Select a group to see its members.
+          </q-card-section>
+        </q-card>
+
+        <app-data-table
+          v-else
+          row-key="userId"
+          :title="`Members — ${selectedGroup.name}`"
+          :rows="members"
+          :columns="memberColumns"
+          :loading="loadingMembers"
+          :pagination="{ rowsPerPage: 10 }"
+          default-sort-by="fullName"
+          :default-descending="false"
+          @refresh="loadMembers"
+        >
+          <!-- Add members sits beside the columns + refresh buttons in the table's top bar. -->
+          <template #actions>
+            <q-btn outline no-caps color="primary" icon="o_person_add" label="Add members" @click="openAddMembers" />
+          </template>
+          <template #body-cell-isActive="cell">
+            <q-td :props="cell">
+              <q-badge :color="cell.value ? 'positive' : 'grey'">{{ cell.value ? "Active" : "Inactive" }}</q-badge>
+            </q-td>
+          </template>
+          <template #body-cell-addedOnUtc="cell">
+            <q-td :props="cell">
+              {{ cell.value }}
+              <q-icon v-if="cell.row.addedBy" name="o_info" size="14px" color="grey-6" class="q-ml-xs cursor-pointer">
+                <q-tooltip>Added by {{ cell.row.addedBy }}</q-tooltip>
+              </q-icon>
+            </q-td>
+          </template>
+          <template #body-cell-actions="cell">
+            <q-td :props="cell" class="text-right">
+              <q-btn flat round dense color="negative" icon="o_person_remove" @click="removeMember(cell.row)">
+                <q-tooltip>Remove from group</q-tooltip>
+              </q-btn>
+            </q-td>
+          </template>
+          <template #no-data>
+            <div class="full-width column flex-center q-pa-lg text-grey-6">
+              <q-icon name="o_person_off" size="32px" class="q-mb-sm" />
+              No members yet.
+            </div>
+          </template>
+        </app-data-table>
+      </div>
+    </div>
+
+    <!-- Create group dialog -->
+    <q-dialog v-model="createOpen" persistent>
+      <q-card style="min-width: 380px; max-width: 90vw;">
+        <q-card-section class="text-h6">New group</q-card-section>
+        <q-separator />
+        <q-card-section>
+          <q-form ref="createForm" greedy>
+            <app-text-field v-model="newGroup.name" label="Name *" :rules="[(v) => !!v || 'Name is required']" class="q-mb-md" />
+            <app-text-field v-model="newGroup.description" label="Description" />
+          </q-form>
+        </q-card-section>
+        <q-separator />
+        <q-card-actions align="right">
+          <q-btn flat no-caps color="grey-8" label="Cancel" @click="createOpen = false" />
+          <q-btn unelevated no-caps color="primary" label="Create" :loading="creating" @click="submitCreate" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <!-- Add members dialog -->
+    <q-dialog v-model="addOpen" persistent>
+      <q-card style="min-width: 420px; max-width: 92vw;">
+        <q-card-section class="text-h6">Add members</q-card-section>
+        <q-separator />
+        <q-card-section>
+          <app-select
+            v-model="addUserIds" :options="userOptions" :loading="loadingUsers"
+            label="Users" multiple use-chips
+            hint="Users already in the group are not listed."
+          />
+        </q-card-section>
+        <q-separator />
+        <q-card-actions align="right">
+          <q-btn flat no-caps color="grey-8" label="Cancel" @click="addOpen = false" />
+          <q-btn unelevated no-caps color="primary" label="Add" :loading="addingMembers" :disable="!addUserIds.length" @click="submitAddMembers" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+  </q-page>
+</template>
+
+<script setup>
+import { ref, reactive, onMounted, watch } from "vue";
+import { debounce } from "quasar";
+import { userGroupApi, userApi, getApiErrorMessage } from "services/api";
+import { useNotify } from "composables/useNotify";
+import { useConfirm } from "composables/useConfirm";
+import { useDateFormat } from "composables/useDateFormat";
+import { useListTable } from "composables/useListTable";
+import AppListHeader from "components/common/AppListHeader.vue";
+import AppDataTable from "components/common/AppDataTable.vue";
+import AppTextField from "components/common/AppTextField.vue";
+import AppSelect from "components/common/AppSelect.vue";
+
+const notify = useNotify();
+const { confirm } = useConfirm();
+const fmt = useDateFormat();
+
+const columns = [
+  { name: "name", label: "Name", field: "name", align: "left", sortable: true, default: true },
+  { name: "description", label: "Description", field: "description", align: "left" },
+  { name: "memberCount", label: "Members", field: "memberCount", align: "left", sortable: true, default: true },
+  { name: "createdBy", label: "Created By", field: "createdBy", align: "left", sortable: true },
+  { name: "createdOnUtc", label: "Created", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true, default: true },
+  { name: "actions", label: "Actions", field: "actions", align: "right" }
+];
+
+const memberColumns = [
+  { name: "fullName", label: "Name", field: "fullName", align: "left", sortable: true, default: true },
+  { name: "email", label: "Email", field: "email", align: "left", sortable: true, default: true },
+  { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true },
+  { name: "addedBy", label: "Added By", field: "addedBy", align: "left", sortable: true, default: true },
+  { name: "addedOnUtc", label: "Added On", field: (r) => fmt.formatDateTime(r.addedOnUtc), align: "left", sortable: true, default: true },
+  { name: "actions", label: "", field: "actions", align: "right" }
+];
+
+const { rows, loading, totalRecords, search, pagination, load, onRequest } = useListTable({
+  fetcher: () => userGroupApi.list(search.value || undefined).then((r) => ({ data: r || [], total: (r || []).length })),
+  onError: (err) => notify.error(getApiErrorMessage(err))
+});
+const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);
+watch(search, reload);
+
+// ---- Members of the selected group ----
+const selectedGroup = ref(null);
+const members = ref([]);
+const loadingMembers = ref(false);
+
+const loadMembers = async () => {
+  if (!selectedGroup.value) return;
+  loadingMembers.value = true;
+  try {
+    members.value = (await userGroupApi.members(selectedGroup.value.id)) || [];
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    loadingMembers.value = false;
+  }
+};
+
+const selectGroup = async (g) => {
+  selectedGroup.value = g;
+  members.value = [];
+  await loadMembers();
+};
+
+// ---- Create group ----
+const createOpen = ref(false);
+const creating = ref(false);
+const createForm = ref(null);
+const newGroup = reactive({ name: "", description: "" });
+
+const openCreate = () => { newGroup.name = ""; newGroup.description = ""; createOpen.value = true; };
+
+const submitCreate = async () => {
+  if (!(await createForm.value?.validate())) return;
+  creating.value = true;
+  try {
+    await userGroupApi.create({ name: newGroup.name, description: newGroup.description || null });
+    notify.success("Group created.");
+    createOpen.value = false;
+    load();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    creating.value = false;
+  }
+};
+
+const removeGroup = async (g) => {
+  const ok = await confirm({
+    title: "Delete group",
+    message: `Delete the group "${g.name}"? It will be removed from all users.`,
+    confirmLabel: "Delete",
+    type: "danger"
+  });
+  if (!ok) return;
+  try {
+    await userGroupApi.remove(g.id);
+    notify.success("Group deleted.");
+    if (selectedGroup.value?.id === g.id) { selectedGroup.value = null; members.value = []; }
+    load();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  }
+};
+
+// ---- Add / remove members ----
+const addOpen = ref(false);
+const addingMembers = ref(false);
+const addUserIds = ref([]);
+const userOptions = ref([]);
+const loadingUsers = ref(false);
+
+const openAddMembers = async () => {
+  addUserIds.value = [];
+  addOpen.value = true;
+  loadingUsers.value = true;
+  try {
+    const resp = await userApi.list({ page: 1, limit: 100 });
+    const memberIds = new Set(members.value.map((m) => m.userId));
+    userOptions.value = (resp?.data || [])
+      .filter((u) => !memberIds.has(u.userId))
+      .map((u) => ({ label: u.email ? `${u.fullName || u.email} (${u.email})` : (u.fullName || "User"), value: u.userId }));
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    loadingUsers.value = false;
+  }
+};
+
+const submitAddMembers = async () => {
+  if (!addUserIds.value.length) return;
+  addingMembers.value = true;
+  try {
+    await userGroupApi.addMembers(selectedGroup.value.id, addUserIds.value);
+    notify.success("Members added.");
+    addOpen.value = false;
+    await loadMembers();
+    load(); // refresh group member counts
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    addingMembers.value = false;
+  }
+};
+
+const removeMember = async (m) => {
+  const ok = await confirm({
+    title: "Remove member",
+    message: `Remove ${m.fullName} from "${selectedGroup.value.name}"?`,
+    confirmLabel: "Remove",
+    type: "danger"
+  });
+  if (!ok) return;
+  try {
+    await userGroupApi.removeMember(selectedGroup.value.id, m.userId);
+    notify.success("Member removed.");
+    await loadMembers();
+    load();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  }
+};
+
+onMounted(load);
+</script>
+
+<style scoped>
+.ug-card {
+  border-radius: 12px;
+}
+</style>

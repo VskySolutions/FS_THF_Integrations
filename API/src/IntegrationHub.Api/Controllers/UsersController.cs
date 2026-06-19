@@ -34,6 +34,7 @@ public sealed class UsersController : ControllerBase
     private readonly IRoleRepository _roles;
     private readonly IPersonRepository _persons;
     private readonly ITenantRepository _tenants;
+    private readonly IUserGroupRepository _groups;
 
     public UsersController(
         IUserRepository users,
@@ -43,7 +44,8 @@ public sealed class UsersController : ControllerBase
         IAuditTrailService audit,
         IRoleRepository roles,
         IPersonRepository persons,
-        ITenantRepository tenants)
+        ITenantRepository tenants,
+        IUserGroupRepository groups)
     {
         _users = users;
         _passwordHasher = passwordHasher;
@@ -53,6 +55,7 @@ public sealed class UsersController : ControllerBase
         _roles = roles;
         _persons = persons;
         _tenants = tenants;
+        _groups = groups;
     }
 
     [HttpPost("/api/admin/users")]
@@ -198,6 +201,7 @@ public sealed class UsersController : ControllerBase
         [FromQuery] string? email = null,
         [FromQuery] string? phone = null,
         [FromQuery] string? role = null,
+        [FromQuery] string? group = null,
         CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
@@ -205,7 +209,7 @@ public sealed class UsersController : ControllerBase
 
         // Super Admins may filter by any tenant; everyone else is scoped to their active tenant.
         Guid? tenantFilter = User.IsSuperAdmin() ? tenantId : User.GetActiveTenantId();
-        var (items, total) = await _users.ListAsync(tenantFilter, search, isActive, name, email, phone, role, page, limit, cancellationToken);
+        var (items, total) = await _users.ListAsync(tenantFilter, search, isActive, name, email, phone, role, group, page, limit, cancellationToken);
 
         var names = await ResolveActorNamesAsync(items.SelectMany(u => new[] { u.CreatedById, u.UpdatedById }), cancellationToken);
 
@@ -233,7 +237,7 @@ public sealed class UsersController : ControllerBase
         var summaries = items.Select(u => new UserSummary(
             u.Id, u.Email,
             u.Person?.FirstName ?? string.Empty, u.Person?.LastName ?? string.Empty,
-            u.Person?.FullName ?? u.DisplayName, u.Person?.MobileNumber, TenantNamesFor(u), RolesFor(u), u.IsActive,
+            u.Person?.FullName ?? u.DisplayName, u.Person?.MobileNumber, TenantNamesFor(u), RolesFor(u), GroupsFor(u, tenantFilter), u.IsActive,
             NameOf(names, u.CreatedById), NameOf(names, u.UpdatedById), u.CreatedOnUtc, u.UpdatedOnUtc));
         return Ok(ApiResponseFactory.Paginated(summaries, "Users retrieved.", page, limit, total));
     }
@@ -534,6 +538,48 @@ public sealed class UsersController : ControllerBase
         return Ok(ApiResponseFactory.Success(new { message = "Assignment removed." }, "Assignment removed."));
     }
 
+    // ---- User groups ----
+
+    /// <summary>Replaces the user's group memberships (in the active tenant) with the supplied set.</summary>
+    [HttpPut("/api/admin/users/{id:guid}/groups")]
+    [RequirePermission(Permissions.UsersGroupManagement)]
+    public async Task<IActionResult> SetGroups(Guid id, [FromBody] AssignUserGroupsRequest request, CancellationToken cancellationToken)
+    {
+        var user = await _users.GetByIdAsync(id, cancellationToken);
+        if (user is null || !CanCallerSee(user))
+        {
+            return NotFound(ApiResponseFactory.NotFound("User not found."));
+        }
+
+        var requested = (request.GroupIds ?? new List<Guid>()).Distinct().ToHashSet();
+
+        // Every requested group must exist in the active tenant (the repo is tenant-scoped).
+        foreach (var groupId in requested)
+        {
+            if (await _groups.GetByIdAsync(groupId, cancellationToken) is null)
+            {
+                return BadRequest(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, "Validation failed.", $"Unknown group {groupId}."));
+            }
+        }
+
+        var existing = await _groups.GetMembershipsForUserAsync(id, cancellationToken);
+        var existingIds = existing.Select(m => m.UserGroupId).ToHashSet();
+
+        foreach (var membership in existing.Where(m => !requested.Contains(m.UserGroupId)))
+        {
+            _groups.RemoveMember(membership);
+        }
+        foreach (var groupId in requested.Where(g => !existingIds.Contains(g)))
+        {
+            await _groups.AddMemberAsync(new UserGroupMember { Id = Guid.NewGuid(), UserGroupId = groupId, UserId = id }, cancellationToken);
+        }
+
+        await _audit.AddAsync(nameof(User), id.ToString(), "GroupsUpdated", cancellationToken: cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Ok(ApiResponseFactory.Success(new { userId = id, groupIds = requested.ToList() }, "Groups updated."));
+    }
+
     /// <summary>
     /// Resolves the role to assign from either an explicit <paramref name="roleId"/> (RBAC) or the
     /// legacy <paramref name="roleName"/> enum, returning the legacy enum (for transition-era policies)
@@ -625,8 +671,17 @@ public sealed class UsersController : ControllerBase
             user.DisplayName,
             user.IsActive,
             user.MustChangePassword,
-            user.TenantRoles.Select(r => new TenantAssignmentDto(r.TenantId, r.Role.ToString(), r.RoleId, r.RoleEntity?.Name)).ToList());
+            user.TenantRoles.Select(r => new TenantAssignmentDto(r.TenantId, r.Role.ToString(), r.RoleId, r.RoleEntity?.Name)).ToList(),
+            // GetByIdAsync already scopes memberships to the active tenant via the ambient filter.
+            GroupsFor(user, null));
     }
+
+    /// <summary>The user's group memberships as DTOs, optionally restricted to a specific tenant.</summary>
+    private static IReadOnlyList<UserGroupDto> GroupsFor(User user, Guid? tenantId) => user.GroupMemberships
+        .Where(m => !m.Deleted && m.UserGroup != null && (tenantId == null || m.TenantId == tenantId))
+        .Select(m => new UserGroupDto(m.UserGroup!.Id, m.UserGroup!.Name))
+        .OrderBy(g => g.Name)
+        .ToList();
 
     private async Task<IReadOnlyDictionary<Guid, string>> ResolveActorNamesAsync(IEnumerable<Guid?> ids, CancellationToken cancellationToken)
         => await _users.GetFullNamesAsync(ids.Where(id => id.HasValue).Select(id => id!.Value), cancellationToken);

@@ -39,4 +39,7 @@ public class User : AuditableEntity
 
     /// <summary>The user's tenant/role assignments.</summary>
     public ICollection<UserTenantRole> TenantRoles { get; set; } = new List<UserTenantRole>();
+
+    /// <summary>The user's group memberships (tenant-scoped segmentation).</summary>
+    public ICollection<UserGroupMember> GroupMemberships { get; set; } = new List<UserGroupMember>();
 }

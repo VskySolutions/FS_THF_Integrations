@@ -25,7 +25,7 @@ public interface IUserRepository
     /// </summary>
     Task<(IReadOnlyList<User> Items, int Total)> ListAsync(
         Guid? tenantId, string? search, bool? isActive,
-        string? name, string? email, string? phone, string? role,
+        string? name, string? email, string? phone, string? role, string? group,
         int page, int limit, CancellationToken cancellationToken = default);
 
     Task AddAsync(User user, CancellationToken cancellationToken = default);

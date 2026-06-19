@@ -160,6 +160,7 @@ const columns = computed(() => [
   { name: "email", label: "Email", field: "email", align: "left", sortable: true, default: true },
   { name: "phoneNumber", label: "Phone", field: "phoneNumber", align: "left", sortable: true },
   { name: "roles", label: "Role", field: (r) => (r.roles || []).join(", "), align: "left", sortable: false, default: true },
+  { name: "groups", label: "Groups", field: (r) => (r.groups || []).map((g) => g.name).join(", "), align: "left", sortable: false, default: true },
   { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true, default: true, filterOptions: [{ label: "Active", value: true }, { label: "Inactive", value: false }] },
   { name: "createdBy", label: "Created By", field: "createdBy", align: "left", sortable: true, filterable: false },
   { name: "updatedBy", label: "Updated By", field: "updatedBy", align: "left", sortable: true, filterable: false },
@@ -179,7 +180,8 @@ const { rows, loading, totalRecords, selected, search, filterOpen, pagination, l
       name: filters.fullName || undefined,
       email: filters.email || undefined,
       phone: filters.phoneNumber || undefined,
-      role: filters.roles || undefined
+      role: filters.roles || undefined,
+      group: filters.groups || undefined
     }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),
   onError: (err) => notify.error(getApiErrorMessage(err))
 });

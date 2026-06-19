@@ -22,6 +22,8 @@ public static class Permissions
     public const string UsersRead = "users.read";
     public const string UsersWrite = "users.write";
     public const string UsersResetPassword = "users.reset_password";
+    /// <summary>Create user groups and assign/remove users from them (and delete groups).</summary>
+    public const string UsersGroupManagement = "users.groupManagement";
 
     // Roles (RBAC management)
     public const string RolesRead = "roles.read";
@@ -61,7 +63,7 @@ public static class Permissions
     {
         TenantsRead, TenantsWrite, TenantsArchive, TenantsCredentials,
         PersonsRead, PersonsWrite, PersonsDelete,
-        UsersRead, UsersWrite, UsersResetPassword,
+        UsersRead, UsersWrite, UsersResetPassword, UsersGroupManagement,
         RolesRead, RolesWrite, RolesAssign,
         MappingsRead, MappingsWrite,
         JobsRead, JobsTrigger, JobsRetry, JobsDelete, JobsSchedule, LogsRead,
@@ -79,7 +81,7 @@ public static class Permissions
         // Deleting persons and changing role assignments are Super-Admin-only (PersonsDelete /
         // RolesAssign intentionally excluded here).
         PersonsRead, PersonsWrite,
-        UsersRead, UsersWrite, UsersResetPassword,
+        UsersRead, UsersWrite, UsersResetPassword, UsersGroupManagement,
         RolesRead,
         MappingsRead, MappingsWrite,
         JobsRead, JobsTrigger, JobsRetry, JobsDelete, JobsSchedule, LogsRead,

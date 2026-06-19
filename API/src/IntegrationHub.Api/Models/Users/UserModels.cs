@@ -48,6 +48,37 @@ public sealed class AssignTenantRoleRequest
 
 public sealed record TenantAssignmentDto(Guid TenantId, string Role, Guid? RoleId, string? RoleName);
 
+// ---- User groups ----
+
+/// <summary>Lightweight reference to a user group (used on user summaries/details).</summary>
+public sealed record UserGroupDto(Guid Id, string Name);
+
+/// <summary>A user group with its member count + provenance (for the groups picker / management list).</summary>
+public sealed record UserGroupResponse(
+    Guid Id, string Name, string? Description, int MemberCount, string? CreatedBy, DateTime CreatedOnUtc);
+
+public sealed class CreateUserGroupRequest
+{
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+}
+
+/// <summary>Replaces a user's group memberships with the given set.</summary>
+public sealed class AssignUserGroupsRequest
+{
+    public List<Guid> GroupIds { get; set; } = new();
+}
+
+/// <summary>A member (user) of a group, with who added them and when — for the group's members list.</summary>
+public sealed record UserGroupMemberResponse(
+    Guid UserId, string FullName, string? Email, bool IsActive, string? AddedBy, DateTime AddedOnUtc);
+
+/// <summary>Adds the given users to a group (members already present are ignored).</summary>
+public sealed class AddGroupMembersRequest
+{
+    public List<Guid> UserIds { get; set; } = new();
+}
+
 public sealed record CreateUserResponse(Guid UserId, string TemporaryPassword);
 
 public sealed record ResetPasswordResponse(Guid UserId, string TemporaryPassword);
@@ -61,6 +92,7 @@ public sealed record UserSummary(
     string? PhoneNumber,
     string? TenantName,
     IReadOnlyList<string> Roles,
+    IReadOnlyList<UserGroupDto> Groups,
     bool IsActive,
     string? CreatedBy,
     string? UpdatedBy,
@@ -78,4 +110,5 @@ public sealed record UserDetail(
     string DisplayName,
     bool IsActive,
     bool MustChangePassword,
-    IReadOnlyList<TenantAssignmentDto> Assignments);
+    IReadOnlyList<TenantAssignmentDto> Assignments,
+    IReadOnlyList<UserGroupDto> Groups);

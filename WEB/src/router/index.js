@@ -24,6 +24,7 @@ import integrationRoutes from "modules/integration/routes";
 import mappingRoutes from "modules/mapping/routes";
 import customerRoutes from "modules/customer/routes";
 import permissionGroupRoutes from "modules/permission-group/routes";
+import userGroupRoutes from "modules/user-group/routes";
 import dashboardRoutes from "modules/dashboard/routes";
 
 routes.push(...accountRoutes);
@@ -36,6 +37,7 @@ routes.push(...integrationRoutes);
 routes.push(...mappingRoutes);
 routes.push(...customerRoutes);
 routes.push(...permissionGroupRoutes);
+routes.push(...userGroupRoutes);
 routes.push(...dashboardRoutes);
 
 export default route(function ({ store }) {

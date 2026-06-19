@@ -15,7 +15,9 @@ internal sealed class UserRepository : IUserRepository
 
     public async Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        // Group memberships are tenant-filtered, so they naturally scope to the active tenant here.
         var user = await _dbContext.Users.Include(u => u.TenantRoles).ThenInclude(r => r.RoleEntity)
+            .Include(u => u.GroupMemberships).ThenInclude(m => m.UserGroup)
             .FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
 
         await LoadPersonAsync(user, cancellationToken);
@@ -77,20 +79,28 @@ internal sealed class UserRepository : IUserRepository
 
     public async Task<(IReadOnlyList<User> Items, int Total)> ListAsync(
         Guid? tenantId, string? search, bool? isActive,
-        string? name, string? email, string? phone, string? role,
+        string? name, string? email, string? phone, string? role, string? group,
         int page, int limit, CancellationToken cancellationToken = default)
     {
         // Ignore query filters (the Person tenant filter would otherwise blank the name / drop the row
         // for users whose person tenant differs or is unset) and re-apply the soft-delete predicates.
+        // Group memberships are scoped to the list tenant manually (the ambient filter is off here).
         var query = _dbContext.Users
             .IgnoreQueryFilters()
             .Where(u => !u.Deleted)
             .Include(u => u.TenantRoles.Where(r => !r.Deleted)).ThenInclude(r => r.RoleEntity)
+            .Include(u => u.GroupMemberships.Where(m => !m.Deleted && (tenantId == null || m.TenantId == tenantId))).ThenInclude(m => m.UserGroup)
             .Include(u => u.Person)
             .AsQueryable();
         if (tenantId is { } id)
         {
             query = query.Where(u => u.TenantRoles.Any(r => r.TenantId == id && !r.Deleted));
+        }
+        if (!string.IsNullOrWhiteSpace(group))
+        {
+            var gt = group.Trim();
+            query = query.Where(u => u.GroupMemberships.Any(m =>
+                !m.Deleted && (tenantId == null || m.TenantId == tenantId) && m.UserGroup != null && m.UserGroup.Name.Contains(gt)));
         }
         if (!string.IsNullOrWhiteSpace(search))
         {

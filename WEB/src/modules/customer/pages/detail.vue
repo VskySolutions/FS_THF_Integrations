@@ -118,9 +118,9 @@
               </q-item>
               <q-item v-if="!documents.length"><q-item-section class="text-grey-6">No documents uploaded.</q-item-section></q-item>
             </q-list>
-            <div class="row items-end q-col-gutter-md q-mt-sm">
+            <div class="row items-center q-col-gutter-md q-mt-sm">
               <q-file
-                v-model="docFile" outlined dense stack-label class="col" label="Upload a document"
+                v-model="docFile" outlined dense stack-label hide-bottom-space class="col" label="Upload a document"
                 :accept="acceptExtensions" hint="Allowed: pdf, doc, docx, xls, xlsx, csv, txt, png, jpg, jpeg"
               >
                 <template #prepend><q-icon name="o_attach_file" /></template>

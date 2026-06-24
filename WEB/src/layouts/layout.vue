@@ -40,6 +40,7 @@
             </q-list>
           </q-btn-dropdown>
 
+          <notification-centre v-if="isLoggedIn" />
           <user-info v-if="isLoggedIn" />
           <q-btn v-else unelevated color="primary" no-caps icon="o_login" label="Login" :to="{ name: 'login' }" />
         </div>
@@ -56,6 +57,9 @@
     <q-page-container>
       <router-view />
     </q-page-container>
+
+    <!-- Universal Features floating sticky notes overlay (authenticated users only). -->
+    <sticky-note-layer v-if="isLoggedIn" />
 
     <q-footer bordered class="bg-white">
       <div class="text-center q-py-sm">
@@ -79,6 +83,8 @@ import { useTenantStore } from "stores/tenant";
 import UserInfo from "shared/user_info.vue";
 import AsideHeader from "shared/aside_header.vue";
 import AppMenu from "src/components/app_menu.vue";
+import NotificationCentre from "components/universal/NotificationCentre.vue";
+import StickyNoteLayer from "components/universal/StickyNoteLayer.vue";
 
 const isLoggedIn = !!LocalStorage.getItem("token");
 

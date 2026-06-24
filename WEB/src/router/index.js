@@ -28,6 +28,7 @@ import userGroupRoutes from "modules/user-group/routes";
 import dashboardRoutes from "modules/dashboard/routes";
 import smtpRoutes from "modules/smtp/routes";
 import emailTemplateRoutes from "modules/email-template/routes";
+import universalRoutes from "modules/universal/routes";
 
 routes.push(...accountRoutes);
 routes.push(...authRoutes);
@@ -43,6 +44,7 @@ routes.push(...userGroupRoutes);
 routes.push(...dashboardRoutes);
 routes.push(...smtpRoutes);
 routes.push(...emailTemplateRoutes);
+routes.push(...universalRoutes);
 
 export default route(function ({ store }) {
   const createHistory = process.env.SERVER

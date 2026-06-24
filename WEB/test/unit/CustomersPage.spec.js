@@ -7,7 +7,8 @@ vi.mock("quasar", () => ({ debounce: (fn) => fn }));
 
 vi.mock("services/api", () => ({
   customerApi: { list: vi.fn(), remove: vi.fn() },
-  getApiErrorMessage: (e) => String(e)
+  getApiErrorMessage: (e) => String(e),
+  EntityType: { CustomerRequest: 1, IntegrationJob: 2, Tenant: 3, User: 4, UserGroup: 5 }
 }));
 
 // useListTable: return a controllable surface so we can drive rows / empty state.
@@ -60,6 +61,7 @@ const stubs = {
   AppColumnFilters: { template: "<div />" },
   AppSelect: { template: "<div class='app-select' />" },
   CustomerFormDrawer: { template: "<div class='customer-form-drawer' />" },
+  DeletedRecordsPanel: { template: "<div class='deleted-records-panel' />" },
   // AppDataTable: expose rows + the status/no-data slots so we can assert on them.
   AppDataTable: {
     props: ["rows"],

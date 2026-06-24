@@ -34,6 +34,31 @@
           </q-item-section>
         </q-item>
         <q-separator class="q-mb-sm" />
+        <q-item v-ripple :to="{ name: 'uf_mentions' }" clickable>
+          <q-item-section avatar>
+            <q-icon name="o_alternate_email" color="orange" class="material-icons-outlined" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label>My Mentions</q-item-label>
+          </q-item-section>
+        </q-item>
+        <q-item v-ripple :to="{ name: 'uf_pinned' }" clickable>
+          <q-item-section avatar>
+            <q-icon name="o_push_pin" color="orange" class="material-icons-outlined" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label>My Pinned</q-item-label>
+          </q-item-section>
+        </q-item>
+        <q-item v-ripple :to="{ name: 'uf_notification_preferences' }" clickable>
+          <q-item-section avatar>
+            <q-icon name="o_tune" color="orange" class="material-icons-outlined" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label>Notification Preferences</q-item-label>
+          </q-item-section>
+        </q-item>
+        <q-separator class="q-my-sm" />
         <q-item v-ripple :to="{ name: 'profile' }" clickable>
           <q-item-section avatar>
             <q-icon name="person" class="material-icons-outlined" color="orange" />

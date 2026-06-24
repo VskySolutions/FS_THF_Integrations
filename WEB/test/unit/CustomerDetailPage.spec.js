@@ -8,7 +8,13 @@ vi.mock("services/api", () => ({
   customerApi,
   getApiErrorMessage: (e) => String(e),
   getApiErrorCode: () => null,
-  ApiErrorCodes: { ValidationFailed: "VALIDATION_FAILED" }
+  ApiErrorCodes: { ValidationFailed: "VALIDATION_FAILED" },
+  EntityType: { CustomerRequest: 1, IntegrationJob: 2, Tenant: 3, User: 4, UserGroup: 5 }
+}));
+
+// Universal Features composable + child components are exercised in their own specs; stub here.
+vi.mock("composables/uf/useFieldLogCounts", () => ({
+  useFieldLogCounts: () => ({ counts: { value: {} }, load: vi.fn(), getCount: () => 0 })
 }));
 
 vi.mock("composables/useNotify", () => ({ useNotify: () => ({ success: vi.fn(), error: vi.fn() }) }));
@@ -74,7 +80,11 @@ const stubs = {
   QDialog: { props: ["modelValue"], template: "<div v-if='modelValue'><slot /></div>" },
   QForm: passthrough,
   QInput: true,
-  QCardActions: passthrough
+  QCardActions: passthrough,
+  // Universal Features children — stubbed (covered by their own specs).
+  EntityUniversalPanel: true,
+  EntityHeaderActions: true,
+  FieldLogIcon: true
 };
 
 const mountDetail = async (detail) => {

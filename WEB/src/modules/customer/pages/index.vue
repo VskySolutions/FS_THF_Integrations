@@ -91,6 +91,14 @@
       </template>
     </app-data-table>
 
+    <!-- Admin-only deleted records (Show Deleted, restore, permanently delete). -->
+    <deleted-records-panel
+      v-if="canAdminDelete"
+      :entity-type="EntityType.CustomerRequest"
+      class="q-mt-md"
+      @restored="load"
+    />
+
     <customer-form-drawer ref="createDrawer" v-model="formOpen" :tenant-id="selectedTenantId" @saved="onSaved" />
   </q-page>
 </template>
@@ -115,6 +123,8 @@ import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import CustomerFormDrawer from "modules/customer/components/CustomerFormDrawer.vue";
+import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
+import { EntityType } from "services/api";
 
 const notify = useNotify();
 const { confirm } = useConfirm();
@@ -122,6 +132,7 @@ const fmt = useDateFormat();
 const tenantStore = useTenantStore();
 const { canChooseTenant, tenantOptions, loadingTenants, loadTenants } = useTenantOptions();
 const { has } = usePermissions();
+const canAdminDelete = computed(() => has(Permissions.RecordsAdminDelete));
 // Customer data-entry capability gates create / submit / delete (the data-entry stage of the workflow).
 const canDataEntry = computed(() => has(Permissions.CustomersDataEntry));
 const { customerStatusColor: statusColor, customerStatusLabel: statusLabel } = useCustomerStatus();

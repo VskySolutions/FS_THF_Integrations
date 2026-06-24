@@ -307,6 +307,152 @@ export const adminApi = {
   health: () => api.get("/api/admin/health").then(unwrap)
 };
 
+// ---------------------------------------------------------------------------
+// Universal Features (Phase 14/15). Attach to any entity via (entityType, entityId).
+// EntityType enum: CustomerRequest=1, IntegrationJob=2, Tenant=3, User=4, UserGroup=5.
+// ---------------------------------------------------------------------------
+
+export const EntityType = Object.freeze({
+  CustomerRequest: 1,
+  IntegrationJob: 2,
+  Tenant: 3,
+  User: 4,
+  UserGroup: 5
+});
+
+// Notes (@mention-aware annotations).
+export const ufNotesApi = {
+  list: (params) => api.get("/api/uf/notes", { params }).then(envelope),
+  create: (payload) => api.post("/api/uf/notes", payload).then(unwrap),
+  update: (id, payload) => api.put(`/api/uf/notes/${id}`, payload).then(unwrap),
+  remove: (id) => api.delete(`/api/uf/notes/${id}`).then(envelope),
+  // Tenant users for the @mention autocomplete.
+  mentionCandidates: (search) => api.get("/api/uf/mention-candidates", { params: { search } }).then(unwrap)
+};
+
+// Tags (admin CRUD + entity application).
+export const ufTagsApi = {
+  list: (search) => api.get("/api/admin/tags", { params: { search } }).then(unwrap),
+  // Read-only picker list available to any tenant user (for applying tags).
+  picker: (search) => api.get("/api/uf/tags", { params: { search } }).then(unwrap),
+  create: (payload) => api.post("/api/admin/tags", payload).then(unwrap),
+  update: (id, payload) => api.put(`/api/admin/tags/${id}`, payload).then(unwrap),
+  remove: (id) => api.delete(`/api/admin/tags/${id}`).then(envelope),
+  entityTags: (entityType, entityId) => api.get("/api/uf/entity-tags", { params: { entityType, entityId } }).then(unwrap),
+  apply: (payload) => api.post("/api/uf/entity-tags", payload).then(unwrap),
+  removeApplication: (id) => api.delete(`/api/uf/entity-tags/${id}`).then(envelope)
+};
+
+// Attachments.
+export const ufAttachmentsApi = {
+  list: (entityType, entityId) => api.get("/api/uf/attachments", { params: { entityType, entityId } }).then(unwrap),
+  upload: (entityType, entityId, file) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("entityType", entityType);
+    form.append("entityId", entityId);
+    return api.post("/api/uf/attachments", form, { headers: { "Content-Type": "multipart/form-data" } }).then(unwrap);
+  },
+  download: (id) => api.get(`/api/uf/attachments/${id}/download`, { responseType: "blob" }).then((r) => r?.data),
+  remove: (id) => api.delete(`/api/uf/attachments/${id}`).then(envelope)
+};
+
+// Activity timeline (read-only).
+export const ufActivityApi = {
+  list: (params) => api.get("/api/uf/activity", { params }).then(envelope)
+};
+
+// Reminders (personal).
+export const ufReminderApi = {
+  list: (params) => api.get("/api/uf/reminders", { params }).then(envelope),
+  create: (payload) => api.post("/api/uf/reminders", payload).then(unwrap),
+  update: (id, payload) => api.put(`/api/uf/reminders/${id}`, payload).then(unwrap),
+  remove: (id) => api.delete(`/api/uf/reminders/${id}`).then(envelope)
+};
+
+// Notification centre + preferences.
+export const ufNotificationApi = {
+  list: (params) => api.get("/api/notifications", { params }).then(envelope),
+  unreadCount: () => api.get("/api/notifications/unread-count").then(unwrap),
+  markRead: (id) => api.put(`/api/notifications/${id}/read`).then(envelope),
+  markAllRead: () => api.put("/api/notifications/read-all").then(envelope),
+  getPreferences: () => api.get("/api/notifications/preferences").then(unwrap),
+  updatePreferences: (preferences) => api.put("/api/notifications/preferences", { preferences }).then(envelope),
+  // Mention inbox.
+  mentions: (params) => api.get("/api/uf/mentions", { params }).then(envelope),
+  markMentionRead: (id) => api.put(`/api/uf/mentions/${id}/read`).then(envelope)
+};
+
+// Pins (bookmarks).
+export const ufPinApi = {
+  list: (params) => api.get("/api/uf/pins", { params }).then(envelope),
+  create: (payload) => api.post("/api/uf/pins", payload).then(unwrap),
+  remove: (id) => api.delete(`/api/uf/pins/${id}`).then(envelope)
+};
+
+// Colour codes (row tinting).
+export const ufColourApi = {
+  batch: (entityType, entityIds) => api.get("/api/uf/colour-codes", { params: { entityType, entityIds }, paramsSerializer: { indexes: null } }).then(unwrap),
+  upsert: (payload) => api.put("/api/uf/colour-codes", payload).then(unwrap)
+};
+
+// PDF export (binary stream).
+export const ufPdfApi = {
+  export: (payload) => api.post("/api/uf/pdf-export", payload, { responseType: "blob" }).then((r) => r?.data)
+};
+
+// Saved views.
+export const ufSavedViewApi = {
+  list: (listPage) => api.get("/api/uf/saved-views", { params: { listPage } }).then(unwrap),
+  shared: () => api.get("/api/uf/saved-views/shared").then(unwrap),
+  create: (payload) => api.post("/api/uf/saved-views", payload).then(unwrap),
+  update: (id, payload) => api.put(`/api/uf/saved-views/${id}`, payload).then(unwrap),
+  remove: (id) => api.delete(`/api/uf/saved-views/${id}`).then(envelope)
+};
+
+// Checklists.
+export const ufChecklistApi = {
+  list: (entityType, entityId) => api.get("/api/uf/checklists", { params: { entityType, entityId } }).then(unwrap),
+  create: (payload) => api.post("/api/uf/checklists", payload).then(unwrap),
+  addItem: (id, text) => api.post(`/api/uf/checklists/${id}/items`, { text }).then(unwrap),
+  toggleItem: (id, itemId, isCompleted) => api.patch(`/api/uf/checklists/${id}/items/${itemId}`, { isCompleted }).then(unwrap),
+  editItem: (id, itemId, text) => api.put(`/api/uf/checklists/${id}/items/${itemId}`, { text }).then(unwrap),
+  reorder: (id, itemIds) => api.put(`/api/uf/checklists/${id}/reorder`, { itemIds }).then(unwrap),
+  removeItem: (id, itemId) => api.delete(`/api/uf/checklists/${id}/items/${itemId}`).then(envelope),
+  remove: (id) => api.delete(`/api/uf/checklists/${id}`).then(envelope)
+};
+
+// Sticky notes (personal + tenant broadcast) and per-user layout state.
+export const ufStickyNoteApi = {
+  list: (scope) => api.get("/api/uf/sticky-notes", { params: { scope } }).then(unwrap),
+  create: (payload) => api.post("/api/uf/sticky-notes", payload).then(unwrap),
+  update: (id, payload) => api.put(`/api/uf/sticky-notes/${id}`, payload).then(unwrap),
+  remove: (id) => api.delete(`/api/uf/sticky-notes/${id}`).then(envelope),
+  dismiss: (id) => api.post(`/api/uf/sticky-notes/${id}/dismiss`).then(envelope),
+  saveState: (noteId, payload) => api.put(`/api/uf/sticky-note-states/${noteId}`, payload).then(envelope),
+  adminList: () => api.get("/api/admin/sticky-notes").then(unwrap)
+};
+
+// Deleted records management.
+export const ufDeletedApi = {
+  list: (params) => api.get("/api/uf/deleted", { params }).then(envelope),
+  restore: (payload) => api.post("/api/uf/restore", payload).then(envelope),
+  restoreBulk: (payload) => api.post("/api/uf/restore/bulk", payload).then(unwrap),
+  hardDelete: (payload) => api.delete("/api/uf/hard-delete", { data: payload }).then(envelope),
+  hardDeleteBulk: (payload) => api.delete("/api/uf/hard-delete/bulk", { data: payload }).then(envelope),
+  getRetention: (tenantId) => api.get("/api/admin/retention-config", { params: { tenantId } }).then(unwrap),
+  updateRetention: (retentionDays, tenantId) => api.put("/api/admin/retention-config", { retentionDays }, { params: { tenantId } }).then(unwrap),
+  overdue: (tenantId) => api.get("/api/admin/retention-overdue", { params: { tenantId } }).then(unwrap)
+};
+
+// Modified log (field change history).
+export const ufModifiedLogApi = {
+  history: (params) => api.get("/api/uf/modified-log", { params }).then(envelope),
+  iconCounts: (entityType, entityId) => api.get("/api/uf/modified-log/icon-counts", { params: { entityType, entityId } }).then(unwrap),
+  config: (entityType) => api.get("/api/admin/modified-log-config", { params: { entityType } }).then(unwrap),
+  toggleConfig: (fieldKey, isEnabled) => api.patch(`/api/admin/modified-log-config/${fieldKey}`, { isEnabled }).then(unwrap)
+};
+
 // Dashboard (WO-73). Role-aware analytics endpoints + per-user layout persistence. Tenant-scoped
 // endpoints auto-scope to the active tenant; Super Admins may target a tenant via `tenantId`.
 // `params` carries `{ dateRange, tenantId? }`. All responses use the standard ApiResponse envelope.

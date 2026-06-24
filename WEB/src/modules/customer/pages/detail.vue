@@ -9,6 +9,12 @@
     >
       <template #actions>
         <q-badge v-if="detail" :color="statusColor(detail.status)" class="q-mr-sm">{{ statusLabel(detail.status) }}</q-badge>
+        <entity-header-actions
+          v-if="detail"
+          :entity-type="EntityType.CustomerRequest"
+          :entity-id="customerId"
+          :label="detail.customerRequestNumber || 'customer'"
+        />
       </template>
     </app-detail-header>
 
@@ -72,7 +78,10 @@
               <app-text-field v-model="enrich.creditTerms" label="Credit Terms" placeholder="e.g. 30 days" hint="Credit period granted to the customer." class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
               <app-text-field v-model="enrich.customerType" label="Customer Type" placeholder="e.g. Direct" hint="Direct, Partner, Reseller, etc." class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
               <app-text-field v-model="enrich.businessSegment" label="Business Segment" placeholder="e.g. Enterprise" hint="Market segment (SMB, Mid-market, Enterprise…)." class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
-              <app-text-field v-model="enrich.riskCategory" label="Risk Category" placeholder="e.g. Low" hint="Risk rating: Low, Medium or High." class="col-12 col-sm-6" :readonly="!detail.actions.canEnrich" />
+              <div class="col-12 col-sm-6 row items-center no-wrap">
+                <app-text-field v-model="enrich.riskCategory" label="Risk Category" placeholder="e.g. Low" hint="Risk rating: Low, Medium or High." class="col" :readonly="!detail.actions.canEnrich" />
+                <field-log-icon :entity-type="EntityType.CustomerRequest" :entity-id="customerId" field-name="RiskCategory" field-label="Risk Category" :count="fieldLog.getCount('RiskCategory')" class="q-ml-xs" />
+              </div>
             </div>
 
             <q-separator class="q-mb-md" />
@@ -93,8 +102,14 @@
               <app-text-field v-model="step2.businessUnit" label="Business Unit *" placeholder="e.g. UK-Operations" hint="Mandatory. Maconomy business unit to post against." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
               <app-text-field v-model="step2.currency" label="Currency *" placeholder="e.g. USD" hint="Mandatory. 3-letter ISO currency code." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
               <app-text-field v-model="step2.customerGroup" label="Customer Group" placeholder="e.g. Standard" hint="Maconomy customer group for grouping/reporting." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
-              <app-text-field v-model="step2.paymentTerms" label="Payment Terms *" placeholder="e.g. Net 30" hint="Mandatory. Maconomy payment terms code." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
-              <app-text-field v-model="step2.creditLimit" type="number" label="Credit Limit" placeholder="e.g. 50000" hint="Approved credit limit (numeric, in the chosen currency)." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
+              <div class="col-12 col-sm-6 row items-center no-wrap">
+                <app-text-field v-model="step2.paymentTerms" label="Payment Terms *" placeholder="e.g. Net 30" hint="Mandatory. Maconomy payment terms code." class="col" :readonly="!detail.actions.canEditStep2" />
+                <field-log-icon :entity-type="EntityType.CustomerRequest" :entity-id="customerId" field-name="PaymentTerms" field-label="Payment Terms" :count="fieldLog.getCount('PaymentTerms')" class="q-ml-xs" />
+              </div>
+              <div class="col-12 col-sm-6 row items-center no-wrap">
+                <app-text-field v-model="step2.creditLimit" type="number" label="Credit Limit" placeholder="e.g. 50000" hint="Approved credit limit (numeric, in the chosen currency)." class="col" :readonly="!detail.actions.canEditStep2" />
+                <field-log-icon :entity-type="EntityType.CustomerRequest" :entity-id="customerId" field-name="CreditLimit" field-label="Credit Limit" :count="fieldLog.getCount('CreditLimit')" class="q-ml-xs" />
+              </div>
               <app-text-field v-model="step2.industry" label="Industry" placeholder="e.g. Manufacturing" hint="Customer's primary industry." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
               <app-text-field v-model="step2.invoiceLanguage" label="Invoice Language" placeholder="e.g. English" hint="Language Maconomy should use for invoices." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
               <app-text-field v-model="step2.billingEmail" label="Billing Email" placeholder="e.g. billing@acme.com" hint="Email address invoices and billing notices are sent to." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
@@ -186,6 +201,13 @@
           </q-tab-panel>
         </q-tab-panels>
       </q-card>
+
+      <!-- Universal Features collaboration panel (notes, activity, checklists, attachments + tags). -->
+      <entity-universal-panel
+        :entity-type="EntityType.CustomerRequest"
+        :entity-id="customerId"
+        class="q-mt-md"
+      />
 
       <!-- Separate bottom action bar: the workflow actions for the caller's role/state. -->
       <q-card v-if="hasActions" flat bordered class="customer-action-bar q-mt-md">
@@ -304,6 +326,11 @@ import { useCustomerStatus } from "composables/useCustomerStatus";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import AppTextField from "components/common/AppTextField.vue";
 import AppSelect from "components/common/AppSelect.vue";
+import { EntityType } from "services/api";
+import EntityUniversalPanel from "components/universal/EntityUniversalPanel.vue";
+import EntityHeaderActions from "components/universal/EntityHeaderActions.vue";
+import FieldLogIcon from "components/universal/FieldLogIcon.vue";
+import { useFieldLogCounts } from "composables/uf/useFieldLogCounts";
 
 const route = useRoute();
 const notify = useNotify();
@@ -315,6 +342,9 @@ const customerId = route.params.id;
 const loading = ref(true);
 const detail = ref(null);
 const documents = ref([]);
+
+// Universal Features field-change-history icon counts for this record (Credit Limit, Payment Terms, Risk Category).
+const fieldLog = useFieldLogCounts(EntityType.CustomerRequest, customerId);
 
 // Active tab; reviewers/approvers default to the Review tab, everyone else to Basic Information.
 const activeTab = ref("basic");
@@ -705,7 +735,10 @@ const reopen = async () => {
   }
 };
 
-onMounted(load);
+onMounted(() => {
+  load();
+  fieldLog.load();
+});
 </script>
 
 <style scoped>

@@ -1,11 +1,17 @@
 <template>
   <q-page padding>
-    <div class="row items-center q-mb-md">
-      <q-btn flat round dense icon="o_arrow_back" class="q-mr-sm" @click="$router.back()" />
-      <div class="text-h6">Notification Preferences</div>
-      <q-space />
-      <q-btn unelevated no-caps color="primary" icon="o_save" label="Save" :loading="saving" @click="save" />
-    </div>
+    <app-detail-header
+      :items="[
+        { label: 'Home', icon: 'o_home', to: '/' },
+        { label: 'Notifications', to: { name: 'uf_notifications' } },
+        { label: 'Preferences' }
+      ]"
+      :back-to="{ name: 'uf_notifications' }"
+    >
+      <template #actions>
+        <q-btn unelevated no-caps color="primary" icon="o_save" label="Save" :loading="saving" @click="save" />
+      </template>
+    </app-detail-header>
 
     <q-card flat bordered>
       <q-markup-table flat>
@@ -36,6 +42,7 @@ import { ref, onMounted } from "vue";
 import { ufNotificationApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useNotificationMeta } from "composables/uf/useNotificationMeta";
+import AppDetailHeader from "components/common/AppDetailHeader.vue";
 
 const notify = useNotify();
 const { metaFor } = useNotificationMeta();

@@ -1,13 +1,15 @@
 <template>
   <q-page padding>
-    <div class="row items-center q-mb-md">
-      <div class="text-h6">My Mentions</div>
-    </div>
-
-    <div class="row q-gutter-sm q-mb-md">
-      <app-select v-model="entityFilter" :options="entityOptions" label="Entity type" style="min-width: 200px;" @update:model-value="reload" />
-      <app-select v-model="readFilter" :options="readOptions" label="Status" style="min-width: 160px;" @update:model-value="reload" />
-    </div>
+    <app-list-header
+      :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'My Mentions' }]"
+      show-back
+      @back="$router.back()"
+    >
+      <template #actions>
+        <app-select v-model="entityFilter" :options="entityOptions" label="Entity type" style="min-width: 180px;" @update:model-value="reload" />
+        <app-select v-model="readFilter" :options="readOptions" label="Status" style="min-width: 150px;" @update:model-value="reload" />
+      </template>
+    </app-list-header>
 
     <app-data-table
       page-key="uf_mentions"
@@ -54,6 +56,7 @@ import { useNotify } from "composables/useNotify";
 import { useDateFormat } from "composables/useDateFormat";
 import { useEntityMeta } from "composables/uf/useEntityMeta";
 import AppDataTable from "components/common/AppDataTable.vue";
+import AppListHeader from "components/common/AppListHeader.vue";
 import AppSelect from "components/common/AppSelect.vue";
 
 const router = useRouter();

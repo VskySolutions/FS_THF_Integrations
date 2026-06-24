@@ -36,8 +36,14 @@ pattern repeats, extract a component/composable.
   sortable columns, show/hide columns, **drag-to-reorder** columns (`useColumnOrder`), resizable
   columns, multi-select (`selectable`) with a `#bulk-actions` slot, "Actions" column title,
   **View action as a direct icon** outside the `⋮` menu, 20px action icons.
-- **Filters:** `components/common/AppColumnFilters.vue` + `composables/useColumnFilters.js`
-  (a control per column) inside the resizable `AppFilterDrawer`.
+- **Filters (standard on every list):** `components/common/AppColumnFilters.vue` +
+  `composables/useColumnFilters.js` (a control per column) inside the resizable `AppFilterDrawer`.
+  Wire `show-filters` + `:filter-count="filterChips.length"` on `AppListHeader` so the **Filters
+  button shows an applied-filter count badge**, and `:chips="filterChips"` on the drawer for the
+  active-filter chips. Server-paginated lists filter in the API (`useColumnFilters(cols, rows)`,
+  default server mode); load-all lists filter the loaded rows (`{ server: false }`, bind
+  `:rows="filteredRows"` + `:total-records="filteredRows.length"`). Mark date/computed/count columns
+  `filterable: false`; give enum/boolean columns `filterOptions` to render a select.
 
 ### Forms & fields (define once, reuse)
 - Field components: `AppTextField`, `AppDateField`, `AppSelect`, `AppPhoneInput`,

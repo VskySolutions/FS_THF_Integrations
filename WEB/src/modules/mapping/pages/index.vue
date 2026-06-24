@@ -2,7 +2,10 @@
   <q-page padding>
     <app-list-header
       :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'Mapping Configuration' }]"
+      show-filters
+      :filter-count="filterChips.length"
       show-back
+      @filters="filterOpen = true"
       @back="$router.back()"
     >
       <template #actions>
@@ -13,6 +16,10 @@
       </template>
     </app-list-header>
 
+    <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
+      <app-column-filters v-model="filters" :columns="filterableColumns" />
+    </app-filter-drawer>
+
     <q-banner v-if="!tenantId" dense class="bg-orange-1 text-orange-9 q-mb-md">
       <template #avatar><q-icon name="o_warning" color="orange" /></template>
       No active tenant selected.
@@ -22,10 +29,10 @@
       page-key="flow-mappings"
       row-key="interfaceName"
       title="Field mappings by flow"
-      :rows="rows"
+      :rows="filteredRows"
       :columns="columns"
       :loading="loading"
-      :total-records="total"
+      :total-records="filteredRows.length"
       :pagination="pagination"
       @request="onRequest"
       @refresh="load"
@@ -131,12 +138,15 @@ import { useTenantOptions } from "composables/useTenantOptions";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
+import { useColumnFilters } from "composables/useColumnFilters";
 import { useDateFormat } from "composables/useDateFormat";
 
 import AppDataTable from "components/common/AppDataTable.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
+import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
+import AppColumnFilters from "components/common/AppColumnFilters.vue";
 
 // Worked, end-to-end mapping examples shown in the collapsible panel in the form.
 const mappingExamples = [
@@ -161,18 +171,22 @@ const fmt = useDateFormat();
 const columns = [
   { name: "flowLabel", label: "Flow", field: "flowLabel", align: "left", sortable: true, default: true },
   { name: "pair", label: "Systems", field: "sourceSystem", align: "left", default: true },
-  { name: "fieldCount", label: "Fields", field: "fieldCount", align: "left", sortable: true, default: true },
-  { name: "updatedOnUtc", label: "Updated", field: (r) => (r.updatedOnUtc ? fmt.formatDateTime(r.updatedOnUtc) : "—"), align: "left", sortable: true, default: true },
+  { name: "fieldCount", label: "Fields", field: "fieldCount", align: "left", sortable: true, default: true, filterable: false },
+  { name: "updatedOnUtc", label: "Updated", field: (r) => (r.updatedOnUtc ? fmt.formatDateTime(r.updatedOnUtc) : "—"), align: "left", sortable: true, default: true, filterable: false },
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 
-const { rows, loading, totalRecords: total, pagination, load, onRequest } = useListTable({
+const { rows, loading, pagination, load, onRequest } = useListTable({
   fetcher: () => {
     if (!tenantId.value) return Promise.resolve({ data: [], total: 0 });
     return flowMappingApi.list(tenantId.value).then((list) => ({ data: list || [], total: (list || []).length }));
   },
   onError: (err) => notify.error(getApiErrorMessage(err))
 });
+
+// Client-side column filters (the list loads all flow mappings); badge/count standard via AppListHeader.
+const filterOpen = ref(false);
+const { filters, filterableColumns, filteredRows, filterChips, removeFilter, clearFilters } = useColumnFilters(columns, rows, { server: false });
 
 watch(tenantId, () => { pagination.value.page = 1; load(); });
 

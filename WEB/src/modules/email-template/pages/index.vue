@@ -6,7 +6,10 @@
         { label: 'Configuration' },
         { label: 'Email Templates' }
       ]"
+      show-filters
+      :filter-count="filterChips.length"
       show-back
+      @filters="filterOpen = true"
       @back="$router.back()"
     >
       <template #actions>
@@ -16,6 +19,10 @@
         />
       </template>
     </app-list-header>
+
+    <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
+      <app-column-filters v-model="filters" :columns="filterableColumns" />
+    </app-filter-drawer>
 
     <q-banner dense rounded class="bg-blue-1 text-primary q-mb-md">
       <template #avatar><q-icon name="o_info" color="primary" /></template>
@@ -27,10 +34,10 @@
       page-key="email-templates"
       row-key="key"
       title="Email templates"
-      :rows="rows"
+      :rows="filteredRows"
       :columns="columns"
       :loading="loading"
-      :total-records="totalRecords"
+      :total-records="filteredRows.length"
       :pagination="pagination"
       @request="onRequest"
       @refresh="load"
@@ -85,9 +92,12 @@ import { useTenantOptions } from "composables/useTenantOptions";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
+import { useColumnFilters } from "composables/useColumnFilters";
 
 import AppDataTable from "components/common/AppDataTable.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
+import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
+import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import EmailTemplateFormDrawer from "modules/email-template/components/EmailTemplateFormDrawer.vue";
 import EmailTemplatePreviewDialog from "modules/email-template/components/EmailTemplatePreviewDialog.vue";
@@ -113,14 +123,25 @@ const scopeParams = computed(() => {
 const columns = [
   { name: "displayName", label: "Template", field: "displayName", align: "left", sortable: true, default: true },
   { name: "subject", label: "Subject", field: "subject", align: "left", default: true },
-  { name: "status", label: "Status", field: "isOverridden", align: "left", default: true },
+  {
+    name: "status",
+    label: "Status",
+    field: "isOverridden",
+    align: "left",
+    default: true,
+    filterOptions: [{ label: "Overridden", value: true }, { label: "Default", value: false }]
+  },
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 
-const { rows, loading, totalRecords, pagination, load, onRequest } = useListTable({
+const { rows, loading, pagination, load, onRequest } = useListTable({
   fetcher: () => emailTemplateApi.list(scopeParams.value).then((r) => ({ data: r?.data, total: r?.data?.length })),
   onError: (err) => notify.error(getApiErrorMessage(err))
 });
+
+// Client-side column filters (the list loads all templates); badge/count standard via AppListHeader.
+const filterOpen = ref(false);
+const { filters, filterableColumns, filteredRows, filterChips, removeFilter, clearFilters } = useColumnFilters(columns, rows, { server: false });
 
 watch(selectedScope, () => load());
 

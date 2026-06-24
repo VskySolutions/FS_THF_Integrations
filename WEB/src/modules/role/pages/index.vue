@@ -5,22 +5,29 @@
       :search="search"
       show-search
       search-placeholder="Search roles"
+      show-filters
+      :filter-count="filterChips.length"
       show-add
       add-label="Create Role"
       show-back
       @update:search="search = $event"
+      @filters="filterOpen = true"
       @add="openCreate"
       @back="$router.back()"
     />
+
+    <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
+      <app-column-filters v-model="filters" :columns="filterableColumns" />
+    </app-filter-drawer>
 
     <app-data-table
       page-key="roles"
       row-key="id"
       title="Roles"
-      :rows="rows"
+      :rows="filteredRows"
       :columns="columns"
       :loading="loading"
-      :total-records="totalRecords"
+      :total-records="filteredRows.length"
       :pagination="pagination"
       @request="onRequest"
       @refresh="load"
@@ -100,10 +107,13 @@ import { roleApi, tenantApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes 
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
+import { useColumnFilters } from "composables/useColumnFilters";
 
 import AppDataTable from "components/common/AppDataTable.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
+import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
+import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import RolePermissionGroupsPanel from "modules/permission-group/components/RolePermissionGroupsPanel.vue";
 
@@ -113,15 +123,27 @@ const { confirm } = useConfirm();
 const columns = [
   { name: "name", label: "Name", field: "name", align: "left", sortable: true, default: true },
   { name: "description", label: "Description", field: "description", align: "left", default: true },
-  { name: "isSystem", label: "Type", field: "isSystem", align: "left", sortable: true, default: true },
-  { name: "permissionCount", label: "Permissions", field: "permissionCount", align: "left", sortable: true, default: true },
+  {
+    name: "isSystem",
+    label: "Type",
+    field: "isSystem",
+    align: "left",
+    sortable: true,
+    default: true,
+    filterOptions: [{ label: "System", value: true }, { label: "Custom", value: false }]
+  },
+  { name: "permissionCount", label: "Permissions", field: "permissionCount", align: "left", sortable: true, default: true, filterable: false },
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 
-const { rows, loading, totalRecords, search, pagination, load, onRequest } = useListTable({
+const { rows, loading, search, pagination, load, onRequest } = useListTable({
   fetcher: () => roleApi.list({ search: search.value || undefined }).then((r) => ({ data: r || [], total: (r || []).length })),
   onError: (err) => notify.error(getApiErrorMessage(err))
 });
+
+// Client-side column filters (the list loads all roles); badge/count standard via AppListHeader.
+const filterOpen = ref(false);
+const { filters, filterableColumns, filteredRows, filterChips, removeFilter, clearFilters } = useColumnFilters(columns, rows, { server: false });
 
 // Server-side search: reload (debounced, first page) when it changes.
 const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);

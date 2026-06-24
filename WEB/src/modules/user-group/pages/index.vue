@@ -5,13 +5,20 @@
       :search="search"
       show-search
       search-placeholder="Search groups"
+      show-filters
+      :filter-count="filterChips.length"
       show-add
       add-label="Add Group"
       show-back
       @update:search="search = $event"
+      @filters="filterOpen = true"
       @add="openCreate"
       @back="$router.back()"
     />
+
+    <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
+      <app-column-filters v-model="filters" :columns="filterableColumns" />
+    </app-filter-drawer>
 
     <div class="row q-col-gutter-md">
       <!-- Group list -->
@@ -20,10 +27,10 @@
           page-key="user-groups"
           row-key="id"
           title="All groups"
-          :rows="rows"
+          :rows="filteredRows"
           :columns="columns"
           :loading="loading"
-          :total-records="totalRecords"
+          :total-records="filteredRows.length"
           :pagination="pagination"
           default-sort-by="name"
           :default-descending="false"
@@ -170,7 +177,10 @@ import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
 import { useListTable } from "composables/useListTable";
+import { useColumnFilters } from "composables/useColumnFilters";
 import AppListHeader from "components/common/AppListHeader.vue";
+import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
+import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppDataTable from "components/common/AppDataTable.vue";
 import AppTextField from "components/common/AppTextField.vue";
 import AppSelect from "components/common/AppSelect.vue";
@@ -182,9 +192,9 @@ const fmt = useDateFormat();
 const columns = [
   { name: "name", label: "Name", field: "name", align: "left", sortable: true, default: true },
   { name: "description", label: "Description", field: "description", align: "left" },
-  { name: "memberCount", label: "Members", field: "memberCount", align: "left", sortable: true, default: true },
+  { name: "memberCount", label: "Members", field: "memberCount", align: "left", sortable: true, default: true, filterable: false },
   { name: "createdBy", label: "Created By", field: "createdBy", align: "left", sortable: true },
-  { name: "createdOnUtc", label: "Created", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true, default: true },
+  { name: "createdOnUtc", label: "Created", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true, default: true, filterable: false },
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 
@@ -197,12 +207,16 @@ const memberColumns = [
   { name: "actions", label: "", field: "actions", align: "right" }
 ];
 
-const { rows, loading, totalRecords, search, pagination, load, onRequest } = useListTable({
+const { rows, loading, search, pagination, load, onRequest } = useListTable({
   fetcher: () => userGroupApi.list(search.value || undefined).then((r) => ({ data: r || [], total: (r || []).length })),
   onError: (err) => notify.error(getApiErrorMessage(err))
 });
 const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);
 watch(search, reload);
+
+// Client-side column filters (the list loads all groups); badge/count standard via AppListHeader.
+const filterOpen = ref(false);
+const { filters, filterableColumns, filteredRows, filterChips, removeFilter, clearFilters } = useColumnFilters(columns, rows, { server: false });
 
 // ---- Members of the selected group ----
 const selectedGroup = ref(null);

@@ -1,60 +1,64 @@
 <template>
-  <div v-if="show">
-    <div class="row items-center q-mb-sm">
-      <div class="text-subtitle2 text-grey-8">Deleted {{ pluralLabel }}</div>
+  <q-card v-if="show" flat bordered class="uf-deleted-card q-mt-md">
+    <q-card-section class="row items-center q-pb-sm">
+      <q-icon name="o_delete" color="negative" size="22px" class="q-mr-sm" />
+      <div class="text-subtitle1 text-weight-medium text-negative">Deleted {{ pluralLabel }}</div>
       <q-space />
       <q-badge v-if="overdueCount" color="orange-8" :label="`${overdueCount} overdue`" />
-    </div>
+    </q-card-section>
+    <q-separator />
 
-    <app-data-table
-      page-key="uf_deleted"
-      row-key="entityId"
-      selectable
-      :rows="rows"
-      :columns="columns"
-      :loading="loading"
-      :total-records="totalRecords"
-      :pagination="pagination"
-      default-sort-by="deletedOnUtc"
-      @request="onRequest"
-      @refresh="load"
-      @update:selected="selected = $event"
-    >
-      <template #bulk-actions="{ selected: sel }">
-        <q-btn flat dense no-caps color="primary" icon="o_restore" label="Restore Selected" @click="restoreBulk(sel)" />
-        <q-btn flat dense no-caps color="negative" icon="o_delete_forever" label="Permanently Delete Selected" @click="hardDeleteBulk(sel)" />
-      </template>
+    <q-card-section>
+      <app-data-table
+        page-key="uf_deleted"
+        row-key="entityId"
+        selectable
+        :rows="rows"
+        :columns="columns"
+        :loading="loading"
+        :total-records="totalRecords"
+        :pagination="pagination"
+        default-sort-by="deletedOnUtc"
+        @request="onRequest"
+        @refresh="load"
+        @update:selected="selected = $event"
+      >
+        <template #bulk-actions="{ selected: sel }">
+          <q-btn flat dense no-caps color="primary" icon="o_restore" label="Restore Selected" @click="restoreBulk(sel)" />
+          <q-btn flat dense no-caps color="negative" icon="o_delete_forever" label="Permanently Delete Selected" @click="hardDeleteBulk(sel)" />
+        </template>
 
-      <template #body-cell-identity="cell">
-        <q-td :props="cell">
-          <span class="text-strike text-grey-7">{{ cell.row.identity }}</span>
-          <q-badge color="grey-6" label="Deleted" class="q-ml-xs" />
-          <q-chip v-if="cell.row.isRetentionOverdue" dense square color="orange-3" text-color="orange-9" label="Overdue" class="q-ml-xs" />
-        </q-td>
-      </template>
-      <template #body-cell-deletedOnUtc="cell">
-        <q-td :props="cell">{{ formatDateTime(cell.row.deletedOnUtc) }}</q-td>
-      </template>
-      <template #body-cell-actions="cell">
-        <q-td :props="cell" class="text-right">
-          <q-btn flat round dense icon="o_more_vert">
-            <q-menu auto-close>
-              <q-list style="min-width: 180px;">
-                <q-item clickable @click="restore(cell.row)">
-                  <q-item-section avatar><q-icon name="o_restore" color="primary" /></q-item-section>
-                  <q-item-section>Restore</q-item-section>
-                </q-item>
-                <q-separator />
-                <q-item clickable @click="hardDelete(cell.row)">
-                  <q-item-section avatar><q-icon name="o_delete_forever" color="negative" /></q-item-section>
-                  <q-item-section class="text-negative">Permanently Delete</q-item-section>
-                </q-item>
-              </q-list>
-            </q-menu>
-          </q-btn>
-        </q-td>
-      </template>
-    </app-data-table>
+        <template #body-cell-identity="cell">
+          <q-td :props="cell">
+            <span class="text-strike text-grey-7">{{ cell.row.identity }}</span>
+            <q-badge color="grey-6" label="Deleted" class="q-ml-xs" />
+            <q-chip v-if="cell.row.isRetentionOverdue" dense square color="orange-3" text-color="orange-9" label="Overdue" class="q-ml-xs" />
+          </q-td>
+        </template>
+        <template #body-cell-deletedOnUtc="cell">
+          <q-td :props="cell">{{ formatDateTime(cell.row.deletedOnUtc) }}</q-td>
+        </template>
+        <template #body-cell-actions="cell">
+          <q-td :props="cell" class="text-right">
+            <q-btn flat round dense icon="o_more_vert">
+              <q-menu auto-close>
+                <q-list style="min-width: 180px;">
+                  <q-item clickable @click="restore(cell.row)">
+                    <q-item-section avatar><q-icon name="o_restore" color="primary" /></q-item-section>
+                    <q-item-section>Restore</q-item-section>
+                  </q-item>
+                  <q-separator />
+                  <q-item clickable @click="hardDelete(cell.row)">
+                    <q-item-section avatar><q-icon name="o_delete_forever" color="negative" /></q-item-section>
+                    <q-item-section class="text-negative">Permanently Delete</q-item-section>
+                  </q-item>
+                </q-list>
+              </q-menu>
+            </q-btn>
+          </q-td>
+        </template>
+      </app-data-table>
+    </q-card-section>
 
     <!-- Two-step permanent delete dialog -->
     <q-dialog v-model="confirmOpen">
@@ -71,7 +75,7 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
-  </div>
+  </q-card>
 </template>
 
 <script setup>
@@ -222,3 +226,10 @@ const hardDeleteBulk = async (sel) => {
 
 defineExpose({ refresh: () => props.show && load() });
 </script>
+
+<style scoped>
+/* Red accent marks this as the destructive "deleted records" area. */
+.uf-deleted-card {
+  border-left: 3px solid var(--q-negative);
+}
+</style>

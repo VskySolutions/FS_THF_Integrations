@@ -216,7 +216,9 @@ public sealed record CustomerActions
     public bool CanViewStep2 { get; init; }
     public bool CanEditStep2 { get; init; }
     public bool CanApprove { get; init; }
-    /// <summary>Approver sends the request back to the reviewer (replaces the old Reject action).</summary>
+    /// <summary>Approver rejects the request with a mandatory reason.</summary>
+    public bool CanReject { get; init; }
+    /// <summary>Approver sends the request back to the reviewer.</summary>
     public bool CanRevertToReviewer { get; init; }
     /// <summary>Reviewer returns the request to data entry.</summary>
     public bool CanReturn { get; init; }

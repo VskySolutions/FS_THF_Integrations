@@ -17,6 +17,7 @@ public class DashboardQueryServiceTests
     private readonly Mock<ITenantRepository> _tenants = new();
     private readonly Mock<ITenantApiConfigurationRepository> _tenantConfigs = new();
     private readonly Mock<IJobScheduleConfigurationRepository> _schedules = new();
+    private readonly Mock<IUserRepository> _users = new();
     private readonly HealthCheckService _health = new NoopHealthCheckService();
 
     public DashboardQueryServiceTests()
@@ -27,10 +28,12 @@ public class DashboardQueryServiceTests
             .ReturnsAsync(Array.Empty<TenantApiConfiguration>());
         _schedules.Setup(s => s.ListAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<JobScheduleConfiguration>());
+        _users.Setup(u => u.GetFullNamesAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, string>());
     }
 
     private DashboardQueryService Create(IntegrationHubDbContext db)
-        => new(db, _retries.Object, _tenants.Object, _tenantConfigs.Object, _schedules.Object, _health);
+        => new(db, _retries.Object, _tenants.Object, _tenantConfigs.Object, _schedules.Object, _users.Object, _health);
 
     private static IntegrationJob Job(Guid tenantId, IntegrationJobStatus status, DateTime createdOnUtc, string interfaceName = "ExpenseImport")
         => new()

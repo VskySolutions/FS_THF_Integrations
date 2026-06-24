@@ -1,0 +1,275 @@
+<template>
+  <q-page padding>
+    <app-list-header
+      :breadcrumbs="[
+        { label: 'Home', icon: 'o_home', to: '/' },
+        { label: 'Configuration' },
+        { label: 'Email Accounts' }
+      ]"
+      :search="search"
+      show-search
+      search-placeholder="Search name, host or from address"
+      show-filters
+      :filter-count="filterChips.length"
+      show-add
+      add-label="Add Account"
+      show-back
+      @update:search="search = $event"
+      @filters="filterOpen = true"
+      @add="openCreate"
+      @back="$router.back()"
+    >
+      <template #actions>
+        <app-select
+          v-if="canChooseTenant" v-model="selectedTenantId" :options="tenantOptions" label="Tenant"
+          :loading="loadingTenants" :clearable="false" style="min-width: 220px;"
+        />
+      </template>
+    </app-list-header>
+
+    <!-- Warning when the tenant has accounts but none is active (AC-SMTP-009.3). -->
+    <q-banner v-if="showNoActiveWarning" dense rounded class="bg-red-1 text-negative q-mb-md">
+      <template #avatar><q-icon name="o_warning" color="negative" /></template>
+      No active email account is configured for this tenant. Set one active so notifications can be sent.
+    </q-banner>
+
+    <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
+      <app-column-filters v-model="filters" :columns="filterableColumns" />
+    </app-filter-drawer>
+
+    <app-data-table
+      page-key="smtp-accounts"
+      row-key="id"
+      title="All email accounts"
+      :rows="rows"
+      :columns="columns"
+      :loading="loading"
+      :total-records="totalRecords"
+      :pagination="pagination"
+      default-sort-by="accountName"
+      :default-descending="false"
+      selectable
+      @request="onRequest"
+      @refresh="load"
+      @update:selected="selected = $event"
+    >
+      <template #bulk-actions="{ selected: sel }">
+        <q-btn flat dense no-caps color="negative" icon="o_delete" label="Delete" @click="bulkDelete(sel)" />
+      </template>
+
+      <template #body-cell-encryptionType="cell">
+        <q-td :props="cell">{{ encryptionLabel(cell.row.encryptionType) }}</q-td>
+      </template>
+
+      <template #body-cell-status="cell">
+        <q-td :props="cell">
+          <q-badge :color="cell.value ? 'positive' : 'grey'">{{ cell.value ? "Active" : "Inactive" }}</q-badge>
+        </q-td>
+      </template>
+
+      <template #body-cell-actions="cell">
+        <q-td :props="cell" class="text-right">
+          <q-btn flat round dense color="primary" icon="o_edit" @click="openEdit(cell.row)">
+            <q-tooltip>Edit</q-tooltip>
+          </q-btn>
+          <q-btn flat round dense icon="o_more_vert">
+            <q-menu auto-close>
+              <q-list style="min-width: 190px;">
+                <q-item clickable @click="openEdit(cell.row)">
+                  <q-item-section avatar><q-icon name="o_edit" /></q-item-section>
+                  <q-item-section>Edit</q-item-section>
+                </q-item>
+                <q-item v-if="!cell.row.isActive" clickable @click="setActive(cell.row)">
+                  <q-item-section avatar><q-icon name="o_check_circle" /></q-item-section>
+                  <q-item-section>Set as Active</q-item-section>
+                </q-item>
+                <q-item clickable @click="openTest(cell.row)">
+                  <q-item-section avatar><q-icon name="o_send" /></q-item-section>
+                  <q-item-section>Send Test Email</q-item-section>
+                </q-item>
+                <q-separator />
+                <q-item clickable :disable="cell.row.isActive" @click="deleteAccount(cell.row)">
+                  <q-item-section avatar><q-icon name="o_delete" :color="cell.row.isActive ? 'grey-5' : 'negative'" /></q-item-section>
+                  <q-item-section :class="cell.row.isActive ? 'text-grey-5' : 'text-negative'">Delete</q-item-section>
+                  <q-tooltip v-if="cell.row.isActive">The active account cannot be deleted.</q-tooltip>
+                </q-item>
+              </q-list>
+            </q-menu>
+          </q-btn>
+        </q-td>
+      </template>
+
+      <template #no-data>
+        <div class="full-width column flex-center q-pa-xl text-grey-6">
+          <q-icon name="o_mail" size="40px" class="q-mb-sm" />
+          <div class="text-subtitle1 q-mb-xs">No email accounts configured</div>
+          <div class="q-mb-md">Add your first SMTP account to send notifications for this tenant.</div>
+          <q-btn unelevated no-caps color="primary" icon="o_add" label="Add Account" @click="openCreate" />
+        </div>
+      </template>
+    </app-data-table>
+
+    <smtp-account-form-drawer
+      v-model="formOpen" :tenant-id="selectedTenantId" :account-id="editingId" @saved="onSaved"
+    />
+
+    <test-email-dialog v-model="testOpen" :account="testAccount" :tenant-id="selectedTenantId" />
+  </q-page>
+</template>
+
+<script setup>
+import { ref, computed, watch } from "vue";
+import { debounce } from "quasar";
+import { smtpAccountApi, getApiErrorMessage } from "services/api";
+import { useTenantStore } from "stores/tenant";
+import { useTenantOptions } from "composables/useTenantOptions";
+import { useNotify } from "composables/useNotify";
+import { useConfirm } from "composables/useConfirm";
+import { useListTable } from "composables/useListTable";
+import { useColumnFilters } from "composables/useColumnFilters";
+import { useDateFormat } from "composables/useDateFormat";
+import { useSmtpOptions } from "composables/useSmtpOptions";
+
+import AppDataTable from "components/common/AppDataTable.vue";
+import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
+import AppColumnFilters from "components/common/AppColumnFilters.vue";
+import AppListHeader from "components/common/AppListHeader.vue";
+import AppSelect from "components/common/AppSelect.vue";
+import SmtpAccountFormDrawer from "modules/smtp/components/SmtpAccountFormDrawer.vue";
+import TestEmailDialog from "modules/smtp/components/TestEmailDialog.vue";
+
+const notify = useNotify();
+const { confirm } = useConfirm();
+const tenantStore = useTenantStore();
+const fmt = useDateFormat();
+const { encryptionLabel } = useSmtpOptions();
+const { canChooseTenant, tenantOptions, loadingTenants, loadTenants } = useTenantOptions();
+
+// Super admins scope the list to a chosen tenant; others are auto-scoped server-side.
+const selectedTenantId = ref(null);
+const scopeTenantId = () => (canChooseTenant.value && selectedTenantId.value ? selectedTenantId.value : undefined);
+
+const STATUS_OPTIONS = [
+  { label: "Active", value: "active" },
+  { label: "Inactive", value: "inactive" }
+];
+
+const columns = [
+  { name: "accountName", label: "Account Name", field: "accountName", align: "left", sortable: true, default: true, filterable: false },
+  { name: "host", label: "Host", field: "host", align: "left", sortable: true, default: true, filterable: false },
+  { name: "port", label: "Port", field: "port", align: "left", sortable: true, default: true, filterable: false },
+  { name: "fromEmail", label: "From Email", field: "fromEmail", align: "left", sortable: true, default: true, filterable: false },
+  { name: "encryptionType", label: "Encryption", field: "encryptionType", align: "left", default: true, filterable: false },
+  { name: "status", label: "Status", field: "isActive", align: "left", sortable: true, default: true, filterOptions: STATUS_OPTIONS },
+  { name: "createdByName", label: "Created By", field: "createdByName", align: "left", default: true, filterable: false },
+  { name: "createdOnUtc", label: "Created Date", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true, default: true, filterable: false },
+  { name: "actions", label: "Actions", field: "actions", align: "right" }
+];
+
+const { rows, loading, totalRecords, selected, search, filterOpen, pagination, load, onRequest } = useListTable({
+  fetcher: ({ page, limit }) =>
+    smtpAccountApi.list({
+      tenantId: scopeTenantId(),
+      status: filters.status || undefined,
+      page,
+      limit
+    }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords ?? r?.data?.length })),
+  onError: (err) => notify.error(getApiErrorMessage(err))
+});
+
+const { filters, filterableColumns, filterChips, removeFilter, clearFilters } = useColumnFilters(columns, rows, { server: true });
+const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);
+watch([search, filters], reload, { deep: true });
+watch(selectedTenantId, () => { pagination.value.page = 1; load(); });
+
+if (canChooseTenant.value) {
+  loadTenants();
+  selectedTenantId.value = tenantStore.activeTenantId;
+}
+
+// Warn only when not filtering by status, the tenant has accounts, and none is active.
+const showNoActiveWarning = computed(() =>
+  !filters.status && !loading.value && rows.value.length > 0 && !rows.value.some((r) => r.isActive));
+
+// ---- Create / Edit ----
+const formOpen = ref(false);
+const editingId = ref(null);
+
+const openCreate = () => { editingId.value = null; formOpen.value = true; };
+const openEdit = (row) => { editingId.value = row.id; formOpen.value = true; };
+const onSaved = () => { formOpen.value = false; load(); };
+
+// ---- Set active ----
+const setActive = async (row) => {
+  if (row.isActive) return; // already active → no-op (AC-SMTP-005.3)
+  const ok = await confirm({
+    title: "Set active account",
+    message: `Make "${row.accountName}" the active sending account for this tenant?`,
+    type: "primary"
+  });
+  if (!ok) return;
+  try {
+    await smtpAccountApi.activate(row.id, scopeTenantId());
+    notify.success("Active account updated.");
+    load();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  }
+};
+
+// ---- Test ----
+const testOpen = ref(false);
+const testAccount = ref(null);
+const openTest = (row) => { testAccount.value = row; testOpen.value = true; };
+
+// ---- Delete ----
+const deleteAccount = async (row) => {
+  if (row.isActive) {
+    notify.error("The active account cannot be deleted. Activate another account first.");
+    return;
+  }
+  const ok = await confirm({
+    title: "Delete email account",
+    message: `Delete "${row.accountName}"? This cannot be undone.`,
+    confirmLabel: "Delete",
+    type: "danger"
+  });
+  if (!ok) return;
+  try {
+    await smtpAccountApi.remove(row.id, scopeTenantId());
+    notify.success("Email account deleted.");
+    load();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  }
+};
+
+// ---- Bulk delete (active accounts are skipped, as they cannot be deleted) ----
+const bulkDelete = async (sel) => {
+  if (!sel.length) return;
+  const deletable = sel.filter((r) => !r.isActive);
+  const skipped = sel.length - deletable.length;
+  if (!deletable.length) {
+    notify.error("The active account cannot be deleted. Activate another account first.");
+    return;
+  }
+  const ok = await confirm({
+    title: "Delete email accounts",
+    message: `Delete ${deletable.length} account(s)?${skipped ? ` ${skipped} active account(s) will be skipped.` : ""}`,
+    confirmLabel: "Delete",
+    type: "danger"
+  });
+  if (!ok) return;
+  try {
+    await Promise.all(deletable.map((r) => smtpAccountApi.remove(r.id, scopeTenantId())));
+    notify.success(`Deleted ${deletable.length} account(s).${skipped ? ` Skipped ${skipped} active.` : ""}`);
+    selected.value = [];
+    load();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  }
+};
+
+// Exposed for unit tests (and parent interactions).
+defineExpose({ openCreate, openEdit, setActive, deleteAccount, bulkDelete, openTest, showNoActiveWarning });
+</script>

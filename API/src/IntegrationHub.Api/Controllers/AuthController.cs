@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using IntegrationHub.Api.Models.Auth;
 using IntegrationHub.Api.Security;
+using IntegrationHub.Application.Abstractions.Email;
 using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Application.Abstractions.Security;
 using IntegrationHub.Domain.Entities;
@@ -35,6 +36,7 @@ public sealed class AuthController : ControllerBase
     private readonly ITenantRepository _tenants;
     private readonly IUnitOfWork _unitOfWork;
     private readonly AuthenticationOptions _options;
+    private readonly IEmailNotificationService _emailNotifications;
 
     public AuthController(
         IUserRepository users,
@@ -43,7 +45,8 @@ public sealed class AuthController : ControllerBase
         IJwtTokenService jwt,
         ITenantRepository tenants,
         IUnitOfWork unitOfWork,
-        IOptions<AuthenticationOptions> options)
+        IOptions<AuthenticationOptions> options,
+        IEmailNotificationService emailNotifications)
     {
         _users = users;
         _refreshTokens = refreshTokens;
@@ -52,6 +55,7 @@ public sealed class AuthController : ControllerBase
         _tenants = tenants;
         _unitOfWork = unitOfWork;
         _options = options.Value;
+        _emailNotifications = emailNotifications;
     }
 
     [HttpPost("/api/auth/login")]
@@ -240,6 +244,18 @@ public sealed class AuthController : ControllerBase
         _users.Update(user);
         await _refreshTokens.RevokeAllForUserAsync(user.Id, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // Best-effort confirmation email via the user's tenant active SMTP account.
+        var tenantForEmail = User.GetActiveTenantId() ?? user.TenantRoles.FirstOrDefault()?.TenantId;
+        if (tenantForEmail is { } tid)
+        {
+            await _emailNotifications.SendAsync(tid, EmailTemplateKey.PasswordChanged, user.Email,
+                new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["FullName"] = user.DisplayName,
+                    ["ChangedAtUtc"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm"),
+                }, cancellationToken);
+        }
 
         return Ok(ApiResponseFactory.Success(new { message = "Password changed." }, "Password changed."));
     }

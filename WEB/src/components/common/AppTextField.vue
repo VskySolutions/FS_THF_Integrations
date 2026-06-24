@@ -3,6 +3,7 @@
     v-model="model"
     :label="label"
     :type="type"
+    :placeholder="placeholder"
     :rules="rules"
     :error="error"
     :error-message="errorMessage"
@@ -37,6 +38,7 @@ const props = defineProps({
   modelValue: { type: [String, Number], default: "" },
   label: { type: String, default: "" },
   type: { type: String, default: "text" },
+  placeholder: { type: String, default: undefined },
   rules: { type: Array, default: () => [] },
   error: { type: Boolean, default: false },
   errorMessage: { type: String, default: "" },

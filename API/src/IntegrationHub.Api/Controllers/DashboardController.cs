@@ -129,9 +129,12 @@ public sealed class DashboardController : ControllerBase
                 "Layout retrieved."));
         }
 
-        var defaults = DashboardDefaultLayouts.For(ResolveDashboardRole());
+        var role = ResolveDashboardRole();
         return Ok(ApiResponseFactory.Success(
-            new DashboardLayoutResponse(defaults, Array.Empty<string>(), Array.Empty<string>()),
+            new DashboardLayoutResponse(
+                DashboardDefaultLayouts.For(role),
+                DashboardDefaultLayouts.DefaultHiddenFor(role),
+                Array.Empty<string>()),
             "Default layout retrieved."));
     }
 

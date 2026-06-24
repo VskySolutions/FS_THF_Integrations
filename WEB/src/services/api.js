@@ -247,6 +247,8 @@ export const customerApi = {
   // body: { step2: {...}, duplicateAcknowledged } → { approved, status, duplicates[] }
   approve: (id, step2, duplicateAcknowledged = false) =>
     api.post(`/api/customers/${id}/approve`, { step2, duplicateAcknowledged }).then(unwrap),
+  // Approver rejects an awaiting-approval request with a mandatory reason. body: { reason }
+  reject: (id, reason) => api.post(`/api/customers/${id}/reject`, { reason }).then(unwrap),
   // Approver sends an awaiting-approval request back to the reviewer. body: { notes? }
   revertToReviewer: (id, notes = null) => api.post(`/api/customers/${id}/revert-to-reviewer`, { notes }).then(unwrap),
   // Reviewer returns a request under review to data entry. body: { notes, fields[] } → { customerId, status }
@@ -267,6 +269,38 @@ export const customerApi = {
     api.get(`/api/customers/${id}/documents/${documentId}/download`, { responseType: "blob" }).then((r) => r?.data),
   removeDocument: (id, documentId) =>
     api.delete(`/api/customers/${id}/documents/${documentId}`).then(unwrap)
+};
+
+// Per-tenant SMTP email accounts (WO-80/81). Reads require users.read; writes require email.manage.
+// Super Admins target a tenant via the `tenantId` query (list/get/write) or create body; everyone
+// else is auto-scoped to their active tenant. Passwords are write-only and never returned.
+export const smtpAccountApi = {
+  // params: { tenantId?, status? } — status is "active" | "inactive".
+  list: (params) => api.get("/api/admin/smtp-accounts", { params }).then(envelope),
+  get: (id, tenantId) => api.get(`/api/admin/smtp-accounts/${id}`, { params: { tenantId } }).then(unwrap),
+  // payload: { tenantId?, accountName, host, port, encryptionType, authType, username?, password?, fromName, fromEmail }
+  create: (payload) => api.post("/api/admin/smtp-accounts", payload).then(unwrap),
+  // payload: same as create minus tenantId; omit password to preserve the existing one.
+  update: (id, payload, tenantId) =>
+    api.put(`/api/admin/smtp-accounts/${id}`, payload, { params: { tenantId } }).then(unwrap),
+  remove: (id, tenantId) => api.delete(`/api/admin/smtp-accounts/${id}`, { params: { tenantId } }).then(envelope),
+  activate: (id, tenantId) => api.put(`/api/admin/smtp-accounts/${id}/activate`, null, { params: { tenantId } }).then(unwrap),
+  // body: { recipientEmail } → { success, sentAtUtc?, serverResponse?, errorCategory?, errorDetail? }
+  test: (id, recipientEmail, tenantId) =>
+    api.post(`/api/admin/smtp-accounts/${id}/test`, { recipientEmail }, { params: { tenantId } }).then(unwrap)
+};
+
+// Transactional email templates (WO email templates). Reads require users.read; writes require
+// email.manage. Tenant Admins manage their tenant overrides; Super Admins manage the platform
+// defaults (`global: true`) or any tenant (`tenantId`). `params` carries `{ tenantId?, global? }`.
+export const emailTemplateApi = {
+  list: (params) => api.get("/api/admin/email-templates", { params }).then(envelope),
+  get: (key, params) => api.get(`/api/admin/email-templates/${key}`, { params }).then(unwrap),
+  // payload: { subject, body }
+  save: (key, payload, params) => api.put(`/api/admin/email-templates/${key}`, payload, { params }).then(unwrap),
+  reset: (key, params) => api.delete(`/api/admin/email-templates/${key}`, { params }).then(unwrap),
+  // payload: { subject?, body? } — renders the draft (or the effective template) with sample data.
+  preview: (key, payload, params) => api.post(`/api/admin/email-templates/${key}/preview`, payload, { params }).then(unwrap)
 };
 
 export const adminApi = {

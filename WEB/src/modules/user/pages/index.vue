@@ -98,6 +98,14 @@
           :loading="loadingTenants" class="q-mb-md" :clearable="false" @update:model-value="onTenantChange"
         />
         <app-select v-model="form.roleId" :options="roleOptions" label="Role *" class="q-mb-md" :clearable="false" :loading="loadingRoles" />
+
+        <q-toggle
+          v-model="form.sendInvitation" color="primary"
+          label="Send invitation email with the temporary password"
+        />
+        <div class="text-caption text-grey-7 q-mb-md">
+          Emails the user their login link and temporary password via the tenant's active SMTP account.
+        </div>
       </q-form>
     </app-form-drawer>
 
@@ -196,7 +204,7 @@ const formOpen = ref(false);
 const saving = ref(false);
 const emailError = ref("");
 const formRef = ref(null);
-const form = reactive({ personId: null, email: "", roleId: null, tenantId: null });
+const form = reactive({ personId: null, email: "", roleId: null, tenantId: null, sendInvitation: false });
 const personDialogOpen = ref(false);
 const roleOptions = ref([]);
 const loadingRoles = ref(false);
@@ -296,6 +304,7 @@ const resetForm = () => {
   form.email = "";
   form.roleId = null;
   form.tenantId = null;
+  form.sendInvitation = false;
   roleOptions.value = [];
   emailError.value = "";
   personLocked.value = false;
@@ -352,14 +361,24 @@ const submitForm = async ({ clearDraft } = {}) => {
       personId: form.personId,
       email: form.email,
       roleId: form.roleId,
-      tenantId
+      tenantId,
+      sendInvitation: form.sendInvitation
     };
+    const recipientEmail = form.email;
+    const wantedInvite = form.sendInvitation;
     const result = await userApi.create(payload);
     clearDraft?.();
     formOpen.value = false;
     resetForm();
     tempPassword.value = result?.temporaryPassword || "";
     tempPwOpen.value = true;
+    if (wantedInvite) {
+      if (result?.invitationEmailSent) {
+        notify.success(`Invitation email sent to ${recipientEmail}.`);
+      } else {
+        notify.warning("User created, but the invitation email could not be sent (no active SMTP account). Share the temporary password manually.");
+      }
+    }
     load();
   } catch (err) {
     if (getApiErrorCode(err) === ApiErrorCodes.DuplicateIdentifier) {

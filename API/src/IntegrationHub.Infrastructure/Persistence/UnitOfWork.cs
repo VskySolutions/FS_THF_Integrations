@@ -1,4 +1,5 @@
 using IntegrationHub.Application.Abstractions.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace IntegrationHub.Infrastructure.Persistence;
 
@@ -17,4 +18,17 @@ internal sealed class UnitOfWork : IUnitOfWork
 
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         => _dbContext.SaveChangesAsync(cancellationToken);
+
+    public async Task ExecuteInTransactionAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken = default)
+    {
+        // Use an execution strategy so the transaction is retried as a unit under the connection
+        // resiliency policy. The in-memory provider used by unit tests treats this as a no-op.
+        var strategy = _dbContext.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+            await operation(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        });
+    }
 }

@@ -35,6 +35,24 @@ public static class DashboardDefaultLayouts
         DashboardRole.TenantAdmin => TenantAdmin,
         _ => Common,
     };
+
+    /// <summary>
+    /// Widgets hidden by default: everything except the customer-related charts/reports. New users land
+    /// on a customer-focused dashboard and can switch the rest on from Customise. Roles without any
+    /// customer widgets (e.g. Common/Operator) hide nothing, so their dashboard stays fully populated.
+    /// </summary>
+    public static IReadOnlyList<string> DefaultHiddenFor(DashboardRole role)
+    {
+        var order = For(role);
+        var hasCustomerWidgets = order.Any(IsCustomerWidget);
+        return hasCustomerWidgets
+            ? order.Where(key => !IsCustomerWidget(key)).ToArray()
+            : Array.Empty<string>();
+    }
+
+    /// <summary>True for the customer-related widget keys (the only widgets shown by default).</summary>
+    private static bool IsCustomerWidget(string key)
+        => key.Contains("customer", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>The dashboard layout tier a caller resolves to (independent of the RBAC role string).</summary>

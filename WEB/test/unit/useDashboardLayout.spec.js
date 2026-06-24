@@ -27,7 +27,7 @@ const { notify } = vi.hoisted(() => ({ notify: { success: vi.fn(), error: vi.fn(
 vi.mock("composables/useNotify", () => ({ useNotify: () => notify }));
 
 import { useDashboardLayout } from "composables/useDashboardLayout";
-import { defaultLayoutForRole } from "modules/dashboard/widgets/registry";
+import { defaultLayoutForRole, defaultHiddenForRole } from "modules/dashboard/widgets/registry";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -69,7 +69,8 @@ describe("useDashboardLayout", () => {
     await layout.loadLayout();
 
     expect(layout.widgetOrder.value).toEqual(defaultLayoutForRole("superAdmin"));
-    expect(layout.hiddenWidgets.value).toEqual([]);
+    // Non-customer widgets are hidden by default (customer-focused dashboard).
+    expect(layout.hiddenWidgets.value).toEqual(defaultHiddenForRole("superAdmin"));
     expect(layout.collapsedWidgets.value).toEqual([]);
   });
 
@@ -145,7 +146,8 @@ describe("useDashboardLayout", () => {
     await layout.resetToDefault();
 
     expect(layout.widgetOrder.value).toEqual(defaultLayoutForRole("tenantAdmin"));
-    expect(layout.hiddenWidgets.value).toEqual([]);
+    // Reset restores the customer-focused default: non-customer widgets hidden.
+    expect(layout.hiddenWidgets.value).toEqual(defaultHiddenForRole("tenantAdmin"));
     expect(layout.collapsedWidgets.value).toEqual([]);
     expect(notify.success).toHaveBeenCalled();
 

@@ -1,6 +1,7 @@
 using IntegrationHub.Api.Models.Users;
 using IntegrationHub.Api.Security;
 using IntegrationHub.Application.Abstractions.Auditing;
+using IntegrationHub.Application.Abstractions.Email;
 using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Application.Abstractions.Security;
 using IntegrationHub.Domain.Entities;
@@ -35,6 +36,7 @@ public sealed class UsersController : ControllerBase
     private readonly IPersonRepository _persons;
     private readonly ITenantRepository _tenants;
     private readonly IUserGroupRepository _groups;
+    private readonly IEmailNotificationService _emailNotifications;
 
     public UsersController(
         IUserRepository users,
@@ -45,7 +47,8 @@ public sealed class UsersController : ControllerBase
         IRoleRepository roles,
         IPersonRepository persons,
         ITenantRepository tenants,
-        IUserGroupRepository groups)
+        IUserGroupRepository groups,
+        IEmailNotificationService emailNotifications)
     {
         _users = users;
         _passwordHasher = passwordHasher;
@@ -56,6 +59,7 @@ public sealed class UsersController : ControllerBase
         _persons = persons;
         _tenants = tenants;
         _groups = groups;
+        _emailNotifications = emailNotifications;
     }
 
     [HttpPost("/api/admin/users")]
@@ -185,8 +189,21 @@ public sealed class UsersController : ControllerBase
             details: $"role={role}; tenant={tenantId}", cancellationToken: cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+        // Optionally email the invitation (with the temporary password) via the tenant's active SMTP account.
+        var invitationEmailSent = false;
+        if (request.SendInvitation && tenantId is { } inviteTenant)
+        {
+            invitationEmailSent = await _emailNotifications.SendAsync(inviteTenant, EmailTemplateKey.UserInvitation, user.Email,
+                new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["FullName"] = user.DisplayName,
+                    ["Email"] = user.Email,
+                    ["TemporaryPassword"] = temporaryPassword,
+                }, cancellationToken);
+        }
+
         return StatusCode(StatusCodes.Status201Created,
-            ApiResponseFactory.Success(new CreateUserResponse(user.Id, temporaryPassword), "User created."));
+            ApiResponseFactory.Success(new CreateUserResponse(user.Id, temporaryPassword, invitationEmailSent), "User created."));
     }
 
     [HttpGet("/api/admin/users")]
@@ -372,6 +389,7 @@ public sealed class UsersController : ControllerBase
                 ApiResponseFactory.Forbidden("Not permitted to manage this user."));
         }
 
+        var wasActive = user.IsActive;
         if (!request.IsActive && user.IsActive)
         {
             user.TokenVersion++; // deactivation invalidates sessions
@@ -382,6 +400,16 @@ public sealed class UsersController : ControllerBase
         await _audit.AddAsync(nameof(User), user.Id.ToString(),
             request.IsActive ? "Activated" : "Deactivated", cancellationToken: cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // Best-effort welcome email on the inactive → active transition.
+        if (request.IsActive && !wasActive && TenantForUserEmail(user) is { } welcomeTenant)
+        {
+            await _emailNotifications.SendAsync(welcomeTenant, EmailTemplateKey.Welcome, user.Email,
+                new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["FullName"] = user.DisplayName,
+                }, cancellationToken);
+        }
 
         return Ok(ApiResponseFactory.Success(new { userId = user.Id, isActive = user.IsActive }, "Status updated."));
     }
@@ -417,9 +445,21 @@ public sealed class UsersController : ControllerBase
         await _audit.AddAsync(nameof(User), user.Id.ToString(), "PasswordReset", cancellationToken: cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+        // Best-effort: email the new temporary password via the relevant tenant's active SMTP account.
+        var emailSent = false;
+        if (TenantForUserEmail(user) is { } resetTenant)
+        {
+            emailSent = await _emailNotifications.SendAsync(resetTenant, EmailTemplateKey.PasswordReset, user.Email,
+                new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["FullName"] = user.DisplayName,
+                    ["TemporaryPassword"] = temporaryPassword,
+                }, cancellationToken);
+        }
+
         // AC-ADM-013.2: the plaintext temporary password is returned only in this response.
         return Ok(ApiResponseFactory.Success(
-            new ResetPasswordResponse(user.Id, temporaryPassword), "Password reset."));
+            new ResetPasswordResponse(user.Id, temporaryPassword, emailSent), "Password reset."));
     }
 
     [HttpPost("/api/admin/users/{id:guid}/tenant-assignments")]
@@ -645,6 +685,10 @@ public sealed class UsersController : ControllerBase
 
         return UserRole.Operator;
     }
+
+    /// <summary>The tenant whose SMTP account should send a user's email: the caller's active tenant, else the user's first assignment.</summary>
+    private Guid? TenantForUserEmail(User user)
+        => User.GetActiveTenantId() ?? user.TenantRoles.FirstOrDefault()?.TenantId;
 
     private bool CanCallerSee(User user)
     {

@@ -23,6 +23,7 @@ public sealed class DashboardQueryService : IDashboardQueryService
     private readonly ITenantRepository _tenants;
     private readonly ITenantApiConfigurationRepository _tenantConfigs;
     private readonly IJobScheduleConfigurationRepository _schedules;
+    private readonly IUserRepository _users;
     private readonly HealthCheckService _healthChecks;
 
     public DashboardQueryService(
@@ -31,6 +32,7 @@ public sealed class DashboardQueryService : IDashboardQueryService
         ITenantRepository tenants,
         ITenantApiConfigurationRepository tenantConfigs,
         IJobScheduleConfigurationRepository schedules,
+        IUserRepository users,
         HealthCheckService healthChecks)
     {
         _db = db;
@@ -38,6 +40,7 @@ public sealed class DashboardQueryService : IDashboardQueryService
         _tenants = tenants;
         _tenantConfigs = tenantConfigs;
         _schedules = schedules;
+        _users = users;
         _healthChecks = healthChecks;
     }
 
@@ -304,12 +307,23 @@ public sealed class DashboardQueryService : IDashboardQueryService
             .Take(take)
             .Select(a => new
             {
-                a.Id, a.ActionType, a.PerformedBy, a.PerformedOnUtc, a.CustomerRequestId, a.Notes,
+                a.Id, a.ActionType, a.PerformedById, a.PerformedBy, a.PerformedOnUtc, a.CustomerRequestId, a.Notes,
                 Number = a.CustomerRequest != null ? a.CustomerRequest.CustomerRequestNumber : null,
             })
             .ToListAsync(cancellationToken);
+
+        // Resolve actor ids to display names (the denormalised PerformedBy can hold an id, never shown raw).
+        var actorNames = await _users.GetFullNamesAsync(
+            rows.Where(a => a.PerformedById.HasValue).Select(a => a.PerformedById!.Value), cancellationToken);
+
         return rows.Select(a => new ActivityEntry(
-            a.Id, a.ActionType.ToString(), a.PerformedBy, a.PerformedOnUtc, a.CustomerRequestId, a.Number, a.Notes)).ToList();
+            a.Id,
+            a.ActionType.ToString(),
+            a.PerformedById is { } pid && actorNames.TryGetValue(pid, out var name) ? name : null,
+            a.PerformedOnUtc,
+            a.CustomerRequestId,
+            a.Number,
+            a.Notes)).ToList();
     }
 
     private async Task<IReadOnlyList<SubmitterCount>> TopSubmittersAsync(Guid? tenantId, CancellationToken cancellationToken)

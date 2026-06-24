@@ -85,6 +85,10 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
 
     public DbSet<UserGroupMember> UserGroupMembers => Set<UserGroupMember>();
 
+    public DbSet<SmtpAccount> SmtpAccounts => Set<SmtpAccount>();
+
+    public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();
+
     /// <summary>Data Protection key ring storage (Multi-Tenancy ADR-002).</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
@@ -112,6 +116,8 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
         // User groups + memberships are tenant-scoped so a tenant only ever sees its own groups.
         modelBuilder.Entity<UserGroup>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<UserGroupMember>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        // SMTP accounts are tenant-scoped; a tenant only ever sees its own mail accounts.
+        modelBuilder.Entity<SmtpAccount>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
 
         // Soft-delete filters for the non-tenant-scoped entities.
         modelBuilder.Entity<Tenant>().HasQueryFilter(e => !e.Deleted);
@@ -120,6 +126,9 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
         modelBuilder.Entity<RefreshToken>().HasQueryFilter(e => !e.Deleted);
         modelBuilder.Entity<TenantApiConfiguration>().HasQueryFilter(e => !e.Deleted);
         modelBuilder.Entity<JobScheduleConfiguration>().HasQueryFilter(e => !e.Deleted);
+        // Email templates carry a nullable TenantId (null = platform default); a tenant filter would
+        // hide the defaults, so they use the soft-delete filter only and are scoped explicitly in the repo.
+        modelBuilder.Entity<EmailTemplate>().HasQueryFilter(e => !e.Deleted);
         modelBuilder.Entity<Role>().HasQueryFilter(e => !e.Deleted);
         modelBuilder.Entity<TenantRole>().HasQueryFilter(e => !e.Deleted);
         modelBuilder.Entity<Address>().HasQueryFilter(e => !e.Deleted);
@@ -232,6 +241,9 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
                     break;
                 case UserGroupMember member when member.TenantId == Guid.Empty:
                     member.TenantId = _tenantContext.TenantId;
+                    break;
+                case SmtpAccount smtpAccount when smtpAccount.TenantId == Guid.Empty:
+                    smtpAccount.TenantId = _tenantContext.TenantId;
                     break;
             }
         }

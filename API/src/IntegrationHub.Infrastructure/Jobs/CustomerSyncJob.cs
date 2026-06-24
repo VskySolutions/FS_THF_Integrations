@@ -1,5 +1,6 @@
 using global::Hangfire;
 using IntegrationHub.Application.Abstractions.Connectors.Maconomy;
+using IntegrationHub.Application.Abstractions.Email;
 using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Application.Abstractions.Tenancy;
 using IntegrationHub.Application.Customers;
@@ -38,6 +39,8 @@ public sealed class CustomerSyncJob
     private readonly ICustomerMaconomyMapper _mapper;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IBackgroundJobClient _backgroundJobs;
+    private readonly IUserRepository _users;
+    private readonly IEmailNotificationService _emailNotifications;
     private readonly ILogger<CustomerSyncJob> _logger;
 
     public CustomerSyncJob(
@@ -52,6 +55,8 @@ public sealed class CustomerSyncJob
         ICustomerMaconomyMapper mapper,
         IUnitOfWork unitOfWork,
         IBackgroundJobClient backgroundJobs,
+        IUserRepository users,
+        IEmailNotificationService emailNotifications,
         ILogger<CustomerSyncJob> logger)
     {
         _tenantContext = tenantContext;
@@ -65,6 +70,8 @@ public sealed class CustomerSyncJob
         _mapper = mapper;
         _unitOfWork = unitOfWork;
         _backgroundJobs = backgroundJobs;
+        _users = users;
+        _emailNotifications = emailNotifications;
         _logger = logger;
     }
 
@@ -127,6 +134,11 @@ public sealed class CustomerSyncJob
             _requests.Update(request);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             _logger.LogInformation("CustomerSyncJob: request {Request} synced as {Number}", request.Id, request.MaconomyCustomerNumber);
+
+            await NotifySubmitterAsync(request, EmailTemplateKey.CustomerSynced, new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MaconomyCustomerNumber"] = request.MaconomyCustomerNumber,
+            }, cancellationToken);
             return;
         }
 
@@ -160,8 +172,39 @@ public sealed class CustomerSyncJob
             $"Sync failed: {error}", cancellationToken);
         _requests.Update(request);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-        // Tenant Admin notification is surfaced via the audit trail + structured log (no email channel in MVP).
         _logger.LogError("CustomerSyncJob: request {Request} for tenant {Tenant} marked Failed: {Error}", request.Id, request.TenantId, error);
+
+        await NotifySubmitterAsync(request, EmailTemplateKey.CustomerSyncFailed, new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["ErrorMessage"] = error,
+        }, cancellationToken);
+    }
+
+    /// <summary>Emails the request's submitter a workflow template (best-effort; no-op when there's no submitter/email).</summary>
+    private async Task NotifySubmitterAsync(CustomerRequest request, EmailTemplateKey key, IReadOnlyDictionary<string, string?> extra, CancellationToken cancellationToken)
+    {
+        if (request.SubmittedById is not { } sid)
+        {
+            return;
+        }
+        var submitter = await _users.GetByIdAsync(sid, cancellationToken);
+        if (submitter is null || string.IsNullOrWhiteSpace(submitter.Email))
+        {
+            return;
+        }
+
+        var model = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["SubmitterName"] = submitter.DisplayName,
+            ["CustomerName"] = string.IsNullOrWhiteSpace(request.CompanyName) ? request.LegalName : request.CompanyName,
+            ["CustomerRequestNumber"] = request.CustomerRequestNumber,
+        };
+        foreach (var kv in extra)
+        {
+            model[kv.Key] = kv.Value;
+        }
+
+        await _emailNotifications.SendAsync(request.TenantId, key, submitter.Email, model, cancellationToken);
     }
 
     private async Task<IntegrationJob> CreateJobAsync(CustomerRequest request, CancellationToken cancellationToken)

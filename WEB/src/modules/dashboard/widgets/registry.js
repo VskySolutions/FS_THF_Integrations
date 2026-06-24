@@ -60,6 +60,17 @@ export function widgetsForRole (role) {
   return WIDGETS.filter((w) => keys.has(w.key));
 }
 
+// Customer-related charts/reports are the only widgets shown by default; the rest are hidden and can be
+// switched on from Customise. Mirrors DashboardDefaultLayouts.DefaultHiddenFor on the backend.
+const isCustomerWidget = (w) => w.category === "customers" || /customer/i.test(w.key);
+
+export function defaultHiddenForRole (role) {
+  const visible = widgetsForRole(role);
+  // Roles without any customer widgets (e.g. common/operator) hide nothing — keep their dashboard full.
+  if (!visible.some(isCustomerWidget)) return [];
+  return visible.filter((w) => !isCustomerWidget(w)).map((w) => w.key);
+}
+
 // Quick lookup by key.
 export const WIDGETS_BY_KEY = Object.freeze(
   WIDGETS.reduce((map, w) => { map[w.key] = w; return map; }, {}));

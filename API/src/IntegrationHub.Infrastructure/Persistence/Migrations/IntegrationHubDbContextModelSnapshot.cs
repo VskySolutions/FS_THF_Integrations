@@ -559,6 +559,56 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                     b.ToTable("DashboardLayouts", (string)null);
                 });
 
+            modelBuilder.Entity("IntegrationHub.Domain.Entities.EmailTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("Deleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("TemplateKey")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "TemplateKey")
+                        .IsUnique()
+                        .HasFilter("[Deleted] = 0");
+
+                    b.ToTable("EmailTemplates", (string)null);
+                });
+
             modelBuilder.Entity("IntegrationHub.Domain.Entities.IntegrationJob", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1557,6 +1607,90 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                     b.ToTable("RolePermissionGroups", (string)null);
                 });
 
+            modelBuilder.Entity("IntegrationHub.Domain.Entities.SmtpAccount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AccountName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("AuthType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("Deleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("EncryptedPassword")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("EncryptionType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("FromEmail")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("FromName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Host")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("Port")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Username")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_SmtpAccounts_TenantId_ActiveSingle")
+                        .HasFilter("[IsActive] = 1 AND [Deleted] = 0");
+
+                    b.HasIndex("TenantId", "AccountName")
+                        .IsUnique()
+                        .HasFilter("[Deleted] = 0");
+
+                    b.ToTable("SmtpAccounts", (string)null);
+                });
+
             modelBuilder.Entity("IntegrationHub.Domain.Entities.Tenant", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1988,6 +2122,14 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                     b.Navigation("Tenant");
                 });
 
+            modelBuilder.Entity("IntegrationHub.Domain.Entities.EmailTemplate", b =>
+                {
+                    b.HasOne("IntegrationHub.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade);
+                });
+
             modelBuilder.Entity("IntegrationHub.Domain.Entities.IntegrationJob", b =>
                 {
                     b.HasOne("IntegrationHub.Domain.Entities.Tenant", null)
@@ -2111,6 +2253,15 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                     b.Navigation("PermissionGroup");
 
                     b.Navigation("Role");
+                });
+
+            modelBuilder.Entity("IntegrationHub.Domain.Entities.SmtpAccount", b =>
+                {
+                    b.HasOne("IntegrationHub.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("IntegrationHub.Domain.Entities.TenantApiConfiguration", b =>

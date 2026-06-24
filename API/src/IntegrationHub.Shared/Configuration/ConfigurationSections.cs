@@ -10,6 +10,9 @@ public static class ConfigurationSections
     /// <summary>Connection string key for the shared SQL Server database.</summary>
     public const string SqlServerConnection = "SqlServer";
 
+    /// <summary>General application settings (e.g. the public SPA base URL used in emails).</summary>
+    public const string App = "App";
+
     /// <summary>Hangfire background queue configuration.</summary>
     public const string Hangfire = "Hangfire";
 

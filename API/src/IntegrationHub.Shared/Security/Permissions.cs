@@ -55,6 +55,10 @@ public static class Permissions
     /// <summary>Create, edit, and compose Permission Groups (and compose them into roles).</summary>
     public const string GroupsManage = "groups.manage";
 
+    // SMTP Email Accounts
+    /// <summary>Create, edit, delete, set-active, and test-send SMTP email accounts. Reads require only <see cref="UsersRead"/>.</summary>
+    public const string EmailManage = "email.manage";
+
     // Platform
     public const string HealthRead = "health.read";
 
@@ -69,6 +73,7 @@ public static class Permissions
         JobsRead, JobsTrigger, JobsRetry, JobsDelete, JobsSchedule, LogsRead,
         CustomersDataEntry, CustomersReview, CustomersApprove,
         GroupsManage,
+        EmailManage,
         HealthRead
     };
 
@@ -89,6 +94,8 @@ public static class Permissions
         CustomersDataEntry, CustomersReview, CustomersApprove,
         // Tenant Admins manage Permission Groups within their own tenant.
         GroupsManage,
+        // Tenant Admins manage their tenant's SMTP email accounts.
+        EmailManage,
         HealthRead
     };
 

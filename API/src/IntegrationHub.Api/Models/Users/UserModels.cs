@@ -16,6 +16,8 @@ public sealed class CreateUserRequest
     public string Role { get; set; } = string.Empty;
     /// <summary>RBAC role to assign. When set, takes precedence and must be available to the tenant.</summary>
     public Guid? RoleId { get; set; }
+    /// <summary>When true, email the new user an invitation with their temporary password (via the tenant's active SMTP account).</summary>
+    public bool SendInvitation { get; set; }
 }
 
 public sealed class UpdateUserRequest
@@ -79,9 +81,9 @@ public sealed class AddGroupMembersRequest
     public List<Guid> UserIds { get; set; } = new();
 }
 
-public sealed record CreateUserResponse(Guid UserId, string TemporaryPassword);
+public sealed record CreateUserResponse(Guid UserId, string TemporaryPassword, bool InvitationEmailSent);
 
-public sealed record ResetPasswordResponse(Guid UserId, string TemporaryPassword);
+public sealed record ResetPasswordResponse(Guid UserId, string TemporaryPassword, bool EmailSent);
 
 public sealed record UserSummary(
     Guid UserId,

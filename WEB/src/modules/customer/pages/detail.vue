@@ -196,6 +196,7 @@
           <q-btn v-if="detail.actions.canSendForApproval" unelevated no-caps color="primary" icon="o_send" label="Send for Approval" :loading="sending" @click="sendForApproval" />
           <q-btn v-if="detail.actions.canReturn" outline no-caps color="warning" icon="o_assignment_return" label="Return to Data Entry" @click="returnOpen = true" />
           <q-btn v-if="detail.actions.canRevertToReviewer" outline no-caps color="warning" icon="o_undo" label="Revert to Reviewer" @click="revertOpen = true" />
+          <q-btn v-if="detail.actions.canReject" outline no-caps color="negative" icon="o_cancel" label="Reject" @click="rejectOpen = true" />
           <q-btn v-if="detail.actions.canApprove" unelevated no-caps color="positive" icon="o_check_circle" label="Approve" @click="openApprove" />
         </q-card-section>
       </q-card>
@@ -253,6 +254,22 @@
         <q-card-actions align="right">
           <q-btn flat no-caps color="grey-8" label="Cancel" @click="revertOpen = false" />
           <q-btn unelevated no-caps color="warning" label="Revert to Reviewer" :loading="busy" @click="submitRevert" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <!-- Reject dialog -->
+    <q-dialog v-model="rejectOpen" persistent>
+      <q-card style="min-width: 420px; max-width: 90vw;">
+        <q-card-section class="text-h6">Reject customer request</q-card-section>
+        <q-separator />
+        <q-card-section>
+          <q-input v-model="rejectReason" outlined dense type="textarea" autogrow label="Reason *" :rules="req" hint="Shared with the submitter." />
+        </q-card-section>
+        <q-separator />
+        <q-card-actions align="right">
+          <q-btn flat no-caps color="grey-8" label="Cancel" @click="rejectOpen = false" />
+          <q-btn unelevated no-caps color="negative" label="Reject" :loading="busy" :disable="!rejectReason" @click="submitReject" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -610,6 +627,24 @@ const submitRevert = async () => {
     revertOpen.value = false;
     revertNotes.value = "";
     notify.success("Reverted to the reviewer.");
+    load();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    busy.value = false;
+  }
+};
+
+const rejectOpen = ref(false);
+const rejectReason = ref("");
+const submitReject = async () => {
+  if (!rejectReason.value) return;
+  busy.value = true;
+  try {
+    await customerApi.reject(customerId, rejectReason.value);
+    rejectOpen.value = false;
+    rejectReason.value = "";
+    notify.success("Customer request rejected.");
     load();
   } catch (err) {
     notify.error(getApiErrorMessage(err));

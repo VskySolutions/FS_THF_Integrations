@@ -44,6 +44,12 @@ public static class DependencyInjection
         // Permission Groups: effective-permission cache computation.
         services.AddScoped<Abstractions.Security.IPermissionGroupEffectivePermissionService, Security.PermissionGroupEffectivePermissionService>();
 
+        // SMTP Email Accounts: account management business logic.
+        services.AddScoped<Abstractions.Email.ISmtpAccountService, Email.SmtpAccountService>();
+
+        // Email templates: management + rendering.
+        services.AddScoped<Abstractions.Email.IEmailTemplateService, Email.EmailTemplateService>();
+
         return services;
     }
 }

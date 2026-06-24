@@ -5,6 +5,7 @@ using IntegrationHub.Api.Controllers;
 using IntegrationHub.Api.Models.Customers;
 using IntegrationHub.Api.Security;
 using IntegrationHub.Application.Abstractions.Customers;
+using IntegrationHub.Application.Abstractions.Email;
 using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Domain.Entities;
 using IntegrationHub.Domain.Enums;
@@ -30,6 +31,7 @@ public class CustomerControllerTests
     private readonly Mock<IUserRepository> _users = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IWebHostEnvironment> _environment = new();
+    private readonly Mock<IEmailNotificationService> _emailNotifications = new();
 
     public CustomerControllerTests()
         => _users.Setup(u => u.GetFullNamesAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
@@ -37,7 +39,7 @@ public class CustomerControllerTests
 
     private CustomersController Create() => new(
         _requests.Object, _audit.Object, _documents.Object, _tenants.Object, _addresses.Object,
-        _approval.Object, _duplicates.Object, _users.Object, _unitOfWork.Object, _environment.Object);
+        _approval.Object, _duplicates.Object, _users.Object, _unitOfWork.Object, _environment.Object, _emailNotifications.Object);
 
     /// <summary>Builds a controller with the given identity claims (subject + role + optional tenant + explicit permissions).</summary>
     private CustomersController CreateWithUser(Guid userId, string role, Guid? tenantId = null, params string[] permissions)
@@ -356,6 +358,7 @@ public class CustomerControllerTests
     [InlineData(nameof(CustomersController.SendForApproval), Permissions.CustomersReview)]
     [InlineData(nameof(CustomersController.Return), Permissions.CustomersReview)]
     [InlineData(nameof(CustomersController.Approve), Permissions.CustomersApprove)]
+    [InlineData(nameof(CustomersController.Reject), Permissions.CustomersApprove)]
     [InlineData(nameof(CustomersController.RevertToReviewer), Permissions.CustomersApprove)]
     [InlineData(nameof(CustomersController.RetrySync), Permissions.CustomersApprove)]
     [InlineData(nameof(CustomersController.Reopen), Permissions.CustomersApprove)]
@@ -367,5 +370,92 @@ public class CustomerControllerTests
         var attribute = method!.GetCustomAttribute<RequirePermissionAttribute>();
         attribute.Should().NotBeNull($"{methodName} should be gated by [RequirePermission]");
         attribute!.Policy.Should().EndWith(expectedPermission);
+    }
+
+    // ---- Workflow email notifications ----
+
+    [Fact]
+    public async Task Submit_notifies_tenant_admins()
+    {
+        var tenant = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var request = Request(tenant, CustomerRequestStatus.Draft);
+        request.CreatedById = userId; // a Draft is visible to its creator
+        _requests.Setup(r => r.GetByIdAsync(request.Id, It.IsAny<CancellationToken>())).ReturnsAsync(request);
+        _duplicates.Setup(d => d.CheckStep1Async(tenant, request, It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<CustomerDuplicateMatch>());
+        _requests.Setup(r => r.CountForYearAsync(tenant, It.IsAny<int>(), It.IsAny<CancellationToken>())).ReturnsAsync(0);
+        _users.Setup(u => u.ListAsync(tenant, null, true, null, null, null, Roles.TenantAdmin, null, 1, 100, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new[] { new User { Id = Guid.NewGuid(), Email = "admin@acme.com", DisplayName = "Admin" } }, 1));
+
+        var result = await CreateWithUser(userId, Roles.Operator, tenant).Submit(request.Id, new SubmitCustomerRequest(), default);
+
+        result.Should().BeOfType<OkObjectResult>();
+        _emailNotifications.Verify(e => e.SendAsync(tenant, EmailTemplateKey.CustomerSubmitted, "admin@acme.com",
+            It.IsAny<IReadOnlyDictionary<string, string?>>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Return_notifies_the_submitter()
+    {
+        var tenant = Guid.NewGuid();
+        var submitterId = Guid.NewGuid();
+        var request = Request(tenant, CustomerRequestStatus.UnderReview);
+        request.SubmittedById = submitterId;
+        _requests.Setup(r => r.GetByIdAsync(request.Id, It.IsAny<CancellationToken>())).ReturnsAsync(request);
+        _users.Setup(u => u.GetByIdAsync(submitterId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User { Id = submitterId, Email = "sub@acme.com", DisplayName = "Sub" });
+
+        var result = await CreateWithUser(Guid.NewGuid(), Roles.Operator, tenant)
+            .Return(request.Id, new ReturnCustomerRequest { Notes = "Fix the legal name" }, default);
+
+        result.Should().BeOfType<OkObjectResult>();
+        _emailNotifications.Verify(e => e.SendAsync(tenant, EmailTemplateKey.CustomerReturned, "sub@acme.com",
+            It.IsAny<IReadOnlyDictionary<string, string?>>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Approve_on_final_stage_notifies_the_submitter()
+    {
+        var tenant = Guid.NewGuid();
+        var submitterId = Guid.NewGuid();
+        var request = Request(tenant, CustomerRequestStatus.PendingApproval);
+        request.SubmittedById = submitterId;
+        _requests.Setup(r => r.GetByIdAsync(request.Id, It.IsAny<CancellationToken>())).ReturnsAsync(request);
+        _duplicates.Setup(d => d.CheckTaxNumberAsync(tenant, request.Id, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<CustomerDuplicateMatch>());
+        _approval.Setup(a => a.ApproveAsync(request, It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback<CustomerRequest, Guid?, string?, CancellationToken>((r, _, _, _) => r.Status = CustomerRequestStatus.SyncInProgress)
+            .Returns(Task.CompletedTask);
+        _users.Setup(u => u.GetByIdAsync(submitterId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User { Id = submitterId, Email = "sub@acme.com", DisplayName = "Sub" });
+
+        var result = await CreateWithUser(Guid.NewGuid(), Roles.Operator, tenant)
+            .Approve(request.Id, new ApproveCustomerRequest(), default);
+
+        result.Should().BeOfType<OkObjectResult>();
+        _emailNotifications.Verify(e => e.SendAsync(tenant, EmailTemplateKey.CustomerApproved, "sub@acme.com",
+            It.IsAny<IReadOnlyDictionary<string, string?>>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Reject_notifies_the_submitter()
+    {
+        var tenant = Guid.NewGuid();
+        var submitterId = Guid.NewGuid();
+        var request = Request(tenant, CustomerRequestStatus.PendingApproval);
+        request.SubmittedById = submitterId;
+        _requests.Setup(r => r.GetByIdAsync(request.Id, It.IsAny<CancellationToken>())).ReturnsAsync(request);
+        _approval.Setup(a => a.RejectAsync(request, "Not a valid customer", It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback<CustomerRequest, string, Guid?, string?, CancellationToken>((r, _, _, _, _) => r.Status = CustomerRequestStatus.Rejected)
+            .Returns(Task.CompletedTask);
+        _users.Setup(u => u.GetByIdAsync(submitterId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User { Id = submitterId, Email = "sub@acme.com", DisplayName = "Sub" });
+
+        var result = await CreateWithUser(Guid.NewGuid(), Roles.Operator, tenant)
+            .Reject(request.Id, new RejectCustomerRequest { Reason = "Not a valid customer" }, default);
+
+        result.Should().BeOfType<OkObjectResult>();
+        _emailNotifications.Verify(e => e.SendAsync(tenant, EmailTemplateKey.CustomerRejected, "sub@acme.com",
+            It.IsAny<IReadOnlyDictionary<string, string?>>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 }

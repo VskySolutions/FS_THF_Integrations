@@ -1,5 +1,6 @@
 using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Application.Abstractions.Security;
+using IntegrationHub.Application.Email;
 using IntegrationHub.Domain.Entities;
 using IntegrationHub.Domain.Enums;
 using IntegrationHub.Shared.Security;
@@ -24,6 +25,10 @@ public static class BootstrapSeeder
 
         // System RBAC roles are seeded/refreshed on every startup (independent of users).
         await SeedSystemRolesAsync(roles, unitOfWork, cancellationToken);
+
+        // Platform-default email templates are inserted when missing (never overwriting Super Admin edits).
+        await SeedEmailTemplatesAsync(
+            services.GetRequiredService<IEmailTemplateRepository>(), unitOfWork, cancellationToken);
 
         // If any user already exists, the platform is initialized.
         if (await users.EmailExistsAsync(GetValue(configuration, "Email", "admin@integrationhub.local"), cancellationToken)
@@ -122,6 +127,38 @@ public static class BootstrapSeeder
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Seeds the platform-wide default email templates (one per <see cref="EmailTemplateKey"/>). Idempotent
+    /// and non-destructive: a default is inserted only when absent, so Super Admin edits to the global
+    /// templates survive restarts.
+    /// </summary>
+    private static async Task SeedEmailTemplatesAsync(IEmailTemplateRepository templates, IUnitOfWork unitOfWork, CancellationToken cancellationToken)
+    {
+        var added = false;
+        foreach (var def in DefaultEmailTemplates.All)
+        {
+            if (await templates.GetAsync(null, def.Key, cancellationToken) is not null)
+            {
+                continue;
+            }
+
+            await templates.AddAsync(new EmailTemplate
+            {
+                Id = Guid.NewGuid(),
+                TenantId = null,
+                TemplateKey = def.Key,
+                Subject = def.Subject,
+                Body = def.Body,
+            }, cancellationToken);
+            added = true;
+        }
+
+        if (added)
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
     }
 
     private static string GetValue(IConfiguration configuration, string key, string fallback)

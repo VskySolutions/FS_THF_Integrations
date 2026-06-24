@@ -10,4 +10,13 @@ public interface IUnitOfWork
 {
     /// <summary>Persists all staged changes in one transaction.</summary>
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Runs <paramref name="operation"/> inside an explicit database transaction and commits it on
+    /// success (rolling back on failure). Use when an invariant requires multiple ordered
+    /// <see cref="SaveChangesAsync"/> calls to commit atomically — e.g. the SMTP active-account swap,
+    /// where the current active row must be deactivated before the target is activated to satisfy the
+    /// "single active per tenant" unique index (SMTP Email Accounts ADR-003).
+    /// </summary>
+    Task ExecuteInTransactionAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken = default);
 }

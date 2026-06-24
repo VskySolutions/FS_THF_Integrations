@@ -69,6 +69,15 @@ const sections = [
     ]
   },
   {
+    // Tenant-wide settings and universal features (email, and future cross-cutting settings).
+    key: "settings",
+    label: "Settings",
+    items: [
+      { label: "Email Accounts", icon: "o_mail", to: "/smtp-accounts", permissions: [Permissions.EmailManage] },
+      { label: "Email Templates", icon: "o_drafts", to: "/email-templates", permissions: [Permissions.EmailManage] }
+    ]
+  },
+  {
     key: "operations",
     label: "Operations",
     items: [

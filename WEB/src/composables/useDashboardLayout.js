@@ -3,7 +3,7 @@ import { debounce } from "quasar";
 import { dashboardApi, getApiErrorMessage } from "services/api";
 import { useConfirm } from "composables/useConfirm";
 import { useNotify } from "composables/useNotify";
-import { widgetsForRole, defaultLayoutForRole, WIDGETS_BY_KEY } from "modules/dashboard/widgets/registry";
+import { widgetsForRole, defaultLayoutForRole, defaultHiddenForRole, WIDGETS_BY_KEY } from "modules/dashboard/widgets/registry";
 
 // Per-user dashboard layout state (WO-73). Persists widget order / hidden / collapsed via the
 // dashboard layout endpoint, with a role-based default when no layout is saved. Every mutation
@@ -55,6 +55,11 @@ export function useDashboardLayout (role) {
     }
     if (!widgetOrder.value.length) {
       widgetOrder.value = defaultLayoutForRole(role);
+      // Apply the default-hidden set only when the server gave us no layout at all (fresh/errored),
+      // so a saved layout that legitimately hides nothing is never overridden.
+      if (!hiddenWidgets.value.length) {
+        hiddenWidgets.value = defaultHiddenForRole(role);
+      }
     }
   };
 
@@ -90,7 +95,7 @@ export function useDashboardLayout (role) {
     });
     if (!ok) return;
     widgetOrder.value = defaultLayoutForRole(role);
-    hiddenWidgets.value = [];
+    hiddenWidgets.value = defaultHiddenForRole(role);
     collapsedWidgets.value = [];
     saveLayout();
     notify.success("Dashboard layout reset.");

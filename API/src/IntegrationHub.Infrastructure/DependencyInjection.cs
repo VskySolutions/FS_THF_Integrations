@@ -44,10 +44,12 @@ public static class DependencyInjection
         services.Configure<MaconomyOptions>(configuration.GetSection(ConfigurationSections.Maconomy));
         services.Configure<ApiKeysOptions>(configuration.GetSection(ConfigurationSections.ApiKeys));
         services.Configure<RetryOptions>(configuration.GetSection(ConfigurationSections.Retry));
+        services.Configure<AppOptions>(configuration.GetSection(ConfigurationSections.App));
 
         services.AddSecurity();
         services.AddRetry();
         services.AddConnectors();
+        services.AddEmail();
 
         services.AddDbContext<IntegrationHubDbContext>(options =>
             options.UseSqlServer(
@@ -94,7 +96,23 @@ public static class DependencyInjection
         services.AddScoped<ICustomerDocumentRepository, CustomerDocumentRepository>();
         services.AddScoped<IPermissionGroupRepository, PermissionGroupRepository>();
         services.AddScoped<IDashboardLayoutRepository, DashboardLayoutRepository>();
+        services.AddScoped<ISmtpAccountRepository, SmtpAccountRepository>();
+        services.AddScoped<IEmailTemplateRepository, EmailTemplateRepository>();
         services.AddSingleton<ITransformationRuleEvaluator, Connectors.TransformationRuleEvaluator>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the email infrastructure: the low-level SMTP sender used by the SMTP account
+    /// management service for test sends (and by future notification flows for production sends).
+    /// </summary>
+    private static IServiceCollection AddEmail(this IServiceCollection services)
+    {
+        // Factory registration so the sender uses its built-in 15-second default timeout (the optional
+        // constructor parameter is not resolvable by the DI container).
+        services.AddScoped<Application.Abstractions.Email.ISmtpEmailSender>(sp =>
+            new Email.SmtpEmailSender(sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Email.SmtpEmailSender>>()));
+        services.AddScoped<Application.Abstractions.Email.IEmailNotificationService, Email.EmailNotificationService>();
         return services;
     }
 

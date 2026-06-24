@@ -3,6 +3,7 @@ using Hangfire;
 using Hangfire.Common;
 using Hangfire.States;
 using IntegrationHub.Application.Abstractions.Connectors.Maconomy;
+using IntegrationHub.Application.Abstractions.Email;
 using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Application.Abstractions.Tenancy;
 using IntegrationHub.Application.Customers;
@@ -29,11 +30,13 @@ public class CustomerSyncJobTests
     private readonly Mock<ICustomerMaconomyMapper> _mapper = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IBackgroundJobClient> _backgroundJobs = new();
+    private readonly Mock<IUserRepository> _users = new();
+    private readonly Mock<IEmailNotificationService> _emailNotifications = new();
 
     private CustomerSyncJob Create() => new(
         _tenantContext.Object, _tenants.Object, _requests.Object, _audit.Object,
         _jobs.Object, _logs.Object, _config.Object, _maconomy.Object, _mapper.Object,
-        _unitOfWork.Object, _backgroundJobs.Object,
+        _unitOfWork.Object, _backgroundJobs.Object, _users.Object, _emailNotifications.Object,
         NullLogger<CustomerSyncJob>.Instance);
 
     private (Guid TenantId, CustomerRequest Request) Arrange(CustomerRequestStatus status = CustomerRequestStatus.SyncInProgress, int syncAttempts = 0)
@@ -160,5 +163,43 @@ public class CustomerSyncJobTests
         request.Status.Should().Be(CustomerRequestStatus.Failed);
         request.LastSyncError.Should().Be("still timing out");
         _backgroundJobs.Verify(b => b.Create(It.IsAny<Job>(), It.IsAny<ScheduledState>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Successful_sync_emails_the_submitter()
+    {
+        var (tenantId, request) = Arrange();
+        var submitterId = Guid.NewGuid();
+        request.SubmittedById = submitterId;
+        _users.Setup(u => u.GetByIdAsync(submitterId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User { Id = submitterId, Email = "sub@acme.com", DisplayName = "Sub" });
+        _config.Setup(c => c.GetMaconomyConfigAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MaconomyConfigDto("https://maconomy/", "user", "pass"));
+        _maconomy.Setup(m => m.CreateCustomerAsync(It.IsAny<MaconomyCustomer>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ConnectorResult<MaconomyWriteResult>.Ok(new MaconomyWriteResult("CUST-1", Duplicate: false)));
+
+        await Create().RunAsync(request.Id, tenantId, default);
+
+        _emailNotifications.Verify(e => e.SendAsync(tenantId, EmailTemplateKey.CustomerSynced, "sub@acme.com",
+            It.IsAny<IReadOnlyDictionary<string, string?>>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Terminal_failure_emails_the_submitter()
+    {
+        var (tenantId, request) = Arrange();
+        var submitterId = Guid.NewGuid();
+        request.SubmittedById = submitterId;
+        _users.Setup(u => u.GetByIdAsync(submitterId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User { Id = submitterId, Email = "sub@acme.com", DisplayName = "Sub" });
+        _config.Setup(c => c.GetMaconomyConfigAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MaconomyConfigDto("https://maconomy/", "user", "pass"));
+        _maconomy.Setup(m => m.CreateCustomerAsync(It.IsAny<MaconomyCustomer>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ConnectorResult<MaconomyWriteResult>.Fail("validation error", isRetriable: false));
+
+        await Create().RunAsync(request.Id, tenantId, default);
+
+        _emailNotifications.Verify(e => e.SendAsync(tenantId, EmailTemplateKey.CustomerSyncFailed, "sub@acme.com",
+            It.IsAny<IReadOnlyDictionary<string, string?>>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 }

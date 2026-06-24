@@ -2,6 +2,7 @@ using System.Text.Json;
 using IntegrationHub.Api.Models.Customers;
 using IntegrationHub.Api.Security;
 using IntegrationHub.Application.Abstractions.Customers;
+using IntegrationHub.Application.Abstractions.Email;
 using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Domain.Entities;
 using IntegrationHub.Domain.Enums;
@@ -42,6 +43,7 @@ public sealed class CustomersController : ControllerBase
     private readonly IUserRepository _users;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IWebHostEnvironment _environment;
+    private readonly IEmailNotificationService _emailNotifications;
 
     public CustomersController(
         ICustomerRequestRepository requests,
@@ -53,7 +55,8 @@ public sealed class CustomersController : ControllerBase
         ICustomerDuplicateChecker duplicates,
         IUserRepository users,
         IUnitOfWork unitOfWork,
-        IWebHostEnvironment environment)
+        IWebHostEnvironment environment,
+        IEmailNotificationService emailNotifications)
     {
         _requests = requests;
         _audit = audit;
@@ -65,6 +68,7 @@ public sealed class CustomersController : ControllerBase
         _users = users;
         _unitOfWork = unitOfWork;
         _environment = environment;
+        _emailNotifications = emailNotifications;
     }
 
     // ---- List ----
@@ -250,6 +254,8 @@ public sealed class CustomersController : ControllerBase
         await AppendAuditAsync(request, CustomerAuditActionType.Submitted, "Submitted for review.", cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+        await NotifyTenantAdminsAsync(request, EmailTemplateKey.CustomerSubmitted, null, cancellationToken);
+
         return Ok(ApiResponseFactory.Success(
             new SubmitCustomerResponse(true, request.CustomerRequestNumber, request.Status.ToString(), Array.Empty<CustomerDuplicateMatchResponse>()),
             "Customer request submitted."));
@@ -317,6 +323,8 @@ public sealed class CustomersController : ControllerBase
         _requests.Update(request);
         await AppendAuditAsync(request, CustomerAuditActionType.SentForApproval, "Sent for approval.", cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await NotifyTenantAdminsAsync(request, EmailTemplateKey.CustomerSentForApproval, null, cancellationToken);
 
         return Ok(ApiResponseFactory.Success(new { customerId = request.Id, status = request.Status.ToString() }, "Sent for approval."));
     }
@@ -401,6 +409,14 @@ public sealed class CustomersController : ControllerBase
             return BadRequest(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, ex.Message, ex.Details));
         }
 
+        // Notify the submitter only on the final approval (the request is queued for sync).
+        if (request.Status == CustomerRequestStatus.SyncInProgress)
+        {
+            await NotifySubmitterAsync(request, EmailTemplateKey.CustomerApproved,
+                new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { ["ApproverName"] = await CallerNameAsync(cancellationToken) ?? "an approver" },
+                cancellationToken);
+        }
+
         return Ok(ApiResponseFactory.Success(
             new ApproveCustomerResponse(true, request.Status.ToString(), Array.Empty<CustomerDuplicateMatchResponse>()),
             "Customer request approved."));
@@ -430,6 +446,37 @@ public sealed class CustomersController : ControllerBase
         return Ok(ApiResponseFactory.Success(new { customerId = request.Id, status = request.Status.ToString() }, "Customer request reverted to the reviewer."));
     }
 
+    // ---- Reject (customers.approve): reject a request with a mandatory reason ----
+
+    [HttpPost("{id:guid}/reject")]
+    [RequirePermission(Permissions.CustomersApprove)]
+    public async Task<IActionResult> Reject(Guid id, [FromBody] RejectCustomerRequest body, CancellationToken cancellationToken)
+    {
+        var request = await LoadAsync(id, cancellationToken);
+        if (request is null)
+        {
+            return NotFound(ApiResponseFactory.NotFound("Customer request not found."));
+        }
+
+        try
+        {
+            await _approval.RejectAsync(request, body.Reason, User.GetUserId(), ActorName(), cancellationToken);
+        }
+        catch (CustomerWorkflowException ex)
+        {
+            return BadRequest(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, ex.Message, ex.Details));
+        }
+
+        await NotifySubmitterAsync(request, EmailTemplateKey.CustomerRejected,
+            new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Notes"] = body.Reason,
+                ["ApproverName"] = await CallerNameAsync(cancellationToken) ?? "an approver",
+            }, cancellationToken);
+
+        return Ok(ApiResponseFactory.Success(new { customerId = request.Id, status = request.Status.ToString() }, "Customer request rejected."));
+    }
+
     // ---- Return for corrections (customers.review): send a request under review back to data entry ----
 
     [HttpPost("{id:guid}/return")]
@@ -455,6 +502,10 @@ public sealed class CustomersController : ControllerBase
         {
             return BadRequest(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, ex.Message, ex.Details));
         }
+
+        await NotifySubmitterAsync(request, EmailTemplateKey.CustomerReturned,
+            new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { ["Notes"] = body.Notes },
+            cancellationToken);
 
         return Ok(ApiResponseFactory.Success(new { customerId = request.Id, status = request.Status.ToString() }, "Customer request returned to data entry."));
     }
@@ -827,8 +878,9 @@ public sealed class CustomersController : ControllerBase
                 CanReturn = canReview && reviewStage,
                 CanViewStep2 = canSeeStep2,
                 CanEditStep2 = (canReview && reviewStage) || (canApprove && approveStage),
-                // Approver: approve, or revert to the reviewer.
+                // Approver: approve, reject, or revert to the reviewer.
                 CanApprove = canApprove && approveStage,
+                CanReject = canApprove && approveStage,
                 CanRevertToReviewer = canApprove && approveStage,
                 CanRetrySync = isAdmin && c.Status == CustomerRequestStatus.Failed,
                 CanReopen = isAdmin && c.Status == CustomerRequestStatus.Rejected,
@@ -859,6 +911,97 @@ public sealed class CustomersController : ControllerBase
     }
 
     private string? ActorName() => User.Identity?.Name;
+
+    // ---- Workflow notifications (best-effort; the dispatcher never throws) ----
+
+    private static string CustomerNameOf(CustomerRequest r)
+        => string.IsNullOrWhiteSpace(r.CompanyName) ? r.LegalName : r.CompanyName;
+
+    /// <summary>Display name of the request's submitter, or null when unknown.</summary>
+    private async Task<string?> SubmitterNameAsync(CustomerRequest request, CancellationToken cancellationToken)
+    {
+        if (request.SubmittedById is not { } sid)
+        {
+            return null;
+        }
+        var names = await _users.GetFullNamesAsync(new[] { sid }, cancellationToken);
+        return names.TryGetValue(sid, out var name) ? name : null;
+    }
+
+    /// <summary>Display name of the acting caller, or null when unknown.</summary>
+    private async Task<string?> CallerNameAsync(CancellationToken cancellationToken)
+    {
+        if (User.GetUserId() is not { } uid)
+        {
+            return null;
+        }
+        var names = await _users.GetFullNamesAsync(new[] { uid }, cancellationToken);
+        return names.TryGetValue(uid, out var name) ? name : null;
+    }
+
+    /// <summary>Emails the request's submitter the given template (no-op when there is no submitter/email).</summary>
+    private async Task NotifySubmitterAsync(CustomerRequest request, EmailTemplateKey key, IReadOnlyDictionary<string, string?>? extra, CancellationToken cancellationToken)
+    {
+        if (request.SubmittedById is not { } sid)
+        {
+            return;
+        }
+        var submitter = await _users.GetByIdAsync(sid, cancellationToken);
+        if (submitter is null || string.IsNullOrWhiteSpace(submitter.Email))
+        {
+            return;
+        }
+
+        var model = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["CustomerName"] = CustomerNameOf(request),
+            ["CustomerRequestNumber"] = request.CustomerRequestNumber,
+            ["SubmitterName"] = submitter.DisplayName,
+        };
+        if (extra is not null)
+        {
+            foreach (var kv in extra)
+            {
+                model[kv.Key] = kv.Value;
+            }
+        }
+
+        await _emailNotifications.SendAsync(request.TenantId, key, submitter.Email, model, cancellationToken);
+    }
+
+    /// <summary>Emails every active Tenant Admin of the request's tenant the given "action needed" template.</summary>
+    private async Task NotifyTenantAdminsAsync(CustomerRequest request, EmailTemplateKey key, IReadOnlyDictionary<string, string?>? extra, CancellationToken cancellationToken)
+    {
+        var (admins, _) = await _users.ListAsync(
+            request.TenantId, search: null, isActive: true, name: null, email: null, phone: null,
+            role: Roles.TenantAdmin, group: null, page: 1, limit: 100, cancellationToken);
+        if (admins is null || admins.Count == 0)
+        {
+            return;
+        }
+
+        var model = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["CustomerName"] = CustomerNameOf(request),
+            ["CustomerRequestNumber"] = request.CustomerRequestNumber,
+            ["SubmitterName"] = await SubmitterNameAsync(request, cancellationToken),
+        };
+        if (extra is not null)
+        {
+            foreach (var kv in extra)
+            {
+                model[kv.Key] = kv.Value;
+            }
+        }
+
+        foreach (var admin in admins)
+        {
+            if (!string.IsNullOrWhiteSpace(admin.Email))
+            {
+                await _emailNotifications.SendAsync(request.TenantId, key, admin.Email, model, cancellationToken);
+            }
+        }
+    }
 
     private Task AppendAuditAsync(CustomerRequest request, CustomerAuditActionType action, string notes, CancellationToken cancellationToken)
         => _audit.AddAsync(new CustomerAuditEntry

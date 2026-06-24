@@ -1,13 +1,12 @@
 <template>
-  <div>
+  <div v-if="show">
     <div class="row items-center q-mb-sm">
-      <q-toggle v-model="show" :label="`Show deleted ${pluralLabel}`" @update:model-value="onToggle" />
+      <div class="text-subtitle2 text-grey-8">Deleted {{ pluralLabel }}</div>
       <q-space />
-      <q-badge v-if="show && overdueCount" color="orange-8" :label="`${overdueCount} overdue`" />
+      <q-badge v-if="overdueCount" color="orange-8" :label="`${overdueCount} overdue`" />
     </div>
 
     <app-data-table
-      v-if="show"
       page-key="uf_deleted"
       row-key="entityId"
       selectable
@@ -76,7 +75,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import { ufDeletedApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
@@ -85,7 +84,9 @@ import { useEntityMeta } from "composables/uf/useEntityMeta";
 import AppDataTable from "components/common/AppDataTable.vue";
 
 const props = defineProps({
-  entityType: { type: Number, required: true }
+  entityType: { type: Number, required: true },
+  // Controlled by the "Show deleted" toggle in the list page's AppFilterDrawer.
+  show: { type: Boolean, default: false }
 });
 const emit = defineEmits(["restored"]);
 
@@ -95,7 +96,6 @@ const { formatDateTime } = useDateFormat();
 const meta = useEntityMeta();
 const pluralLabel = computed(() => `${meta.labelFor(props.entityType)}s`);
 
-const show = ref(false);
 const rows = ref([]);
 const loading = ref(false);
 const totalRecords = ref(0);
@@ -128,10 +128,11 @@ const load = async () => {
   }
 };
 
-const onToggle = (val) => {
+// React to the "Show deleted" toggle (lives in the list page's AppFilterDrawer).
+watch(() => props.show, (val) => {
   if (val) load();
   else { rows.value = []; selected.value = []; }
-};
+}, { immediate: true });
 
 const onRequest = (pag) => {
   pagination.value = { ...pagination.value, ...pag };
@@ -219,5 +220,5 @@ const hardDeleteBulk = async (sel) => {
   }
 };
 
-defineExpose({ refresh: () => show.value && load() });
+defineExpose({ refresh: () => props.show && load() });
 </script>

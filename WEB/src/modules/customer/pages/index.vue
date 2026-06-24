@@ -24,6 +24,11 @@
     </app-list-header>
 
     <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
+      <!-- Admin-only "Show deleted" toggle (records.adminDelete); reveals the deleted-records table below. -->
+      <template v-if="canAdminDelete">
+        <q-toggle v-model="showDeleted" label="Show deleted records" dense class="q-mb-sm" />
+        <q-separator class="q-mb-md" />
+      </template>
       <app-column-filters v-model="filters" :columns="filterableColumns" />
     </app-filter-drawer>
 
@@ -91,10 +96,11 @@
       </template>
     </app-data-table>
 
-    <!-- Admin-only deleted records (Show Deleted, restore, permanently delete). -->
+    <!-- Deleted records (restore, permanently delete) — revealed by the "Show deleted" filter toggle. -->
     <deleted-records-panel
       v-if="canAdminDelete"
       :entity-type="EntityType.CustomerRequest"
+      :show="showDeleted"
       class="q-mt-md"
       @restored="load"
     />
@@ -133,6 +139,8 @@ const tenantStore = useTenantStore();
 const { canChooseTenant, tenantOptions, loadingTenants, loadTenants } = useTenantOptions();
 const { has } = usePermissions();
 const canAdminDelete = computed(() => has(Permissions.RecordsAdminDelete));
+// Bound to the "Show deleted" toggle inside the filter drawer (admin-only).
+const showDeleted = ref(false);
 // Customer data-entry capability gates create / submit / delete (the data-entry stage of the workflow).
 const canDataEntry = computed(() => has(Permissions.CustomersDataEntry));
 const { customerStatusColor: statusColor, customerStatusLabel: statusLabel } = useCustomerStatus();

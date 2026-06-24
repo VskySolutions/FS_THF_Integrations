@@ -51,10 +51,15 @@ public static class DependencyInjection
         services.AddConnectors();
         services.AddEmail();
 
-        services.AddDbContext<IntegrationHubDbContext>(options =>
+        // Field-level change-history capture (Universal Features — Modified Log).
+        services.AddSingleton<Persistence.ModifiedLog.IFieldValueFormatter, Persistence.ModifiedLog.FieldValueFormatter>();
+        services.AddScoped<Persistence.ModifiedLog.FieldChangeInterceptor>();
+
+        services.AddDbContext<IntegrationHubDbContext>((sp, options) =>
             options.UseSqlServer(
-                configuration.GetConnectionString(ConfigurationSections.SqlServerConnection),
-                sql => sql.MigrationsAssembly(typeof(IntegrationHubDbContext).Assembly.FullName)));
+                    configuration.GetConnectionString(ConfigurationSections.SqlServerConnection),
+                    sql => sql.MigrationsAssembly(typeof(IntegrationHubDbContext).Assembly.FullName))
+                .AddInterceptors(sp.GetRequiredService<Persistence.ModifiedLog.FieldChangeInterceptor>()));
 
         services.AddPersistence();
 
@@ -98,6 +103,27 @@ public static class DependencyInjection
         services.AddScoped<IDashboardLayoutRepository, DashboardLayoutRepository>();
         services.AddScoped<ISmtpAccountRepository, SmtpAccountRepository>();
         services.AddScoped<IEmailTemplateRepository, EmailTemplateRepository>();
+
+        // Universal Features (Phase 14) repositories.
+        services.AddScoped<IActivityEventRepository, ActivityEventRepository>();
+        services.AddScoped<INotificationRepository, NotificationRepository>();
+        services.AddScoped<INoteRepository, NoteRepository>();
+        services.AddScoped<ITagRepository, TagRepository>();
+        services.AddScoped<IAttachmentRepository, AttachmentRepository>();
+        services.AddScoped<IReminderRepository, ReminderRepository>();
+        services.AddScoped<IPinRepository, PinRepository>();
+        services.AddScoped<IColourCodeRepository, ColourCodeRepository>();
+        services.AddScoped<ISavedViewRepository, SavedViewRepository>();
+        services.AddScoped<IChecklistRepository, ChecklistRepository>();
+        services.AddScoped<IStickyNoteRepository, StickyNoteRepository>();
+        services.AddScoped<IDeletedRecordsRepository, DeletedRecordsRepository>();
+        services.AddScoped<IRetentionConfigRepository, RetentionConfigRepository>();
+        services.AddScoped<IModifiedLogRepository, ModifiedLogRepository>();
+
+        // Universal Features recurring jobs (Hangfire resolves them from DI).
+        services.AddScoped<Jobs.ReminderDispatchJob>();
+        services.AddScoped<Jobs.StickyNoteExpiryJob>();
+
         services.AddSingleton<ITransformationRuleEvaluator, Connectors.TransformationRuleEvaluator>();
         return services;
     }

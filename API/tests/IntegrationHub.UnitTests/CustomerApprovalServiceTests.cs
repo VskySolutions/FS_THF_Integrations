@@ -1,6 +1,7 @@
 using FluentAssertions;
 using IntegrationHub.Application.Abstractions.Customers;
 using IntegrationHub.Application.Abstractions.Persistence;
+using IntegrationHub.Application.Abstractions.UniversalFeatures;
 using IntegrationHub.Application.Customers;
 using IntegrationHub.Domain.Entities;
 using IntegrationHub.Domain.Enums;
@@ -13,9 +14,10 @@ public class CustomerApprovalServiceTests
 {
     private readonly Mock<ICustomerAuditRepository> _audit = new();
     private readonly Mock<ICustomerSyncDispatcher> _dispatcher = new();
+    private readonly Mock<IActivityEventWriter> _activity = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
 
-    private CustomerApprovalService Create() => new(_audit.Object, _dispatcher.Object, _unitOfWork.Object);
+    private CustomerApprovalService Create() => new(_audit.Object, _dispatcher.Object, _activity.Object, _unitOfWork.Object);
 
     /// <summary>A request awaiting approval with all mandatory Step 2 fields completed.</summary>
     private static CustomerRequest CompleteRequest(int requiredStages = 1, int currentStage = 0)

@@ -58,6 +58,9 @@ builder.Services.AddIntegrationHubHealthChecks();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
+// Universal Features (Phase 14): local-disk attachment storage under the content root.
+builder.Services.AddScoped<IntegrationHub.Application.Abstractions.UniversalFeatures.IFileStorage, IntegrationHub.Api.Storage.LocalFileStorage>();
+
 // Dashboard (WO-72): short-lived in-process cache (singleton) + scoped read-model aggregator.
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<IntegrationHub.Api.Dashboard.IDashboardCacheService, IntegrationHub.Api.Dashboard.DashboardCacheService>();

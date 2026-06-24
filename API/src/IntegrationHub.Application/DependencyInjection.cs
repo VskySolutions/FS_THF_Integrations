@@ -50,6 +50,10 @@ public static class DependencyInjection
         // Email templates: management + rendering.
         services.AddScoped<Abstractions.Email.IEmailTemplateService, Email.EmailTemplateService>();
 
+        // Universal Features (Phase 14): cross-cutting activity writer + notification dispatcher.
+        services.AddScoped<Abstractions.UniversalFeatures.IActivityEventWriter, UniversalFeatures.ActivityEventWriter>();
+        services.AddScoped<Abstractions.UniversalFeatures.INotificationDispatcher, UniversalFeatures.NotificationDispatcher>();
+
         return services;
     }
 }

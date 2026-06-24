@@ -38,4 +38,10 @@ public enum EmailTemplateKey
 
     /// <summary>A customer request failed to sync to Maconomy (sent to the submitter).</summary>
     CustomerSyncFailed = 10,
+
+    /// <summary>A user was @mentioned in a note (Universal Features). Sent to the mentioned user.</summary>
+    MentionReceived = 11,
+
+    /// <summary>A reminder a user set has reached its due time (Universal Features). Sent to the owner.</summary>
+    ReminderDue = 12,
 }

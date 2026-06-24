@@ -59,6 +59,13 @@ public static class Permissions
     /// <summary>Create, edit, delete, set-active, and test-send SMTP email accounts. Reads require only <see cref="UsersRead"/>.</summary>
     public const string EmailManage = "email.manage";
 
+    // Universal Features (Phase 14)
+    /// <summary>Manage tenant-wide Universal Feature settings: tags, shared saved views, tenant sticky
+    /// notes, and Modified Log field configuration.</summary>
+    public const string SettingsManage = "settings.manage";
+    /// <summary>View, restore, and permanently delete soft-deleted records (Deleted Records Management).</summary>
+    public const string RecordsAdminDelete = "records.adminDelete";
+
     // Platform
     public const string HealthRead = "health.read";
 
@@ -74,6 +81,7 @@ public static class Permissions
         CustomersDataEntry, CustomersReview, CustomersApprove,
         GroupsManage,
         EmailManage,
+        SettingsManage, RecordsAdminDelete,
         HealthRead
     };
 
@@ -96,6 +104,8 @@ public static class Permissions
         GroupsManage,
         // Tenant Admins manage their tenant's SMTP email accounts.
         EmailManage,
+        // Tenant Admins manage tenant-wide UF settings and the deleted-records lifecycle.
+        SettingsManage, RecordsAdminDelete,
         HealthRead
     };
 

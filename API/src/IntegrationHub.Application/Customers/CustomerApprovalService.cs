@@ -1,5 +1,6 @@
 using IntegrationHub.Application.Abstractions.Customers;
 using IntegrationHub.Application.Abstractions.Persistence;
+using IntegrationHub.Application.Abstractions.UniversalFeatures;
 using IntegrationHub.Domain.Entities;
 using IntegrationHub.Domain.Enums;
 
@@ -13,15 +14,18 @@ public sealed class CustomerApprovalService : ICustomerApprovalService
 {
     private readonly ICustomerAuditRepository _audit;
     private readonly ICustomerSyncDispatcher _syncDispatcher;
+    private readonly IActivityEventWriter _activity;
     private readonly IUnitOfWork _unitOfWork;
 
     public CustomerApprovalService(
         ICustomerAuditRepository audit,
         ICustomerSyncDispatcher syncDispatcher,
+        IActivityEventWriter activity,
         IUnitOfWork unitOfWork)
     {
         _audit = audit;
         _syncDispatcher = syncDispatcher;
+        _activity = activity;
         _unitOfWork = unitOfWork;
     }
 
@@ -59,6 +63,7 @@ public sealed class CustomerApprovalService : ICustomerApprovalService
                 $"Missing: {string.Join(", ", missing)}.");
         }
 
+        var previousStatus = request.Status;
         request.CurrentApprovalStage++;
         var isFinal = request.CurrentApprovalStage >= request.RequiredApprovalStages;
 
@@ -78,6 +83,7 @@ public sealed class CustomerApprovalService : ICustomerApprovalService
                 $"Stage {request.CurrentApprovalStage} of {request.RequiredApprovalStages} approved.", cancellationToken);
         }
 
+        await WriteStatusChangeAsync(request, previousStatus, actorId, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         // Enqueue only after the SyncInProgress state is committed so the job sees a consistent row.
@@ -98,9 +104,11 @@ public sealed class CustomerApprovalService : ICustomerApprovalService
             throw new CustomerWorkflowException("A synced or in-progress request cannot be rejected.", $"Current status: {request.Status}.");
         }
 
+        var previousStatus = request.Status;
         request.Status = CustomerRequestStatus.Rejected;
         request.RejectionReason = reason.Trim();
         await AppendAuditAsync(request, CustomerAuditActionType.Rejected, actorId, actorName, reason.Trim(), cancellationToken);
+        await WriteStatusChangeAsync(request, previousStatus, actorId, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
@@ -111,10 +119,12 @@ public sealed class CustomerApprovalService : ICustomerApprovalService
             throw new CustomerWorkflowException("Only a request awaiting approval can be reverted to the reviewer.", $"Current status: {request.Status}.");
         }
 
+        var previousStatus = request.Status;
         request.Status = CustomerRequestStatus.UnderReview;
         request.CurrentApprovalStage = 0;
         await AppendAuditAsync(request, CustomerAuditActionType.RevertedToReviewer, actorId, actorName,
             string.IsNullOrWhiteSpace(notes) ? "Reverted to reviewer." : notes.Trim(), cancellationToken);
+        await WriteStatusChangeAsync(request, previousStatus, actorId, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
@@ -125,6 +135,7 @@ public sealed class CustomerApprovalService : ICustomerApprovalService
             throw new CustomerWorkflowException("Correction notes are required when returning a request.");
         }
 
+        var previousStatus = request.Status;
         request.Status = CustomerRequestStatus.Returned;
         request.ReturnNotes = notes.Trim();
         request.UnlockedFields = fields is { Count: > 0 }
@@ -134,7 +145,21 @@ public sealed class CustomerApprovalService : ICustomerApprovalService
         request.CurrentApprovalStage = 0;
         await AppendAuditAsync(request, CustomerAuditActionType.Returned, actorId, actorName,
             notes.Trim(), cancellationToken, fields is { Count: > 0 } ? System.Text.Json.JsonSerializer.Serialize(fields) : null);
+        await WriteStatusChangeAsync(request, previousStatus, actorId, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>Records a customer-request status change on the Universal Features activity timeline.</summary>
+    private Task WriteStatusChangeAsync(CustomerRequest request, CustomerRequestStatus previousStatus, Guid? actorId, CancellationToken cancellationToken)
+    {
+        if (previousStatus == request.Status)
+        {
+            return Task.CompletedTask;
+        }
+
+        return _activity.WriteAsync(new CreateActivityEventDto(
+            EntityType.CustomerRequest, request.Id, ActivityEventTypes.StatusChanged,
+            previousStatus.ToString(), request.Status.ToString(), actorId), cancellationToken);
     }
 
     private Task AppendAuditAsync(

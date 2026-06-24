@@ -1,0 +1,67 @@
+using IntegrationHub.Application.Abstractions.Persistence;
+using IntegrationHub.Domain.Entities;
+using IntegrationHub.Domain.Enums;
+using Microsoft.EntityFrameworkCore;
+
+namespace IntegrationHub.Infrastructure.Persistence.Repositories;
+
+internal sealed class NotificationRepository : INotificationRepository
+{
+    private readonly IntegrationHubDbContext _dbContext;
+
+    public NotificationRepository(IntegrationHubDbContext dbContext) => _dbContext = dbContext;
+
+    public Task AddAsync(Notification notification, CancellationToken cancellationToken = default)
+        => _dbContext.Notifications.AddAsync(notification, cancellationToken).AsTask();
+
+    public void Update(Notification notification) => _dbContext.Notifications.Update(notification);
+
+    public Task<Notification?> GetByIdForUserAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
+        => _dbContext.Notifications.FirstOrDefaultAsync(n => n.Id == id && n.UserId == userId, cancellationToken);
+
+    public async Task<(IReadOnlyList<Notification> Items, int Total)> ListAsync(
+        Guid userId, bool? isRead, NotificationType? type, int page, int limit, CancellationToken cancellationToken = default)
+    {
+        var query = _dbContext.Notifications.Where(n => n.UserId == userId);
+        if (isRead is { } read)
+        {
+            query = query.Where(n => n.IsRead == read);
+        }
+        if (type is { } t)
+        {
+            query = query.Where(n => n.Type == t);
+        }
+
+        var ordered = query.OrderByDescending(n => n.CreatedOnUtc);
+        var total = await ordered.CountAsync(cancellationToken);
+        var items = await ordered.Skip((page - 1) * limit).Take(limit).ToListAsync(cancellationToken);
+        return (items, total);
+    }
+
+    public Task<int> CountUnreadAsync(Guid userId, CancellationToken cancellationToken = default)
+        => _dbContext.Notifications.CountAsync(n => n.UserId == userId && !n.IsRead, cancellationToken);
+
+    public async Task<IReadOnlyList<Notification>> GetUnreadAsync(Guid userId, CancellationToken cancellationToken = default)
+        => await _dbContext.Notifications.Where(n => n.UserId == userId && !n.IsRead).ToListAsync(cancellationToken);
+
+    public Task<bool> HasRecentDuplicateAsync(
+        Guid userId, NotificationType type, EntityType? entityType, Guid? entityId, DateTime sinceUtc, CancellationToken cancellationToken = default)
+        => _dbContext.Notifications.AnyAsync(
+            n => n.UserId == userId
+                && n.Type == type
+                && n.EntityType == entityType
+                && n.EntityId == entityId
+                && n.CreatedOnUtc >= sinceUtc,
+            cancellationToken);
+
+    public async Task<IReadOnlyList<NotificationPreference>> GetPreferencesAsync(Guid userId, CancellationToken cancellationToken = default)
+        => await _dbContext.NotificationPreferences.Where(p => p.UserId == userId).ToListAsync(cancellationToken);
+
+    public Task<NotificationPreference?> GetPreferenceAsync(Guid userId, NotificationType type, CancellationToken cancellationToken = default)
+        => _dbContext.NotificationPreferences.FirstOrDefaultAsync(p => p.UserId == userId && p.NotificationType == type, cancellationToken);
+
+    public Task AddPreferenceAsync(NotificationPreference preference, CancellationToken cancellationToken = default)
+        => _dbContext.NotificationPreferences.AddAsync(preference, cancellationToken).AsTask();
+
+    public void UpdatePreference(NotificationPreference preference) => _dbContext.NotificationPreferences.Update(preference);
+}

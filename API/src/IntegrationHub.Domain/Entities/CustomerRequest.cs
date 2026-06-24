@@ -43,6 +43,9 @@ public class CustomerRequest : AuditableEntity
     public string? CreditTerms { get; set; }
     public string? CustomerType { get; set; }
     public string? BusinessSegment { get; set; }
+
+    /// <summary>Risk classification. Optional tracked field — a tenant may disable its change history.</summary>
+    [TrackedField(Enums.EntityType.CustomerRequest, "Risk Category", isSystemTracked: false)]
     public string? RiskCategory { get; set; }
 
     // ---- Step 2: Maconomy Fields (customers.approve only) ----
@@ -51,7 +54,13 @@ public class CustomerRequest : AuditableEntity
     public string? BusinessUnit { get; set; }
     public string? Currency { get; set; }
     public string? CustomerGroup { get; set; }
+
+    /// <summary>Maconomy payment terms. System Tracked field — change history is always captured.</summary>
+    [TrackedField(Enums.EntityType.CustomerRequest, "Payment Terms", isSystemTracked: true)]
     public string? PaymentTerms { get; set; }
+
+    /// <summary>Approved credit limit. System Tracked field — change history is always captured.</summary>
+    [TrackedField(Enums.EntityType.CustomerRequest, "Credit Limit", isSystemTracked: true)]
     public decimal? CreditLimit { get; set; }
     public string? Industry { get; set; }
     public string? InvoiceLanguage { get; set; }

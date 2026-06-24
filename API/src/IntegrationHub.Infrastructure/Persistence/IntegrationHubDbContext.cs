@@ -89,6 +89,28 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
 
     public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();
 
+    // ---- Universal Features (Phase 14) ----
+    public DbSet<Note> Notes => Set<Note>();
+    public DbSet<NoteMention> NoteMentions => Set<NoteMention>();
+    public DbSet<Tag> Tags => Set<Tag>();
+    public DbSet<EntityTag> EntityTags => Set<EntityTag>();
+    public DbSet<Attachment> Attachments => Set<Attachment>();
+    public DbSet<ActivityEvent> ActivityEvents => Set<ActivityEvent>();
+    public DbSet<Reminder> Reminders => Set<Reminder>();
+    public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
+    public DbSet<Pin> Pins => Set<Pin>();
+    public DbSet<ColourCode> ColourCodes => Set<ColourCode>();
+    public DbSet<SavedView> SavedViews => Set<SavedView>();
+    public DbSet<Checklist> Checklists => Set<Checklist>();
+    public DbSet<ChecklistItem> ChecklistItems => Set<ChecklistItem>();
+    public DbSet<StickyNote> StickyNotes => Set<StickyNote>();
+    public DbSet<StickyNoteDismissal> StickyNoteDismissals => Set<StickyNoteDismissal>();
+    public DbSet<UserStickyNoteState> UserStickyNoteStates => Set<UserStickyNoteState>();
+    public DbSet<DeletedRecordRetentionConfig> DeletedRecordRetentionConfigs => Set<DeletedRecordRetentionConfig>();
+    public DbSet<FieldModifiedLog> FieldModifiedLogs => Set<FieldModifiedLog>();
+    public DbSet<ModifiedLogFieldConfig> ModifiedLogFieldConfigs => Set<ModifiedLogFieldConfig>();
+
     /// <summary>Data Protection key ring storage (Multi-Tenancy ADR-002).</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
@@ -118,6 +140,30 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
         modelBuilder.Entity<UserGroupMember>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         // SMTP accounts are tenant-scoped; a tenant only ever sees its own mail accounts.
         modelBuilder.Entity<SmtpAccount>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+
+        // Universal Features (Phase 14): every UF table is tenant-scoped + soft-deletable, so it
+        // carries the combined ambient-tenant + soft-delete filter. FieldModifiedLog is the lone
+        // exception — it is append-only with no soft-delete column, so it uses a tenant-only filter.
+        modelBuilder.Entity<Note>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<NoteMention>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<Tag>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<EntityTag>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<Attachment>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<ActivityEvent>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<Reminder>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<Notification>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<NotificationPreference>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<Pin>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<ColourCode>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<SavedView>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<Checklist>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<ChecklistItem>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<StickyNote>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<StickyNoteDismissal>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<UserStickyNoteState>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<DeletedRecordRetentionConfig>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<ModifiedLogFieldConfig>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<FieldModifiedLog>().HasQueryFilter(e => !_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId);
 
         // Soft-delete filters for the non-tenant-scoped entities.
         modelBuilder.Entity<Tenant>().HasQueryFilter(e => !e.Deleted);
@@ -244,6 +290,68 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
                     break;
                 case SmtpAccount smtpAccount when smtpAccount.TenantId == Guid.Empty:
                     smtpAccount.TenantId = _tenantContext.TenantId;
+                    break;
+
+                // ---- Universal Features (Phase 14) ----
+                case Note note when note.TenantId == Guid.Empty:
+                    note.TenantId = _tenantContext.TenantId;
+                    break;
+                case NoteMention noteMention when noteMention.TenantId == Guid.Empty:
+                    noteMention.TenantId = _tenantContext.TenantId;
+                    break;
+                case Tag tag when tag.TenantId == Guid.Empty:
+                    tag.TenantId = _tenantContext.TenantId;
+                    break;
+                case EntityTag entityTag when entityTag.TenantId == Guid.Empty:
+                    entityTag.TenantId = _tenantContext.TenantId;
+                    break;
+                case Attachment attachment when attachment.TenantId == Guid.Empty:
+                    attachment.TenantId = _tenantContext.TenantId;
+                    break;
+                case ActivityEvent activityEvent when activityEvent.TenantId == Guid.Empty:
+                    activityEvent.TenantId = _tenantContext.TenantId;
+                    break;
+                case Reminder reminder when reminder.TenantId == Guid.Empty:
+                    reminder.TenantId = _tenantContext.TenantId;
+                    break;
+                case Notification notification when notification.TenantId == Guid.Empty:
+                    notification.TenantId = _tenantContext.TenantId;
+                    break;
+                case NotificationPreference notificationPreference when notificationPreference.TenantId == Guid.Empty:
+                    notificationPreference.TenantId = _tenantContext.TenantId;
+                    break;
+                case Pin pin when pin.TenantId == Guid.Empty:
+                    pin.TenantId = _tenantContext.TenantId;
+                    break;
+                case ColourCode colourCode when colourCode.TenantId == Guid.Empty:
+                    colourCode.TenantId = _tenantContext.TenantId;
+                    break;
+                case SavedView savedView when savedView.TenantId == Guid.Empty:
+                    savedView.TenantId = _tenantContext.TenantId;
+                    break;
+                case Checklist checklist when checklist.TenantId == Guid.Empty:
+                    checklist.TenantId = _tenantContext.TenantId;
+                    break;
+                case ChecklistItem checklistItem when checklistItem.TenantId == Guid.Empty:
+                    checklistItem.TenantId = _tenantContext.TenantId;
+                    break;
+                case StickyNote stickyNote when stickyNote.TenantId == Guid.Empty:
+                    stickyNote.TenantId = _tenantContext.TenantId;
+                    break;
+                case StickyNoteDismissal stickyNoteDismissal when stickyNoteDismissal.TenantId == Guid.Empty:
+                    stickyNoteDismissal.TenantId = _tenantContext.TenantId;
+                    break;
+                case UserStickyNoteState userStickyNoteState when userStickyNoteState.TenantId == Guid.Empty:
+                    userStickyNoteState.TenantId = _tenantContext.TenantId;
+                    break;
+                case DeletedRecordRetentionConfig retentionConfig when retentionConfig.TenantId == Guid.Empty:
+                    retentionConfig.TenantId = _tenantContext.TenantId;
+                    break;
+                case FieldModifiedLog fieldModifiedLog when fieldModifiedLog.TenantId == Guid.Empty:
+                    fieldModifiedLog.TenantId = _tenantContext.TenantId;
+                    break;
+                case ModifiedLogFieldConfig modifiedLogFieldConfig when modifiedLogFieldConfig.TenantId == Guid.Empty:
+                    modifiedLogFieldConfig.TenantId = _tenantContext.TenantId;
                     break;
             }
         }

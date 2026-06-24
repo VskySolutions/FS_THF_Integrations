@@ -175,6 +175,32 @@ public static class DefaultEmailTemplates
             <p><a href="{{LoginUrl}}">View the request</a></p>
             """,
             new[] { "SubmitterName", "CustomerName", "CustomerRequestNumber", "ErrorMessage", "TenantName", "LoginUrl" }),
+
+        new Definition(
+            EmailTemplateKey.MentionReceived,
+            "Mention Received",
+            "Sent when a user is @mentioned in a note on any record (Universal Features).",
+            "{{Title}}",
+            """
+            <p>Hello {{FullName}},</p>
+            <p>{{Title}}</p>
+            <blockquote>{{Body}}</blockquote>
+            <p><a href="{{LoginUrl}}">Open the record</a></p>
+            """,
+            new[] { "FullName", "Title", "Body", "TenantName", "LoginUrl" }),
+
+        new Definition(
+            EmailTemplateKey.ReminderDue,
+            "Reminder Due",
+            "Sent when a reminder a user set on a record reaches its due time (Universal Features).",
+            "{{Title}}",
+            """
+            <p>Hello {{FullName}},</p>
+            <p>{{Title}}</p>
+            <blockquote>{{Body}}</blockquote>
+            <p><a href="{{LoginUrl}}">Open the record</a></p>
+            """,
+            new[] { "FullName", "Title", "Body", "TenantName", "LoginUrl" }),
     }.ToDictionary(d => d.Key);
 
     /// <summary>All template definitions, in key order.</summary>

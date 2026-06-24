@@ -52,6 +52,22 @@ const sections = [
     ]
   },
   {
+    key: "configuration",
+    label: "Configuration",
+    items: [
+      { label: "Mapping Config", icon: "o_swap_horiz", to: "/mappings", permissions: [Permissions.MappingsRead] }
+    ]
+  },
+  {
+    key: "operations",
+    label: "Operations",
+    items: [
+      { label: "Integration Jobs", icon: "o_sync", to: "/jobs", permissions: [Permissions.JobsRead] },
+      { label: "Logs", icon: "o_description", to: "/logs", permissions: [Permissions.LogsRead] },
+      { label: "Health", icon: "o_monitor_heart", to: "/health", permissions: [Permissions.HealthRead] }
+    ]
+  },
+  {
     key: "access-management",
     label: "Access Management",
     items: [
@@ -59,13 +75,6 @@ const sections = [
       { label: "Roles", icon: "o_admin_panel_settings", to: "/roles", permissions: [Permissions.RolesWrite] },
       { label: "Users", icon: "o_group", to: "/users", permissions: [Permissions.UsersRead] },
       { label: "User Groups", icon: "o_groups", to: "/user-groups", permissions: [Permissions.UsersGroupManagement] }
-    ]
-  },
-  {
-    key: "configuration",
-    label: "Configuration",
-    items: [
-      { label: "Mapping Config", icon: "o_swap_horiz", to: "/mappings", permissions: [Permissions.MappingsRead] }
     ]
   },
   {
@@ -80,15 +89,6 @@ const sections = [
       { label: "Sticky Notes", icon: "o_sticky_note_2", to: "/settings/sticky-notes", permissions: [Permissions.SettingsManage] },
       { label: "Modified Log", icon: "o_manage_history", to: "/settings/modified-log-config", permissions: [Permissions.SettingsManage] },
       { label: "Deleted Records", icon: "o_restore_from_trash", to: "/settings/retention", permissions: [Permissions.RecordsAdminDelete] }
-    ]
-  },
-  {
-    key: "operations",
-    label: "Operations",
-    items: [
-      { label: "Integration Jobs", icon: "o_sync", to: "/jobs", permissions: [Permissions.JobsRead] },
-      { label: "Logs", icon: "o_description", to: "/logs", permissions: [Permissions.LogsRead] },
-      { label: "Health", icon: "o_monitor_heart", to: "/health", permissions: [Permissions.HealthRead] }
     ]
   },
   {

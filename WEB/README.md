@@ -60,20 +60,41 @@ pattern repeats, extract a component/composable.
 - Dates display app-wide as **`MM-DD-YYYY hh:mm AM/PM`** in the active tenant's time zone
   (`composables/useDateFormat.js`).
 
+### Universal Features (Phase 15)
+Platform-wide collaboration/personalisation that attaches to **any** entity via an `(entityType, entityId)` key.
+- **Reusable components** live in `components/universal/`: `EntityUniversalPanel` (Notes / Activity /
+  Checklists / Attachments tabs + tags), `EntityHeaderActions` (Pin · Colour · Reminder · Copy Link ·
+  PDF), `FieldLogIcon` + `FieldModifiedLogDrawer` (field change history), `DeletedRecordsPanel`
+  (Show Deleted · Restore · Permanently Delete), `NotificationCentre`, `StickyNoteLayer`, `SavedViewSelector`.
+- **Composables** live in `composables/uf/`: `useEntityMeta` (label/icon/permalink route per `EntityType`),
+  `usePins`, `useColourCodes`, `useFieldLogCounts`, `useShowDeleted`, `useNotificationMeta`.
+- **API** groups in `services/api.js`: `ufNotesApi`, `ufTagsApi`, `ufAttachmentsApi`, `ufActivityApi`,
+  `ufReminderApi`, `ufNotificationApi`, `ufPinApi`, `ufColourApi`, `ufPdfApi`, `ufSavedViewApi`,
+  `ufChecklistApi`, `ufStickyNoteApi`, `ufDeletedApi`, `ufModifiedLogApi` (+ the `EntityType` enum).
+- **Standalone pages** + settings/admin pages live in `modules/universal/`.
+- To attach UF to a new entity type, extend `EntityType` (api.js) + `useEntityMeta` and drop
+  `<EntityUniversalPanel>` / `<EntityHeaderActions>` into its detail page. See
+  `API/docs/DEVELOPMENT.md` → *Add a Universal Feature to a new entity type*.
+
 ---
 
 ## Project structure
 
 ```
 src/
-├── components/common/   # shared UI: AppDataTable, AppFormDrawer, AppFilterDrawer, AppDetailHeader,
-│                        #            AppListHeader, AppSelect, AppTextField, AppPhoneInput, …
-├── components/person/   # PersonFormFields, PersonFormDialog
-├── composables/         # useListTable, useColumnFilters, useColumnOrder, useDrawerResize,
-│                        # useCountries, useTenantOptions, useDateFormat, usePermissions, …
-├── modules/             # feature modules: tenant, person, user, role, mapping, integration, account, auth
-│   └── <feature>/{routes.js, pages/}
-├── services/api.js      # API client (resource groups per controller)
-├── stores/              # Pinia: auth, tenant
-└── css/                 # quasar.variables.scss, app.scss, typography.scss, custom.scss
+├── components/common/      # shared UI: AppDataTable, AppFormDrawer, AppFilterDrawer, AppDetailHeader,
+│                           #            AppListHeader, AppSelect, AppTextField, AppPhoneInput, …
+├── components/universal/   # Universal Features components (entity panels, header actions, sticky notes, …)
+├── components/person/      # PersonFormFields, PersonFormDialog
+├── composables/            # useListTable, useColumnFilters, useColumnOrder, useDrawerResize,
+│   └── uf/                 # universal-features composables (useEntityMeta, usePins, useFieldLogCounts, …)
+├── modules/                # feature modules: tenant, person, user, role, mapping, integration, …, universal
+│   └── <feature>/{routes.js, pages/, components/}
+├── services/api.js         # API client (resource groups per controller, incl. uf*Api)
+├── stores/                 # Pinia: auth, tenant
+└── css/                    # quasar.variables.scss, app.scss, typography.scss, custom.scss
 ```
+
+> **Adding a new module/page?** Follow the full-stack checklist in
+> [`API/docs/DEVELOPMENT.md`](../API/docs/DEVELOPMENT.md) → *Add a new feature module*, which lists every
+> backend **and** frontend file to create, with the naming standard for each.

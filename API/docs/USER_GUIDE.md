@@ -5,9 +5,10 @@ what the platform does, who can do what, and how to perform every common task �
 login to triggering an import and checking whether it succeeded.
 
 > IntegrationHub automates importing financial data from **Concur** into **Maconomy** —
-> expense reports, vendor invoices, and vendor payments. You drive it through a REST API.
-> There is no graphical screen; you interact with it through the **Scalar API reference** in your
-> browser, through `curl`, or through any HTTP client (Postman, Insomnia, a script).
+> expense reports, vendor invoices, and vendor payments. It also handles customer onboarding,
+> user/role administration, email, dashboards, and a cross-cutting **Universal Features** layer.
+> You can drive it through the **web app** (`WEB/`, a Quasar/Vue SPA) or directly through the REST API
+> — via the **Scalar API reference** in your browser, `curl`, or any HTTP client (Postman, Insomnia, a script).
 
 ---
 
@@ -43,6 +44,7 @@ login to triggering an import and checking whether it succeeded.
 | **Credentials / Config** | The Concur and Maconomy connection details for a tenant. Stored encrypted; an import can only run once both are configured. |
 | **Mapping** | A rule that translates a field from the source system to the destination system (optionally with a transformation). |
 | **Retry queue** | Jobs that failed for a transient reason are automatically retried on a backoff schedule. You can also retry manually. |
+| **Universal Features** | A collaboration/personalisation toolkit available on every record: **notes** (with @mentions), **tags**, **attachments**, an **activity timeline**, **reminders**, **notifications**, **pins**, **colour codes**, **saved views**, **checklists**, **sticky notes**, **deleted-records management** (restore / permanently delete), and a **modified-log** of field changes. Admin-only items are gated by the `settings.manage` and `records.adminDelete` permissions. |
 
 **Imports run asynchronously.** When you trigger an import you get back a **job ID immediately** (HTTP
 `202 Accepted`). The work then happens on a background worker. To find out whether it succeeded, you

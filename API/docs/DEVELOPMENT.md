@@ -51,9 +51,10 @@ Conventions:
 
 - One `DbContext`: `IntegrationHubDbContext`. Entity mappings live in `Persistence/Configurations/*` as `IEntityTypeConfiguration<T>` (applied via `ApplyConfigurationsFromAssembly`). **No data annotations on entities.**
 - **Repositories stage changes; they do not save.** Commit via `IUnitOfWork.SaveChangesAsync()`. This lets an action and its audit entry commit in one transaction.
-- The `AuditTrail` repository is **append-only** — expose `AddAsync` only; never an update/delete path.
+- The `AuditTrail` repository is **append-only** — expose `AddAsync` only; never an update/delete path. The Universal Features `ActivityEvent` and `FieldModifiedLog` tables are append-only the same way (read API only; written in-process).
 - All public repo methods are `async` and take a `CancellationToken` (default it).
-- Enums are persisted **as strings** (`.HasConversion<string>()`).
+- Enums are persisted via `.HasConversion<…>()` — **`<int>`** for most domain enums (`CustomerRequestStatus`, `EntityType`, `NotificationType`, …) and **`<string>`** only where DB readability matters (e.g. `TenantStatus`). Pick one per enum and stay consistent across the entity config and any seed data.
+- **One allowed Domain attribute:** entities are POCOs with no framework attributes, **except** the `[TrackedField]` marker (Universal Features — Modified Log) which carries no EF/framework dependency and is read by reflection at startup.
 
 ### Migrations
 
@@ -70,8 +71,9 @@ The API applies migrations on startup. Never edit an already-applied migration �
 
 ## 4. Multi-tenancy (non-negotiable)
 
-- Tenant-scoped entities (`IntegrationJob`, `IntegrationLog`, `RetryQueue`, `AuditTrail`, `MappingConfiguration`) carry a `TenantId`.
+- Tenant-scoped entities (`IntegrationJob`, `IntegrationLog`, `RetryQueue`, `AuditTrail`, `MappingConfiguration`, `CustomerRequest`, `Person`, `SmtpAccount`, and **every Universal Features table**) carry a `TenantId`.
 - `IntegrationHubDbContext` applies a **global query filter** keyed to `ITenantContext.TenantId`, and **stamps `TenantId` on insert** in `SaveChanges`. You normally don't write tenant filters by hand.
+- **Checklist for any new tenant-scoped entity** (miss one and it leaks across tenants): (1) add the `DbSet`, (2) add the combined filter `(!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted` in `OnModelCreating`, (3) add a `StampTenant` switch case. Append-only tables with no soft-delete (e.g. `FieldModifiedLog`) drop the `&& !e.Deleted` part.
 - The filter is a **no-op when no tenant is resolved** (background/global ops). For cross-tenant admin queries (Super Admin), use `.IgnoreQueryFilters()` with an explicit `TenantId` filter.
 - `ITenantContext` is set by `TenantResolutionMiddleware` (API) from the JWT `activeTenantId`, and by the Hangfire tenant filter (Worker) from the job payload — **before** any data access.
 - Tenant credentials are resolved per-tenant at runtime via `ITenantApiConfigurationService` and decrypted with `ICredentialEncryptionService` (Data Protection). Connectors never read credentials from `appsettings`.
@@ -136,7 +138,56 @@ Add a controller action gated by `[RequirePermission(Permissions.<key>)]`, a Flu
 
 ### Add a permission
 
-Add the key to `IntegrationHub.Shared.Security.Permissions` (`area.action`), include it in `All` and the relevant `For<Role>()` set(s). It is re-seeded onto system roles on the next startup. Mirror the key into the web side (`WEB/src/composables/usePermissions.js`) so the UI can gate controls.
+Add the key to `IntegrationHub.Shared.Security.Permissions` (`area.action`), include it in `All` and the relevant `For<Role>()` set(s). It is re-seeded onto system roles on the next startup. Mirror the key into the web side (`WEB/src/composables/usePermissions.js`) so the UI can gate controls. *(Phase 14 added `settings.manage` and `records.adminDelete` this way — both granted to Tenant Admin + Super Admin.)*
+
+### Add a new feature module (full-stack checklist)
+
+This is the canonical "where do I put everything" list for a new CRUD-style module (e.g. a new admin-managed entity). **File names match the type; one public type per file.** Work outward through the layers.
+
+**Backend (`API/src`)** — create in this order, building after each layer:
+
+| # | Layer · folder | File(s) to add | Naming standard |
+|---|----------------|----------------|-----------------|
+| 1 | `Domain/Entities` | `Widget.cs` (extends `AuditableEntity`; `Guid Id`; `Guid TenantId` if tenant-scoped) | Entity = singular PascalCase. Properties PascalCase. UTC fields suffixed `…OnUtc`. |
+| 2 | `Domain/Enums` | `WidgetStatus.cs` (if needed) | Enum singular PascalCase; explicit integer values when persisted. |
+| 3 | `Infrastructure/Persistence/Configurations` | `WidgetConfiguration.cs` (`IEntityTypeConfiguration<Widget>`, `internal sealed`) | `<Entity>Configuration`. Table name plural (`builder.ToTable("Widgets")`). Unique indexes filtered `[Deleted] = 0`. |
+| 4 | `Infrastructure/Persistence/IntegrationHubDbContext.cs` | add `DbSet<Widget>`, query filter, `StampTenant` case (see the tenant checklist above) | DbSet name plural. |
+| 5 | `Application/Abstractions/Persistence` | `IWidgetRepository.cs` (interface; `async` + `CancellationToken`; repos **stage**, never save) | `I<Entity>Repository`. Methods `GetByIdAsync`/`ListAsync`/`AddAsync`/`Update`/`Remove`; Super-Admin reads via a `…ForTenantAsync`/`…UnscopedAsync` variant. |
+| 6 | `Infrastructure/Persistence/Repositories` | `WidgetRepository.cs` (`internal sealed`, implements the interface) | `<Entity>Repository`. |
+| 7 | `Infrastructure/DependencyInjection.cs` | `services.AddScoped<IWidgetRepository, WidgetRepository>();` in `AddPersistence` | interface → implementation, **Scoped** for anything touching the DbContext. |
+| 8 | `Application/…` (optional) | `IWidgetService` + `WidgetService` for non-trivial business rules; register in `Application.DependencyInjection` | `I<Name>Service` / `<Name>Service`. |
+| 9 | `Shared/Security/Permissions.cs` | new `area.action` keys + add to `All` / `For<Role>()` | constant `PascalCase`, value `area.action` (lower camel action). |
+| 10 | `Api/Models/<Area>` | `WidgetModels.cs` — request **classes** (`Create…Request`/`Update…Request`) + response **records** (`…Response`) | Requests = mutable `class` (model binding); responses = `record`. No raw entity exposure. |
+| 11 | `Api/Validators/<Area>` | `WidgetValidators.cs` (`AbstractValidator<TRequest>`, auto-registered) | `<Request>Validator`. |
+| 12 | `Api/Controllers` | `WidgetsController.cs` (`[ApiController]`, `[Authorize]`, `[RequirePermission(...)]`, every response via `ApiResponseFactory`) | `<Plural>Controller`. Route `/api/admin/<plural>` (admin) or `/api/<plural>`. |
+| 13 | migration | `dotnet ef migrations add Add<Feature>` | descriptive PascalCase; never edit an applied migration. |
+| 14 | `tests/IntegrationHub.UnitTests` | `<Type>Tests.cs` (xUnit + Moq + FluentAssertions) | `<Type>Tests`; one fact per behaviour. |
+
+**Frontend (`WEB/src`)** — see also `WEB/README.md`:
+
+| # | Folder | File(s) to add | Naming standard |
+|---|--------|----------------|-----------------|
+| 1 | `services/api.js` | a `widgetApi` resource group (`list`/`get`/`create`/`update`/`remove`); lists use `.then(envelope)`, single items `.then(unwrap)` | `<entity>Api` camelCase object. |
+| 2 | `composables/usePermissions.js` | mirror any new permission keys into the `Permissions` object | key `PascalCase`, value matches backend. |
+| 3 | `modules/<feature>/routes.js` | route block (lazy `component: () => import(...)`, `meta.requiresAuth`, `meta.permissions`) | route `name` snake_case (`widget_detail`). |
+| 4 | `router/index.js` | `import` + `routes.push(...<feature>Routes)` | — |
+| 5 | `modules/<feature>/pages/` | `index.vue` (list: `AppListHeader` + `AppDataTable` + `useListTable`) and `detail.vue` (`AppDetailHeader` + cards) | `<script setup>`; kebab-case component usage in templates. |
+| 6 | `modules/<feature>/components/` | `WidgetFormDrawer.vue` (`AppFormDrawer` + `q-form`) | `<Entity>FormDrawer`. |
+| 7 | `components/app_menu.vue` | a nav item under the right section, gated by `permissions: [Permissions.X]` | — |
+| 8 | `test/unit` | `<Thing>.spec.js` (Vitest; mock `services/api` + composables, stub heavy children) | `<Thing>.spec.js`. |
+
+**Reuse, don't hand-roll:** `AppDataTable`/`useListTable`, `AppFormDrawer`/`AppViewDrawer`/`AppFilterDrawer`, `AppDetailHeader`/`AppListHeader`, the `App*` field inputs, `useNotify`/`useConfirm`/`usePreferences`. Show resolved names, never raw ids.
+
+### Add a Universal Feature to a new entity type
+
+Universal Features (notes, tags, attachments, activity, reminders, pins, colour codes, checklists, sticky notes, deleted-records, modified-log) attach to any entity via the shared **`(EntityType, EntityId)`** key — no per-entity tables (Universal Features ADR-001). To onboard a new entity type:
+
+1. Add the value to the `EntityType` enum (`Domain/Enums/EntityType.cs`) — **no migration**; all UF tables already serve it.
+2. Map it in `Api/Security/UniversalFeatureEntityAccess.cs` (its base read permission) so UF endpoints gate correctly.
+3. Frontend: add it to `EntityType` in `services/api.js` and to `composables/uf/useEntityMeta.js` (label, icon, detail-route resolver for permalinks/pins/mentions).
+4. To support **Deleted Records Management** for it, add a `case` to `DeletedRecordsRepository` (list/identity/restore/hard-delete projections).
+5. To field-track a property for **Modified Log**, decorate it with `[TrackedField(EntityType.X, "Label", isSystemTracked: …)]` and render a `<FieldLogIcon>` beside its input (with `useFieldLogCounts` on the detail page).
+6. Drop `<EntityUniversalPanel :entity-type :entity-id>` into the detail page and `<EntityHeaderActions>` into its header.
 
 ---
 

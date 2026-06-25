@@ -12,18 +12,22 @@ namespace IntegrationHub.Api.Security;
 /// </summary>
 public static class UniversalFeatureEntityAccess
 {
-    /// <summary>The base read permission gating UF access to a given entity type.</summary>
-    public static string RequiredReadPermission(EntityType entityType) => entityType switch
+    /// <summary>
+    /// The base read permission(s) gating UF access to a given entity type. Holding ANY one grants
+    /// access. CustomerRequest accepts any customer-workflow capability (data entry / review / approve)
+    /// so everyone who can open a customer record can read its notes, tags, activity, etc.
+    /// </summary>
+    public static IReadOnlyList<string> RequiredReadPermissions(EntityType entityType) => entityType switch
     {
-        EntityType.CustomerRequest => Permissions.CustomersDataEntry,
-        EntityType.IntegrationJob => Permissions.JobsRead,
-        EntityType.Tenant => Permissions.TenantsRead,
-        EntityType.User => Permissions.UsersRead,
-        EntityType.UserGroup => Permissions.UsersRead,
-        _ => Permissions.UsersRead,
+        EntityType.CustomerRequest => new[] { Permissions.CustomersDataEntry, Permissions.CustomersReview, Permissions.CustomersApprove },
+        EntityType.IntegrationJob => new[] { Permissions.JobsRead },
+        EntityType.Tenant => new[] { Permissions.TenantsRead },
+        EntityType.User => new[] { Permissions.UsersRead },
+        EntityType.UserGroup => new[] { Permissions.UsersRead },
+        _ => new[] { Permissions.UsersRead },
     };
 
     /// <summary>True when the caller may read the given entity type (and therefore its UF data).</summary>
     public static bool CanAccess(this ClaimsPrincipal principal, EntityType entityType)
-        => principal.IsSuperAdmin() || principal.HasPermission(RequiredReadPermission(entityType));
+        => principal.IsSuperAdmin() || RequiredReadPermissions(entityType).Any(principal.HasPermission);
 }

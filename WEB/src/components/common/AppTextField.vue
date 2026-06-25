@@ -1,42 +1,49 @@
 <template>
-  <q-input
-    v-model="model"
-    :label="label"
-    :type="type"
-    :placeholder="placeholder"
-    :rules="rules"
-    :error="error"
-    :error-message="errorMessage"
-    :disable="disable"
-    :readonly="readonly"
-    :hint="hint"
-    :autogrow="autogrow"
-    :mask="mask"
-    :clearable="clearable"
-    :autocomplete="autocomplete"
-    outlined
-    :dense="dense"
-    stack-label
-    hide-bottom-space
-    @blur="$emit('blur', $event)"
-  >
-    <template v-if="$slots.prepend" #prepend>
-      <slot name="prepend" />
-    </template>
-    <template v-if="$slots.append" #append>
-      <slot name="append" />
-    </template>
-  </q-input>
+  <div class="app-field">
+    <app-field-label :label="label" :required="required" />
+    <q-input
+      v-model="model"
+      :type="type"
+      :placeholder="placeholder"
+      :rules="rules"
+      :error="error"
+      :error-message="errorMessage"
+      :disable="disable"
+      :readonly="readonly"
+      :hint="hint"
+      :autogrow="autogrow"
+      :mask="mask"
+      :clearable="clearable"
+      :autocomplete="autocomplete"
+      :aria-label="ariaLabel"
+      outlined
+      :dense="dense"
+      hide-bottom-space
+      @blur="$emit('blur', $event)"
+    >
+      <template v-if="$slots.prepend" #prepend>
+        <slot name="prepend" />
+      </template>
+      <template v-if="$slots.append" #append>
+        <slot name="append" />
+      </template>
+    </q-input>
+  </div>
 </template>
 
 <script setup>
-// Standard single-line text/email/number field. Centralises the outlined / stack-label /
-// hide-bottom-space styling so every form looks and behaves the same (UI consistency).
-import { computed } from "vue";
+// Standard single-line text/email/number field. Renders the label as an external top-left label
+// (via AppFieldLabel) with a red asterisk for mandatory fields, and centralises the outlined / dense
+// styling so every form looks and behaves the same (UI consistency).
+import { computed, toRef } from "vue";
+import AppFieldLabel from "components/common/AppFieldLabel.vue";
+import { useFieldLabel } from "composables/useFieldLabel";
 
 const props = defineProps({
   modelValue: { type: [String, Number], default: "" },
   label: { type: String, default: "" },
+  // Force the required marker; a trailing "*" in the label also marks it required.
+  required: { type: Boolean, default: false },
   type: { type: String, default: "text" },
   placeholder: { type: String, default: undefined },
   rules: { type: Array, default: () => [] },
@@ -59,4 +66,7 @@ const model = computed({
   get: () => props.modelValue,
   set: (val) => emit("update:modelValue", val)
 });
+
+// Keep the control accessible now that the visible label is external.
+const { text: ariaLabel } = useFieldLabel(toRef(props, "label"), toRef(props, "required"));
 </script>

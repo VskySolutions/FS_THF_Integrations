@@ -26,10 +26,12 @@ public sealed class PermissionPolicyProvider : IAuthorizationPolicyProvider
     {
         if (policyName.StartsWith(PermissionAuthorizationDefaults.PolicyPrefix, StringComparison.Ordinal))
         {
-            var permission = policyName[PermissionAuthorizationDefaults.PolicyPrefix.Length..];
+            // The suffix is one permission, or several pipe-separated for an any-of (OR) requirement.
+            var permissions = policyName[PermissionAuthorizationDefaults.PolicyPrefix.Length..]
+                .Split('|', StringSplitOptions.RemoveEmptyEntries);
             var policy = new AuthorizationPolicyBuilder(AuthenticationSchemes.Jwt, AuthenticationSchemes.ApiKey)
                 .RequireAuthenticatedUser()
-                .AddRequirements(new PermissionRequirement(permission))
+                .AddRequirements(new PermissionRequirement(permissions))
                 .Build();
             return Task.FromResult<AuthorizationPolicy?>(policy);
         }

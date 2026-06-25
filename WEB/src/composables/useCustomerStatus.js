@@ -4,6 +4,8 @@
 // Status strings (mirror the API contract): Draft, Submitted, UnderReview, PendingApproval,
 // PartiallyApproved, Approved, SyncInProgress, Synced, Rejected, Returned, Failed.
 
+import { usePermissions, Permissions } from "composables/usePermissions";
+
 const STATUS_COLORS = Object.freeze({
   Draft: "grey",
   Submitted: "blue",
@@ -52,5 +54,18 @@ export function customerStatusLabel (status) {
 }
 
 export function useCustomerStatus () {
-  return { customerStatusColor, customerStatusLabel, CUSTOMER_STAGES };
+  const { has } = usePermissions();
+
+  // A submitted request is the reviewer's queue item: data-entry users see "Submitted" (blue,
+  // confirming their action), while users with the review capability see "Waiting For Review" in a
+  // distinct colour so it stands out as an item awaiting their action.
+  const isReviewerQueueItem = (status) => status === "Submitted" && has(Permissions.CustomersReview);
+
+  const roleAwareStatusLabel = (status) =>
+    isReviewerQueueItem(status) ? "Waiting For Review" : customerStatusLabel(status);
+
+  const roleAwareStatusColor = (status) =>
+    isReviewerQueueItem(status) ? "purple" : customerStatusColor(status);
+
+  return { customerStatusColor: roleAwareStatusColor, customerStatusLabel: roleAwareStatusLabel, CUSTOMER_STAGES };
 }

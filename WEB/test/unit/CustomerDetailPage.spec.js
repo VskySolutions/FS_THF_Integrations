@@ -20,6 +20,11 @@ vi.mock("composables/uf/useFieldLogCounts", () => ({
 vi.mock("composables/useNotify", () => ({ useNotify: () => ({ success: vi.fn(), error: vi.fn() }) }));
 vi.mock("composables/useConfirm", () => ({ useConfirm: () => ({ confirm: vi.fn() }) }));
 vi.mock("composables/useDateFormat", () => ({ useDateFormat: () => ({ formatDateTime: (v) => v || "—" }) }));
+// useCustomerStatus reads permissions (role-aware status label/colour); stub it (no Pinia in the spec).
+vi.mock("composables/usePermissions", () => ({
+  usePermissions: () => ({ has: () => false, hasAny: () => false }),
+  Permissions: { CustomersReview: "customers.review" }
+}));
 
 import CustomerDetailPage from "modules/customer/pages/detail.vue";
 

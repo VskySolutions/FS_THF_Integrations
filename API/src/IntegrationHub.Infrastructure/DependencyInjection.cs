@@ -140,6 +140,10 @@ public static class DependencyInjection
         services.AddScoped<Application.Abstractions.Email.ISmtpEmailSender>(sp =>
             new Email.SmtpEmailSender(sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Email.SmtpEmailSender>>()));
         services.AddScoped<Application.Abstractions.Email.IEmailNotificationService, Email.EmailNotificationService>();
+
+        // Transactional emails are queued and delivered on a Hangfire worker so requests never block on SMTP.
+        services.AddScoped<Application.Abstractions.Email.IEmailDispatcher, Jobs.EmailDispatcher>();
+        services.AddScoped<Jobs.EmailSendJob>();
         return services;
     }
 

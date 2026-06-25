@@ -31,7 +31,8 @@ public class CustomerControllerTests
     private readonly Mock<IUserRepository> _users = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IWebHostEnvironment> _environment = new();
-    private readonly Mock<IEmailNotificationService> _emailNotifications = new();
+    private readonly Mock<IEmailDispatcher> _emailDispatcher = new();
+    private readonly Mock<IPinRepository> _pins = new();
 
     public CustomerControllerTests()
         => _users.Setup(u => u.GetFullNamesAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
@@ -39,7 +40,8 @@ public class CustomerControllerTests
 
     private CustomersController Create() => new(
         _requests.Object, _audit.Object, _documents.Object, _tenants.Object, _addresses.Object,
-        _approval.Object, _duplicates.Object, _users.Object, _unitOfWork.Object, _environment.Object, _emailNotifications.Object);
+        _approval.Object, _duplicates.Object, _users.Object, _unitOfWork.Object, _environment.Object,
+        _emailDispatcher.Object, _pins.Object);
 
     /// <summary>Builds a controller with the given identity claims (subject + role + optional tenant + explicit permissions).</summary>
     private CustomersController CreateWithUser(Guid userId, string role, Guid? tenantId = null, params string[] permissions)
@@ -92,7 +94,8 @@ public class CustomerControllerTests
         var tenantId = Guid.NewGuid();
         _requests.Setup(r => r.ListAsync(
                 It.IsAny<string?>(), It.IsAny<Guid?>(), It.IsAny<CustomerRequestStatus?>(), It.IsAny<Guid?>(),
-                It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<int>(),
+                It.IsAny<CancellationToken>(), It.IsAny<IReadOnlyCollection<Guid>?>()))
             .ReturnsAsync((Array.Empty<CustomerRequest>(), 0));
 
         var userId = Guid.NewGuid();
@@ -101,7 +104,7 @@ public class CustomerControllerTests
 
         // Non-super-admins are pinned by the ambient filter (scopeTenant = null); drafts scoped to the caller.
         _requests.Verify(r => r.ListAsync(
-            null, null, null, null, null, null, userId, 1, 20, It.IsAny<CancellationToken>()), Times.Once);
+            null, null, null, null, null, null, userId, 1, 20, It.IsAny<CancellationToken>(), It.IsAny<IReadOnlyCollection<Guid>?>()), Times.Once);
     }
 
     [Fact]
@@ -110,7 +113,8 @@ public class CustomerControllerTests
         var target = Guid.NewGuid();
         _requests.Setup(r => r.ListAsync(
                 It.IsAny<string?>(), It.IsAny<Guid?>(), It.IsAny<CustomerRequestStatus?>(), It.IsAny<Guid?>(),
-                It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<int>(),
+                It.IsAny<CancellationToken>(), It.IsAny<IReadOnlyCollection<Guid>?>()))
             .ReturnsAsync((Array.Empty<CustomerRequest>(), 0));
 
         var userId = Guid.NewGuid();
@@ -118,7 +122,7 @@ public class CustomerControllerTests
         await controller.List(tenantId: target, null, null, null, null, null, 1, 20, default);
 
         _requests.Verify(r => r.ListAsync(
-            null, target, null, null, null, null, userId, 1, 20, It.IsAny<CancellationToken>()), Times.Once);
+            null, target, null, null, null, null, userId, 1, 20, It.IsAny<CancellationToken>(), It.IsAny<IReadOnlyCollection<Guid>?>()), Times.Once);
     }
 
     // ---- Create ----
@@ -390,8 +394,8 @@ public class CustomerControllerTests
         var result = await CreateWithUser(userId, Roles.Operator, tenant).Submit(request.Id, new SubmitCustomerRequest(), default);
 
         result.Should().BeOfType<OkObjectResult>();
-        _emailNotifications.Verify(e => e.SendAsync(tenant, EmailTemplateKey.CustomerSubmitted, "admin@acme.com",
-            It.IsAny<IReadOnlyDictionary<string, string?>>(), It.IsAny<CancellationToken>()), Times.Once);
+        _emailDispatcher.Verify(e => e.Enqueue(tenant, EmailTemplateKey.CustomerSubmitted, "admin@acme.com",
+            It.IsAny<IReadOnlyDictionary<string, string?>>()), Times.Once);
     }
 
     [Fact]
@@ -409,8 +413,8 @@ public class CustomerControllerTests
             .Return(request.Id, new ReturnCustomerRequest { Notes = "Fix the legal name" }, default);
 
         result.Should().BeOfType<OkObjectResult>();
-        _emailNotifications.Verify(e => e.SendAsync(tenant, EmailTemplateKey.CustomerReturned, "sub@acme.com",
-            It.IsAny<IReadOnlyDictionary<string, string?>>(), It.IsAny<CancellationToken>()), Times.Once);
+        _emailDispatcher.Verify(e => e.Enqueue(tenant, EmailTemplateKey.CustomerReturned, "sub@acme.com",
+            It.IsAny<IReadOnlyDictionary<string, string?>>()), Times.Once);
     }
 
     [Fact]
@@ -433,8 +437,8 @@ public class CustomerControllerTests
             .Approve(request.Id, new ApproveCustomerRequest(), default);
 
         result.Should().BeOfType<OkObjectResult>();
-        _emailNotifications.Verify(e => e.SendAsync(tenant, EmailTemplateKey.CustomerApproved, "sub@acme.com",
-            It.IsAny<IReadOnlyDictionary<string, string?>>(), It.IsAny<CancellationToken>()), Times.Once);
+        _emailDispatcher.Verify(e => e.Enqueue(tenant, EmailTemplateKey.CustomerApproved, "sub@acme.com",
+            It.IsAny<IReadOnlyDictionary<string, string?>>()), Times.Once);
     }
 
     [Fact]
@@ -455,7 +459,7 @@ public class CustomerControllerTests
             .Reject(request.Id, new RejectCustomerRequest { Reason = "Not a valid customer" }, default);
 
         result.Should().BeOfType<OkObjectResult>();
-        _emailNotifications.Verify(e => e.SendAsync(tenant, EmailTemplateKey.CustomerRejected, "sub@acme.com",
-            It.IsAny<IReadOnlyDictionary<string, string?>>(), It.IsAny<CancellationToken>()), Times.Once);
+        _emailDispatcher.Verify(e => e.Enqueue(tenant, EmailTemplateKey.CustomerRejected, "sub@acme.com",
+            It.IsAny<IReadOnlyDictionary<string, string?>>()), Times.Once);
     }
 }

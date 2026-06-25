@@ -16,4 +16,11 @@ public interface IEmailNotificationService
         string? toEmail,
         IReadOnlyDictionary<string, string?> model,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Fast check (no SMTP round-trip) of whether the tenant has an active SMTP account, i.e. whether a
+    /// queued email will actually be attempted. Used by flows that report email status to the caller
+    /// while the send itself runs in the background.
+    /// </summary>
+    Task<bool> HasActiveSenderAsync(Guid tenantId, CancellationToken cancellationToken = default);
 }

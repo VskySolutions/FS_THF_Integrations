@@ -16,11 +16,11 @@ public class NotificationDispatcherTests
 {
     private readonly Mock<INotificationRepository> _notifications = new();
     private readonly Mock<IUserRepository> _users = new();
-    private readonly Mock<IEmailNotificationService> _email = new();
+    private readonly Mock<IEmailDispatcher> _emailDispatcher = new();
     private readonly Mock<ITenantContext> _tenant = new();
 
     private NotificationDispatcher Create() => new(
-        _notifications.Object, _users.Object, _email.Object, _tenant.Object, NullLogger<NotificationDispatcher>.Instance);
+        _notifications.Object, _users.Object, _emailDispatcher.Object, _tenant.Object, NullLogger<NotificationDispatcher>.Instance);
 
     private static CreateNotificationDto Dto(Guid userId) =>
         new(userId, NotificationType.Mention, "X mentioned you", "hello", EntityType.CustomerRequest, Guid.NewGuid());

@@ -41,6 +41,9 @@ internal sealed class EmailNotificationService : IEmailNotificationService
         _logger = logger;
     }
 
+    public async Task<bool> HasActiveSenderAsync(Guid tenantId, CancellationToken cancellationToken = default)
+        => await _smtpAccounts.GetActiveAsync(tenantId, cancellationToken) is not null;
+
     public async Task<bool> SendAsync(
         Guid tenantId,
         EmailTemplateKey key,

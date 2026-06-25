@@ -47,14 +47,18 @@ export const WIDGETS = [
 const COMMON_KEYS = WIDGETS.filter((w) => w.role === "common").map((w) => w.key);
 const TENANT_KEYS = WIDGETS.filter((w) => w.role === "tenantAdmin").map((w) => w.key);
 const SUPER_KEYS = WIDGETS.filter((w) => w.role === "superAdmin").map((w) => w.key);
+// Customer onboarding charts/reports — shown to customer-workflow users (data entry / review / approve).
+const CUSTOMER_KEYS = WIDGETS.filter((w) => w.category === "customers" && w.role === "tenantAdmin").map((w) => w.key);
 
 export function defaultLayoutForRole (role) {
   if (role === "superAdmin") return [...COMMON_KEYS, ...TENANT_KEYS, ...SUPER_KEYS];
   if (role === "tenantAdmin") return [...COMMON_KEYS, ...TENANT_KEYS];
+  if (role === "customer") return [...COMMON_KEYS, ...CUSTOMER_KEYS];
   return [...COMMON_KEYS];
 }
 
-// Widgets visible to a role: common sees common; tenantAdmin sees common + tenantAdmin; superAdmin sees all.
+// Widgets visible to a role: common sees common; customer sees common + customer charts; tenantAdmin
+// sees common + all tenant widgets; superAdmin sees everything.
 export function widgetsForRole (role) {
   const keys = new Set(defaultLayoutForRole(role));
   return WIDGETS.filter((w) => keys.has(w.key));

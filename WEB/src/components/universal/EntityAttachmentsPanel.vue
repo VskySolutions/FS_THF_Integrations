@@ -1,16 +1,21 @@
 <template>
   <div class="column q-gutter-sm">
-    <q-file
+    <app-multi-file-upload
       v-model="picked"
-      outlined
-      dense
-      label="Upload a file (max 10 MB)"
+      label="Upload files"
+      hint="Max 10 MB each"
+      :max-size-mb="10"
       :loading="uploading"
       accept=".pdf,.png,.jpg,.jpeg,.gif,.bmp,.webp,.svg,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf,.md,.json,.xml,.zip"
-      @update:model-value="onPick"
-    >
-      <template #prepend><q-icon name="o_attach_file" /></template>
-    </q-file>
+    />
+    <div v-if="picked.length" class="row justify-end">
+      <q-btn
+        unelevated no-caps color="primary" icon="o_upload"
+        :label="`Upload ${picked.length} file${picked.length > 1 ? 's' : ''}`"
+        :loading="uploading"
+        @click="uploadAll"
+      />
+    </div>
 
     <q-inner-loading :showing="loading && !attachments.length" />
     <div v-if="!loading && !attachments.length" class="text-grey-6 q-pa-md text-center">No attachments yet.</div>
@@ -43,13 +48,12 @@ import { ufAttachmentsApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
+import AppMultiFileUpload from "components/common/AppMultiFileUpload.vue";
 
 const props = defineProps({
   entityType: { type: Number, required: true },
   entityId: { type: String, required: true }
 });
-
-const MAX_BYTES = 10 * 1024 * 1024;
 
 const notify = useNotify();
 const { confirm } = useConfirm();
@@ -58,7 +62,7 @@ const { formatDate } = useDateFormat();
 const attachments = ref([]);
 const loading = ref(false);
 const uploading = ref(false);
-const picked = ref(null);
+const picked = ref([]);
 
 const load = async () => {
   loading.value = true;
@@ -71,21 +75,25 @@ const load = async () => {
   }
 };
 
-const onPick = async (file) => {
-  if (!file) return;
-  if (file.size > MAX_BYTES) {
-    notify.error("File exceeds the 10 MB limit.");
-    picked.value = null;
-    return;
-  }
+const uploadAll = async () => {
+  if (!picked.value.length) return;
   uploading.value = true;
+  let uploaded = 0;
   try {
-    await ufAttachmentsApi.upload(props.entityType, props.entityId, file);
-    notify.success("Attachment uploaded.");
-    picked.value = null;
-    await load();
-  } catch (err) {
-    notify.error(getApiErrorMessage(err));
+    // Upload each staged file; report per-file failures but keep going.
+    for (const file of picked.value) {
+      try {
+        await ufAttachmentsApi.upload(props.entityType, props.entityId, file);
+        uploaded += 1;
+      } catch (err) {
+        notify.error(`${file.name}: ${getApiErrorMessage(err)}`);
+      }
+    }
+    picked.value = [];
+    if (uploaded) {
+      notify.success(`${uploaded} attachment${uploaded > 1 ? "s" : ""} uploaded.`);
+      await load();
+    }
   } finally {
     uploading.value = false;
   }

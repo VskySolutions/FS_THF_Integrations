@@ -70,7 +70,7 @@ public sealed class DashboardController : ControllerBase
     // ---- Customers ----
 
     [HttpGet("customers")]
-    [RequirePermission(Permissions.CustomersReview)]
+    [RequireAnyPermission(Permissions.CustomersDataEntry, Permissions.CustomersReview, Permissions.CustomersApprove)]
     [ProducesResponseType<ApiResponse<CustomerDashboardDto>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Customers([FromQuery] string dateRange = "7d", [FromQuery] Guid? tenantId = null, CancellationToken cancellationToken = default)
     {
@@ -168,7 +168,11 @@ public sealed class DashboardController : ControllerBase
     private Guid? ResolveScope(Guid? requestedTenantId)
         => User.IsSuperAdmin() ? requestedTenantId : User.GetActiveTenantId();
 
-    /// <summary>Resolves the layout tier: Super Admin, else Tenant Admin (users.read + tenants.read), else Common.</summary>
+    /// <summary>
+    /// Resolves the layout tier: Super Admin, else Tenant Admin (users.read + tenants.read), else a
+    /// Customer-workflow user (any of dataEntry/review/approve) who lands on the customer dashboard,
+    /// else Common (jobs + health).
+    /// </summary>
     private DashboardRole ResolveDashboardRole()
     {
         if (User.IsSuperAdmin())
@@ -178,6 +182,12 @@ public sealed class DashboardController : ControllerBase
         if (User.HasPermission(Permissions.UsersRead) && User.HasPermission(Permissions.TenantsRead))
         {
             return DashboardRole.TenantAdmin;
+        }
+        if (User.HasPermission(Permissions.CustomersDataEntry)
+            || User.HasPermission(Permissions.CustomersReview)
+            || User.HasPermission(Permissions.CustomersApprove))
+        {
+            return DashboardRole.Customer;
         }
         return DashboardRole.Common;
     }

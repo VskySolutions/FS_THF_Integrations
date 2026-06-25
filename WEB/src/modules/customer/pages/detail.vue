@@ -97,13 +97,13 @@
               />
             </div>
             <div class="row q-col-gutter-md q-mb-lg">
-              <app-text-field v-model="step2.taxNumber" label="Tax Number *" placeholder="e.g. GB123456789" hint="Mandatory. Tax / VAT registration number." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
-              <app-text-field v-model="step2.registrationNumber" label="Registration Number *" placeholder="e.g. 12345678" hint="Mandatory. Company registration number." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
-              <app-text-field v-model="step2.businessUnit" label="Business Unit *" placeholder="e.g. UK-Operations" hint="Mandatory. Maconomy business unit to post against." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
-              <app-text-field v-model="step2.currency" label="Currency *" placeholder="e.g. USD" hint="Mandatory. 3-letter ISO currency code." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
+              <app-text-field v-model="step2.taxNumber" label="Tax Number *" placeholder="e.g. GB123456789" hint="Tax / VAT registration number." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" :error="step2Errors.has('taxNumber')" error-message="This field is required." @update:model-value="clearStep2Error('taxNumber')" />
+              <app-text-field v-model="step2.registrationNumber" label="Registration Number *" placeholder="e.g. 12345678" hint="Company registration number." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" :error="step2Errors.has('registrationNumber')" error-message="This field is required." @update:model-value="clearStep2Error('registrationNumber')" />
+              <app-text-field v-model="step2.businessUnit" label="Business Unit *" placeholder="e.g. UK-Operations" hint="Maconomy business unit to post against." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" :error="step2Errors.has('businessUnit')" error-message="This field is required." @update:model-value="clearStep2Error('businessUnit')" />
+              <app-text-field v-model="step2.currency" label="Currency *" placeholder="e.g. USD" hint="3-letter ISO currency code." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" :error="step2Errors.has('currency')" error-message="This field is required." @update:model-value="clearStep2Error('currency')" />
               <app-text-field v-model="step2.customerGroup" label="Customer Group" placeholder="e.g. Standard" hint="Maconomy customer group for grouping/reporting." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
               <div class="col-12 col-sm-6 row items-center no-wrap">
-                <app-text-field v-model="step2.paymentTerms" label="Payment Terms *" placeholder="e.g. Net 30" hint="Mandatory. Maconomy payment terms code." class="col" :readonly="!detail.actions.canEditStep2" />
+                <app-text-field v-model="step2.paymentTerms" label="Payment Terms *" placeholder="e.g. Net 30" hint="Maconomy payment terms code." class="col" :readonly="!detail.actions.canEditStep2" :error="step2Errors.has('paymentTerms')" error-message="This field is required." @update:model-value="clearStep2Error('paymentTerms')" />
                 <field-log-icon :entity-type="EntityType.CustomerRequest" :entity-id="customerId" field-name="PaymentTerms" field-label="Payment Terms" :count="fieldLog.getCount('PaymentTerms')" class="q-ml-xs" />
               </div>
               <div class="col-12 col-sm-6 row items-center no-wrap">
@@ -133,14 +133,15 @@
               </q-item>
               <q-item v-if="!documents.length"><q-item-section class="text-grey-6">No documents uploaded.</q-item-section></q-item>
             </q-list>
-            <div class="row items-center q-col-gutter-md q-mt-sm">
-              <q-file
-                v-model="docFile" outlined dense stack-label hide-bottom-space class="col" label="Upload a document"
-                :accept="acceptExtensions" hint="Allowed: pdf, doc, docx, xls, xlsx, csv, txt, png, jpg, jpeg"
-              >
-                <template #prepend><q-icon name="o_attach_file" /></template>
-              </q-file>
-              <q-btn unelevated no-caps color="primary" label="Upload" icon="o_upload" :loading="uploading" :disable="!docFile" @click="uploadDoc" />
+            <div class="row items-end q-col-gutter-md q-mt-sm">
+              <app-multi-file-upload
+                v-model="docFiles"
+                class="col"
+                label="Upload documents"
+                :accept="acceptExtensions"
+                hint="Allowed: pdf, doc, docx, xls, xlsx, csv, txt, png, jpg, jpeg"
+              />
+              <q-btn unelevated no-caps color="primary" label="Upload" icon="o_upload" :loading="uploading" :disable="!docFiles.length" @click="uploadDocs" />
             </div>
           </q-tab-panel>
 
@@ -161,9 +162,23 @@
               <template #avatar><q-icon name="o_error" color="negative" /></template>
               Last sync error: {{ detail.lastSyncError }}
             </q-banner>
-            <q-banner v-if="detail.status === 'Returned' && detail.returnNotes" dense rounded class="bg-orange-1 text-orange-9 q-mb-sm">
+            <q-banner v-if="detail.status === 'Returned' && (detail.returnNotes || detail.unlockedFields?.length)" dense rounded class="bg-orange-1 text-orange-9 q-mb-sm">
               <template #avatar><q-icon name="o_assignment_return" color="warning" /></template>
-              Returned for corrections: {{ detail.returnNotes }}
+              <div v-if="detail.returnNotes">Returned for corrections: {{ detail.returnNotes }}</div>
+              <div v-if="detail.unlockedFields?.length" class="q-mt-xs">
+                <span class="text-weight-medium">Fields to correct:</span>
+                <q-chip
+                  v-for="f in detail.unlockedFields"
+                  :key="f"
+                  dense
+                  square
+                  color="orange-2"
+                  text-color="orange-10"
+                  class="q-ml-xs"
+                >
+                  {{ humanizeField(f) }}
+                </q-chip>
+              </div>
             </q-banner>
             <q-banner v-if="detail.status === 'Rejected' && detail.rejectionReason" dense rounded class="bg-red-1 text-red-9 q-mb-sm">
               <template #avatar><q-icon name="o_block" color="negative" /></template>
@@ -325,6 +340,7 @@ import { useDateFormat } from "composables/useDateFormat";
 import { useCustomerStatus } from "composables/useCustomerStatus";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import AppTextField from "components/common/AppTextField.vue";
+import AppMultiFileUpload from "components/common/AppMultiFileUpload.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import { EntityType } from "services/api";
 import EntityUniversalPanel from "components/universal/EntityUniversalPanel.vue";
@@ -352,6 +368,15 @@ let tabInitialised = false;
 const showReviewTab = computed(() => !!detail.value?.actions?.canViewStep2);
 
 const req = [(v) => !!v || "Required"];
+
+// Turn a camelCase field key (e.g. "addressLine1") into a readable label ("Address Line 1"), used
+// for both the reviewer's "fields to correct" picker and the returned-for-corrections banner.
+const humanizeField = (key) => (key || "")
+  .replace(/([A-Z])/g, " $1")
+  .replace(/([0-9]+)/g, " $1")
+  .replace(/\s+/g, " ")
+  .trim()
+  .replace(/^./, (c) => c.toUpperCase());
 
 // ---- Step 1 (basic information) ----
 const step1 = reactive({});
@@ -485,12 +510,17 @@ const MANDATORY_STEP2 = [
   { key: "paymentTerms", label: "Payment Terms" }
 ];
 
+// Keys of mandatory Step 2 fields currently flagged as missing — drives the inline field highlight.
+const step2Errors = ref(new Set());
+const clearStep2Error = (key) => step2Errors.value.delete(key);
+
 const sending = ref(false);
 const sendForApproval = async () => {
-  // 1) Block until the mandatory Maconomy fields are filled (jump to the Review tab to fix them).
-  const missing = MANDATORY_STEP2.filter((f) => !String(step2[f.key] ?? "").trim()).map((f) => f.label);
+  // 1) Block until the mandatory Maconomy fields are filled (highlight them + jump to the Review tab).
+  const missing = MANDATORY_STEP2.filter((f) => !String(step2[f.key] ?? "").trim());
+  step2Errors.value = new Set(missing.map((f) => f.key));
   if (missing.length) {
-    notify.error(`Complete the mandatory Maconomy fields first: ${missing.join(", ")}.`);
+    notify.error(`Complete the mandatory Maconomy fields first: ${missing.map((f) => f.label).join(", ")}.`);
     activeTab.value = "review";
     return;
   }
@@ -544,7 +574,7 @@ const buildStep2 = (src) => {
 // ---- Documents ----
 const ALLOWED_EXT = ["pdf", "doc", "docx", "xls", "xlsx", "csv", "txt", "png", "jpg", "jpeg"];
 const acceptExtensions = ALLOWED_EXT.map((e) => `.${e}`).join(",");
-const docFile = ref(null);
+const docFiles = ref([]);
 const uploading = ref(false);
 
 const formatSize = (bytes) => {
@@ -554,22 +584,23 @@ const formatSize = (bytes) => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
 
-const uploadDoc = async () => {
-  const file = docFile.value;
-  if (!file) return;
-  const ext = file.name.split(".").pop()?.toLowerCase();
-  if (!ALLOWED_EXT.includes(ext)) {
-    notify.error(`Unsupported file type. Allowed: ${ALLOWED_EXT.join(", ")}.`);
-    return;
-  }
+const uploadDocs = async () => {
+  if (!docFiles.value.length) return;
   uploading.value = true;
+  let uploaded = 0;
   try {
-    const created = await customerApi.uploadDocument(customerId, file);
-    documents.value = [...documents.value, created];
-    docFile.value = null;
-    notify.success("Document uploaded.");
-  } catch (err) {
-    notify.error(getApiErrorMessage(err));
+    // Upload each staged document; report per-file failures but keep going.
+    for (const file of docFiles.value) {
+      try {
+        const created = await customerApi.uploadDocument(customerId, file);
+        documents.value = [...documents.value, created];
+        uploaded += 1;
+      } catch (err) {
+        notify.error(`${file.name}: ${getApiErrorMessage(err)}`);
+      }
+    }
+    docFiles.value = [];
+    if (uploaded) notify.success(`${uploaded} document${uploaded > 1 ? "s" : ""} uploaded.`);
   } finally {
     uploading.value = false;
   }
@@ -687,7 +718,7 @@ const submitReject = async () => {
 const returnOpen = ref(false);
 const returnNotes = ref("");
 const returnFields = ref([]);
-const returnFieldOptions = STEP1_FIELDS.map((f) => ({ label: f, value: f }));
+const returnFieldOptions = STEP1_FIELDS.map((f) => ({ label: humanizeField(f), value: f }));
 const submitReturn = async () => {
   if (!returnNotes.value) return;
   busy.value = true;

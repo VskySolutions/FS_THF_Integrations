@@ -53,11 +53,11 @@ public class AuthControllerTests
     private readonly Mock<IJwtTokenService> _jwt = new();
     private readonly Mock<ITenantRepository> _tenants = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
-    private readonly Mock<IEmailNotificationService> _emailNotifications = new();
+    private readonly Mock<IEmailDispatcher> _emailDispatcher = new();
 
     private AuthController Create() => new(
         _users.Object, _refresh.Object, _hasher.Object, _jwt.Object, _tenants.Object, _unitOfWork.Object,
-        Options.Create(new AuthenticationOptions()), _emailNotifications.Object);
+        Options.Create(new AuthenticationOptions()), _emailDispatcher.Object);
 
     [Fact]
     public async Task Login_with_valid_credentials_returns_token_with_must_change_flag()
@@ -126,8 +126,9 @@ public class UsersControllerTests
     private readonly Mock<ITenantRepository> _tenants = new();
     private readonly Mock<IUserGroupRepository> _groups = new();
     private readonly Mock<IEmailNotificationService> _emailNotifications = new();
+    private readonly Mock<IEmailDispatcher> _emailDispatcher = new();
 
-    private UsersController Create() => new(_users.Object, _hasher.Object, _refreshTokens.Object, _unitOfWork.Object, _audit.Object, _roles.Object, _persons.Object, _tenants.Object, _groups.Object, _emailNotifications.Object);
+    private UsersController Create() => new(_users.Object, _hasher.Object, _refreshTokens.Object, _unitOfWork.Object, _audit.Object, _roles.Object, _persons.Object, _tenants.Object, _groups.Object, _emailNotifications.Object, _emailDispatcher.Object);
 
     /// <summary>Mocks an existing person for the promote-to-user flow and returns its id.</summary>
     private Guid SetupPerson(string email = "p@t.com", bool isUser = false)

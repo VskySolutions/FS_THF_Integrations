@@ -1,36 +1,41 @@
 <template>
-  <q-input
-    v-model="model"
-    :label="label"
-    outlined
-    :dense="dense"
-    stack-label
-    hide-bottom-space
-    clearable
-    readonly
-    :error="hasError"
-    :error-message="errorMessage"
-  >
-    <template #prepend>
-      <q-icon name="o_event" class="cursor-pointer">
-        <q-popup-proxy cover transition-show="scale" transition-hide="scale">
-          <q-date v-model="model" mask="YYYY-MM-DD" :options="dateOptions" today-btn>
-            <div class="row items-center justify-end">
-              <q-btn v-close-popup label="Close" color="primary" flat no-caps />
-            </div>
-          </q-date>
-        </q-popup-proxy>
-      </q-icon>
-    </template>
-  </q-input>
+  <div class="app-field">
+    <app-field-label :label="label" :required="required" />
+    <q-input
+      v-model="model"
+      :aria-label="ariaLabel"
+      outlined
+      :dense="dense"
+      hide-bottom-space
+      clearable
+      readonly
+      :error="hasError"
+      :error-message="errorMessage"
+    >
+      <template #prepend>
+        <q-icon name="o_event" class="cursor-pointer">
+          <q-popup-proxy cover transition-show="scale" transition-hide="scale">
+            <q-date v-model="model" mask="YYYY-MM-DD" :options="dateOptions" today-btn>
+              <div class="row items-center justify-end">
+                <q-btn v-close-popup label="Close" color="primary" flat no-caps />
+              </div>
+            </q-date>
+          </q-popup-proxy>
+        </q-icon>
+      </template>
+    </q-input>
+  </div>
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, toRef } from "vue";
+import AppFieldLabel from "components/common/AppFieldLabel.vue";
+import { useFieldLabel } from "composables/useFieldLabel";
 
 const props = defineProps({
   modelValue: { type: String, default: null },
   label: { type: String, default: "" },
+  required: { type: Boolean, default: false },
   // Dense by default so date fields match the dense selects/inputs (consistent field height).
   dense: { type: Boolean, default: true },
   // Start/End range validation: only one of these is typically supplied.
@@ -44,6 +49,8 @@ const model = computed({
   get: () => props.modelValue,
   set: (val) => emit("update:modelValue", val)
 });
+
+const { text: ariaLabel } = useFieldLabel(toRef(props, "label"), toRef(props, "required"));
 
 // Constrain selectable days so Start <= End.
 const dateOptions = (date) => {

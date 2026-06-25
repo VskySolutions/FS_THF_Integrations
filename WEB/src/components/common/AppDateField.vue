@@ -1,28 +1,34 @@
 <template>
-  <q-input
-    v-model="model"
-    :label="label"
-    type="date"
-    :rules="rules"
-    :error="error"
-    :error-message="errorMessage"
-    :disable="disable"
-    :readonly="readonly"
-    :autocomplete="autocomplete"
-    outlined
-    :dense="dense"
-    stack-label
-    hide-bottom-space
-  />
+  <div class="app-field">
+    <app-field-label :label="label" :required="required" />
+    <q-input
+      v-model="model"
+      type="date"
+      :rules="rules"
+      :error="error"
+      :error-message="errorMessage"
+      :disable="disable"
+      :readonly="readonly"
+      :autocomplete="autocomplete"
+      :aria-label="ariaLabel"
+      outlined
+      :dense="dense"
+      hide-bottom-space
+    />
+  </div>
 </template>
 
 <script setup>
-// Standard date field (ISO yyyy-mm-dd). Wraps q-input so date pickers stay consistent.
-import { computed } from "vue";
+// Standard date field (ISO yyyy-mm-dd). Wraps q-input with the external top-left label so date
+// pickers stay consistent with the rest of the form.
+import { computed, toRef } from "vue";
+import AppFieldLabel from "components/common/AppFieldLabel.vue";
+import { useFieldLabel } from "composables/useFieldLabel";
 
 const props = defineProps({
   modelValue: { type: String, default: "" },
   label: { type: String, default: "" },
+  required: { type: Boolean, default: false },
   rules: { type: Array, default: () => [] },
   error: { type: Boolean, default: false },
   errorMessage: { type: String, default: "" },
@@ -39,4 +45,6 @@ const model = computed({
   get: () => props.modelValue,
   set: (val) => emit("update:modelValue", val)
 });
+
+const { text: ariaLabel } = useFieldLabel(toRef(props, "label"), toRef(props, "required"));
 </script>

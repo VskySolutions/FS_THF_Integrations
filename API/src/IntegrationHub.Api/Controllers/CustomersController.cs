@@ -43,7 +43,7 @@ public sealed class CustomersController : ControllerBase
     private readonly IUserRepository _users;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IWebHostEnvironment _environment;
-    private readonly IEmailNotificationService _emailNotifications;
+    private readonly IEmailDispatcher _emailDispatcher;
     private readonly IPinRepository _pins;
 
     public CustomersController(
@@ -57,7 +57,7 @@ public sealed class CustomersController : ControllerBase
         IUserRepository users,
         IUnitOfWork unitOfWork,
         IWebHostEnvironment environment,
-        IEmailNotificationService emailNotifications,
+        IEmailDispatcher emailDispatcher,
         IPinRepository pins)
     {
         _requests = requests;
@@ -70,7 +70,7 @@ public sealed class CustomersController : ControllerBase
         _users = users;
         _unitOfWork = unitOfWork;
         _environment = environment;
-        _emailNotifications = emailNotifications;
+        _emailDispatcher = emailDispatcher;
         _pins = pins;
     }
 
@@ -975,7 +975,7 @@ public sealed class CustomersController : ControllerBase
             }
         }
 
-        await _emailNotifications.SendAsync(request.TenantId, key, submitter.Email, model, cancellationToken);
+        _emailDispatcher.Enqueue(request.TenantId, key, submitter.Email, model);
     }
 
     /// <summary>Emails every active Tenant Admin of the request's tenant the given "action needed" template.</summary>
@@ -1007,7 +1007,7 @@ public sealed class CustomersController : ControllerBase
         {
             if (!string.IsNullOrWhiteSpace(admin.Email))
             {
-                await _emailNotifications.SendAsync(request.TenantId, key, admin.Email, model, cancellationToken);
+                _emailDispatcher.Enqueue(request.TenantId, key, admin.Email, model);
             }
         }
     }

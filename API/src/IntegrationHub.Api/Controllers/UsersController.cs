@@ -37,6 +37,7 @@ public sealed class UsersController : ControllerBase
     private readonly ITenantRepository _tenants;
     private readonly IUserGroupRepository _groups;
     private readonly IEmailNotificationService _emailNotifications;
+    private readonly IEmailDispatcher _emailDispatcher;
 
     public UsersController(
         IUserRepository users,
@@ -48,7 +49,8 @@ public sealed class UsersController : ControllerBase
         IPersonRepository persons,
         ITenantRepository tenants,
         IUserGroupRepository groups,
-        IEmailNotificationService emailNotifications)
+        IEmailNotificationService emailNotifications,
+        IEmailDispatcher emailDispatcher)
     {
         _users = users;
         _passwordHasher = passwordHasher;
@@ -60,6 +62,7 @@ public sealed class UsersController : ControllerBase
         _tenants = tenants;
         _groups = groups;
         _emailNotifications = emailNotifications;
+        _emailDispatcher = emailDispatcher;
     }
 
     [HttpPost("/api/admin/users")]
@@ -189,17 +192,20 @@ public sealed class UsersController : ControllerBase
             details: $"role={role}; tenant={tenantId}", cancellationToken: cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        // Optionally email the invitation (with the temporary password) via the tenant's active SMTP account.
+        // Optionally email the invitation (with the temporary password) via the tenant's active SMTP
+        // account. The send runs in the background; the flag reflects whether it will be attempted (an
+        // active SMTP account exists), so the caller knows whether to share the password manually.
         var invitationEmailSent = false;
         if (request.SendInvitation && tenantId is { } inviteTenant)
         {
-            invitationEmailSent = await _emailNotifications.SendAsync(inviteTenant, EmailTemplateKey.UserInvitation, user.Email,
+            invitationEmailSent = await _emailNotifications.HasActiveSenderAsync(inviteTenant, cancellationToken);
+            _emailDispatcher.Enqueue(inviteTenant, EmailTemplateKey.UserInvitation, user.Email,
                 new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["FullName"] = user.DisplayName,
                     ["Email"] = user.Email,
                     ["TemporaryPassword"] = temporaryPassword,
-                }, cancellationToken);
+                });
         }
 
         return StatusCode(StatusCodes.Status201Created,
@@ -404,11 +410,11 @@ public sealed class UsersController : ControllerBase
         // Best-effort welcome email on the inactive → active transition.
         if (request.IsActive && !wasActive && TenantForUserEmail(user) is { } welcomeTenant)
         {
-            await _emailNotifications.SendAsync(welcomeTenant, EmailTemplateKey.Welcome, user.Email,
+            _emailDispatcher.Enqueue(welcomeTenant, EmailTemplateKey.Welcome, user.Email,
                 new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["FullName"] = user.DisplayName,
-                }, cancellationToken);
+                });
         }
 
         return Ok(ApiResponseFactory.Success(new { userId = user.Id, isActive = user.IsActive }, "Status updated."));
@@ -445,16 +451,18 @@ public sealed class UsersController : ControllerBase
         await _audit.AddAsync(nameof(User), user.Id.ToString(), "PasswordReset", cancellationToken: cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        // Best-effort: email the new temporary password via the relevant tenant's active SMTP account.
+        // Email the new temporary password in the background via the relevant tenant's active SMTP
+        // account; the flag reflects whether a send will be attempted (so the caller can share manually).
         var emailSent = false;
         if (TenantForUserEmail(user) is { } resetTenant)
         {
-            emailSent = await _emailNotifications.SendAsync(resetTenant, EmailTemplateKey.PasswordReset, user.Email,
+            emailSent = await _emailNotifications.HasActiveSenderAsync(resetTenant, cancellationToken);
+            _emailDispatcher.Enqueue(resetTenant, EmailTemplateKey.PasswordReset, user.Email,
                 new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["FullName"] = user.DisplayName,
                     ["TemporaryPassword"] = temporaryPassword,
-                }, cancellationToken);
+                });
         }
 
         // AC-ADM-013.2: the plaintext temporary password is returned only in this response.

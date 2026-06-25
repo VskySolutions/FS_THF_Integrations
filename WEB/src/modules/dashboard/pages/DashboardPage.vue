@@ -99,12 +99,14 @@ const { has } = usePermissions();
 const prefs = usePreferences("dashboard");
 const notify = useNotify();
 
-// ---- Role resolution ----
+// ---- Role resolution (must mirror DashboardController.ResolveDashboardRole) ----
 // Super Admin = platform admin (can manage tenants). Tenant Admin = manages users + reads tenants.
-// Everyone else gets the common dashboard.
+// Customer-workflow users (data entry / review / approve) land on the customer dashboard. Everyone
+// else gets the common (jobs + health) dashboard.
 const role = computed(() => {
   if (has(Permissions.TenantsWrite)) return "superAdmin";
   if (has(Permissions.UsersRead) && has(Permissions.TenantsRead)) return "tenantAdmin";
+  if (has(Permissions.CustomersDataEntry) || has(Permissions.CustomersReview) || has(Permissions.CustomersApprove)) return "customer";
   return "common";
 }).value;
 
@@ -130,7 +132,9 @@ const jobs = useJobsDashboard(dateRange);
 const health = useHealthDashboard();
 const isTenantAdmin = role === "tenantAdmin" || role === "superAdmin";
 const isSuperAdmin = role === "superAdmin";
-const customers = isTenantAdmin ? useCustomerDashboard(dateRange) : null;
+// Customer widgets are shown to Tenant/Super Admins and to customer-workflow users.
+const showsCustomers = isTenantAdmin || role === "customer";
+const customers = showsCustomers ? useCustomerDashboard(dateRange) : null;
 const users = isTenantAdmin ? useUserDashboard(dateRange) : null;
 const platform = isSuperAdmin ? usePlatformDashboard(dateRange) : null;
 

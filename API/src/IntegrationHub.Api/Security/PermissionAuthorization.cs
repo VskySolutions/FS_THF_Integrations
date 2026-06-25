@@ -11,24 +11,27 @@ public static class PermissionAuthorizationDefaults
     public const string PolicyPrefix = "perm:";
 }
 
-/// <summary>An authorization requirement for a single permission key (see <see cref="Permissions"/>).</summary>
+/// <summary>
+/// An authorization requirement satisfied when the caller holds ANY of the listed permission keys
+/// (see <see cref="Permissions"/>). A single permission is the common case; multiple express an OR.
+/// </summary>
 public sealed class PermissionRequirement : IAuthorizationRequirement
 {
-    public PermissionRequirement(string permission) => Permission = permission;
+    public PermissionRequirement(params string[] permissions) => Permissions = permissions;
 
-    public string Permission { get; }
+    public IReadOnlyList<string> Permissions { get; }
 }
 
 /// <summary>
-/// Grants a <see cref="PermissionRequirement"/> when the caller carries the matching permission
-/// claim. As a fallback for callers without explicit permission claims (API-key callers and
+/// Grants a <see cref="PermissionRequirement"/> when the caller carries any of its permission
+/// claims. As a fallback for callers without explicit permission claims (API-key callers and
 /// pre-RBAC tokens), the role claim is mapped to its seeded system-role permission set.
 /// </summary>
 public sealed class PermissionAuthorizationHandler : AuthorizationHandler<PermissionRequirement>
 {
     protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, PermissionRequirement requirement)
     {
-        if (HasPermission(context.User, requirement.Permission))
+        if (requirement.Permissions.Any(permission => HasPermission(context.User, permission)))
         {
             context.Succeed(requirement);
         }

@@ -21,20 +21,20 @@ public sealed class NotificationDispatcher : INotificationDispatcher
 
     private readonly INotificationRepository _notifications;
     private readonly IUserRepository _users;
-    private readonly IEmailNotificationService _email;
+    private readonly IEmailDispatcher _emailDispatcher;
     private readonly ITenantContext _tenantContext;
     private readonly ILogger<NotificationDispatcher> _logger;
 
     public NotificationDispatcher(
         INotificationRepository notifications,
         IUserRepository users,
-        IEmailNotificationService email,
+        IEmailDispatcher emailDispatcher,
         ITenantContext tenantContext,
         ILogger<NotificationDispatcher> logger)
     {
         _notifications = notifications;
         _users = users;
-        _email = email;
+        _emailDispatcher = emailDispatcher;
         _tenantContext = tenantContext;
         _logger = logger;
     }
@@ -85,7 +85,7 @@ public sealed class NotificationDispatcher : INotificationDispatcher
             var names = await _users.GetFullNamesAsync(new[] { notification.UserId }, cancellationToken);
             var fullName = names.TryGetValue(notification.UserId, out var n) ? n : user.DisplayName;
 
-            await _email.SendAsync(
+            _emailDispatcher.Enqueue(
                 _tenantContext.TenantId,
                 templateKey,
                 user.Email,
@@ -94,8 +94,7 @@ public sealed class NotificationDispatcher : INotificationDispatcher
                     ["FullName"] = fullName,
                     ["Title"] = notification.Title,
                     ["Body"] = notification.Body,
-                },
-                cancellationToken);
+                });
         }
         catch (Exception ex)
         {

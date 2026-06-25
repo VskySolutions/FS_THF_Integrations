@@ -10,23 +10,24 @@
       class="col-12 col-sm-5"
       @filter="filterDialCodes"
     />
-    <q-input
-      :model-value="display"
-      :label="label"
-      :placeholder="exampleNational"
-      :error="!!localError"
-      :error-message="localError"
-      :disable="disable"
-      :readonly="readonly"
-      autocomplete="off"
-      outlined
-      :dense="dense"
-      stack-label
-      hide-bottom-space
-      class="col-12 col-sm-7"
-      @update:model-value="onInput"
-      @blur="onBlur"
-    />
+    <div class="col-12 col-sm-7">
+      <app-field-label :label="label" />
+      <q-input
+        :model-value="display"
+        :placeholder="exampleNational"
+        :error="!!localError"
+        :error-message="localError"
+        :disable="disable"
+        :readonly="readonly"
+        :aria-label="label"
+        autocomplete="off"
+        outlined
+        :dense="dense"
+        hide-bottom-space
+        @update:model-value="onInput"
+        @blur="onBlur"
+      />
+    </div>
   </div>
 </template>
 
@@ -40,6 +41,7 @@ import { AsYouType, isValidPhoneNumber, parsePhoneNumber, getExampleNumber } fro
 import examples from "libphonenumber-js/mobile/examples";
 import { orderedCountries, dialCodeOption, isoFromDial, dialFromIso, DEFAULT_COUNTRY_ISO } from "composables/useCountries";
 import AppSelect from "components/common/AppSelect.vue";
+import AppFieldLabel from "components/common/AppFieldLabel.vue";
 
 const props = defineProps({
   // The phone number (stored value; normalised to E.164 when valid).

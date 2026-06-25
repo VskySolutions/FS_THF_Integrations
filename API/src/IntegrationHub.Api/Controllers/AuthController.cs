@@ -36,7 +36,7 @@ public sealed class AuthController : ControllerBase
     private readonly ITenantRepository _tenants;
     private readonly IUnitOfWork _unitOfWork;
     private readonly AuthenticationOptions _options;
-    private readonly IEmailNotificationService _emailNotifications;
+    private readonly IEmailDispatcher _emailDispatcher;
 
     public AuthController(
         IUserRepository users,
@@ -46,7 +46,7 @@ public sealed class AuthController : ControllerBase
         ITenantRepository tenants,
         IUnitOfWork unitOfWork,
         IOptions<AuthenticationOptions> options,
-        IEmailNotificationService emailNotifications)
+        IEmailDispatcher emailDispatcher)
     {
         _users = users;
         _refreshTokens = refreshTokens;
@@ -55,7 +55,7 @@ public sealed class AuthController : ControllerBase
         _tenants = tenants;
         _unitOfWork = unitOfWork;
         _options = options.Value;
-        _emailNotifications = emailNotifications;
+        _emailDispatcher = emailDispatcher;
     }
 
     [HttpPost("/api/auth/login")]
@@ -249,12 +249,12 @@ public sealed class AuthController : ControllerBase
         var tenantForEmail = User.GetActiveTenantId() ?? user.TenantRoles.FirstOrDefault()?.TenantId;
         if (tenantForEmail is { } tid)
         {
-            await _emailNotifications.SendAsync(tid, EmailTemplateKey.PasswordChanged, user.Email,
+            _emailDispatcher.Enqueue(tid, EmailTemplateKey.PasswordChanged, user.Email,
                 new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["FullName"] = user.DisplayName,
                     ["ChangedAtUtc"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm"),
-                }, cancellationToken);
+                });
         }
 
         return Ok(ApiResponseFactory.Success(new { message = "Password changed." }, "Password changed."));

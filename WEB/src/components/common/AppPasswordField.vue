@@ -2,6 +2,7 @@
   <app-text-field
     v-model="model"
     :label="label"
+    :required="required"
     :type="reveal ? 'text' : 'password'"
     :rules="rules"
     :error="error"
@@ -34,6 +35,7 @@ import AppTextField from "components/common/AppTextField.vue";
 const props = defineProps({
   modelValue: { type: String, default: "" },
   label: { type: String, default: "" },
+  required: { type: Boolean, default: false },
   rules: { type: Array, default: () => [] },
   error: { type: Boolean, default: false },
   errorMessage: { type: String, default: "" },

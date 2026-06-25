@@ -13,12 +13,21 @@ public static class DashboardDefaultLayouts
         "systemHealth", "failedJobsPanel", "retryQueue",
     };
 
-    /// <summary>Tenant Admin = Common + customer/user widgets.</summary>
-    public static readonly string[] TenantAdmin = Common.Concat(new[]
+    /// <summary>The customer onboarding charts/reports (shared by the Customer and Tenant Admin tiers).</summary>
+    private static readonly string[] CustomerWidgets =
     {
-        "userSummary", "userRoleDistribution", "customerKpiCards", "customerFunnel",
-        "customerAgeing", "customerSyncHealth", "customerActivityFeed", "customerSubmissionTrend",
-    }).ToArray();
+        "customerKpiCards", "customerFunnel", "customerAgeing", "customerSyncHealth",
+        "customerActivityFeed", "customerSubmissionTrend",
+    };
+
+    /// <summary>Customer-workflow users (data entry / review / approve) = Common + the customer widgets.</summary>
+    public static readonly string[] Customer = Common.Concat(CustomerWidgets).ToArray();
+
+    /// <summary>Tenant Admin = Common + user widgets + customer widgets.</summary>
+    public static readonly string[] TenantAdmin = Common
+        .Concat(new[] { "userSummary", "userRoleDistribution" })
+        .Concat(CustomerWidgets)
+        .ToArray();
 
     /// <summary>Super Admin = TenantAdmin + platform/cross-tenant widgets.</summary>
     public static readonly string[] SuperAdmin = TenantAdmin.Concat(new[]
@@ -33,6 +42,7 @@ public static class DashboardDefaultLayouts
     {
         DashboardRole.SuperAdmin => SuperAdmin,
         DashboardRole.TenantAdmin => TenantAdmin,
+        DashboardRole.Customer => Customer,
         _ => Common,
     };
 
@@ -61,4 +71,5 @@ public enum DashboardRole
     Common = 0,
     TenantAdmin = 1,
     SuperAdmin = 2,
+    Customer = 3,
 }

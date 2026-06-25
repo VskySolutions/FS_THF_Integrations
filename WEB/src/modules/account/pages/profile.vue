@@ -22,19 +22,16 @@
       <q-card flat bordered class="profile-card q-mb-md">
         <q-card-section class="text-subtitle1 text-weight-medium">Profile picture</q-card-section>
         <q-separator />
-        <q-card-section class="row items-center q-gutter-md">
-          <q-avatar size="96px" color="grey-3" text-color="grey-8">
-            <img v-if="previewUrl" :src="previewUrl" alt="Profile">
-            <q-icon v-else name="o_person" size="48px" />
-          </q-avatar>
-          <div class="column q-gutter-sm">
-            <div class="row q-gutter-sm">
-              <q-btn outline no-caps color="primary" icon="o_upload" label="Upload" @click="pickImage" />
-              <q-btn v-if="previewUrl" flat no-caps color="negative" icon="o_delete" label="Remove" @click="removeImage" />
-            </div>
-          </div>
+        <q-card-section>
+          <app-image-upload
+            ref="imageUpload"
+            v-model="previewUrl"
+            :loading="uploading"
+            file-name="profile.png"
+            @crop="onCropUpload"
+            @remove="onImageRemove"
+          />
         </q-card-section>
-        <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileSelected">
       </q-card>
 
       <!-- Personal details -->
@@ -142,21 +139,6 @@
       </q-form>
     </q-card>
 
-    <!-- Image crop dialog -->
-    <q-dialog v-model="cropOpen">
-      <q-card style="min-width: 360px; max-width: 90vw;">
-        <q-card-section class="text-subtitle1 text-weight-medium">Crop image</q-card-section>
-        <q-separator />
-        <q-card-section>
-          <Cropper ref="cropper" :src="cropSrc" :stencil-props="{ aspectRatio: 1 }" class="profile-cropper" />
-        </q-card-section>
-        <q-separator />
-        <q-card-actions align="right">
-          <q-btn flat no-caps label="Cancel" @click="cropOpen = false" />
-          <q-btn unelevated no-caps color="primary" label="Upload" :loading="uploading" @click="confirmCrop" />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
   </q-page>
 </template>
 
@@ -164,8 +146,6 @@
 import { ref, reactive, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { orderedCountries, countryNameOption } from "composables/useCountries";
-import { Cropper } from "vue-advanced-cropper";
-import "vue-advanced-cropper/dist/style.css";
 import { authApi, profileApi, mediaApi, getApiErrorMessage } from "services/api";
 import { useAuthStore } from "stores/auth";
 import { useNotify } from "composables/useNotify";
@@ -175,6 +155,7 @@ import AppTextField from "components/common/AppTextField.vue";
 import AppDateField from "components/common/AppDateField.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
 import AppAddressFields from "components/common/AppAddressFields.vue";
+import AppImageUpload from "components/common/AppImageUpload.vue";
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -281,43 +262,28 @@ const load = async () => {
 };
 
 // ---- Profile image ----
-const fileInput = ref(null);
+// AppImageUpload handles picking + cropping; we upload the cropped file and reflect the new URL.
+const imageUpload = ref(null);
 const previewUrl = ref(null);
-const cropOpen = ref(false);
-const cropSrc = ref(null);
-const cropper = ref(null);
 const uploading = ref(false);
 
-const pickImage = () => fileInput.value?.click();
-const onFileSelected = (e) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => { cropSrc.value = reader.result; cropOpen.value = true; };
-  reader.readAsDataURL(file);
-  e.target.value = ""; // allow re-selecting the same file
-};
-const confirmCrop = () => {
-  const result = cropper.value?.getResult();
-  if (!result?.canvas) { cropOpen.value = false; return; }
+const onCropUpload = async (file) => {
   uploading.value = true;
-  result.canvas.toBlob(async (blob) => {
-    try {
-      const file = new File([blob], "profile.png", { type: "image/png" });
-      const media = await mediaApi.upload(file, "Profile");
-      form.profileMediaId = media.id;
-      previewUrl.value = mediaApi.absoluteUrl(media.publicUrl);
-      cropOpen.value = false;
-    } catch (err) {
-      notify.error(getApiErrorMessage(err));
-    } finally {
-      uploading.value = false;
-    }
-  }, "image/png");
+  try {
+    const media = await mediaApi.upload(file, "Profile");
+    form.profileMediaId = media.id;
+    previewUrl.value = mediaApi.absoluteUrl(media.publicUrl);
+    imageUpload.value?.closeCrop();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    uploading.value = false;
+  }
 };
-const removeImage = () => {
+
+const onImageRemove = () => {
+  // v-model already cleared previewUrl; also drop the saved media id.
   form.profileMediaId = null;
-  previewUrl.value = null;
 };
 
 // ---- Save ----
@@ -431,12 +397,5 @@ onMounted(load);
   text-transform: uppercase;
   color: var(--q-primary);
   margin-top: 4px;
-}
-.profile-cropper {
-  max-height: 50vh;
-  background: #f5f5f5;
-}
-.hidden {
-  display: none;
 }
 </style>

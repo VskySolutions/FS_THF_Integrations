@@ -236,7 +236,6 @@ public class DashboardControllerTests
     [Theory]
     [InlineData(nameof(DashboardController.Jobs), Permissions.JobsRead)]
     [InlineData(nameof(DashboardController.Health), Permissions.HealthRead)]
-    [InlineData(nameof(DashboardController.Customers), Permissions.CustomersReview)]
     [InlineData(nameof(DashboardController.Users), Permissions.UsersRead)]
     public void Sections_require_expected_permission(string methodName, string expectedPermission)
     {
@@ -246,5 +245,16 @@ public class DashboardControllerTests
         var attribute = method!.GetCustomAttribute<RequirePermissionAttribute>();
         attribute.Should().NotBeNull($"{methodName} should be gated by [RequirePermission]");
         attribute!.Policy.Should().EndWith(expectedPermission);
+    }
+
+    [Fact]
+    public void Customers_section_allows_any_customer_workflow_permission()
+    {
+        var method = typeof(DashboardController).GetMethod(nameof(DashboardController.Customers), BindingFlags.Public | BindingFlags.Instance);
+        method.Should().NotBeNull();
+
+        var attribute = method!.GetCustomAttribute<RequireAnyPermissionAttribute>();
+        attribute.Should().NotBeNull("the customer dashboard is open to any customer-workflow capability");
+        attribute!.Policy.Should().ContainAll(Permissions.CustomersDataEntry, Permissions.CustomersReview, Permissions.CustomersApprove);
     }
 }

@@ -1,63 +1,69 @@
 <template>
-  <q-select
-    v-model="model"
-    :options="options"
-    :label="label"
-    :loading="loading"
-    :clearable="clearable"
-    :multiple="multiple"
-    :option-value="optionValue"
-    :option-label="optionLabel"
-    :emit-value="emitValue"
-    :map-options="mapOptions"
-    :dense="dense"
-    :use-chips="chips"
-    :readonly="readonly"
-    :disable="disable"
-    :autocomplete="autocomplete"
-    outlined
-    stack-label
-    hide-bottom-space
-    :error="error"
-    :error-message="errorMessage"
-    class="app-select"
-  >
-    <!-- Multi-select renders each selection as a consistent badge/chip (removable when editable). -->
-    <template v-if="chips" #selected-item="scope">
-      <q-chip
-        :removable="!readonly && !disable"
-        dense
-        :tabindex="scope.tabindex"
-        color="blue-1"
-        text-color="primary"
-        class="app-select__chip"
-        @remove="scope.removeAtIndex(scope.index)"
-      >
-        {{ scope.opt.label ?? scope.opt }}
-      </q-chip>
-    </template>
+  <div class="app-field">
+    <app-field-label :label="label" :required="required" />
+    <q-select
+      v-model="model"
+      :options="options"
+      :loading="loading"
+      :clearable="clearable"
+      :multiple="multiple"
+      :option-value="optionValue"
+      :option-label="optionLabel"
+      :emit-value="emitValue"
+      :map-options="mapOptions"
+      :dense="dense"
+      :use-chips="chips"
+      :readonly="readonly"
+      :disable="disable"
+      :autocomplete="autocomplete"
+      :aria-label="ariaLabel"
+      outlined
+      hide-bottom-space
+      :error="error"
+      :error-message="errorMessage"
+      class="app-select"
+    >
+      <!-- Multi-select renders each selection as a consistent badge/chip (removable when editable). -->
+      <template v-if="chips" #selected-item="scope">
+        <q-chip
+          :removable="!readonly && !disable"
+          dense
+          :tabindex="scope.tabindex"
+          color="blue-1"
+          text-color="primary"
+          class="app-select__chip"
+          @remove="scope.removeAtIndex(scope.index)"
+        >
+          {{ scope.opt.label ?? scope.opt }}
+        </q-chip>
+      </template>
 
-    <template v-if="loading" #append>
-      <q-spinner size="20px" color="primary" />
-    </template>
-    <template #no-option>
-      <q-item>
-        <q-item-section class="text-grey-6">No options</q-item-section>
-      </q-item>
-    </template>
-    <template v-if="$slots.after" #after>
-      <slot name="after" />
-    </template>
-  </q-select>
+      <template v-if="loading" #append>
+        <q-spinner size="20px" color="primary" />
+      </template>
+      <template #no-option>
+        <q-item>
+          <q-item-section class="text-grey-6">No options</q-item-section>
+        </q-item>
+      </template>
+      <template v-if="$slots.after" #after>
+        <slot name="after" />
+      </template>
+    </q-select>
+  </div>
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, toRef } from "vue";
+import AppFieldLabel from "components/common/AppFieldLabel.vue";
+import { useFieldLabel } from "composables/useFieldLabel";
 
 const props = defineProps({
   modelValue: { type: [String, Number, Array, Object], default: null },
   options: { type: Array, default: () => [] },
   label: { type: String, default: "" },
+  // Force the required marker; a trailing "*" in the label also marks it required.
+  required: { type: Boolean, default: false },
   loading: { type: Boolean, default: false },
   clearable: { type: Boolean, default: true },
   multiple: { type: Boolean, default: false },
@@ -86,6 +92,9 @@ const model = computed({
 
 // Multi-select shows selections as badges by default; single-select stays inline text.
 const chips = computed(() => (props.useChips === undefined ? props.multiple : props.useChips));
+
+// Keep the control accessible now that the visible label is external.
+const { text: ariaLabel } = useFieldLabel(toRef(props, "label"), toRef(props, "required"));
 </script>
 
 <style scoped>

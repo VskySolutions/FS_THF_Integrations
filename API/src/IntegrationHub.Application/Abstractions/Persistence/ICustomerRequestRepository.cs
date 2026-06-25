@@ -28,7 +28,8 @@ public interface ICustomerRequestRepository
         Guid? draftViewerId,
         int page,
         int limit,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<Guid>? pinnedFirstIds = null);
 
     /// <summary>
     /// Step 1 duplicate candidates within a tenant: matches Company Name, Legal Name, or Email Address.

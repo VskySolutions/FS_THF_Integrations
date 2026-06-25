@@ -5,9 +5,11 @@ import { useNotify } from "composables/useNotify";
 // Reactive pin state for a single entity record (detail header Pin toggle).
 // The list endpoint is the source of truth for "is this record pinned"; we resolve the pin id so
 // it can be removed. Best-effort: failures notify but never throw.
-export function usePins (entityType, entityId) {
+export function usePins (entityType, entityId, initialPinned = false) {
   const notify = useNotify();
-  const pinned = ref(false);
+  // Seed from a known state (e.g. a list that already loaded the user's pins) for instant display;
+  // refresh() still reconciles and resolves the pin id needed to unpin.
+  const pinned = ref(initialPinned);
   const pinId = ref(null);
   const busy = ref(false);
 

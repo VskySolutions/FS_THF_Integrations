@@ -1,10 +1,13 @@
 <template>
   <q-page padding>
-    <div class="row items-center q-mb-md">
-      <div class="text-h6">Tenant Sticky Notes</div>
-      <q-space />
-      <q-btn unelevated no-caps color="primary" icon="o_add" label="New team note" @click="openCreate" />
-    </div>
+    <app-list-header
+      :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'Sticky Notes' }]"
+      show-add
+      add-label="New team note"
+      show-back
+      @add="openCreate"
+      @back="$router.back()"
+    />
 
     <app-data-table
       page-key="uf_sticky_admin"
@@ -52,6 +55,7 @@ import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
 import AppDataTable from "components/common/AppDataTable.vue";
+import AppListHeader from "components/common/AppListHeader.vue";
 import AppTextField from "components/common/AppTextField.vue";
 
 const notify = useNotify();

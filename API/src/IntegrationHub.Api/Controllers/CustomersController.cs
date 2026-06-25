@@ -44,6 +44,7 @@ public sealed class CustomersController : ControllerBase
     private readonly IUnitOfWork _unitOfWork;
     private readonly IWebHostEnvironment _environment;
     private readonly IEmailNotificationService _emailNotifications;
+    private readonly IPinRepository _pins;
 
     public CustomersController(
         ICustomerRequestRepository requests,
@@ -56,7 +57,8 @@ public sealed class CustomersController : ControllerBase
         IUserRepository users,
         IUnitOfWork unitOfWork,
         IWebHostEnvironment environment,
-        IEmailNotificationService emailNotifications)
+        IEmailNotificationService emailNotifications,
+        IPinRepository pins)
     {
         _requests = requests;
         _audit = audit;
@@ -69,6 +71,7 @@ public sealed class CustomersController : ControllerBase
         _unitOfWork = unitOfWork;
         _environment = environment;
         _emailNotifications = emailNotifications;
+        _pins = pins;
     }
 
     // ---- List ----
@@ -99,9 +102,15 @@ public sealed class CustomersController : ControllerBase
             statusFilter = parsed;
         }
 
+        // The caller's pinned customers float to the top of the list (so they land on the first page).
+        var userId = User.GetUserId();
+        IReadOnlyCollection<Guid>? pinnedIds = userId is { } uid
+            ? await _pins.ListEntityIdsByUserAndTypeAsync(uid, EntityType.CustomerRequest, cancellationToken)
+            : null;
+
         // Drafts are visible only to their creator.
         var (items, total) = await _requests.ListAsync(
-            search, scopeTenant, statusFilter, submittedById, fromUtc, toUtc, User.GetUserId(), Math.Max(1, page), Math.Clamp(limit, 1, 100), cancellationToken);
+            search, scopeTenant, statusFilter, submittedById, fromUtc, toUtc, userId, Math.Max(1, page), Math.Clamp(limit, 1, 100), cancellationToken, pinnedIds);
 
         var data = items.Select(c => new CustomerSummaryResponse(
             c.Id, c.CustomerRequestNumber, c.CompanyName, c.LegalName, c.Status.ToString(),

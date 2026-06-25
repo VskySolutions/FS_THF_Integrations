@@ -1,10 +1,17 @@
 <template>
   <q-card flat bordered>
-    <!-- Inline tags chips -->
-    <div class="q-px-md q-pt-sm">
-      <entity-tags-panel :entity-type="entityType" :entity-id="entityId" />
+    <!-- Optional section title. -->
+    <div v-if="title" class="q-px-md q-pt-sm">
+      <div class="text-subtitle1">{{ title }}</div>
     </div>
-    <q-separator class="q-mt-sm" />
+
+    <!-- Inline tags chips. -->
+    <template v-if="showTags">
+      <div class="q-px-md q-pt-sm">
+        <entity-tags-panel :entity-type="entityType" :entity-id="entityId" />
+      </div>
+      <q-separator class="q-mt-sm" />
+    </template>
 
     <q-tabs
       v-model="tab"
@@ -14,49 +21,66 @@
       indicator-color="primary"
       class="text-grey-7"
     >
-      <q-tab name="notes" icon="o_chat" label="Notes" no-caps />
-      <q-tab name="activity" icon="o_history" label="Activity" no-caps />
-      <q-tab name="checklists" icon="o_checklist" label="Checklists" no-caps />
-      <q-tab name="attachments" icon="o_attach_file" label="Attachments" no-caps />
+      <q-tab v-for="t in visibleTabs" :key="t.key" :name="t.key" :icon="t.icon" :label="t.label" no-caps />
     </q-tabs>
     <q-separator />
 
     <q-tab-panels v-model="tab" keep-alive animated>
-      <q-tab-panel name="notes">
-        <entity-notes-panel v-if="opened.notes" :entity-type="entityType" :entity-id="entityId" />
-      </q-tab-panel>
-      <q-tab-panel name="activity">
-        <entity-activity-timeline v-if="opened.activity" :entity-type="entityType" :entity-id="entityId" />
-      </q-tab-panel>
-      <q-tab-panel name="checklists">
-        <entity-checklists-panel v-if="opened.checklists" :entity-type="entityType" :entity-id="entityId" />
-      </q-tab-panel>
-      <q-tab-panel name="attachments">
-        <entity-attachments-panel v-if="opened.attachments" :entity-type="entityType" :entity-id="entityId" />
+      <q-tab-panel v-for="t in visibleTabs" :key="t.key" :name="t.key" class="q-pt-sm">
+        <component
+          :is="t.component"
+          v-if="opened[t.key]"
+          :entity-type="entityType"
+          :entity-id="entityId"
+        />
       </q-tab-panel>
     </q-tab-panels>
   </q-card>
 </template>
 
 <script setup>
-import { ref, reactive, watch } from "vue";
+import { ref, reactive, computed, watch } from "vue";
 import EntityTagsPanel from "./EntityTagsPanel.vue";
 import EntityNotesPanel from "./EntityNotesPanel.vue";
 import EntityActivityTimeline from "./EntityActivityTimeline.vue";
 import EntityChecklistsPanel from "./EntityChecklistsPanel.vue";
 import EntityAttachmentsPanel from "./EntityAttachmentsPanel.vue";
 
+// The reusable Universal Features collaboration panel: inline tags plus tabbed notes, activity,
+// checklists and attachments for any (entityType, entityId). Drop it onto any detail page:
+//   <entity-universal-panel :entity-type="EntityType.User" :entity-id="userId" />
+// Pick/Order sections with `tabs`, hide tags with `:show-tags="false"`, add a heading with `title`.
+const TAB_REGISTRY = {
+  notes: { label: "Notes", icon: "o_chat", component: EntityNotesPanel },
+  activity: { label: "Activity", icon: "o_history", component: EntityActivityTimeline },
+  checklists: { label: "Checklists", icon: "o_checklist", component: EntityChecklistsPanel },
+  attachments: { label: "Attachments", icon: "o_attach_file", component: EntityAttachmentsPanel }
+};
+
 const props = defineProps({
   entityType: { type: Number, required: true },
   entityId: { type: String, required: true },
-  initialTab: { type: String, default: "notes" }
+  // Which sections to show, in order. Unknown keys are ignored.
+  tabs: { type: Array, default: () => ["notes", "activity", "checklists", "attachments"] },
+  // Show the inline tags row above the tabs.
+  showTags: { type: Boolean, default: true },
+  // The tab open on first render; defaults to the first visible tab.
+  initialTab: { type: String, default: "" },
+  // Optional heading rendered above the panel.
+  title: { type: String, default: "" }
 });
 
-const tab = ref(props.initialTab);
-// Lazy-load each tab's content only after it is first opened.
-const opened = reactive({ notes: false, activity: false, checklists: false, attachments: false });
+const visibleTabs = computed(() =>
+  props.tabs.filter((key) => TAB_REGISTRY[key]).map((key) => ({ key, ...TAB_REGISTRY[key] })));
 
-const markOpened = (name) => { opened[name] = true; };
+const firstTabKey = computed(() => visibleTabs.value[0]?.key || "");
+const tab = ref(props.initialTab && visibleTabs.value.some((t) => t.key === props.initialTab)
+  ? props.initialTab
+  : firstTabKey.value);
+
+// Lazy-load each tab's content only after it is first opened.
+const opened = reactive({});
+const markOpened = (name) => { if (name) opened[name] = true; };
 markOpened(tab.value);
 watch(tab, (value) => markOpened(value));
 </script>

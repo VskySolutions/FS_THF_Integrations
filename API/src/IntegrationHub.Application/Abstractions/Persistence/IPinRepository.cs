@@ -16,5 +16,11 @@ public interface IPinRepository
 
     Task<int> CountByUserAsync(Guid userId, CancellationToken cancellationToken = default);
 
+    /// <summary>Number of records of a given type the user has pinned (per-type pin cap).</summary>
+    Task<int> CountByUserAndTypeAsync(Guid userId, EntityType entityType, CancellationToken cancellationToken = default);
+
+    /// <summary>The entity ids of the user's pinned records of a given type (e.g. to float them to the top of a list).</summary>
+    Task<IReadOnlyList<Guid>> ListEntityIdsByUserAndTypeAsync(Guid userId, EntityType entityType, CancellationToken cancellationToken = default);
+
     Task<(IReadOnlyList<Pin> Items, int Total)> ListByUserAsync(Guid userId, int page, int limit, CancellationToken cancellationToken = default);
 }

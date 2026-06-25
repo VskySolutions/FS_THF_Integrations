@@ -1,16 +1,43 @@
 <template>
   <div class="column q-gutter-sm">
-    <!-- Composer -->
-    <div class="relative-position">
+    <!-- Header: title (left) + quick search with loader + Add note (right) -->
+    <div class="row items-center no-wrap q-gutter-sm">
+      <div class="text-subtitle1">Notes</div>
+      <q-space />
       <q-input
-        ref="composerRef"
-        v-model="draft"
-        type="textarea"
-        outlined
+        v-model="search"
         dense
-        autogrow
+        outlined
+        clearable
+        placeholder="Quick search"
+        class="uf-notes__search"
+        debounce="300"
+        :loading="loading"
+        @update:model-value="load"
+      >
+        <template #prepend><q-icon name="o_search" /></template>
+      </q-input>
+      <q-btn
+        v-if="!composerOpen"
+        color="primary"
+        no-caps
+        unelevated
+        dense
+        icon="o_add"
+        label="Add note"
+        @click="openComposer"
+      />
+    </div>
+
+    <!-- Composer: rich text editor with @mention autocomplete -->
+    <div v-if="composerOpen" class="relative-position">
+      <q-editor
+        ref="editorRef"
+        v-model="draft"
+        min-height="6rem"
+        :toolbar="toolbar"
         placeholder="Write a note… type @ to mention someone"
-        @update:model-value="onType"
+        content-class="uf-notes__editor"
         @keydown.esc="mentionOpen = false"
       />
       <q-menu
@@ -43,37 +70,22 @@
           </q-item>
         </q-list>
       </q-menu>
-      <div class="row justify-end q-mt-xs">
+      <div class="row justify-end q-gutter-sm q-mt-xs">
+        <q-btn flat no-caps dense label="Cancel" @click="closeComposer" />
         <q-btn
           color="primary"
           no-caps
           unelevated
           dense
-          label="Add note"
+          label="Save note"
           :loading="posting"
-          :disable="!draft.trim()"
+          :disable="!hasContent(draft)"
           @click="post"
         />
       </div>
     </div>
 
-    <!-- Search / filter -->
-    <div class="row q-gutter-sm items-center">
-      <q-input
-        v-model="search"
-        dense
-        outlined
-        clearable
-        placeholder="Search notes"
-        class="col"
-        debounce="300"
-        @update:model-value="load"
-      >
-        <template #prepend><q-icon name="o_search" /></template>
-      </q-input>
-    </div>
-
-    <!-- Timeline -->
+    <!-- Timeline (newest first) -->
     <q-inner-loading :showing="loading" />
     <div v-if="!loading && !notes.length" class="text-grey-6 q-pa-md text-center">No notes yet.</div>
     <q-list separator>
@@ -89,7 +101,7 @@
           </q-item-label>
 
           <div v-if="editingId === note.id" class="q-mt-xs">
-            <q-input v-model="editDraft" type="textarea" outlined dense autogrow />
+            <q-editor v-model="editDraft" min-height="5rem" :toolbar="toolbar" content-class="uf-notes__editor" />
             <div class="row q-gutter-xs q-mt-xs">
               <q-btn dense no-caps unelevated color="primary" label="Save" @click="saveEdit(note)" />
               <q-btn dense no-caps flat label="Cancel" @click="editingId = null" />
@@ -111,7 +123,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, nextTick, onMounted, onBeforeUnmount } from "vue";
 import { ufNotesApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
@@ -132,23 +144,33 @@ const auth = useAuthStore();
 const currentUserId = auth.user?.userId || null;
 const isAdmin = has(Permissions.SettingsManage);
 
+const toolbar = [
+  ["bold", "italic", "underline", "strike"],
+  ["unordered", "ordered"],
+  ["link"],
+  ["removeFormat"]
+];
+
 const notes = ref([]);
 const loading = ref(false);
 const search = ref("");
 
+const composerOpen = ref(false);
 const draft = ref("");
 const posting = ref(false);
-const mentionedUserIds = ref([]);
 
-// @mention autocomplete
-const composerRef = ref(null);
+// @mention autocomplete state
+const editorRef = ref(null);
 const mentionOpen = ref(false);
 const candidates = ref([]);
 let mentionTimer = null;
+let mentionContentEl = null;
+let mentionRange = null; // the range covering the typed "@query"
 
 const editingId = ref(null);
 const editDraft = ref("");
 
+// ---- data ----
 const load = async () => {
   loading.value = true;
   try {
@@ -159,7 +181,9 @@ const load = async () => {
       page: 1,
       limit: 100
     });
-    notes.value = res?.data || [];
+    const rows = res?.data || [];
+    // Newest first, regardless of server ordering.
+    notes.value = rows.sort((a, b) => new Date(b.createdOnUtc) - new Date(a.createdOnUtc));
   } catch (err) {
     notify.error(getApiErrorMessage(err));
   } finally {
@@ -167,15 +191,57 @@ const load = async () => {
   }
 };
 
-const onType = (value) => {
-  const match = /@(\w*)$/.exec(value || "");
-  if (!match) {
-    mentionOpen.value = false;
-    return;
+// ---- composer open/close ----
+const openComposer = async () => {
+  composerOpen.value = true;
+  await nextTick();
+  wireMentionListener();
+  editorRef.value?.focus?.();
+};
+
+const closeComposer = () => {
+  composerOpen.value = false;
+  mentionOpen.value = false;
+  draft.value = "";
+  unwireMentionListener();
+};
+
+// ---- @mention autocomplete inside the contenteditable editor ----
+const editorContentEl = () =>
+  editorRef.value?.getContentEl?.() || editorRef.value?.$el?.querySelector(".q-editor__content") || null;
+
+const wireMentionListener = () => {
+  const el = editorContentEl();
+  if (el && el !== mentionContentEl) {
+    unwireMentionListener();
+    mentionContentEl = el;
+    el.addEventListener("keyup", onEditorKeyup);
   }
-  const term = match[1];
+};
+
+const unwireMentionListener = () => {
+  mentionContentEl?.removeEventListener("keyup", onEditorKeyup);
+  mentionContentEl = null;
+};
+
+const onEditorKeyup = () => {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) { mentionOpen.value = false; return; }
+  const range = sel.getRangeAt(0);
+  const node = range.startContainer;
+  if (node.nodeType !== Node.TEXT_NODE) { mentionOpen.value = false; return; }
+
+  const textBefore = node.textContent.slice(0, range.startOffset);
+  const match = /@(\w*)$/.exec(textBefore);
+  if (!match) { mentionOpen.value = false; return; }
+
+  // Remember the exact span of the "@query" so we can replace it on selection.
+  mentionRange = document.createRange();
+  mentionRange.setStart(node, range.startOffset - match[0].length);
+  mentionRange.setEnd(node, range.startOffset);
+
   clearTimeout(mentionTimer);
-  mentionTimer = setTimeout(() => fetchCandidates(term), 200);
+  mentionTimer = setTimeout(() => fetchCandidates(match[1]), 200);
 };
 
 const fetchCandidates = async (term) => {
@@ -188,27 +254,41 @@ const fetchCandidates = async (term) => {
 };
 
 const pickMention = (c) => {
-  // Replace the trailing "@term" with a mention token and track the user id.
-  draft.value = draft.value.replace(/@(\w*)$/, `@[${c.name}](${c.userId}) `);
-  if (!mentionedUserIds.value.includes(c.userId)) {
-    mentionedUserIds.value.push(c.userId);
+  editorRef.value?.focus?.();
+  // Reselect the "@query" range and replace it with a non-editable mention token.
+  if (mentionRange) {
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(mentionRange);
   }
+  const html = `<span class="uf-mention" data-user-id="${c.userId}" contenteditable="false">@${escapeHtml(c.name)}</span>&nbsp;`;
+  editorRef.value?.runCmd?.("insertHTML", html);
+  mentionRange = null;
   mentionOpen.value = false;
 };
 
+// User ids are derived from the mention tokens present in the saved HTML — robust to manual edits.
+const extractMentionIds = (html) => {
+  const doc = new DOMParser().parseFromString(html || "", "text/html");
+  const ids = Array.from(doc.querySelectorAll("[data-user-id]"))
+    .map((el) => el.getAttribute("data-user-id"))
+    .filter(Boolean);
+  return [...new Set(ids)];
+};
+
+// ---- post / edit / delete ----
 const post = async () => {
-  if (!draft.value.trim()) return;
+  if (!hasContent(draft.value)) return;
   posting.value = true;
   try {
     await ufNotesApi.create({
       entityType: props.entityType,
       entityId: props.entityId,
-      body: draft.value.trim(),
-      mentionedUserIds: mentionedUserIds.value
+      body: draft.value,
+      mentionedUserIds: extractMentionIds(draft.value)
     });
-    draft.value = "";
-    mentionedUserIds.value = [];
     notify.success("Note added.");
+    closeComposer();
     await load();
   } catch (err) {
     notify.error(getApiErrorMessage(err));
@@ -227,7 +307,7 @@ const startEdit = (note) => {
 
 const saveEdit = async (note) => {
   try {
-    await ufNotesApi.update(note.id, { body: editDraft.value.trim(), mentionedUserIds: [] });
+    await ufNotesApi.update(note.id, { body: editDraft.value, mentionedUserIds: extractMentionIds(editDraft.value) });
     editingId.value = null;
     notify.success("Note updated.");
     await load();
@@ -253,14 +333,35 @@ const remove = async (note) => {
   }
 };
 
+// ---- rendering ----
 const escapeHtml = (s) => (s || "").replace(/[&<>"']/g, (c) => (
   { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c]
 ));
 
-// Render @[Name](id) tokens as highlighted names; everything else escaped.
+// True when the editor holds visible content (q-editor leaves an empty <br> / whitespace behind).
+const hasContent = (html) => !!(html || "").replace(/<br\s*\/?>/gi, "").replace(/<[^>]+>/g, "").replace(/&nbsp;/gi, " ").trim();
+
+// Allowlist sanitizer for stored HTML notes (no sanitizer dependency available): drops dangerous
+// elements, inline event handlers, and javascript: URLs while keeping basic rich-text markup.
+const sanitizeHtml = (html) => {
+  const doc = new DOMParser().parseFromString(html || "", "text/html");
+  doc.querySelectorAll("script,style,iframe,object,embed,link,meta,form,input").forEach((n) => n.remove());
+  doc.querySelectorAll("*").forEach((el) => {
+    Array.from(el.attributes).forEach((attr) => {
+      const name = attr.name.toLowerCase();
+      if (name.startsWith("on")) el.removeAttribute(attr.name);
+      else if ((name === "href" || name === "src") && /^\s*javascript:/i.test(attr.value)) el.removeAttribute(attr.name);
+    });
+  });
+  return doc.body.innerHTML;
+};
+
+// New notes are q-editor HTML; legacy notes are plain text with @[Name](id) tokens.
 const renderBody = (body) => {
-  const escaped = escapeHtml(body);
-  return escaped.replace(
+  if (/<[a-z][\s\S]*>/i.test(body || "")) {
+    return sanitizeHtml(body);
+  }
+  return escapeHtml(body).replace(
     /@\[([^\]]+)\]\([0-9a-fA-F-]{36}\)/g,
     (_m, name) => `<span class="uf-mention">@${escapeHtml(name)}</span>`
   );
@@ -269,10 +370,14 @@ const renderBody = (body) => {
 const initials = (name) => (name || "?").split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 
 onMounted(load);
+onBeforeUnmount(unwireMentionListener);
 defineExpose({ load });
 </script>
 
 <style scoped>
-.note-body { white-space: pre-wrap; word-break: break-word; }
+.uf-notes__search { max-width: 220px; width: 100%; }
+.note-body { white-space: normal; word-break: break-word; }
 .note-body :deep(.uf-mention) { color: #1976d2; font-weight: 500; background: #e3f2fd; border-radius: 4px; padding: 0 2px; }
+.note-body :deep(p) { margin: 0 0 6px; }
+.note-body :deep(ul), .note-body :deep(ol) { margin: 0 0 6px; padding-left: 20px; }
 </style>

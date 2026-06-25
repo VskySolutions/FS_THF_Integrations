@@ -1,6 +1,11 @@
 <template>
   <q-page padding>
-    <div class="text-h6 q-mb-md">Modified Log Configuration</div>
+    <app-list-header
+      :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'Modified Log' }]"
+      show-back
+      @back="$router.back()"
+    />
+
     <p class="text-grey-7">
       System Tracked fields always record change history. Optional fields can be toggled off for this tenant.
     </p>
@@ -44,6 +49,7 @@ import { ref, onMounted } from "vue";
 import { ufModifiedLogApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useEntityMeta } from "composables/uf/useEntityMeta";
+import AppListHeader from "components/common/AppListHeader.vue";
 
 const notify = useNotify();
 const { labelFor } = useEntityMeta();

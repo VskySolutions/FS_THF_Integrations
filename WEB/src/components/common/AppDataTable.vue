@@ -106,7 +106,10 @@ const props = defineProps({
   selectable: { type: Boolean, default: false },
   pagination: { type: Object, default: null },
   defaultSortBy: { type: String, default: "updatedOnUtc" },
-  defaultDescending: { type: Boolean, default: true }
+  defaultDescending: { type: Boolean, default: true },
+  // Row-key values to float to the top of the current page (e.g. pinned records), kept above the
+  // rest regardless of the active sort.
+  pinnedRowKeys: { type: Array, default: () => [] }
 });
 
 const emit = defineEmits(["request", "refresh", "update:pagination", "update:selected"]);
@@ -141,23 +144,36 @@ watch(() => props.totalRecords, (total) => {
   innerPagination.value = { ...innerPagination.value, rowsNumber: total };
 });
 
-// ---- Client-side sort of the current page's rows ----
+// ---- Client-side sort of the current page's rows, with pinned rows floated to the top ----
 const displayedRows = computed(() => {
   const { sortBy, descending } = innerPagination.value;
-  if (!sortBy) return props.rows;
-  const col = props.columns.find((c) => c.name === sortBy);
-  const field = col?.field ?? sortBy;
-  const get = typeof field === "function" ? field : (row) => row[field];
-  const sorted = [...props.rows].sort((a, b) => {
-    const x = get(a);
-    const y = get(b);
-    if (x == null && y == null) return 0;
-    if (x == null) return 1;
-    if (y == null) return -1;
-    if (typeof x === "number" && typeof y === "number") return x - y;
-    return String(x).localeCompare(String(y), undefined, { numeric: true });
-  });
-  return descending ? sorted.reverse() : sorted;
+  let result = props.rows;
+
+  if (sortBy) {
+    const col = props.columns.find((c) => c.name === sortBy);
+    const field = col?.field ?? sortBy;
+    const get = typeof field === "function" ? field : (row) => row[field];
+    const sorted = [...props.rows].sort((a, b) => {
+      const x = get(a);
+      const y = get(b);
+      if (x == null && y == null) return 0;
+      if (x == null) return 1;
+      if (y == null) return -1;
+      if (typeof x === "number" && typeof y === "number") return x - y;
+      return String(x).localeCompare(String(y), undefined, { numeric: true });
+    });
+    result = descending ? sorted.reverse() : sorted;
+  }
+
+  // Keep pinned rows on top, preserving the sorted order within the pinned and non-pinned groups.
+  if (props.pinnedRowKeys.length) {
+    const pinnedSet = new Set(props.pinnedRowKeys);
+    const isPinned = (row) => pinnedSet.has(row[props.rowKey]);
+    const pinned = result.filter(isPinned);
+    if (pinned.length) result = [...pinned, ...result.filter((row) => !isPinned(row))];
+  }
+
+  return result;
 });
 
 const onRequest = (requestProps) => {

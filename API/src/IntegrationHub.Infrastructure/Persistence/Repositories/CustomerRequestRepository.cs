@@ -47,7 +47,8 @@ internal sealed class CustomerRequestRepository : ICustomerRequestRepository
         Guid? draftViewerId,
         int page,
         int limit,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<Guid>? pinnedFirstIds = null)
     {
         // Cross-tenant (Super Admin) reads pass an explicit tenant id and bypass the ambient filter.
         var query = (tenantId is { } tid
@@ -89,8 +90,13 @@ internal sealed class CustomerRequestRepository : ICustomerRequestRepository
         }
 
         var total = await query.CountAsync(cancellationToken);
-        var items = await query
-            .OrderByDescending(c => c.UpdatedOnUtc)
+
+        // Float the caller's pinned records to the top so they land on the first page, then newest-first.
+        var ordered = pinnedFirstIds is { Count: > 0 }
+            ? query.OrderByDescending(c => pinnedFirstIds.Contains(c.Id)).ThenByDescending(c => c.UpdatedOnUtc)
+            : query.OrderByDescending(c => c.UpdatedOnUtc);
+
+        var items = await ordered
             .Skip((page - 1) * limit)
             .Take(limit)
             .ToListAsync(cancellationToken);

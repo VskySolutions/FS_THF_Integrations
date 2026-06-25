@@ -1,6 +1,7 @@
 using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Application.Abstractions.Security;
 using IntegrationHub.Application.Email;
+using IntegrationHub.Application.OptionSets;
 using IntegrationHub.Domain.Entities;
 using IntegrationHub.Domain.Enums;
 using IntegrationHub.Shared.Security;
@@ -29,6 +30,10 @@ public static class BootstrapSeeder
         // Platform-default email templates are inserted when missing (never overwriting Super Admin edits).
         await SeedEmailTemplatesAsync(
             services.GetRequiredService<IEmailTemplateRepository>(), unitOfWork, cancellationToken);
+
+        // Platform-standard option lists (e.g. Payment Terms) are inserted when missing.
+        await SeedOptionSetsAsync(
+            services.GetRequiredService<IOptionSetRepository>(), unitOfWork, cancellationToken);
 
         // If any user already exists, the platform is initialized.
         if (await users.EmailExistsAsync(GetValue(configuration, "Email", "admin@integrationhub.local"), cancellationToken)
@@ -152,6 +157,53 @@ public static class BootstrapSeeder
                 Subject = def.Subject,
                 Body = def.Body,
             }, cancellationToken);
+            added = true;
+        }
+
+        if (added)
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Seeds the platform-standard option lists (TenantId = null, IsSystem = true). Idempotent and
+    /// non-destructive: a standard list is inserted only when its key is absent, so tenant additions
+    /// and any later edits to the standard items survive restarts.
+    /// </summary>
+    private static async Task SeedOptionSetsAsync(IOptionSetRepository sets, IUnitOfWork unitOfWork, CancellationToken cancellationToken)
+    {
+        var added = false;
+        foreach (var def in DefaultOptionSets.All)
+        {
+            if (await sets.KeyExistsAsync(null, def.EntityType, def.Key, excludeId: null, cancellationToken))
+            {
+                continue;
+            }
+
+            var set = new OptionSet
+            {
+                Id = Guid.NewGuid(),
+                TenantId = null,
+                EntityType = def.EntityType,
+                Key = def.Key,
+                Name = def.Name,
+                ItemSortMode = def.ItemSortMode,
+                IsSystem = true,
+                IsActive = true,
+                Items = def.Items.Select(i => new OptionSetItem
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = null,
+                    Value = i.Value,
+                    Label = i.Label,
+                    SortOrder = i.SortOrder,
+                    IsActive = true,
+                    MetadataJson = i.MetadataJson,
+                }).ToList(),
+            };
+
+            await sets.AddSetAsync(set, cancellationToken);
             added = true;
         }
 

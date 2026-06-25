@@ -12,9 +12,10 @@ using Microsoft.AspNetCore.Mvc;
 namespace IntegrationHub.Api.Controllers;
 
 /// <summary>
-/// Personal productivity features that attach to any entity record for the current user: Pins (max 50),
-/// Colour Codes (upsert/clear, batch fetch for list pages), and synchronous PDF export. All operations
-/// are scoped to the calling user and require the read permission of the parent entity.
+/// Personal productivity features that attach to any entity record for the current user: Pins (max 5
+/// per entity type, 50 overall), Colour Codes (upsert/clear, batch fetch for list pages), and
+/// synchronous PDF export. All operations are scoped to the calling user and require the read
+/// permission of the parent entity.
 /// </summary>
 [ApiController]
 [Authorize]
@@ -28,6 +29,7 @@ namespace IntegrationHub.Api.Controllers;
 public sealed class PersonalFeaturesController : ControllerBase
 {
     private const int MaxPinsPerUser = 50;
+    private const int MaxPinsPerType = 5;
 
     private readonly IPinRepository _pins;
     private readonly IColourCodeRepository _colours;
@@ -84,7 +86,11 @@ public sealed class PersonalFeaturesController : ControllerBase
             return Ok(ApiResponseFactory.Success(new PinResponse(existing.Id, existing.EntityType, existing.EntityId, existing.PinnedOnUtc), "Already pinned."));
         }
 
-        // Max 50 pins per user (Universal Features REQ-UNI-014).
+        // Max 5 pins per entity type (e.g. at most 5 pinned customers), and 50 overall.
+        if (await _pins.CountByUserAndTypeAsync(userId, request.EntityType, cancellationToken) >= MaxPinsPerType)
+        {
+            return BadRequest(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, "Pin limit reached.", $"You can pin at most {MaxPinsPerType} records of this type."));
+        }
         if (await _pins.CountByUserAsync(userId, cancellationToken) >= MaxPinsPerUser)
         {
             return BadRequest(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, "Pin limit reached.", $"You can pin at most {MaxPinsPerUser} records."));

@@ -5,7 +5,7 @@
       <q-btn round color="primary" icon="o_sticky_note_2" @click="openCreate">
         <q-tooltip>New sticky note</q-tooltip>
       </q-btn>
-      <q-btn round color="grey-7" :icon="hideAll ? 'o_visibility_off' : 'o_visibility'" @click="toggleHideAll">
+      <q-btn v-if="notes.length" round color="grey-7" :icon="hideAll ? 'o_visibility_off' : 'o_visibility'" @click="toggleHideAll">
         <q-tooltip>{{ hideAll ? "Show sticky notes" : "Hide sticky notes" }}</q-tooltip>
       </q-btn>
     </div>
@@ -128,7 +128,8 @@ const scopeOptions = [
 let maxZ = 10;
 
 const load = async () => {
-  if (hideAll.value) return;
+  // Always fetch so we know the note count even when hidden — the toggle button and
+  // the rendered cards are gated on `hideAll` in the template, not on the fetch.
   try {
     const data = (await ufStickyNoteApi.list(route.path)) || [];
     notes.value = data.map((n, i) => ({
@@ -273,7 +274,7 @@ onMounted(load);
 
 <style scoped>
 .uf-sticky-layer { position: fixed; inset: 0; pointer-events: none; z-index: 2000; }
-.uf-sticky-controls { position: fixed; right: 18px; bottom: 18px; display: flex; flex-direction: column; gap: 8px; pointer-events: all; z-index: 2100; }
+.uf-sticky-controls { position: fixed; right: 18px; bottom: 68px; display: flex; flex-direction: column; gap: 8px; pointer-events: all; z-index: 2100; }
 .uf-sticky-note {
   position: fixed;
   pointer-events: all;

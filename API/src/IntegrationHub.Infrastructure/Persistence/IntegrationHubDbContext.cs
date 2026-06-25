@@ -89,6 +89,10 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
 
     public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();
 
+    // ---- Option Sets (tenant-configurable input value lists) ----
+    public DbSet<OptionSet> OptionSets => Set<OptionSet>();
+    public DbSet<OptionSetItem> OptionSetItems => Set<OptionSetItem>();
+
     // ---- Universal Features (Phase 14) ----
     public DbSet<Note> Notes => Set<Note>();
     public DbSet<NoteMention> NoteMentions => Set<NoteMention>();
@@ -175,6 +179,11 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
         // Email templates carry a nullable TenantId (null = platform default); a tenant filter would
         // hide the defaults, so they use the soft-delete filter only and are scoped explicitly in the repo.
         modelBuilder.Entity<EmailTemplate>().HasQueryFilter(e => !e.Deleted);
+        // Option sets/items carry a nullable TenantId (null = platform-standard list); a tenant filter
+        // would hide the standard lists, so they use the soft-delete filter only and are scoped
+        // explicitly in the repository (standard rows ∪ the current tenant's rows).
+        modelBuilder.Entity<OptionSet>().HasQueryFilter(e => !e.Deleted);
+        modelBuilder.Entity<OptionSetItem>().HasQueryFilter(e => !e.Deleted);
         modelBuilder.Entity<Role>().HasQueryFilter(e => !e.Deleted);
         modelBuilder.Entity<TenantRole>().HasQueryFilter(e => !e.Deleted);
         modelBuilder.Entity<Address>().HasQueryFilter(e => !e.Deleted);

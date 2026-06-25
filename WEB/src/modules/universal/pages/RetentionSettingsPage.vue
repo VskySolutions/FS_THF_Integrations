@@ -1,6 +1,10 @@
 <template>
   <q-page padding>
-    <div class="text-h6 q-mb-md">Deleted Records Retention</div>
+    <app-list-header
+      :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'Deleted Records' }]"
+      show-back
+      @back="$router.back()"
+    />
 
     <q-card flat bordered class="q-pa-md" style="max-width: 520px;">
       <p class="text-grey-7">
@@ -32,6 +36,7 @@ import { ref, onMounted } from "vue";
 import { ufDeletedApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useEntityMeta } from "composables/uf/useEntityMeta";
+import AppListHeader from "components/common/AppListHeader.vue";
 
 const notify = useNotify();
 const { labelFor } = useEntityMeta();

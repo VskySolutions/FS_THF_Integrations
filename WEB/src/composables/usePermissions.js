@@ -33,7 +33,10 @@ export const Permissions = Object.freeze({
   EmailManage: "email.manage",
   // Universal Features (Phase 14/15).
   SettingsManage: "settings.manage",
-  RecordsAdminDelete: "records.adminDelete"
+  RecordsAdminDelete: "records.adminDelete",
+  // Option Sets (tenant-configurable input value lists).
+  OptionSetsRead: "optionSets.read",
+  OptionSetsManage: "optionSets.manage"
 });
 
 // Reactive permission checks for the active tenant. `has`/`hasAny` read the auth store's

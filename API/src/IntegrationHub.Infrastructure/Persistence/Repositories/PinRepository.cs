@@ -26,6 +26,15 @@ internal sealed class PinRepository : IPinRepository
     public Task<int> CountByUserAsync(Guid userId, CancellationToken cancellationToken = default)
         => _dbContext.Pins.CountAsync(p => p.UserId == userId, cancellationToken);
 
+    public Task<int> CountByUserAndTypeAsync(Guid userId, EntityType entityType, CancellationToken cancellationToken = default)
+        => _dbContext.Pins.CountAsync(p => p.UserId == userId && p.EntityType == entityType, cancellationToken);
+
+    public async Task<IReadOnlyList<Guid>> ListEntityIdsByUserAndTypeAsync(Guid userId, EntityType entityType, CancellationToken cancellationToken = default)
+        => await _dbContext.Pins
+            .Where(p => p.UserId == userId && p.EntityType == entityType)
+            .Select(p => p.EntityId)
+            .ToListAsync(cancellationToken);
+
     public async Task<(IReadOnlyList<Pin> Items, int Total)> ListByUserAsync(Guid userId, int page, int limit, CancellationToken cancellationToken = default)
     {
         var query = _dbContext.Pins.Where(p => p.UserId == userId).OrderByDescending(p => p.PinnedOnUtc);

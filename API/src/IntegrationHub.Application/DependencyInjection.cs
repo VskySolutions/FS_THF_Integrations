@@ -50,6 +50,9 @@ public static class DependencyInjection
         // Email templates: management + rendering.
         services.AddScoped<Abstractions.Email.IEmailTemplateService, Email.EmailTemplateService>();
 
+        // Option Sets: tenant-configurable input value lists.
+        services.AddScoped<Abstractions.OptionSets.IOptionSetService, OptionSets.OptionSetService>();
+
         // Universal Features (Phase 14): cross-cutting activity writer + notification dispatcher.
         services.AddScoped<Abstractions.UniversalFeatures.IActivityEventWriter, UniversalFeatures.ActivityEventWriter>();
         services.AddScoped<Abstractions.UniversalFeatures.INotificationDispatcher, UniversalFeatures.NotificationDispatcher>();

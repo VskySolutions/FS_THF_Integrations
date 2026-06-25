@@ -307,6 +307,36 @@ export const adminApi = {
   health: () => api.get("/api/admin/health").then(unwrap)
 };
 
+// How an option list orders its items. Mirrors IntegrationHub.Domain.Enums.OptionItemSortMode.
+export const OptionItemSortMode = Object.freeze({
+  AlphabeticalAsc: "AlphabeticalAsc",
+  AlphabeticalDesc: "AlphabeticalDesc",
+  Custom: "Custom"
+});
+
+// Tenant-configurable input value lists (e.g. Payment Terms). Reads require optionSets.read; writes
+// require optionSets.manage. Standard (seeded) lists are returned read-only; only a tenant's own
+// lists can be modified. Scoped to the caller's active tenant.
+export const optionSetApi = {
+  // params: { entityType? } — EntityType enum value.
+  list: (params) => api.get("/api/option-sets", { params }).then(unwrap),
+  get: (id) => api.get(`/api/option-sets/${id}`).then(unwrap),
+  // Effective active values for a key: { entityType, key, parentItemId? }.
+  resolve: (params) => api.get("/api/option-sets/resolve", { params }).then(unwrap),
+  // payload: { entityType, key, name, parentSetId?, itemSortMode }
+  create: (payload) => api.post("/api/option-sets", payload).then(unwrap),
+  // payload: { name, itemSortMode, isActive }
+  update: (id, payload) => api.put(`/api/option-sets/${id}`, payload).then(unwrap),
+  remove: (id) => api.delete(`/api/option-sets/${id}`).then(unwrap),
+  // payload: { value, label, parentItemId?, isDefault, metadataJson? }
+  createItem: (setId, payload) => api.post(`/api/option-sets/${setId}/items`, payload).then(unwrap),
+  // payload: { value, label, parentItemId?, isDefault, isActive, metadataJson? }
+  updateItem: (setId, itemId, payload) => api.put(`/api/option-sets/${setId}/items/${itemId}`, payload).then(unwrap),
+  removeItem: (setId, itemId) => api.delete(`/api/option-sets/${setId}/items/${itemId}`).then(unwrap),
+  // payload: itemIds in the desired order.
+  reorderItems: (setId, itemIds) => api.put(`/api/option-sets/${setId}/items/reorder`, { itemIds }).then(unwrap)
+};
+
 // ---------------------------------------------------------------------------
 // Universal Features (Phase 14/15). Attach to any entity via (entityType, entityId).
 // EntityType enum: CustomerRequest=1, IntegrationJob=2, Tenant=3, User=4, UserGroup=5.

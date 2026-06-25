@@ -43,6 +43,7 @@
       :pagination="pagination"
       default-sort-by="createdOnUtc"
       selectable
+      :pinned-row-keys="pinnedKeys"
       @request="onRequest"
       @refresh="load"
       @update:selected="selected = $event"
@@ -51,6 +52,16 @@
       <template v-if="canDataEntry" #bulk-actions="{ selected: sel }">
         <q-btn v-if="sel.some(canSubmit)" flat dense no-caps color="primary" icon="o_send" label="Submit for Approval" @click="bulkSubmit(sel)" />
         <q-btn v-if="sel.some(canDelete)" flat dense no-caps color="negative" icon="o_delete" label="Delete" @click="bulkDelete(sel)" />
+      </template>
+
+      <!-- Universal Features colour shown as a bar at the very left edge of the row (before the checkbox),
+           plus a pin badge beside it when the record is pinned. -->
+      <template #body-selection="scope">
+        <div class="uf-row-accent" :style="{ backgroundColor: colourMap[scope.row.id] || 'transparent' }" />
+        <q-checkbox v-model="scope.selected" dense />
+        <q-icon v-if="pinnedSet.has(scope.row.id)" name="o_push_pin" size="16px" color="primary" class="q-ml-xs">
+          <q-tooltip>Pinned</q-tooltip>
+        </q-icon>
       </template>
 
       <template #body-cell-status="cell">
@@ -64,25 +75,30 @@
           <q-btn flat round dense color="primary" icon="o_visibility" :to="{ name: 'customer_detail', params: { id: cell.row.id } }">
             <q-tooltip>View / Manage</q-tooltip>
           </q-btn>
-          <q-btn v-if="canEdit(cell.row) || canDelete(cell.row)" flat round dense icon="o_more_vert">
-            <q-menu auto-close>
-              <q-list style="min-width: 170px;">
-                <q-item clickable :to="{ name: 'customer_detail', params: { id: cell.row.id } }">
-                  <q-item-section avatar><q-icon name="o_visibility" /></q-item-section>
-                  <q-item-section>View</q-item-section>
-                </q-item>
-                <q-item v-if="canEdit(cell.row)" clickable :to="{ name: 'customer_detail', params: { id: cell.row.id } }">
-                  <q-item-section avatar><q-icon name="o_edit" /></q-item-section>
-                  <q-item-section>Edit</q-item-section>
-                </q-item>
-                <q-separator v-if="canDelete(cell.row)" />
-                <q-item v-if="canDelete(cell.row)" clickable @click="removeCustomer(cell.row)">
-                  <q-item-section avatar><q-icon name="o_delete" color="negative" /></q-item-section>
-                  <q-item-section class="text-negative">Delete</q-item-section>
-                </q-item>
-              </q-list>
-            </q-menu>
-          </q-btn>
+          <!-- "More" menu: page actions (View/Edit/Delete) above the universal feature actions. -->
+          <entity-row-actions-menu
+            :entity-type="EntityType.CustomerRequest"
+            :entity-id="cell.row.id"
+            :label="cell.row.customerRequestNumber || 'customer'"
+            :initial-pinned="pinnedSet.has(cell.row.id)"
+            :pin-disabled="pinLimitReached"
+            :pin-limit="PIN_LIMIT"
+            @colour-change="(colour) => onRowColourChange(cell.row.id, colour)"
+            @pin-change="(isPinned) => onRowPinChange(cell.row.id, isPinned)"
+          >
+            <q-item v-close-popup clickable :to="{ name: 'customer_detail', params: { id: cell.row.id } }">
+              <q-item-section avatar><q-icon name="o_visibility" /></q-item-section>
+              <q-item-section>View</q-item-section>
+            </q-item>
+            <q-item v-if="canEdit(cell.row)" v-close-popup clickable :to="{ name: 'customer_detail', params: { id: cell.row.id } }">
+              <q-item-section avatar><q-icon name="o_edit" /></q-item-section>
+              <q-item-section>Edit</q-item-section>
+            </q-item>
+            <q-item v-if="canDelete(cell.row)" v-close-popup clickable @click="removeCustomer(cell.row)">
+              <q-item-section avatar><q-icon name="o_delete" color="negative" /></q-item-section>
+              <q-item-section class="text-negative">Delete</q-item-section>
+            </q-item>
+          </entity-row-actions-menu>
         </q-td>
       </template>
 
@@ -112,7 +128,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from "vue";
 import { debounce } from "quasar";
-import { customerApi, getApiErrorMessage } from "services/api";
+import { customerApi, ufColourApi, ufPinApi, getApiErrorMessage } from "services/api";
 import { useTenantStore } from "stores/tenant";
 import { useTenantOptions } from "composables/useTenantOptions";
 import { usePermissions, Permissions } from "composables/usePermissions";
@@ -130,6 +146,7 @@ import AppListHeader from "components/common/AppListHeader.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import CustomerFormDrawer from "modules/customer/components/CustomerFormDrawer.vue";
 import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
+import EntityRowActionsMenu from "components/universal/EntityRowActionsMenu.vue";
 import { EntityType } from "services/api";
 
 const notify = useNotify();
@@ -181,11 +198,48 @@ const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);
 watch([search, filters], reload, { deep: true });
 watch(selectedTenantId, () => { pagination.value.page = 1; load(); });
 
+// Universal Features colour codes for the visible rows → a left-border accent on each coloured row.
+const colourMap = ref({});
+const loadColours = async () => {
+  const ids = rows.value.map((r) => r.id);
+  if (!ids.length) { colourMap.value = {}; return; }
+  try {
+    colourMap.value = (await ufColourApi.batch(EntityType.CustomerRequest, ids)) || {};
+  } catch { /* non-critical */ }
+};
+watch(rows, loadColours);
+
+const onRowColourChange = (id, colour) => { colourMap.value = { ...colourMap.value, [id]: colour }; };
+
+// The user's pinned customer records → a pin badge on those rows. Pins are a small per-user set,
+// loaded once; the row menu keeps it in sync via @pin-change.
+const pinnedSet = ref(new Set());
+const loadPins = async () => {
+  try {
+    const res = await ufPinApi.list({ page: 1, limit: 50 });
+    pinnedSet.value = new Set(
+      (res?.data || [])
+        .filter((p) => Number(p.entityType) === Number(EntityType.CustomerRequest))
+        .map((p) => p.entityId)
+    );
+  } catch { /* non-critical */ }
+};
+const onRowPinChange = (id, isPinned) => {
+  const next = new Set(pinnedSet.value);
+  if (isPinned) next.add(id); else next.delete(id);
+  pinnedSet.value = next;
+};
+// Pinned customers float to the top of the table; capped at 5 per the backend pin limit.
+const PIN_LIMIT = 5;
+const pinnedKeys = computed(() => [...pinnedSet.value]);
+const pinLimitReached = computed(() => pinnedSet.value.size >= PIN_LIMIT);
+
 onMounted(() => {
   if (canChooseTenant.value) {
     loadTenants();
     selectedTenantId.value = tenantStore.activeTenantId;
   }
+  loadPins();
 });
 
 // Draft and Returned customers are editable/submittable; only Draft customers may be deleted.
@@ -271,3 +325,18 @@ const bulkDelete = async (sel) => {
   }
 };
 </script>
+
+<style scoped>
+/* Anchor the colour accent to the selection cell so it sits at the row's left edge. */
+:deep(.app-data-table.with-selection tbody td:first-child) {
+  position: relative;
+}
+/* The Universal Features colour bar, drawn before the checkbox. */
+.uf-row-accent {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+}
+</style>

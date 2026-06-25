@@ -1,6 +1,10 @@
 <template>
   <q-page padding>
-    <div class="text-h6 q-mb-md">Saved Views</div>
+    <app-list-header
+      :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'Saved Views' }]"
+      show-back
+      @back="$router.back()"
+    />
 
     <app-data-table
       page-key="uf_saved_views"
@@ -33,6 +37,7 @@ import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
 import AppDataTable from "components/common/AppDataTable.vue";
+import AppListHeader from "components/common/AppListHeader.vue";
 
 const notify = useNotify();
 const { confirm } = useConfirm();

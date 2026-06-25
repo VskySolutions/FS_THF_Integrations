@@ -47,7 +47,6 @@ const sections = [
     label: "Administration",
     items: [
       { label: "Tenants", icon: "o_apartment", to: "/tenants", permissions: [Permissions.TenantsWrite] },
-      { label: "Person", icon: "o_badge", to: "/persons", permissions: [Permissions.PersonsRead] },
       { label: "Customers", icon: "o_groups", to: "/customers", permissions: null }
     ]
   },
@@ -72,6 +71,7 @@ const sections = [
     label: "Access Management",
     items: [
       { label: "Permission Groups", icon: "o_workspaces", to: "/permission-groups", permissions: [Permissions.GroupsManage] },
+      { label: "Person", icon: "o_badge", to: "/persons", permissions: [Permissions.PersonsRead] },
       { label: "Roles", icon: "o_admin_panel_settings", to: "/roles", permissions: [Permissions.RolesWrite] },
       { label: "Users", icon: "o_group", to: "/users", permissions: [Permissions.UsersRead] },
       { label: "User Groups", icon: "o_groups", to: "/user-groups", permissions: [Permissions.UsersGroupManagement] }
@@ -80,10 +80,11 @@ const sections = [
   {
     // Tenant-wide settings and universal features (email, and future cross-cutting settings).
     key: "settings",
-    label: "Settings",
+    label: "Tenant Settings",
     items: [
       { label: "Email Accounts", icon: "o_mail", to: "/smtp-accounts", permissions: [Permissions.EmailManage] },
       { label: "Email Templates", icon: "o_drafts", to: "/email-templates", permissions: [Permissions.EmailManage] },
+      { label: "Option Sets", icon: "o_list_alt", to: "/option-sets", permissions: [Permissions.OptionSetsRead] },
       { label: "Tag Management", icon: "o_label", to: "/settings/tags", permissions: [Permissions.SettingsManage] },
       { label: "Saved Views", icon: "o_view_list", to: "/settings/saved-views", permissions: [Permissions.SettingsManage] },
       { label: "Sticky Notes", icon: "o_sticky_note_2", to: "/settings/sticky-notes", permissions: [Permissions.SettingsManage] },

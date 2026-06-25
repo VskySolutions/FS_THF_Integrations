@@ -66,6 +66,12 @@ public static class Permissions
     /// <summary>View, restore, and permanently delete soft-deleted records (Deleted Records Management).</summary>
     public const string RecordsAdminDelete = "records.adminDelete";
 
+    // Option Sets (tenant-configurable input value lists)
+    /// <summary>Read option lists and their values (for pickers and the management UI).</summary>
+    public const string OptionSetsRead = "optionSets.read";
+    /// <summary>Create, edit, reorder, and delete a tenant's own option lists and values.</summary>
+    public const string OptionSetsManage = "optionSets.manage";
+
     // Platform
     public const string HealthRead = "health.read";
 
@@ -82,6 +88,7 @@ public static class Permissions
         GroupsManage,
         EmailManage,
         SettingsManage, RecordsAdminDelete,
+        OptionSetsRead, OptionSetsManage,
         HealthRead
     };
 
@@ -106,6 +113,8 @@ public static class Permissions
         EmailManage,
         // Tenant Admins manage tenant-wide UF settings and the deleted-records lifecycle.
         SettingsManage, RecordsAdminDelete,
+        // Tenant Admins manage their tenant's option lists.
+        OptionSetsRead, OptionSetsManage,
         HealthRead
     };
 

@@ -187,7 +187,17 @@ Universal Features (notes, tags, attachments, activity, reminders, pins, colour 
 3. Frontend: add it to `EntityType` in `services/api.js` and to `composables/uf/useEntityMeta.js` (label, icon, detail-route resolver for permalinks/pins/mentions).
 4. To support **Deleted Records Management** for it, add a `case` to `DeletedRecordsRepository` (list/identity/restore/hard-delete projections).
 5. To field-track a property for **Modified Log**, decorate it with `[TrackedField(EntityType.X, "Label", isSystemTracked: …)]` and render a `<FieldLogIcon>` beside its input (with `useFieldLogCounts` on the detail page).
-6. Drop `<EntityUniversalPanel :entity-type :entity-id>` into the detail page and `<EntityHeaderActions>` into its header.
+6. Drop `<EntityUniversalPanel :entity-type :entity-id>` into the detail page and `<EntityHeaderActions>` into its header. `EntityUniversalPanel` is a configurable common component — props `tabs` (which sections + order), `show-tags`, `title`, `initial-tab`.
+7. To expose the per-record actions (pin, colour, reminder, copy link, export PDF) in a **list row's "more" menu**, drop `<EntityRowActionsMenu :entity-type :entity-id>` and inject the page's own View/Edit/Delete `q-item`s into its default slot. It floats colour as a left-edge accent and a pin badge per row (see `modules/customer/pages/index.vue`): load the user's colours (`ufColourApi.batch`) and pins (`ufPinApi.list`) for the page, pass `:pinned-row-keys` to `AppDataTable` (floats pinned to the top after sort) and handle its `@colour-change`/`@pin-change`. Pins are capped at **5 per entity type** server-side (`PersonalFeaturesController`); to keep pinned rows on page 1, have the list endpoint accept `pinnedFirstIds` and order them first. Icons must use the **outlined** set (`o_push_pin`, `o_palette`, `o_chevron_right`) — filled names render as ligature text.
+
+### Add or use an Option Set (tenant-configurable input value lists)
+
+Option Sets are admin-managed dropdown value lists keyed by `(EntityType, Key)` — e.g. Customer "Payment Terms". A list with `TenantId == null` is a platform-**standard** seeded list (`IsSystem = true`, visible to every tenant, read-only in the app); a `TenantId`-bearing list is that tenant's own. Tables `OptionSets` / `OptionSetItems`; sort modes `AlphabeticalAsc`/`AlphabeticalDesc`/`Custom` (drag-reorder); dependency chains via `ParentSetId` + item `ParentItemId`.
+
+- **Consume options in a form:** use the reusable `<AppOptionPicker :entity-type :option-key="'payment_terms'" v-model="…">` (`components/common/AppOptionPicker.vue`); pass `:parent-item-id` for a cascading child list. It resolves via `GET /api/option-sets/resolve` (composable `useOptionSet`).
+- **Seed a new standard list:** add a `Definition` to `Application/OptionSets/DefaultOptionSets.cs` — `BootstrapSeeder` inserts it idempotently (`TenantId = null`, `IsSystem = true`). Scope to an existing `EntityType` member (there is no `Customer` value; customers use `CustomerRequest`).
+- **Scoping:** nullable-`TenantId` like `EmailTemplate` — query filter is `!Deleted` only (a tenant filter would hide the standard rows); the repo scopes explicitly as `TenantId == null || == current`. Write operations read the tenant from `ITenantContext`; standard sets are not editable through the API.
+- **Permissions:** `optionSets.read` / `optionSets.manage` (Tenant Admin + Super Admin). API `/api/option-sets` (CRUD + `/items` + `/items/reorder` + `/resolve`); admin UI in `modules/option-set/`.
 
 ---
 

@@ -10,7 +10,7 @@ namespace IntegrationHub.Api.Tenancy;
 /// <summary>
 /// Resolves the active tenant for authenticated requests from the JWT <c>activeTenantId</c>
 /// claim, validates it against the database, and populates <see cref="ITenantContext"/>
-/// (Multi-Tenancy). Anonymous requests (health, swagger) pass through untouched.
+/// (Multi-Tenancy). Anonymous requests (swagger) pass through untouched.
 /// Inactive tenants are rejected 403 (<c>TENANT_INACTIVE</c>); missing/unresolvable
 /// tenants are rejected 401 (<c>UNAUTHORIZED</c>).
 /// </summary>
@@ -32,7 +32,7 @@ public sealed class TenantResolutionMiddleware
 
     public async Task InvokeAsync(HttpContext context, ITenantContext tenantContext, ITenantRepository tenantRepository)
     {
-        // Anonymous endpoints (health, swagger) carry no tenant — let them through.
+        // Anonymous endpoints (swagger) carry no tenant — let them through.
         if (context.User.Identity?.IsAuthenticated != true)
         {
             await _next(context);

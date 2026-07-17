@@ -42,10 +42,6 @@ if (HangfireStorageConfigurator.IsConfigured(builder.Configuration))
         }
     });
 
-    // DB-driven scheduler: registers all recurring jobs from SQL Server and polls for
-    // schedule changes at runtime (WO-30).
-    builder.Services.AddHostedService<HangfireJobScheduler>();
-
     // Universal Features platform-fixed recurring jobs (reminder dispatch, sticky-note expiry).
     builder.Services.AddHostedService<UniversalFeaturesRecurringJobs>();
 }

@@ -119,7 +119,7 @@ public static class DefaultEmailTemplates
             "Your customer request {{CustomerRequestNumber}} was approved",
             """
             <p>Hello {{SubmitterName}},</p>
-            <p>Your customer request for <strong>{{CustomerName}}</strong> ({{CustomerRequestNumber}}) has been approved by {{ApproverName}} and is being synced to Maconomy.</p>
+            <p>Your customer request for <strong>{{CustomerName}}</strong> ({{CustomerRequestNumber}}) has been approved by {{ApproverName}}.</p>
             <p><a href="{{LoginUrl}}">View the request</a></p>
             """,
             new[] { "SubmitterName", "CustomerName", "CustomerRequestNumber", "ApproverName", "TenantName", "LoginUrl" }),
@@ -149,32 +149,6 @@ public static class DefaultEmailTemplates
             <p><a href="{{LoginUrl}}">Make the corrections</a></p>
             """,
             new[] { "SubmitterName", "CustomerName", "CustomerRequestNumber", "Notes", "TenantName", "LoginUrl" }),
-
-        new Definition(
-            EmailTemplateKey.CustomerSynced,
-            "Customer Synced",
-            "Sent to the submitter when their customer request syncs to Maconomy successfully.",
-            "Customer {{CustomerName}} synced to Maconomy",
-            """
-            <p>Hello {{SubmitterName}},</p>
-            <p>Your customer request for <strong>{{CustomerName}}</strong> ({{CustomerRequestNumber}}) has been synced to Maconomy as customer <strong>{{MaconomyCustomerNumber}}</strong>.</p>
-            <p><a href="{{LoginUrl}}">View the request</a></p>
-            """,
-            new[] { "SubmitterName", "CustomerName", "CustomerRequestNumber", "MaconomyCustomerNumber", "TenantName", "LoginUrl" }),
-
-        new Definition(
-            EmailTemplateKey.CustomerSyncFailed,
-            "Customer Sync Failed",
-            "Sent to the submitter when their customer request fails to sync to Maconomy.",
-            "Customer request {{CustomerRequestNumber}} failed to sync",
-            """
-            <p>Hello {{SubmitterName}},</p>
-            <p>Your customer request for <strong>{{CustomerName}}</strong> ({{CustomerRequestNumber}}) could not be synced to Maconomy.</p>
-            <p><strong>Error:</strong> {{ErrorMessage}}</p>
-            <p>The team has been notified. You can retry the sync from the request once the issue is resolved.</p>
-            <p><a href="{{LoginUrl}}">View the request</a></p>
-            """,
-            new[] { "SubmitterName", "CustomerName", "CustomerRequestNumber", "ErrorMessage", "TenantName", "LoginUrl" }),
 
         new Definition(
             EmailTemplateKey.MentionReceived,

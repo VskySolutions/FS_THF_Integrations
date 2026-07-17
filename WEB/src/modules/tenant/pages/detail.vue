@@ -44,16 +44,6 @@
         </q-card-section>
       </q-card>
 
-      <!-- Credentials -->
-      <div class="row q-col-gutter-md q-mb-md">
-        <div class="col-12 col-md-6">
-          <credential-config-panel :tenant-id="tenantId" system="Concur" :configured="tenant.concurConfig?.configured" @changed="load" />
-        </div>
-        <div class="col-12 col-md-6">
-          <credential-config-panel :tenant-id="tenantId" system="Maconomy" :configured="tenant.maconomyConfig?.configured" @changed="load" />
-        </div>
-      </div>
-
       <!-- Danger zone -->
       <q-card v-if="tenant.status !== 'Archived'" flat bordered class="tenant-card danger-zone">
         <q-card-section class="text-subtitle1 text-weight-medium text-negative">Danger zone</q-card-section>
@@ -63,7 +53,7 @@
           {{ archiveError }}
         </q-banner>
         <q-card-actions>
-          <div class="text-body2 text-grey-7 q-pa-sm">Archiving retires this tenant. Only possible when it has no active jobs.</div>
+          <div class="text-body2 text-grey-7 q-pa-sm">Archiving retires this tenant.</div>
           <q-space />
           <q-btn outline no-caps color="negative" icon="o_archive" label="Archive tenant" @click="archive" />
         </q-card-actions>
@@ -75,11 +65,10 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { tenantApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
+import { tenantApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
-import CredentialConfigPanel from "components/credential_config_panel.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -152,11 +141,7 @@ const archive = async () => {
     notify.success("Tenant archived.");
     router.push({ name: "tenants" });
   } catch (err) {
-    if (getApiErrorCode(err) === ApiErrorCodes.ActiveJobsExist) {
-      archiveError.value = "This tenant has active jobs and cannot be archived.";
-    } else {
-      notify.error(getApiErrorMessage(err));
-    }
+    archiveError.value = getApiErrorMessage(err);
   }
 };
 

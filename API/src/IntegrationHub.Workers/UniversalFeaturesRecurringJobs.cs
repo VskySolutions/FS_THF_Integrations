@@ -4,9 +4,8 @@ using IntegrationHub.Infrastructure.Jobs;
 namespace IntegrationHub.Workers;
 
 /// <summary>
-/// Registers the Universal Features recurring background jobs on startup with fixed cron schedules.
-/// Unlike the tenant-configurable import schedules (driven by <see cref="HangfireJobScheduler"/>), these
-/// are platform-fixed sweeps: reminder dispatch (every minute) and sticky-note expiry (hourly).
+/// Registers the Universal Features recurring background jobs on startup with fixed cron schedules:
+/// platform-fixed sweeps for reminder dispatch (every minute) and sticky-note expiry (hourly).
 /// </summary>
 public sealed class UniversalFeaturesRecurringJobs : IHostedService
 {

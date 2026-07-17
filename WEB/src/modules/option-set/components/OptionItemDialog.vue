@@ -26,6 +26,35 @@
           clearable
         />
 
+        <!-- Display colours shown for this value on the front UI. -->
+        <div class="row q-col-gutter-md">
+          <app-text-field v-model="form.backgroundColor" class="col" label="Background colour" placeholder="#e3f2fd" clearable>
+            <template #append>
+              <q-icon name="o_palette" class="cursor-pointer" :style="{ color: form.backgroundColor || '#9e9e9e' }">
+                <q-popup-proxy cover transition-show="scale" transition-hide="scale">
+                  <q-color v-model="form.backgroundColor" format-model="hex" default-view="palette" />
+                </q-popup-proxy>
+              </q-icon>
+            </template>
+          </app-text-field>
+          <app-text-field v-model="form.textColor" class="col" label="Text colour" placeholder="#0d47a1" clearable>
+            <template #append>
+              <q-icon name="o_format_color_text" class="cursor-pointer" :style="{ color: form.textColor || '#9e9e9e' }">
+                <q-popup-proxy cover transition-show="scale" transition-hide="scale">
+                  <q-color v-model="form.textColor" format-model="hex" default-view="palette" />
+                </q-popup-proxy>
+              </q-icon>
+            </template>
+          </app-text-field>
+        </div>
+        <div class="row items-center q-gutter-sm">
+          <span class="text-caption text-grey-7">Preview:</span>
+          <q-chip
+            :style="{ backgroundColor: form.backgroundColor || '#e0e0e0', color: form.textColor || '#212121' }"
+            :label="form.label || 'Sample'"
+          />
+        </div>
+
         <q-toggle v-model="form.isDefault" label="Default selection" />
         <q-toggle v-if="item" v-model="form.isActive" label="Active" />
       </q-card-section>
@@ -66,7 +95,7 @@ const notify = useNotify();
 const saving = ref(false);
 const valueError = ref("");
 
-const blankForm = () => ({ label: "", value: "", parentItemId: null, isDefault: false, isActive: true });
+const blankForm = () => ({ label: "", value: "", parentItemId: null, isDefault: false, isActive: true, backgroundColor: null, textColor: null });
 const form = reactive(blankForm());
 
 const open = computed({
@@ -85,7 +114,9 @@ watch(
         value: props.item.value,
         parentItemId: props.item.parentItemId,
         isDefault: props.item.isDefault,
-        isActive: props.item.isActive
+        isActive: props.item.isActive,
+        backgroundColor: props.item.backgroundColor,
+        textColor: props.item.textColor
       });
     } else {
       Object.assign(form, blankForm());
@@ -100,7 +131,9 @@ const submit = async () => {
       label: form.label.trim(),
       value: form.value.trim(),
       parentItemId: form.parentItemId || null,
-      isDefault: form.isDefault
+      isDefault: form.isDefault,
+      backgroundColor: form.backgroundColor || null,
+      textColor: form.textColor || null
     };
     if (props.item) {
       await optionSetApi.updateItem(props.setId, props.item.id, { ...payload, isActive: form.isActive });

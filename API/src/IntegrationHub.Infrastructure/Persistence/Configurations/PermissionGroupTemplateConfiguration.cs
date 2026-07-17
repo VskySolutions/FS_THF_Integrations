@@ -21,16 +21,11 @@ internal sealed class PermissionGroupTemplateConfiguration : IEntityTypeConfigur
 
         builder.HasIndex(t => t.Name);
 
-        // The 8 platform-standard seeded templates (permission keys mapped to the live catalogue).
+        // The platform-standard seeded templates (permission keys mapped to the live catalogue).
         builder.HasData(
-            Seed("22222222-2222-2222-2222-222222222201", "Import Operator", "Trigger and monitor imports.", "[\"jobs.trigger\",\"jobs.read\",\"logs.read\"]"),
-            Seed("22222222-2222-2222-2222-222222222202", "Mapping Manager", "Read and edit field mappings.", "[\"mappings.read\",\"mappings.write\"]"),
-            Seed("22222222-2222-2222-2222-222222222203", "Tenant Configurator", "Configure tenant settings and credentials.", "[\"tenants.read\",\"tenants.write\",\"tenants.credentials\"]"),
+            Seed("22222222-2222-2222-2222-222222222203", "Tenant Configurator", "Configure tenant settings.", "[\"tenants.read\",\"tenants.write\"]"),
             Seed("22222222-2222-2222-2222-222222222204", "Customer Reviewer", "Enrich and review customer requests.", "[\"customers.review\"]"),
-            Seed("22222222-2222-2222-2222-222222222205", "Customer Approver", "Review and approve customer requests.", "[\"customers.review\",\"customers.approve\"]"),
-            Seed("22222222-2222-2222-2222-222222222206", "Finance Read-Only", "Read-only access to jobs and logs.", "[\"jobs.read\",\"logs.read\"]"),
-            Seed("22222222-2222-2222-2222-222222222207", "Platform Monitor", "Monitor platform health, jobs and schedules.", "[\"health.read\",\"jobs.read\",\"logs.read\",\"jobs.schedule\"]"),
-            Seed("22222222-2222-2222-2222-222222222208", "Schedule Admin", "Manage recurring import schedules.", "[\"jobs.schedule\"]"));
+            Seed("22222222-2222-2222-2222-222222222205", "Customer Approver", "Review and approve customer requests.", "[\"customers.review\",\"customers.approve\"]"));
     }
 
     private static PermissionGroupTemplate Seed(string id, string name, string description, string keysJson) => new()

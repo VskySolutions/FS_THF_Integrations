@@ -26,6 +26,8 @@ public sealed class CreateOptionItemRequest
     public string Label { get; set; } = string.Empty;
     public Guid? ParentItemId { get; set; }
     public bool IsDefault { get; set; }
+    public string? BackgroundColor { get; set; }
+    public string? TextColor { get; set; }
     public string? MetadataJson { get; set; }
 }
 
@@ -36,6 +38,8 @@ public sealed class UpdateOptionItemRequest
     public Guid? ParentItemId { get; set; }
     public bool IsDefault { get; set; }
     public bool IsActive { get; set; } = true;
+    public string? BackgroundColor { get; set; }
+    public string? TextColor { get; set; }
     public string? MetadataJson { get; set; }
 }
 
@@ -71,6 +75,8 @@ public sealed record OptionSetItemResponse(
     bool IsDefault,
     bool IsActive,
     bool IsStandard,
+    string? BackgroundColor,
+    string? TextColor,
     string? MetadataJson);
 
 public sealed record OptionSetDetailResponse(

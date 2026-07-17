@@ -8,11 +8,6 @@ const META = {
     icon: "o_groups",
     route: (id) => ({ name: "customer_detail", params: { id } })
   },
-  [EntityType.IntegrationJob]: {
-    label: "Integration Job",
-    icon: "o_sync",
-    route: () => ({ name: "jobs" })
-  },
   [EntityType.Tenant]: {
     label: "Tenant",
     icon: "o_apartment",

@@ -36,7 +36,7 @@ internal sealed class CustomerRequestConfiguration : IEntityTypeConfiguration<Cu
         builder.Property(c => c.BusinessSegment).HasMaxLength(128);
         builder.Property(c => c.RiskCategory).HasMaxLength(128);
 
-        // Step 2: Maconomy Fields
+        // Step 2: Additional Business Details
         builder.Property(c => c.TaxNumber).HasMaxLength(64);
         builder.Property(c => c.RegistrationNumber).HasMaxLength(64);
         builder.Property(c => c.BusinessUnit).HasMaxLength(128);
@@ -49,11 +49,9 @@ internal sealed class CustomerRequestConfiguration : IEntityTypeConfiguration<Cu
         builder.Property(c => c.BillingEmail).HasMaxLength(256);
 
         // Workflow metadata
-        builder.Property(c => c.MaconomyCustomerNumber).HasMaxLength(64);
         builder.Property(c => c.RejectionReason).HasMaxLength(2000);
         builder.Property(c => c.ReturnNotes).HasMaxLength(2000);
         builder.Property(c => c.UnlockedFields).HasMaxLength(2000);
-        builder.Property(c => c.LastSyncError).HasMaxLength(2000);
         builder.Property(c => c.RequiredApprovalStages).HasDefaultValue(1);
 
         builder.HasIndex(c => c.TenantId);

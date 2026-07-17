@@ -114,7 +114,7 @@ public sealed class CustomersController : ControllerBase
 
         var data = items.Select(c => new CustomerSummaryResponse(
             c.Id, c.CustomerRequestNumber, c.CompanyName, c.LegalName, c.Status.ToString(),
-            c.SubmittedById, c.TenantId, c.Tenant?.Name, c.MaconomyCustomerNumber, c.CreatedOnUtc, c.UpdatedOnUtc));
+            c.SubmittedById, c.TenantId, c.Tenant?.Name, c.CreatedOnUtc, c.UpdatedOnUtc));
 
         return Ok(ApiResponseFactory.Paginated(data, "Customers retrieved.", page, limit, total));
     }
@@ -319,12 +319,12 @@ public sealed class CustomersController : ControllerBase
             return Conflict(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, "Only a reviewed request can be sent for approval.", request.Status.ToString()));
         }
 
-        // The mandatory Step 2 Maconomy fields must be completed before the approver receives it.
+        // The mandatory Step 2 fields must be completed before the approver receives it.
         var missing = _approval.GetMissingMandatoryStep2Fields(request);
         if (missing.Count > 0)
         {
             return BadRequest(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed,
-                "Complete the mandatory Maconomy fields before sending for approval.",
+                "Complete the mandatory Step 2 fields before sending for approval.",
                 $"Missing: {string.Join(", ", missing)}."));
         }
 
@@ -368,7 +368,7 @@ public sealed class CustomersController : ControllerBase
 
         ApplyStep2(request, body);
         _requests.Update(request);
-        await AppendAuditAsync(request, CustomerAuditActionType.Step2Saved, "Step 2 Maconomy fields saved.", cancellationToken);
+        await AppendAuditAsync(request, CustomerAuditActionType.Step2Saved, "Step 2 fields saved.", cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Ok(ApiResponseFactory.Success(new { customerId = request.Id }, "Step 2 fields saved."));
@@ -418,8 +418,8 @@ public sealed class CustomersController : ControllerBase
             return BadRequest(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, ex.Message, ex.Details));
         }
 
-        // Notify the submitter only on the final approval (the request is queued for sync).
-        if (request.Status == CustomerRequestStatus.SyncInProgress)
+        // Notify the submitter only on the final approval.
+        if (request.Status == CustomerRequestStatus.Approved)
         {
             await NotifySubmitterAsync(request, EmailTemplateKey.CustomerApproved,
                 new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { ["ApproverName"] = await CallerNameAsync(cancellationToken) ?? "an approver" },
@@ -517,32 +517,6 @@ public sealed class CustomersController : ControllerBase
             cancellationToken);
 
         return Ok(ApiResponseFactory.Success(new { customerId = request.Id, status = request.Status.ToString() }, "Customer request returned to data entry."));
-    }
-
-    // ---- Retry sync (customers.approve / admin) ----
-
-    [HttpPost("{id:guid}/retry-sync")]
-    [RequirePermission(Permissions.CustomersApprove)]
-    public async Task<IActionResult> RetrySync(Guid id, [FromServices] ICustomerSyncDispatcher dispatcher, CancellationToken cancellationToken)
-    {
-        var request = await LoadAsync(id, cancellationToken);
-        if (request is null)
-        {
-            return NotFound(ApiResponseFactory.NotFound("Customer request not found."));
-        }
-        if (request.Status != CustomerRequestStatus.Failed)
-        {
-            return Conflict(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, "Only a Failed sync can be retried.", request.Status.ToString()));
-        }
-
-        request.Status = CustomerRequestStatus.SyncInProgress;
-        request.LastSyncError = null;
-        _requests.Update(request);
-        await AppendAuditAsync(request, CustomerAuditActionType.RetrySyncRequested, "Manual sync retry requested.", cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        dispatcher.Enqueue(request.Id, request.TenantId);
-        return Ok(ApiResponseFactory.Success(new { customerId = request.Id, status = request.Status.ToString() }, "Sync retry enqueued."));
     }
 
     // ---- Reopen a rejected request (customers.approve / admin) ----
@@ -855,7 +829,6 @@ public sealed class CustomersController : ControllerBase
                 InvoiceLanguage = c.InvoiceLanguage,
                 BillingEmail = c.BillingEmail,
             } : null,
-            MaconomyCustomerNumber = c.MaconomyCustomerNumber,
             SubmittedById = c.SubmittedById,
             SubmittedOnUtc = c.SubmittedOnUtc,
             ApprovedById = c.ApprovedById,
@@ -865,7 +838,6 @@ public sealed class CustomersController : ControllerBase
             RejectionReason = c.RejectionReason,
             ReturnNotes = c.ReturnNotes,
             UnlockedFields = unlocked,
-            LastSyncError = c.LastSyncError,
             CreatedOnUtc = c.CreatedOnUtc,
             UpdatedOnUtc = c.UpdatedOnUtc,
             MissingStep2Fields = canSeeStep2 ? _approval.GetMissingMandatoryStep2Fields(c) : Array.Empty<string>(),
@@ -891,7 +863,6 @@ public sealed class CustomersController : ControllerBase
                 CanApprove = canApprove && approveStage,
                 CanReject = canApprove && approveStage,
                 CanRevertToReviewer = canApprove && approveStage,
-                CanRetrySync = isAdmin && c.Status == CustomerRequestStatus.Failed,
                 CanReopen = isAdmin && c.Status == CustomerRequestStatus.Rejected,
             },
         };

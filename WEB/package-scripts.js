@@ -8,8 +8,6 @@ export default {
     build_test: "cross-env QENV=test quasar build",
     build_prod: "cross-env QENV=prod quasar build",
 
-    lint: "eslint --ext .js,.vue ./",
-    test: "vitest run",
-    test_watch: "vitest"
+    lint: "eslint --ext .js,.vue ./"
   }
 };

@@ -2,18 +2,15 @@
 // form, detail page and role panel group/label permission keys identically.
 //
 // Category derivation (by key prefix):
-//   jobs.*       → Jobs (except jobs.schedule → Schedules)
 //   tenants.*    → Tenants
 //   users.* / persons.* → Users
-//   mappings.*   → Mappings
 //   customers.*  → Customers
 //   roles.* / groups.*  → Access
-//   logs.* / health.*   → System
 //   (anything else)     → Other
 
 // Display order for the rendered category sections.
 export const CATEGORY_ORDER = Object.freeze([
-  "Tenants", "Users", "Access", "Customers", "Mappings", "Jobs", "Schedules", "System", "Other"
+  "Tenants", "Users", "Access", "Customers", "Other"
 ]);
 
 // Super-admin-only / elevated keys that a Tenant Admin cannot typically grant. Used as a
@@ -22,24 +19,19 @@ export const ELEVATED_KEYS = Object.freeze(["tenants.archive", "roles.assign", "
 
 export function categoryForKey (key) {
   if (!key) return "Other";
-  if (key === "jobs.schedule") return "Schedules";
   const prefix = key.split(".")[0];
   switch (prefix) {
-    case "jobs": return "Jobs";
     case "tenants": return "Tenants";
     case "users":
     case "persons": return "Users";
-    case "mappings": return "Mappings";
     case "customers": return "Customers";
     case "roles":
     case "groups": return "Access";
-    case "logs":
-    case "health": return "System";
     default: return "Other";
   }
 }
 
-// "jobs.schedule" → "Jobs · Schedule"; underscores become spaces (title-cased segments).
+// "users.reset_password" → "Users · Reset Password"; underscores become spaces (title-cased segments).
 export function humanizeKey (key) {
   if (!key) return "";
   return key

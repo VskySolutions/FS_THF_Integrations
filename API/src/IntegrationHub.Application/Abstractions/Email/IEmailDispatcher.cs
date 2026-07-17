@@ -6,7 +6,7 @@ namespace IntegrationHub.Application.Abstractions.Email;
 /// Enqueues transactional emails for background delivery so the request thread is never blocked on the
 /// SMTP round-trip. The actual send is performed by a Hangfire job that calls
 /// <see cref="IEmailNotificationService"/>. Abstracted so the Api/Application layers can queue an email
-/// without referencing Hangfire directly (mirrors <c>ICustomerSyncDispatcher</c>).
+/// without referencing Hangfire directly.
 /// </summary>
 public interface IEmailDispatcher
 {

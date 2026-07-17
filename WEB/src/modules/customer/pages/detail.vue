@@ -57,7 +57,7 @@
             </div>
           </q-tab-panel>
 
-          <!-- Tab 2: Review (reviewer / approver) — Business Information, Maconomy Fields, Documents -->
+          <!-- Tab 2: Review (reviewer / approver) — Business Information, Additional Details, Documents -->
           <q-tab-panel v-if="showReviewTab" name="review">
             <!-- Business Information -->
             <div class="row items-center q-mb-sm">
@@ -86,9 +86,9 @@
 
             <q-separator class="q-mb-md" />
 
-            <!-- Maconomy Fields -->
+            <!-- Additional Details -->
             <div class="row items-center q-mb-sm">
-              <div class="text-subtitle1 text-weight-medium">Maconomy Fields</div>
+              <div class="text-subtitle1 text-weight-medium">Additional Details</div>
               <q-space />
               <q-btn
                 v-if="detail.actions.canEditStep2"
@@ -99,11 +99,11 @@
             <div class="row q-col-gutter-md q-mb-lg">
               <app-text-field v-model="step2.taxNumber" label="Tax Number *" placeholder="e.g. GB123456789" hint="Tax / VAT registration number." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" :error="step2Errors.has('taxNumber')" error-message="This field is required." @update:model-value="clearStep2Error('taxNumber')" />
               <app-text-field v-model="step2.registrationNumber" label="Registration Number *" placeholder="e.g. 12345678" hint="Company registration number." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" :error="step2Errors.has('registrationNumber')" error-message="This field is required." @update:model-value="clearStep2Error('registrationNumber')" />
-              <app-text-field v-model="step2.businessUnit" label="Business Unit *" placeholder="e.g. UK-Operations" hint="Maconomy business unit to post against." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" :error="step2Errors.has('businessUnit')" error-message="This field is required." @update:model-value="clearStep2Error('businessUnit')" />
+              <app-text-field v-model="step2.businessUnit" label="Business Unit *" placeholder="e.g. UK-Operations" hint="Business unit to post against." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" :error="step2Errors.has('businessUnit')" error-message="This field is required." @update:model-value="clearStep2Error('businessUnit')" />
               <app-text-field v-model="step2.currency" label="Currency *" placeholder="e.g. USD" hint="3-letter ISO currency code." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" :error="step2Errors.has('currency')" error-message="This field is required." @update:model-value="clearStep2Error('currency')" />
-              <app-text-field v-model="step2.customerGroup" label="Customer Group" placeholder="e.g. Standard" hint="Maconomy customer group for grouping/reporting." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
+              <app-text-field v-model="step2.customerGroup" label="Customer Group" placeholder="e.g. Standard" hint="Customer group for grouping/reporting." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
               <div class="col-12 col-sm-6 row items-center no-wrap">
-                <app-text-field v-model="step2.paymentTerms" label="Payment Terms *" placeholder="e.g. Net 30" hint="Maconomy payment terms code." class="col" :readonly="!detail.actions.canEditStep2" :error="step2Errors.has('paymentTerms')" error-message="This field is required." @update:model-value="clearStep2Error('paymentTerms')" />
+                <app-text-field v-model="step2.paymentTerms" label="Payment Terms *" placeholder="e.g. Net 30" hint="Payment terms code." class="col" :readonly="!detail.actions.canEditStep2" :error="step2Errors.has('paymentTerms')" error-message="This field is required." @update:model-value="clearStep2Error('paymentTerms')" />
                 <field-log-icon :entity-type="EntityType.CustomerRequest" :entity-id="customerId" field-name="PaymentTerms" field-label="Payment Terms" :count="fieldLog.getCount('PaymentTerms')" class="q-ml-xs" />
               </div>
               <div class="col-12 col-sm-6 row items-center no-wrap">
@@ -111,7 +111,7 @@
                 <field-log-icon :entity-type="EntityType.CustomerRequest" :entity-id="customerId" field-name="CreditLimit" field-label="Credit Limit" :count="fieldLog.getCount('CreditLimit')" class="q-ml-xs" />
               </div>
               <app-text-field v-model="step2.industry" label="Industry" placeholder="e.g. Manufacturing" hint="Customer's primary industry." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
-              <app-text-field v-model="step2.invoiceLanguage" label="Invoice Language" placeholder="e.g. English" hint="Language Maconomy should use for invoices." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
+              <app-text-field v-model="step2.invoiceLanguage" label="Invoice Language" placeholder="e.g. English" hint="Language to use for invoices." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
               <app-text-field v-model="step2.billingEmail" label="Billing Email" placeholder="e.g. billing@acme.com" hint="Email address invoices and billing notices are sent to." class="col-12 col-sm-6" :readonly="!detail.actions.canEditStep2" />
             </div>
 
@@ -149,19 +149,8 @@
           <q-tab-panel name="history">
             <div class="row items-center q-gutter-sm q-mb-md">
               <q-badge :color="statusColor(detail.status)" class="text-subtitle2">{{ statusLabel(detail.status) }}</q-badge>
-              <q-chip
-                v-if="detail.status === 'Synced' && detail.maconomyCustomerNumber"
-                square color="positive" text-color="white" icon="o_verified"
-                class="text-weight-bold maconomy-chip"
-              >
-                Maconomy Customer #: {{ detail.maconomyCustomerNumber }}
-              </q-chip>
             </div>
 
-            <q-banner v-if="detail.status === 'Failed' && detail.lastSyncError" dense rounded class="bg-red-1 text-red-9 q-mb-sm">
-              <template #avatar><q-icon name="o_error" color="negative" /></template>
-              Last sync error: {{ detail.lastSyncError }}
-            </q-banner>
             <q-banner v-if="detail.status === 'Returned' && (detail.returnNotes || detail.unlockedFields?.length)" dense rounded class="bg-orange-1 text-orange-9 q-mb-sm">
               <template #avatar><q-icon name="o_assignment_return" color="warning" /></template>
               <div v-if="detail.returnNotes">Returned for corrections: {{ detail.returnNotes }}</div>
@@ -229,7 +218,6 @@
         <q-card-section class="row justify-end items-center q-gutter-sm">
           <q-btn v-if="detail.actions.canSubmit" unelevated no-caps color="primary" icon="o_send" label="Submit for Approval" :loading="submitting" @click="submitForReview" />
           <q-btn v-if="detail.actions.canReopen" outline no-caps color="primary" icon="o_lock_open" label="Reopen" :loading="busy" @click="reopen" />
-          <q-btn v-if="detail.actions.canRetrySync" outline no-caps color="primary" icon="o_sync" label="Retry Sync" :loading="busy" @click="retrySync" />
           <q-btn v-if="detail.actions.canSendForApproval" unelevated no-caps color="primary" icon="o_send" label="Send for Approval" :loading="sending" @click="sendForApproval" />
           <q-btn v-if="detail.actions.canReturn" outline no-caps color="warning" icon="o_assignment_return" label="Return to Data Entry" @click="returnOpen = true" />
           <q-btn v-if="detail.actions.canRevertToReviewer" outline no-caps color="warning" icon="o_undo" label="Revert to Reviewer" @click="revertOpen = true" />
@@ -386,7 +374,7 @@ const STEP1_FIELDS = ["legalName", "companyName", "contactPerson", "emailAddress
 const enrich = reactive({});
 const ENRICH_FIELDS = ["internalCustomerCategory", "territory", "practiceArea", "salesRepresentative", "enrichmentPaymentTerms", "creditTerms", "customerType", "businessSegment", "riskCategory"];
 
-// ---- Step 2 (Maconomy fields) ----
+// ---- Step 2 (additional details) ----
 const step2 = reactive({});
 const STEP2_FIELDS = ["taxNumber", "registrationNumber", "businessUnit", "currency", "customerGroup", "paymentTerms", "creditLimit", "industry", "invoiceLanguage", "billingEmail"];
 
@@ -401,11 +389,8 @@ const stageReached = (stageKey) => {
     PendingApproval: 3,
     PartiallyApproved: 3,
     Approved: 4,
-    SyncInProgress: 4,
-    Synced: 5,
     Rejected: 1,
-    Returned: 1,
-    Failed: 4
+    Returned: 1
   }[current] ?? 0;
   return STAGE_ORDER.indexOf(stageKey) <= reachedIndex;
 };
@@ -413,7 +398,7 @@ const stageReached = (stageKey) => {
 // The bottom action bar shows whenever the caller has any workflow action available.
 const hasActions = computed(() => {
   const a = detail.value?.actions || {};
-  return a.canSubmit || a.canSendForApproval || a.canReturn || a.canRevertToReviewer || a.canApprove || a.canReopen || a.canRetrySync;
+  return a.canSubmit || a.canSendForApproval || a.canReturn || a.canRevertToReviewer || a.canApprove || a.canReopen;
 });
 
 const fill = (target, source, fields) => {
@@ -501,7 +486,7 @@ const saveEnrichment = async () => {
   }
 };
 
-// Mandatory Maconomy (Step 2) fields that must be present before approval (mirrors the backend).
+// Mandatory Step 2 fields that must be present before approval (mirrors the backend).
 const MANDATORY_STEP2 = [
   { key: "taxNumber", label: "Tax Number" },
   { key: "registrationNumber", label: "Registration Number" },
@@ -516,11 +501,11 @@ const clearStep2Error = (key) => step2Errors.value.delete(key);
 
 const sending = ref(false);
 const sendForApproval = async () => {
-  // 1) Block until the mandatory Maconomy fields are filled (highlight them + jump to the Review tab).
+  // 1) Block until the mandatory Step 2 fields are filled (highlight them + jump to the Review tab).
   const missing = MANDATORY_STEP2.filter((f) => !String(step2[f.key] ?? "").trim());
   step2Errors.value = new Set(missing.map((f) => f.key));
   if (missing.length) {
-    notify.error(`Complete the mandatory Maconomy fields first: ${missing.map((f) => f.label).join(", ")}.`);
+    notify.error(`Complete the mandatory Step 2 fields first: ${missing.map((f) => f.label).join(", ")}.`);
     activeTab.value = "review";
     return;
   }
@@ -555,7 +540,7 @@ const saveStep2 = async () => {
   savingStep2.value = true;
   try {
     await customerApi.saveStep2(customerId, buildStep2(step2));
-    notify.success("Maconomy fields saved.");
+    notify.success("Step 2 fields saved.");
     load();
   } catch (err) {
     notify.error(getApiErrorMessage(err));
@@ -669,7 +654,7 @@ const submitApprove = async () => {
     load();
   } catch (err) {
     if (getApiErrorCode(err) === ApiErrorCodes.ValidationFailed) {
-      notify.error(getApiErrorMessage(err, "Please complete all mandatory Maconomy fields."));
+      notify.error(getApiErrorMessage(err, "Please complete all mandatory Step 2 fields."));
     } else {
       notify.error(getApiErrorMessage(err));
     }
@@ -736,20 +721,6 @@ const submitReturn = async () => {
   }
 };
 
-// Retry sync
-const retrySync = async () => {
-  busy.value = true;
-  try {
-    await customerApi.retrySync(customerId);
-    notify.success("Sync retried.");
-    load();
-  } catch (err) {
-    notify.error(getApiErrorMessage(err));
-  } finally {
-    busy.value = false;
-  }
-};
-
 // Reopen
 const reopen = async () => {
   const ok = await confirm({ title: "Reopen customer", message: "Reopen this customer for editing?", confirmLabel: "Reopen" });
@@ -776,8 +747,5 @@ onMounted(() => {
 .customer-card,
 .customer-action-bar {
   border-radius: 12px;
-}
-.maconomy-chip {
-  font-size: 14px;
 }
 </style>

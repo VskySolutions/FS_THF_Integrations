@@ -13,7 +13,6 @@ namespace IntegrationHub.Domain.Enums;
 public enum EntityType
 {
     CustomerRequest = 1,
-    IntegrationJob = 2,
     Tenant = 3,
     User = 4,
     UserGroup = 5,

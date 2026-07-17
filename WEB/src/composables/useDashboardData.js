@@ -14,82 +14,6 @@ const paramsFrom = (dateRange, tenantId) => {
   return params;
 };
 
-// ---- Jobs ----
-export function useJobsDashboard (dateRange, tenantId = null) {
-  const loading = ref(false);
-  const error = ref(null);
-  const kpis = ref(null);
-  const successRate = ref(0);
-  const volumeChart = ref([]);
-  const flowBreakdown = ref([]);
-  const failedJobs = ref([]);
-  const retryQueueCount = ref(0);
-  const retryQueueNextRunUtc = ref(null);
-
-  const refresh = async () => {
-    loading.value = true;
-    error.value = null;
-    try {
-      const data = await dashboardApi.jobs(paramsFrom(dateRange, tenantId));
-      kpis.value = data?.kpis ?? null;
-      successRate.value = data?.successRate ?? 0;
-      volumeChart.value = data?.volumeChart ?? [];
-      flowBreakdown.value = data?.flowBreakdown ?? [];
-      failedJobs.value = data?.failedJobs ?? [];
-      retryQueueCount.value = data?.retryQueueCount ?? 0;
-      retryQueueNextRunUtc.value = data?.retryQueueNextRunUtc ?? null;
-    } catch (err) {
-      error.value = getApiErrorMessage(err);
-    } finally {
-      loading.value = false;
-    }
-  };
-
-  watch(() => [unref(dateRange), unref(tenantId)], refresh);
-  onMounted(refresh);
-
-  return {
-    loading,
-    error,
-    refresh,
-    kpis,
-    successRate,
-    volumeChart,
-    flowBreakdown,
-    failedJobs,
-    retryQueueCount,
-    retryQueueNextRunUtc
-  };
-}
-
-// ---- Health ----
-export function useHealthDashboard () {
-  const loading = ref(false);
-  const error = ref(null);
-  const status = ref(null);
-  const components = ref([]);
-  const allOperational = ref(true);
-
-  const refresh = async () => {
-    loading.value = true;
-    error.value = null;
-    try {
-      const data = await dashboardApi.health();
-      status.value = data?.status ?? null;
-      components.value = data?.components ?? [];
-      allOperational.value = data?.allOperational ?? false;
-    } catch (err) {
-      error.value = getApiErrorMessage(err);
-    } finally {
-      loading.value = false;
-    }
-  };
-
-  onMounted(refresh);
-
-  return { loading, error, refresh, status, components, allOperational };
-}
-
 // ---- Customers ----
 export function useCustomerDashboard (dateRange, tenantId = null) {
   const loading = ref(false);
@@ -97,7 +21,6 @@ export function useCustomerDashboard (dateRange, tenantId = null) {
   const kpis = ref(null);
   const funnel = ref([]);
   const ageing = ref([]);
-  const syncHealth = ref(null);
   const activityFeed = ref([]);
   const topSubmitters = ref([]);
   const submissionTrend = ref([]);
@@ -110,7 +33,6 @@ export function useCustomerDashboard (dateRange, tenantId = null) {
       kpis.value = data?.kpis ?? null;
       funnel.value = data?.funnel ?? [];
       ageing.value = data?.ageing ?? [];
-      syncHealth.value = data?.syncHealth ?? null;
       activityFeed.value = data?.activityFeed ?? [];
       topSubmitters.value = data?.topSubmitters ?? [];
       submissionTrend.value = data?.submissionTrend ?? [];
@@ -131,7 +53,6 @@ export function useCustomerDashboard (dateRange, tenantId = null) {
     kpis,
     funnel,
     ageing,
-    syncHealth,
     activityFeed,
     topSubmitters,
     submissionTrend
@@ -172,7 +93,6 @@ export function usePlatformDashboard (dateRange, tenantId = null) {
   const loading = ref(false);
   const error = ref(null);
   const tenantKpis = ref(null);
-  const crossTenantJobs = ref([]);
   const tenantHealth = ref([]);
   const growth = ref([]);
   const onboarding = ref([]);
@@ -187,7 +107,6 @@ export function usePlatformDashboard (dateRange, tenantId = null) {
     try {
       const data = await dashboardApi.platform({ dateRange: unref(dateRange) }, forceRefresh);
       tenantKpis.value = data?.tenantKpis ?? null;
-      crossTenantJobs.value = data?.crossTenantJobs ?? [];
       tenantHealth.value = data?.tenantHealth ?? [];
       growth.value = data?.growth ?? [];
       onboarding.value = data?.onboarding ?? [];
@@ -209,7 +128,6 @@ export function usePlatformDashboard (dateRange, tenantId = null) {
     error,
     refresh,
     tenantKpis,
-    crossTenantJobs,
     tenantHealth,
     growth,
     onboarding,

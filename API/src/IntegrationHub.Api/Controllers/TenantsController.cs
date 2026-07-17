@@ -1,24 +1,18 @@
-using System.Text.Json;
 using IntegrationHub.Api.Models.Tenants;
 using IntegrationHub.Api.Security;
 using IntegrationHub.Application.Abstractions.Auditing;
-using IntegrationHub.Application.Abstractions.Connectors.Concur;
-using IntegrationHub.Application.Abstractions.Connectors.Maconomy;
 using IntegrationHub.Application.Abstractions.Persistence;
-using IntegrationHub.Application.Abstractions.Security;
-using IntegrationHub.Application.Abstractions.Tenancy;
 using IntegrationHub.Domain.Entities;
 using IntegrationHub.Domain.Enums;
 using IntegrationHub.Shared.Contracts;
 using IntegrationHub.Shared.Security;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace IntegrationHub.Api.Controllers;
 
 /// <summary>
-/// Tenant management (WO-40): lifecycle (Super Admin) plus per-tenant credential and
-/// mapping management (Tenant Admin or above, scoped to their own tenant).
+/// Tenant management (WO-40): tenant lifecycle — create, update, status, and archive
+/// (Super Admin) — plus tenant detail reads.
 /// </summary>
 [ApiController]
 [Route("/api/admin/tenants")]
@@ -32,36 +26,18 @@ namespace IntegrationHub.Api.Controllers;
 public sealed class TenantsController : ControllerBase
 {
     private readonly ITenantRepository _tenants;
-    private readonly ITenantApiConfigurationRepository _configs;
-    private readonly IIntegrationJobRepository _jobs;
     private readonly IUserRepository _users;
-    private readonly ICredentialEncryptionService _encryption;
-    private readonly ITenantContext _tenantContext;
-    private readonly IConcurConnector _concur;
-    private readonly IMaconomyConnector _maconomy;
     private readonly IAuditTrailService _audit;
     private readonly IUnitOfWork _unitOfWork;
 
     public TenantsController(
         ITenantRepository tenants,
-        ITenantApiConfigurationRepository configs,
-        IIntegrationJobRepository jobs,
         IUserRepository users,
-        ICredentialEncryptionService encryption,
-        ITenantContext tenantContext,
-        IConcurConnector concur,
-        IMaconomyConnector maconomy,
         IAuditTrailService audit,
         IUnitOfWork unitOfWork)
     {
         _tenants = tenants;
-        _configs = configs;
-        _jobs = jobs;
         _users = users;
-        _encryption = encryption;
-        _tenantContext = tenantContext;
-        _concur = concur;
-        _maconomy = maconomy;
         _audit = audit;
         _unitOfWork = unitOfWork;
     }
@@ -144,11 +120,8 @@ public sealed class TenantsController : ControllerBase
             return NotFound(ApiResponseFactory.Error(ApiErrorCodes.TenantNotFound, "Tenant not found.", id.ToString()));
         }
 
-        var configs = await _configs.ListByTenantAsync(id, cancellationToken);
         var detail = new TenantDetail(
             tenant.Id, tenant.Name, tenant.Identifier, tenant.Status.ToString(), tenant.TimeZoneId,
-            new CredentialIndicator(configs.Any(c => c.System == SystemName.Concur)),
-            new CredentialIndicator(configs.Any(c => c.System == SystemName.Maconomy)),
             tenant.CreatedOnUtc, tenant.UpdatedOnUtc);
 
         return Ok(ApiResponseFactory.Success(detail, "Tenant retrieved."));
@@ -204,11 +177,6 @@ public sealed class TenantsController : ControllerBase
             return NotFound(ApiResponseFactory.Error(ApiErrorCodes.TenantNotFound, "Tenant not found.", id.ToString()));
         }
 
-        if (await _jobs.HasActiveJobsAsync(id, cancellationToken))
-        {
-            return Conflict(ApiResponseFactory.Error(ApiErrorCodes.ActiveJobsExist, "Tenant has active jobs.", id.ToString()));
-        }
-
         tenant.Status = TenantStatus.Archived;
         _tenants.Update(tenant);
         await _audit.AddAsync(nameof(Tenant), tenant.Id.ToString(), "Archived", cancellationToken: cancellationToken);
@@ -217,140 +185,7 @@ public sealed class TenantsController : ControllerBase
         return Ok(ApiResponseFactory.Success(new { tenantId = tenant.Id, status = tenant.Status.ToString() }, "Tenant archived."));
     }
 
-    // ---- Credentials (Tenant Admin or above, own tenant) ----
-
-    [HttpPut("{id:guid}/concur-config")]
-    [RequirePermission(Permissions.TenantsCredentials)]
-    public Task<IActionResult> SetConcurConfig(Guid id, [FromBody] ConcurCredentialsRequest request, CancellationToken cancellationToken)
-        => StoreCredentialsAsync(id, SystemName.Concur,
-            new ConcurConfigDto(request.ClientId, request.ClientSecret, request.BaseUrl, request.CompanyUuid), cancellationToken);
-
-    [HttpPut("{id:guid}/maconomy-config")]
-    [RequirePermission(Permissions.TenantsCredentials)]
-    public Task<IActionResult> SetMaconomyConfig(Guid id, [FromBody] MaconomyCredentialsRequest request, CancellationToken cancellationToken)
-        => StoreCredentialsAsync(id, SystemName.Maconomy,
-            new MaconomyConfigDto(request.BaseUrl, request.Username, request.Password), cancellationToken);
-
-    [HttpDelete("{id:guid}/concur-config")]
-    [RequirePermission(Permissions.TenantsCredentials)]
-    public Task<IActionResult> ClearConcurConfig(Guid id, CancellationToken cancellationToken)
-        => ClearCredentialsAsync(id, SystemName.Concur, cancellationToken);
-
-    [HttpDelete("{id:guid}/maconomy-config")]
-    [RequirePermission(Permissions.TenantsCredentials)]
-    public Task<IActionResult> ClearMaconomyConfig(Guid id, CancellationToken cancellationToken)
-        => ClearCredentialsAsync(id, SystemName.Maconomy, cancellationToken);
-
-    [HttpPost("{id:guid}/concur-config/test")]
-    [RequirePermission(Permissions.TenantsCredentials)]
-    public async Task<IActionResult> TestConcurConfig(Guid id, CancellationToken cancellationToken)
-    {
-        var guard = await EnsureScopeAsync(id, cancellationToken);
-        if (guard is not null)
-        {
-            return guard;
-        }
-
-        // Scope the connector to the target tenant, then attempt a live authentication.
-        _tenantContext.Set(id, string.Empty);
-        var result = await _concur.AuthenticateAsync(cancellationToken);
-        return Ok(ApiResponseFactory.Success(
-            new CredentialTestResponse(result.Success, result.Success ? "Connected." : result.ErrorMessage ?? "Failed."), "Test complete."));
-    }
-
-    [HttpPost("{id:guid}/maconomy-config/test")]
-    [RequirePermission(Permissions.TenantsCredentials)]
-    public async Task<IActionResult> TestMaconomyConfig(Guid id, CancellationToken cancellationToken)
-    {
-        var guard = await EnsureScopeAsync(id, cancellationToken);
-        if (guard is not null)
-        {
-            return guard;
-        }
-
-        _tenantContext.Set(id, string.Empty);
-        var result = await _maconomy.AuthenticateAsync(cancellationToken);
-        return Ok(ApiResponseFactory.Success(
-            new CredentialTestResponse(result.Success, result.Success ? "Connected." : result.ErrorMessage ?? "Failed."), "Test complete."));
-    }
-
-
     // ---- helpers ----
-
-    private async Task<IActionResult> StoreCredentialsAsync<T>(Guid tenantId, SystemName system, T config, CancellationToken cancellationToken)
-    {
-        var guard = await EnsureScopeAsync(tenantId, cancellationToken);
-        if (guard is not null)
-        {
-            return guard;
-        }
-
-        var ciphertext = _encryption.Encrypt(JsonSerializer.Serialize(config));
-        var existing = await _configs.GetAsync(tenantId, system, cancellationToken);
-        if (existing is not null)
-        {
-            existing.EncryptedCredentials = ciphertext;
-            existing.UpdatedDate = DateTime.UtcNow;
-            _configs.Update(existing);
-        }
-        else
-        {
-            await _configs.AddAsync(new TenantApiConfiguration
-            {
-                Id = Guid.NewGuid(),
-                TenantId = tenantId,
-                System = system,
-                EncryptedCredentials = ciphertext,
-                CreatedDate = DateTime.UtcNow,
-            }, cancellationToken);
-        }
-
-        await _audit.AddAsync("TenantApiConfiguration", tenantId.ToString(), $"{system}CredentialsStored", cancellationToken: cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-        return Ok(ApiResponseFactory.Success(new { message = $"{system} credentials stored." }, "Credentials stored."));
-    }
-
-    private async Task<IActionResult> ClearCredentialsAsync(Guid tenantId, SystemName system, CancellationToken cancellationToken)
-    {
-        var guard = await EnsureScopeAsync(tenantId, cancellationToken);
-        if (guard is not null)
-        {
-            return guard;
-        }
-
-        var existing = await _configs.GetAsync(tenantId, system, cancellationToken);
-        if (existing is null)
-        {
-            return NotFound(ApiResponseFactory.NotFound($"No {system} credentials configured."));
-        }
-
-        _configs.Remove(existing);
-        await _audit.AddAsync("TenantApiConfiguration", tenantId.ToString(), $"{system}CredentialsCleared", cancellationToken: cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-        return Ok(ApiResponseFactory.Success(new { message = $"{system} credentials cleared." }, "Credentials cleared."));
-    }
-
-    /// <summary>Returns a 403 result when a non-Super-Admin acts on a tenant other than their active one; null when allowed.</summary>
-    private async Task<IActionResult?> EnsureScopeAsync(Guid tenantId, CancellationToken cancellationToken)
-    {
-        if (!User.IsSuperAdmin() && User.GetActiveTenantId() != tenantId)
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden("Not permitted for this tenant."));
-        }
-
-        var tenant = await _tenants.GetByIdAsync(tenantId, cancellationToken);
-        if (tenant is null)
-        {
-            return NotFound(ApiResponseFactory.Error(ApiErrorCodes.TenantNotFound, "Tenant not found.", tenantId.ToString()));
-        }
-
-        if (tenant.Status == TenantStatus.Archived)
-        {
-            return StatusCode(StatusCodes.Status409Conflict, ApiResponseFactory.Error(ApiErrorCodes.TenantArchived, "Tenant is archived.", tenantId.ToString()));
-        }
-
-        return null;
-    }
 
     private async Task<IReadOnlyDictionary<Guid, string>> ResolveActorNamesAsync(IEnumerable<Guid?> ids, CancellationToken cancellationToken)
         => await _users.GetFullNamesAsync(ids.Where(id => id.HasValue).Select(id => id!.Value), cancellationToken);

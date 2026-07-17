@@ -3,9 +3,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace IntegrationHub.Infrastructure.HealthChecks;
 
 /// <summary>
-/// Registers the platform health checks: SQL Server plus the Concur and Maconomy
-/// connectivity probes (Paycor is out of scope). All are tagged <see cref="ReadyTag"/>
-/// so the readiness endpoint reflects dependency availability (REQ-INF-005).
+/// Registers the platform health checks: the SQL Server connectivity probe, tagged
+/// <see cref="ReadyTag"/> so the readiness endpoint reflects dependency availability.
 /// </summary>
 public static class IntegrationHubHealthCheckExtensions
 {
@@ -14,12 +13,8 @@ public static class IntegrationHubHealthCheckExtensions
 
     public static IServiceCollection AddIntegrationHubHealthChecks(this IServiceCollection services)
     {
-        services.AddHttpClient();
-
         services.AddHealthChecks()
-            .AddCheck<SqlServerHealthCheck>(SqlServerHealthCheck.Name, tags: new[] { ReadyTag })
-            .AddCheck<ConcurApiHealthCheck>(ConcurApiHealthCheck.Name, tags: new[] { ReadyTag })
-            .AddCheck<MaconomyApiHealthCheck>(MaconomyApiHealthCheck.Name, tags: new[] { ReadyTag });
+            .AddCheck<SqlServerHealthCheck>(SqlServerHealthCheck.Name, tags: new[] { ReadyTag });
 
         return services;
     }

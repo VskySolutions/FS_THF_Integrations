@@ -33,12 +33,6 @@ public enum EmailTemplateKey
     /// <summary>A customer request was returned for corrections (sent to the submitter).</summary>
     CustomerReturned = 8,
 
-    /// <summary>A customer request synced to Maconomy successfully (sent to the submitter).</summary>
-    CustomerSynced = 9,
-
-    /// <summary>A customer request failed to sync to Maconomy (sent to the submitter).</summary>
-    CustomerSyncFailed = 10,
-
     /// <summary>A user was @mentioned in a note (Universal Features). Sent to the mentioned user.</summary>
     MentionReceived = 11,
 

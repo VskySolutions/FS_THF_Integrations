@@ -6,8 +6,7 @@ namespace IntegrationHub.Application.Customers;
 
 /// <summary>
 /// Default <see cref="ICustomerDuplicateChecker"/>. Compares only within the supplied tenant
-/// scope. (Matching against live Maconomy customer records is a future extension; MVP checks the
-/// platform's own Customer Requests.)
+/// scope, checking the platform's own Customer Requests.
 /// </summary>
 public sealed class CustomerDuplicateChecker : ICustomerDuplicateChecker
 {

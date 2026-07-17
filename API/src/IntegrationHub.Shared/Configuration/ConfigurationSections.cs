@@ -16,9 +16,6 @@ public static class ConfigurationSections
     /// <summary>Hangfire background queue configuration.</summary>
     public const string Hangfire = "Hangfire";
 
-    /// <summary>Retry framework configuration.</summary>
-    public const string Retry = "Retry";
-
     /// <summary>Serilog structured logging configuration.</summary>
     public const string Serilog = "Serilog";
 
@@ -27,13 +24,4 @@ public static class ConfigurationSections
 
     /// <summary>Registered machine-to-machine API keys.</summary>
     public const string ApiKeys = "ApiKeys";
-
-    /// <summary>Paycor external system configuration.</summary>
-    public const string Paycor = "ExternalSystems:Paycor";
-
-    /// <summary>Concur external system configuration.</summary>
-    public const string Concur = "ExternalSystems:Concur";
-
-    /// <summary>Maconomy external system configuration.</summary>
-    public const string Maconomy = "ExternalSystems:Maconomy";
 }

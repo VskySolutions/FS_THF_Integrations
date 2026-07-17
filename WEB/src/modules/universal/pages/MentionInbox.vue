@@ -69,7 +69,6 @@ const readFilter = ref(null);
 const entityOptions = [
   { label: "All", value: null },
   { label: "Customer Request", value: EntityType.CustomerRequest },
-  { label: "Integration Job", value: EntityType.IntegrationJob },
   { label: "Tenant", value: EntityType.Tenant },
   { label: "User", value: EntityType.User },
   { label: "User Group", value: EntityType.UserGroup }

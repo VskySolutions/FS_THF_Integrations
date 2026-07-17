@@ -4,6 +4,7 @@ using IntegrationHub.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace IntegrationHub.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(IntegrationHubDbContext))]
-    partial class IntegrationHubDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260625144021_AddOptionSetItemColors")]
+    partial class AddOptionSetItemColors
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -682,10 +685,18 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
+                    b.Property<string>("LastSyncError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
                     b.Property<string>("LegalName")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("MaconomyCustomerNumber")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("PaymentTerms")
                         .HasMaxLength(128)
@@ -732,6 +743,9 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTime?>("SubmittedOnUtc")
                         .HasColumnType("datetime2");
+
+                    b.Property<int>("SyncAttempts")
+                        .HasColumnType("int");
 
                     b.Property<string>("TaxNumber")
                         .HasMaxLength(64)
@@ -1003,6 +1017,318 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                         .IsDescending(false, false, false, true);
 
                     b.ToTable("FieldModifiedLogs", (string)null);
+                });
+
+            modelBuilder.Entity("IntegrationHub.Domain.Entities.IntegrationJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CompletedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("Deleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Direction")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("InterfaceName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("SourceSystem")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("StartedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("TargetSystem")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CorrelationId");
+
+                    b.HasIndex("CreatedOnUtc");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("IntegrationJobs", (string)null);
+                });
+
+            modelBuilder.Entity("IntegrationHub.Domain.Entities.IntegrationLog", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("Deleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Level")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("RequestPayload")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ResponsePayload")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("JobId");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("IntegrationLogs", (string)null);
+                });
+
+            modelBuilder.Entity("IntegrationHub.Domain.Entities.JobScheduleConfiguration", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CronExpression")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("Deleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("JobName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("UpdatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("JobName", "TenantId")
+                        .IsUnique()
+                        .HasFilter("[Deleted] = 0");
+
+                    b.ToTable("JobScheduleConfigurations", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("11111111-1111-1111-1111-111111111101"),
+                            CreatedOnUtc = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified),
+                            CronExpression = "0 */2 * * *",
+                            Deleted = false,
+                            IsActive = true,
+                            JobName = "ExpenseImportJob",
+                            UpdatedDate = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            UpdatedOnUtc = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified)
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-1111-1111-1111-111111111102"),
+                            CreatedOnUtc = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified),
+                            CronExpression = "15 */2 * * *",
+                            Deleted = false,
+                            IsActive = true,
+                            JobName = "InvoiceImportJob",
+                            UpdatedDate = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            UpdatedOnUtc = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified)
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-1111-1111-1111-111111111103"),
+                            CreatedOnUtc = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified),
+                            CronExpression = "30 */2 * * *",
+                            Deleted = false,
+                            IsActive = true,
+                            JobName = "VendorPaymentImportJob",
+                            UpdatedDate = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            UpdatedOnUtc = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified)
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-1111-1111-1111-111111111104"),
+                            CreatedOnUtc = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified),
+                            CronExpression = "*/5 * * * *",
+                            Deleted = false,
+                            IsActive = true,
+                            JobName = "RetryFailedJobsJob",
+                            UpdatedDate = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            UpdatedOnUtc = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified)
+                        });
+                });
+
+            modelBuilder.Entity("IntegrationHub.Domain.Entities.MappingConfiguration", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("Deleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DestinationField")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("InterfaceName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("MappingJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SourceField")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("SourceSystem")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("TargetSystem")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TransformationRule")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "InterfaceName");
+
+                    b.HasIndex("SourceSystem", "TargetSystem", "InterfaceName", "IsActive");
+
+                    b.ToTable("MappingConfigurations", (string)null);
                 });
 
             modelBuilder.Entity("IntegrationHub.Domain.Entities.Media", b =>
@@ -1632,13 +1958,35 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                     b.HasData(
                         new
                         {
+                            Id = new Guid("22222222-2222-2222-2222-222222222201"),
+                            CreatedOnUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Deleted = false,
+                            Description = "Trigger and monitor imports.",
+                            IsSeeded = true,
+                            Name = "Import Operator",
+                            PermissionKeysJson = "[\"jobs.trigger\",\"jobs.read\",\"logs.read\"]",
+                            UpdatedOnUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = new Guid("22222222-2222-2222-2222-222222222202"),
+                            CreatedOnUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Deleted = false,
+                            Description = "Read and edit field mappings.",
+                            IsSeeded = true,
+                            Name = "Mapping Manager",
+                            PermissionKeysJson = "[\"mappings.read\",\"mappings.write\"]",
+                            UpdatedOnUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
                             Id = new Guid("22222222-2222-2222-2222-222222222203"),
                             CreatedOnUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             Deleted = false,
-                            Description = "Configure tenant settings.",
+                            Description = "Configure tenant settings and credentials.",
                             IsSeeded = true,
                             Name = "Tenant Configurator",
-                            PermissionKeysJson = "[\"tenants.read\",\"tenants.write\"]",
+                            PermissionKeysJson = "[\"tenants.read\",\"tenants.write\",\"tenants.credentials\"]",
                             UpdatedOnUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
                         new
@@ -1661,6 +2009,39 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                             IsSeeded = true,
                             Name = "Customer Approver",
                             PermissionKeysJson = "[\"customers.review\",\"customers.approve\"]",
+                            UpdatedOnUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = new Guid("22222222-2222-2222-2222-222222222206"),
+                            CreatedOnUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Deleted = false,
+                            Description = "Read-only access to jobs and logs.",
+                            IsSeeded = true,
+                            Name = "Finance Read-Only",
+                            PermissionKeysJson = "[\"jobs.read\",\"logs.read\"]",
+                            UpdatedOnUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = new Guid("22222222-2222-2222-2222-222222222207"),
+                            CreatedOnUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Deleted = false,
+                            Description = "Monitor platform health, jobs and schedules.",
+                            IsSeeded = true,
+                            Name = "Platform Monitor",
+                            PermissionKeysJson = "[\"health.read\",\"jobs.read\",\"logs.read\",\"jobs.schedule\"]",
+                            UpdatedOnUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = new Guid("22222222-2222-2222-2222-222222222208"),
+                            CreatedOnUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Deleted = false,
+                            Description = "Manage recurring import schedules.",
+                            IsSeeded = true,
+                            Name = "Schedule Admin",
+                            PermissionKeysJson = "[\"jobs.schedule\"]",
                             UpdatedOnUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
                         });
                 });
@@ -2012,6 +2393,62 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                     b.HasIndex("IsDispatched", "DueAtUtc");
 
                     b.ToTable("Reminders", (string)null);
+                });
+
+            modelBuilder.Entity("IntegrationHub.Domain.Entities.RetryQueueEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("Deleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime>("NextRetryDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("RetryCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("JobId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("Status", "NextRetryDate");
+
+                    b.ToTable("RetryQueue", (string)null);
                 });
 
             modelBuilder.Entity("IntegrationHub.Domain.Entities.Role", b =>
@@ -2447,6 +2884,57 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                     b.ToTable("Tenants", (string)null);
                 });
 
+            modelBuilder.Entity("IntegrationHub.Domain.Entities.TenantApiConfiguration", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("Deleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("EncryptedCredentials")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("System")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("UpdatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "System")
+                        .IsUnique()
+                        .HasFilter("[Deleted] = 0");
+
+                    b.ToTable("TenantApiConfigurations", (string)null);
+                });
+
             modelBuilder.Entity("IntegrationHub.Domain.Entities.TenantRole", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2864,6 +3352,49 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                     b.Navigation("Tag");
                 });
 
+            modelBuilder.Entity("IntegrationHub.Domain.Entities.IntegrationJob", b =>
+                {
+                    b.HasOne("IntegrationHub.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("IntegrationHub.Domain.Entities.IntegrationLog", b =>
+                {
+                    b.HasOne("IntegrationHub.Domain.Entities.IntegrationJob", "Job")
+                        .WithMany("Logs")
+                        .HasForeignKey("JobId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("IntegrationHub.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Job");
+                });
+
+            modelBuilder.Entity("IntegrationHub.Domain.Entities.JobScheduleConfiguration", b =>
+                {
+                    b.HasOne("IntegrationHub.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade);
+                });
+
+            modelBuilder.Entity("IntegrationHub.Domain.Entities.MappingConfiguration", b =>
+                {
+                    b.HasOne("IntegrationHub.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("IntegrationHub.Domain.Entities.NoteMention", b =>
                 {
                     b.HasOne("IntegrationHub.Domain.Entities.Note", "Note")
@@ -2945,6 +3476,23 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                     b.Navigation("Tenant");
                 });
 
+            modelBuilder.Entity("IntegrationHub.Domain.Entities.RetryQueueEntry", b =>
+                {
+                    b.HasOne("IntegrationHub.Domain.Entities.IntegrationJob", "Job")
+                        .WithMany()
+                        .HasForeignKey("JobId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("IntegrationHub.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Job");
+                });
+
             modelBuilder.Entity("IntegrationHub.Domain.Entities.RolePermissionGroup", b =>
                 {
                     b.HasOne("IntegrationHub.Domain.Entities.PermissionGroup", "PermissionGroup")
@@ -2982,6 +3530,17 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("StickyNote");
+                });
+
+            modelBuilder.Entity("IntegrationHub.Domain.Entities.TenantApiConfiguration", b =>
+                {
+                    b.HasOne("IntegrationHub.Domain.Entities.Tenant", "Tenant")
+                        .WithMany("ApiConfigurations")
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Tenant");
                 });
 
             modelBuilder.Entity("IntegrationHub.Domain.Entities.User", b =>
@@ -3065,6 +3624,11 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
                     b.Navigation("Documents");
                 });
 
+            modelBuilder.Entity("IntegrationHub.Domain.Entities.IntegrationJob", b =>
+                {
+                    b.Navigation("Logs");
+                });
+
             modelBuilder.Entity("IntegrationHub.Domain.Entities.Note", b =>
                 {
                     b.Navigation("Mentions");
@@ -3097,6 +3661,11 @@ namespace IntegrationHub.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IntegrationHub.Domain.Entities.Tag", b =>
                 {
                     b.Navigation("EntityTags");
+                });
+
+            modelBuilder.Entity("IntegrationHub.Domain.Entities.Tenant", b =>
+                {
+                    b.Navigation("ApiConfigurations");
                 });
 
             modelBuilder.Entity("IntegrationHub.Domain.Entities.User", b =>

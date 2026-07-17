@@ -312,11 +312,7 @@ const archive = async (row) => {
     notify.success("Tenant archived.");
     load();
   } catch (err) {
-    if (getApiErrorCode(err) === ApiErrorCodes.ActiveJobsExist) {
-      notify.error("Tenant has active jobs and cannot be archived.");
-    } else {
-      notify.error(getApiErrorMessage(err));
-    }
+    notify.error(getApiErrorMessage(err));
   }
 };
 

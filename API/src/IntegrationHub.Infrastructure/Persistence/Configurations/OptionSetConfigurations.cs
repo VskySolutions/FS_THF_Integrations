@@ -69,6 +69,9 @@ internal sealed class OptionSetItemConfiguration : IEntityTypeConfiguration<Opti
         builder.Property(i => i.IsDefault).IsRequired();
         builder.Property(i => i.IsActive).IsRequired();
 
+        builder.Property(i => i.BackgroundColor).HasMaxLength(32);
+        builder.Property(i => i.TextColor).HasMaxLength(32);
+
         // Value is unique within a list for a given scope (null tenant = standard value).
         builder.HasIndex(i => new { i.OptionSetId, i.TenantId, i.Value })
             .IsUnique()

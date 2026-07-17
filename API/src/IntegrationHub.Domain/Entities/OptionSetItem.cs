@@ -38,6 +38,12 @@ public class OptionSetItem : AuditableEntity
     /// <summary>When false, the value is hidden from pickers without being deleted.</summary>
     public bool IsActive { get; set; } = true;
 
+    /// <summary>Optional background colour (hex, e.g. "#e3f2fd") shown for this value in the UI.</summary>
+    public string? BackgroundColor { get; set; }
+
+    /// <summary>Optional text colour (hex, e.g. "#0d47a1") shown for this value in the UI.</summary>
+    public string? TextColor { get; set; }
+
     /// <summary>Optional extra metadata as a JSON object, e.g. <c>{"days":30}</c>.</summary>
     public string? MetadataJson { get; set; }
 

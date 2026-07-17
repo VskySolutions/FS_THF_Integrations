@@ -168,7 +168,7 @@ const selectedTenantId = ref(null);
 
 const STATUS_OPTIONS = [
   "Draft", "Submitted", "UnderReview", "PendingApproval", "PartiallyApproved",
-  "Approved", "SyncInProgress", "Synced", "Rejected", "Returned", "Failed"
+  "Approved", "Rejected", "Returned"
 ].map((s) => ({ label: statusLabel(s), value: s }));
 
 const columns = computed(() => [

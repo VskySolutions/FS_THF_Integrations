@@ -1,11 +1,9 @@
-using IntegrationHub.Api.Integrations;
 using IntegrationHub.Api.Models.Dashboard;
 using IntegrationHub.Application.Abstractions.Persistence;
 using IntegrationHub.Domain.Entities;
 using IntegrationHub.Domain.Enums;
 using IntegrationHub.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace IntegrationHub.Api.Dashboard;
 
@@ -19,29 +17,17 @@ public sealed class DashboardQueryService : IDashboardQueryService
     private const int SlaBreachDays = 3;
 
     private readonly IntegrationHubDbContext _db;
-    private readonly IRetryQueueRepository _retries;
     private readonly ITenantRepository _tenants;
-    private readonly ITenantApiConfigurationRepository _tenantConfigs;
-    private readonly IJobScheduleConfigurationRepository _schedules;
     private readonly IUserRepository _users;
-    private readonly HealthCheckService _healthChecks;
 
     public DashboardQueryService(
         IntegrationHubDbContext db,
-        IRetryQueueRepository retries,
         ITenantRepository tenants,
-        ITenantApiConfigurationRepository tenantConfigs,
-        IJobScheduleConfigurationRepository schedules,
-        IUserRepository users,
-        HealthCheckService healthChecks)
+        IUserRepository users)
     {
         _db = db;
-        _retries = retries;
         _tenants = tenants;
-        _tenantConfigs = tenantConfigs;
-        _schedules = schedules;
         _users = users;
-        _healthChecks = healthChecks;
     }
 
     // ---- Date windows ----
@@ -65,23 +51,7 @@ public sealed class DashboardQueryService : IDashboardQueryService
     private static double TrendPct(int current, int prior)
         => prior == 0 ? 0 : Math.Round((double)(current - prior) / prior * 100, 0);
 
-    private static IReadOnlyList<DateTime> DayBuckets(DateTime from, DateTime to)
-    {
-        var days = new List<DateTime>();
-        for (var d = from.Date; d <= to.Date; d = d.AddDays(1))
-        {
-            days.Add(d);
-        }
-        return days;
-    }
-
-    // ---- Job querying ----
-
-    private IQueryable<IntegrationJob> JobsScoped(Guid? tenantId)
-    {
-        var q = _db.IntegrationJobs.IgnoreQueryFilters().Where(j => !j.Deleted);
-        return tenantId is { } tid ? q.Where(j => j.TenantId == tid) : q;
-    }
+    // ---- Scoping helpers ----
 
     private IQueryable<CustomerRequest> CustomersScoped(Guid? tenantId)
     {
@@ -99,103 +69,6 @@ public sealed class DashboardQueryService : IDashboardQueryService
     {
         var q = _db.Users.IgnoreQueryFilters().Where(u => !u.Deleted);
         return tenantId is { } tid ? q.Where(u => u.TenantRoles.Any(r => r.TenantId == tid && !r.Deleted)) : q;
-    }
-
-    private static bool IsFailed(IntegrationJobStatus s) => s is IntegrationJobStatus.Failed or IntegrationJobStatus.PermanentlyFailed;
-
-    private static bool IsPending(IntegrationJobStatus s) => s is IntegrationJobStatus.Created or IntegrationJobStatus.Running;
-
-    public async Task<JobDashboardDto> GetJobsAsync(Guid? tenantId, string dateRange, CancellationToken cancellationToken)
-    {
-        var (from, to, priorFrom) = Window(dateRange);
-
-        var current = await JobsScoped(tenantId)
-            .Where(j => j.CreatedOnUtc >= from && j.CreatedOnUtc <= to)
-            .Select(j => new { j.Id, j.Status, j.InterfaceName, j.SourceSystem, j.TargetSystem, j.CreatedOnUtc, j.CompletedAtUtc, j.UpdatedOnUtc, j.ErrorMessage })
-            .ToListAsync(cancellationToken);
-
-        var prior = await JobsScoped(tenantId)
-            .Where(j => j.CreatedOnUtc >= priorFrom && j.CreatedOnUtc < from)
-            .Select(j => new { j.Status })
-            .ToListAsync(cancellationToken);
-
-        int Completed(IEnumerable<IntegrationJobStatus> s) => s.Count(x => x == IntegrationJobStatus.Completed);
-
-        var total = current.Count;
-        var completed = current.Count(j => j.Status == IntegrationJobStatus.Completed);
-        var failed = current.Count(j => IsFailed(j.Status));
-        var pending = current.Count(j => IsPending(j.Status));
-
-        var pTotal = prior.Count;
-        var pCompleted = prior.Count(j => j.Status == IntegrationJobStatus.Completed);
-        var pFailed = prior.Count(j => IsFailed(j.Status));
-        var pPending = prior.Count(j => IsPending(j.Status));
-
-        var kpis = new JobKpisDto(
-            total, completed, failed, pending,
-            TrendPct(total, pTotal), TrendPct(completed, pCompleted), TrendPct(failed, pFailed), TrendPct(pending, pPending));
-
-        var successRate = (completed + failed) == 0 ? 0 : Math.Round((double)completed / (completed + failed) * 100, 1);
-
-        var volume = DayBuckets(from, to).Select(day =>
-        {
-            var dayJobs = current.Where(j => j.CreatedOnUtc.Date == day).ToList();
-            return new DailyJobCount(
-                day.ToString("yyyy-MM-dd"),
-                dayJobs.Count(j => j.Status == IntegrationJobStatus.Completed),
-                dayJobs.Count(j => IsFailed(j.Status)),
-                dayJobs.Count(j => IsPending(j.Status)));
-        }).ToList();
-
-        var flowBreakdown = IntegrationFlows.All().Select(flow =>
-        {
-            var flowJobs = current.Where(j => string.Equals(j.InterfaceName, flow.InterfaceName, StringComparison.OrdinalIgnoreCase)).ToList();
-            return new FlowJobCount(
-                flow.InterfaceName, flow.Label,
-                flowJobs.Count(j => j.Status == IntegrationJobStatus.Completed),
-                flowJobs.Count(j => IsFailed(j.Status)),
-                flowJobs.Count(j => IsPending(j.Status)));
-        }).ToList();
-
-        var failedJobs = current
-            .Where(j => IsFailed(j.Status))
-            .OrderByDescending(j => j.CompletedAtUtc ?? j.UpdatedOnUtc)
-            .Take(5)
-            .Select(j => new FailedJobSummary(
-                j.Id, j.InterfaceName,
-                IntegrationFlows.Label(j.SourceSystem, j.TargetSystem, j.InterfaceName),
-                j.ErrorMessage, j.CompletedAtUtc ?? j.UpdatedOnUtc))
-            .ToList();
-
-        var (retryCount, nextRun) = await RetryQueueAsync(tenantId, cancellationToken);
-
-        return new JobDashboardDto(kpis, successRate, volume, flowBreakdown, failedJobs, retryCount, nextRun);
-    }
-
-    private async Task<(int Count, DateTime? NextRun)> RetryQueueAsync(Guid? tenantId, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var (items, total) = await _retries.QueryAsync(tenantId, 1, 100, cancellationToken);
-            var next = items.Count == 0 ? (DateTime?)null : items.Min(r => r.NextRetryDate);
-            return (total, next);
-        }
-        catch
-        {
-            return (0, null);
-        }
-    }
-
-    // ---- Health ----
-
-    public async Task<HealthDashboardDto> GetHealthAsync(CancellationToken cancellationToken)
-    {
-        var report = await _healthChecks.CheckHealthAsync(cancellationToken);
-        var components = report.Entries
-            .Select(e => new HealthComponentDto(e.Key, e.Value.Status.ToString(), e.Value.Description))
-            .ToList();
-        var allOperational = report.Entries.All(e => e.Value.Status == HealthStatus.Healthy);
-        return new HealthDashboardDto(report.Status.ToString(), components, allOperational);
     }
 
     // ---- Customers ----
@@ -220,18 +93,15 @@ public sealed class DashboardQueryService : IDashboardQueryService
             .Select(c => new { c.Status })
             .ToListAsync(cancellationToken);
 
-        int PendingAction(IEnumerable<CustomerRequestStatus> s) => s.Count(x => PendingActionStatuses.Contains(x));
-
         var total = current.Count;
-        var synced = current.Count(c => c.Status == CustomerRequestStatus.Synced);
+        var approved = current.Count(c => c.Status == CustomerRequestStatus.Approved);
         var pendingAction = current.Count(c => PendingActionStatuses.Contains(c.Status));
-        var syncFailed = current.Count(c => c.Status == CustomerRequestStatus.Failed);
         var rejected = current.Count(c => c.Status == CustomerRequestStatus.Rejected);
 
         var kpis = new CustomerKpisDto(
-            total, synced, pendingAction, syncFailed, rejected,
+            total, approved, pendingAction, rejected,
             TrendPct(total, prior.Count),
-            TrendPct(synced, prior.Count(c => c.Status == CustomerRequestStatus.Synced)));
+            TrendPct(approved, prior.Count(c => c.Status == CustomerRequestStatus.Approved)));
 
         // Funnel: count per stage across the full (unwindowed) scoped set, ordered by enum.
         var byStatus = await CustomersScoped(tenantId)
@@ -242,9 +112,9 @@ public sealed class DashboardQueryService : IDashboardQueryService
             .Select(st => new StageCount(st.ToString(), byStatus.FirstOrDefault(x => x.Status == st)?.Count ?? 0))
             .ToList();
 
-        // Ageing: open requests (not Synced/Rejected), oldest-in-status first, top 5.
+        // Ageing: open requests (not Approved/Rejected), oldest-in-status first, top 5.
         var openStatuses = Enum.GetValues<CustomerRequestStatus>()
-            .Where(s => s != CustomerRequestStatus.Synced && s != CustomerRequestStatus.Rejected)
+            .Where(s => s != CustomerRequestStatus.Approved && s != CustomerRequestStatus.Rejected)
             .ToArray();
         var ageingRaw = await CustomersScoped(tenantId)
             .Where(c => openStatuses.Contains(c.Status))
@@ -261,43 +131,11 @@ public sealed class DashboardQueryService : IDashboardQueryService
             .Take(5)
             .ToList();
 
-        var syncHealth = await SyncHealthAsync(tenantId, from, to, cancellationToken);
         var activityFeed = await CustomerActivityFeedAsync(tenantId, 15, cancellationToken);
         var topSubmitters = await TopSubmittersAsync(tenantId, cancellationToken);
         var submissionTrend = await SubmissionTrendAsync(tenantId, cancellationToken);
 
-        return new CustomerDashboardDto(kpis, funnel, ageing, syncHealth, activityFeed, topSubmitters, submissionTrend);
-    }
-
-    private async Task<SyncHealthDto> SyncHealthAsync(Guid? tenantId, DateTime from, DateTime to, CancellationToken cancellationToken)
-    {
-        var totalSynced = await CustomersScoped(tenantId).CountAsync(c => c.Status == CustomerRequestStatus.Synced, cancellationToken);
-        var monthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-        var syncedThisMonth = await CustomersScoped(tenantId)
-            .CountAsync(c => c.Status == CustomerRequestStatus.Synced && c.UpdatedOnUtc >= monthStart, cancellationToken);
-        var inProgress = await CustomersScoped(tenantId).CountAsync(c => c.Status == CustomerRequestStatus.SyncInProgress, cancellationToken);
-        var failed = await CustomersScoped(tenantId).CountAsync(c => c.Status == CustomerRequestStatus.Failed, cancellationToken);
-        var successRate = (totalSynced + failed) == 0 ? 0 : Math.Round((double)totalSynced / (totalSynced + failed) * 100, 1);
-
-        // Per-day Synced vs Failed timeline over the window (keyed on UpdatedOnUtc).
-        var windowItems = await CustomersScoped(tenantId)
-            .Where(c => (c.Status == CustomerRequestStatus.Synced || c.Status == CustomerRequestStatus.Failed)
-                        && c.UpdatedOnUtc >= from && c.UpdatedOnUtc <= to)
-            .Select(c => new { c.Status, c.UpdatedOnUtc })
-            .ToListAsync(cancellationToken);
-        var timeline = DayBuckets(from, to).Select(day => new SyncTimelinePoint(
-            day.ToString("yyyy-MM-dd"),
-            windowItems.Count(c => c.Status == CustomerRequestStatus.Synced && c.UpdatedOnUtc.Date == day),
-            windowItems.Count(c => c.Status == CustomerRequestStatus.Failed && c.UpdatedOnUtc.Date == day))).ToList();
-
-        var recentFailures = await CustomersScoped(tenantId)
-            .Where(c => c.Status == CustomerRequestStatus.Failed)
-            .OrderByDescending(c => c.UpdatedOnUtc)
-            .Take(3)
-            .Select(c => new SyncFailureItem(c.Id, c.CustomerRequestNumber, c.CompanyName, c.LastSyncError, c.UpdatedOnUtc))
-            .ToListAsync(cancellationToken);
-
-        return new SyncHealthDto(totalSynced, syncedThisMonth, successRate, inProgress, failed, timeline, recentFailures);
+        return new CustomerDashboardDto(kpis, funnel, ageing, activityFeed, topSubmitters, submissionTrend);
     }
 
     private async Task<IReadOnlyList<ActivityEntry>> CustomerActivityFeedAsync(Guid? tenantId, int take, CancellationToken cancellationToken)
@@ -453,8 +291,6 @@ public sealed class DashboardQueryService : IDashboardQueryService
 
     private async Task<PlatformDashboardDto> BuildPlatformAsync(string dateRange, CancellationToken cancellationToken)
     {
-        var (from, to, _) = Window(dateRange);
-        var todayStart = DateTime.UtcNow.Date;
         var monthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
 
         var tenants = await _tenants.ListAsync(cancellationToken);
@@ -465,47 +301,21 @@ public sealed class DashboardQueryService : IDashboardQueryService
         var archivedTenants = tenants.Count(t => t.Status == TenantStatus.Archived);
 
         var totalUsers = await _db.Users.IgnoreQueryFilters().CountAsync(u => !u.Deleted, cancellationToken);
-        var jobsToday = await JobsScoped(null).CountAsync(j => j.CreatedOnUtc >= todayStart, cancellationToken);
-
-        // Platform success rate over all jobs (completed / (completed + failed)).
-        var platCompleted = await JobsScoped(null).CountAsync(j => j.Status == IntegrationJobStatus.Completed, cancellationToken);
-        var platFailed = await JobsScoped(null).CountAsync(j => j.Status == IntegrationJobStatus.Failed || j.Status == IntegrationJobStatus.PermanentlyFailed, cancellationToken);
-        var platSuccessRate = (platCompleted + platFailed) == 0 ? 0 : Math.Round((double)platCompleted / (platCompleted + platFailed) * 100, 1);
 
         var pendingApprovals = await CustomersScoped(null)
             .CountAsync(c => c.Status == CustomerRequestStatus.PendingApproval || c.Status == CustomerRequestStatus.PartiallyApproved, cancellationToken);
 
         var tenantKpis = new TenantKpisDto(
-            activeTenants, inactiveTenants, archivedTenants, totalUsers, jobsToday, platSuccessRate, pendingApprovals);
-
-        // Cross-tenant jobs (window), top 10 by volume.
-        var jobsByTenant = await JobsScoped(null)
-            .Where(j => j.CreatedOnUtc >= from && j.CreatedOnUtc <= to)
-            .GroupBy(j => j.TenantId)
-            .Select(g => new
-            {
-                TenantId = g.Key,
-                Completed = g.Count(j => j.Status == IntegrationJobStatus.Completed),
-                Failed = g.Count(j => j.Status == IntegrationJobStatus.Failed || j.Status == IntegrationJobStatus.PermanentlyFailed),
-                Pending = g.Count(j => j.Status == IntegrationJobStatus.Created || j.Status == IntegrationJobStatus.Running),
-                Total = g.Count(),
-            })
-            .ToListAsync(cancellationToken);
-        var crossTenantJobs = jobsByTenant
-            .OrderByDescending(g => g.Total)
-            .Take(10)
-            .Select(g => new CrossTenantJobCount(
-                g.TenantId, tenantNames.GetValueOrDefault(g.TenantId, g.TenantId.ToString()), g.Completed, g.Failed, g.Pending))
-            .ToList();
+            activeTenants, inactiveTenants, archivedTenants, totalUsers, pendingApprovals);
 
         var tenantHealth = await TenantHealthAsync(tenants, cancellationToken);
         var growth = await GrowthAsync(tenants, cancellationToken);
         var onboarding = await OnboardingAsync(tenants, cancellationToken);
         var userAnalytics = await PlatformUserAnalyticsAsync(tenantNames, monthStart, cancellationToken);
         var customer = await PlatformCustomerAsync(dateRange, tenantNames, cancellationToken);
-        var alerts = await SystemAlertsAsync(tenantNames, customer, crossTenantJobs, cancellationToken);
+        var alerts = await SystemAlertsAsync(customer, cancellationToken);
 
-        return new PlatformDashboardDto(tenantKpis, crossTenantJobs, tenantHealth, growth, onboarding, alerts, userAnalytics, customer);
+        return new PlatformDashboardDto(tenantKpis, tenantHealth, growth, onboarding, alerts, userAnalytics, customer);
     }
 
     private async Task<IReadOnlyList<TenantHealthRow>> TenantHealthAsync(IReadOnlyList<Tenant> tenants, CancellationToken cancellationToken)
@@ -513,19 +323,11 @@ public sealed class DashboardQueryService : IDashboardQueryService
         var rows = new List<TenantHealthRow>();
         foreach (var t in tenants)
         {
-            var configs = await _tenantConfigs.ListByTenantAsync(t.Id, cancellationToken);
-            var concur = configs.Any(c => c.System == SystemName.Concur && !string.IsNullOrWhiteSpace(c.EncryptedCredentials));
-            var maconomy = configs.Any(c => c.System == SystemName.Maconomy && !string.IsNullOrWhiteSpace(c.EncryptedCredentials));
-
-            var lastRun = await JobsScoped(t.Id).MaxAsync(j => (DateTime?)(j.CompletedAtUtc ?? j.CreatedOnUtc), cancellationToken);
-            var completed = await JobsScoped(t.Id).CountAsync(j => j.Status == IntegrationJobStatus.Completed, cancellationToken);
-            var failed = await JobsScoped(t.Id).CountAsync(j => j.Status == IntegrationJobStatus.Failed || j.Status == IntegrationJobStatus.PermanentlyFailed, cancellationToken);
-            var successRate = (completed + failed) == 0 ? 0 : Math.Round((double)completed / (completed + failed) * 100, 1);
             var pendingCustomers = await CustomersScoped(t.Id)
                 .CountAsync(c => c.Status == CustomerRequestStatus.PendingApproval || c.Status == CustomerRequestStatus.PartiallyApproved, cancellationToken);
             var activeUsers = await UsersScoped(t.Id).CountAsync(u => u.IsActive, cancellationToken);
 
-            rows.Add(new TenantHealthRow(t.Id, t.Name, concur, maconomy, lastRun, successRate, pendingCustomers, activeUsers));
+            rows.Add(new TenantHealthRow(t.Id, t.Name, pendingCustomers, activeUsers));
         }
         return rows;
     }
@@ -551,15 +353,11 @@ public sealed class DashboardQueryService : IDashboardQueryService
 
     private async Task<IReadOnlyList<OnboardingRow>> OnboardingAsync(IReadOnlyList<Tenant> tenants, CancellationToken cancellationToken)
     {
-        var schedules = await _schedules.ListAsync(cancellationToken);
         var rows = new List<OnboardingRow>();
         foreach (var t in tenants)
         {
-            var configs = await _tenantConfigs.ListByTenantAsync(t.Id, cancellationToken);
-            var missingCreds = !configs.Any(c => !string.IsNullOrWhiteSpace(c.EncryptedCredentials));
             var missingUsers = !await UsersScoped(t.Id).AnyAsync(cancellationToken);
-            var missingSchedules = !schedules.Any(s => s.TenantId == t.Id);
-            rows.Add(new OnboardingRow(t.Id, t.Name, missingCreds, missingUsers, missingSchedules));
+            rows.Add(new OnboardingRow(t.Id, t.Name, missingUsers));
         }
         return rows;
     }
@@ -605,9 +403,8 @@ public sealed class DashboardQueryService : IDashboardQueryService
         var priorCount = await CustomersScoped(null).CountAsync(c => c.CreatedOnUtc >= priorFrom && c.CreatedOnUtc < from, cancellationToken);
 
         var total = current.Count;
-        var synced = current.Count(c => c.Status == CustomerRequestStatus.Synced);
+        var approved = current.Count(c => c.Status == CustomerRequestStatus.Approved);
         var pendingApproval = current.Count(c => c.Status == CustomerRequestStatus.PendingApproval || c.Status == CustomerRequestStatus.PartiallyApproved);
-        var syncFailed = current.Count(c => c.Status == CustomerRequestStatus.Failed);
         var rejected = current.Count(c => c.Status == CustomerRequestStatus.Rejected);
 
         var byTenantRaw = await CustomersScoped(null)
@@ -618,16 +415,6 @@ public sealed class DashboardQueryService : IDashboardQueryService
             .Select(x => new TenantCount(tenantNames.GetValueOrDefault(x.TenantId, x.TenantId.ToString()), x.Count))
             .OrderByDescending(x => x.Count)
             .ToList();
-
-        var windowSync = await CustomersScoped(null)
-            .Where(c => (c.Status == CustomerRequestStatus.Synced || c.Status == CustomerRequestStatus.Failed)
-                        && c.UpdatedOnUtc >= from && c.UpdatedOnUtc <= to)
-            .Select(c => new { c.Status, c.UpdatedOnUtc })
-            .ToListAsync(cancellationToken);
-        var syncTimeline = DayBuckets(from, to).Select(day => new SyncTimelinePoint(
-            day.ToString("yyyy-MM-dd"),
-            windowSync.Count(c => c.Status == CustomerRequestStatus.Synced && c.UpdatedOnUtc.Date == day),
-            windowSync.Count(c => c.Status == CustomerRequestStatus.Failed && c.UpdatedOnUtc.Date == day))).ToList();
 
         var byStatus = await CustomersScoped(null)
             .GroupBy(c => c.Status)
@@ -640,8 +427,8 @@ public sealed class DashboardQueryService : IDashboardQueryService
         var issues = await CustomerIssuesAsync(tenantNames, cancellationToken);
 
         return new PlatformCustomerDto(
-            total, synced, pendingApproval, syncFailed, rejected, TrendPct(total, priorCount),
-            byTenant, syncTimeline, funnel, issues);
+            total, approved, pendingApproval, rejected, TrendPct(total, priorCount),
+            byTenant, funnel, issues);
     }
 
     private async Task<IReadOnlyList<CustomerIssueRow>> CustomerIssuesAsync(
@@ -652,12 +439,6 @@ public sealed class DashboardQueryService : IDashboardQueryService
         var staleApprovals = await CustomersScoped(null)
             .Where(c => (c.Status == CustomerRequestStatus.PendingApproval || c.Status == CustomerRequestStatus.PartiallyApproved)
                         && c.UpdatedOnUtc < staleCutoff)
-            .GroupBy(c => c.TenantId)
-            .Select(g => new { TenantId = g.Key, Count = g.Count() })
-            .ToListAsync(cancellationToken);
-
-        var syncFailures = await CustomersScoped(null)
-            .Where(c => c.Status == CustomerRequestStatus.Failed)
             .GroupBy(c => c.TenantId)
             .Select(g => new { TenantId = g.Key, Count = g.Count() })
             .ToListAsync(cancellationToken);
@@ -678,7 +459,6 @@ public sealed class DashboardQueryService : IDashboardQueryService
             .ToList();
 
         var tenantIds = staleApprovals.Select(x => x.TenantId)
-            .Concat(syncFailures.Select(x => x.TenantId))
             .Concat(repeatedReturns.Select(x => x.TenantId))
             .Distinct()
             .ToList();
@@ -686,36 +466,23 @@ public sealed class DashboardQueryService : IDashboardQueryService
         return tenantIds.Select(tid => new CustomerIssueRow(
             tid, tenantNames.GetValueOrDefault(tid, tid.ToString()),
             staleApprovals.FirstOrDefault(x => x.TenantId == tid)?.Count ?? 0,
-            syncFailures.FirstOrDefault(x => x.TenantId == tid)?.Count ?? 0,
             repeatedReturns.FirstOrDefault(x => x.TenantId == tid)?.Count ?? 0)).ToList();
     }
 
     private Task<IReadOnlyList<SystemAlert>> SystemAlertsAsync(
-        IReadOnlyDictionary<Guid, string> tenantNames,
         PlatformCustomerDto customer,
-        IReadOnlyList<CrossTenantJobCount> crossTenantJobs,
         CancellationToken cancellationToken)
     {
         var alerts = new List<SystemAlert>();
 
-        // Synthesize from sync failures per tenant.
-        foreach (var issue in customer.Issues.Where(i => i.SyncFailures > 0))
+        // Synthesize from stale customer approvals per tenant.
+        foreach (var issue in customer.Issues.Where(i => i.StaleApprovals > 0))
         {
             alerts.Add(new SystemAlert(
-                $"syncfail:{issue.TenantId}", "SyncFailure",
-                issue.SyncFailures >= 5 ? "High" : "Warning",
-                $"{issue.SyncFailures} customer sync failure(s) awaiting attention.",
+                $"staleapproval:{issue.TenantId}", "StaleApprovals",
+                issue.StaleApprovals >= 5 ? "High" : "Warning",
+                $"{issue.StaleApprovals} customer request(s) awaiting approval beyond SLA.",
                 issue.TenantId, issue.TenantName));
-        }
-
-        // Synthesize from failed-job spikes per tenant in the window.
-        foreach (var job in crossTenantJobs.Where(j => j.Failed > 0))
-        {
-            alerts.Add(new SystemAlert(
-                $"jobfail:{job.TenantId}", "JobFailure",
-                job.Failed >= 5 ? "High" : "Warning",
-                $"{job.Failed} failed integration job(s) in the selected window.",
-                job.TenantId, job.TenantName));
         }
 
         return Task.FromResult<IReadOnlyList<SystemAlert>>(alerts);

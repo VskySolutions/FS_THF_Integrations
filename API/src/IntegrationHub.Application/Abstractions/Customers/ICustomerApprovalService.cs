@@ -17,8 +17,8 @@ public sealed class CustomerWorkflowException : Exception
 
 /// <summary>
 /// Owns the multi-stage approval state machine for a <see cref="CustomerRequest"/>. Validates the
-/// mandatory Step 2 Maconomy fields before an approval, advances or finalises the approval stage,
-/// records audit entries, persists, and — on final approval — enqueues the Maconomy sync job.
+/// mandatory Step 2 fields before an approval, advances or finalises the approval stage, records
+/// audit entries, and persists. Final approval is the terminal success state.
 /// </summary>
 public interface ICustomerApprovalService
 {

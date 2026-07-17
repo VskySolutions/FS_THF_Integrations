@@ -11,9 +11,6 @@ public static class ApiErrorCodes
     public const string TenantInactive = "TENANT_INACTIVE";
     public const string TenantNotFound = "TENANT_NOT_FOUND";
     public const string TenantArchived = "TENANT_ARCHIVED";
-    public const string ActiveJobsExist = "ACTIVE_JOBS_EXIST";
-    public const string JobNotFound = "JOB_NOT_FOUND";
-    public const string CredentialsNotConfigured = "CREDENTIALS_NOT_CONFIGURED";
 
     // Permission Groups
     public const string DuplicateGroupName = "DUPLICATE_GROUP_NAME";

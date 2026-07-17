@@ -3,8 +3,8 @@ using IntegrationHub.Domain.Enums;
 namespace IntegrationHub.Domain.Entities;
 
 /// <summary>
-/// An independent organization served by the platform. Owns isolated integration data,
-/// its own encrypted external-system credentials, and its own users (Multi-Tenancy).
+/// An independent organization served by the platform. Owns its own isolated data
+/// and users (Multi-Tenancy).
 /// </summary>
 public class Tenant : AuditableEntity
 {
@@ -25,7 +25,4 @@ public class Tenant : AuditableEntity
 
     /// <summary>UTC timestamp when the tenant was created.</summary>
     public DateTime CreatedDate { get; set; }
-
-    /// <summary>Per-tenant external system credential configurations.</summary>
-    public ICollection<TenantApiConfiguration> ApiConfigurations { get; set; } = new List<TenantApiConfiguration>();
 }

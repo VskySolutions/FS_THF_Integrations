@@ -51,22 +51,6 @@ const sections = [
     ]
   },
   {
-    key: "configuration",
-    label: "Configuration",
-    items: [
-      { label: "Mapping Config", icon: "o_swap_horiz", to: "/mappings", permissions: [Permissions.MappingsRead] }
-    ]
-  },
-  {
-    key: "operations",
-    label: "Operations",
-    items: [
-      { label: "Integration Jobs", icon: "o_sync", to: "/jobs", permissions: [Permissions.JobsRead] },
-      { label: "Logs", icon: "o_description", to: "/logs", permissions: [Permissions.LogsRead] },
-      { label: "Health", icon: "o_monitor_heart", to: "/health", permissions: [Permissions.HealthRead] }
-    ]
-  },
-  {
     key: "access-management",
     label: "Access Management",
     items: [

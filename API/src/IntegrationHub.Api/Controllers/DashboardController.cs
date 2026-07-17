@@ -45,28 +45,6 @@ public sealed class DashboardController : ControllerBase
         _unitOfWork = unitOfWork;
     }
 
-    // ---- Jobs ----
-
-    [HttpGet("jobs")]
-    [RequirePermission(Permissions.JobsRead)]
-    [ProducesResponseType<ApiResponse<JobDashboardDto>>(StatusCodes.Status200OK)]
-    public async Task<IActionResult> Jobs([FromQuery] string dateRange = "7d", [FromQuery] Guid? tenantId = null, CancellationToken cancellationToken = default)
-    {
-        var data = await _query.GetJobsAsync(ResolveScope(tenantId), dateRange, cancellationToken);
-        return Ok(ApiResponseFactory.Success(data, "Job dashboard retrieved."));
-    }
-
-    // ---- Health ----
-
-    [HttpGet("health")]
-    [RequirePermission(Permissions.HealthRead)]
-    [ProducesResponseType<ApiResponse<HealthDashboardDto>>(StatusCodes.Status200OK)]
-    public async Task<IActionResult> Health(CancellationToken cancellationToken)
-    {
-        var data = await _query.GetHealthAsync(cancellationToken);
-        return Ok(ApiResponseFactory.Success(data, "Health dashboard retrieved."));
-    }
-
     // ---- Customers ----
 
     [HttpGet("customers")]
@@ -171,7 +149,7 @@ public sealed class DashboardController : ControllerBase
     /// <summary>
     /// Resolves the layout tier: Super Admin, else Tenant Admin (users.read + tenants.read), else a
     /// Customer-workflow user (any of dataEntry/review/approve) who lands on the customer dashboard,
-    /// else Common (jobs + health).
+    /// else Common.
     /// </summary>
     private DashboardRole ResolveDashboardRole()
     {

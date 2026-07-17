@@ -45,7 +45,5 @@ public static class ActivityEventTypes
     public const string AttachmentUploaded = "AttachmentUploaded";
     public const string AttachmentDeleted = "AttachmentDeleted";
     public const string ChecklistItemCompleted = "ChecklistItemCompleted";
-    public const string SyncCompleted = "SyncCompleted";
-    public const string SyncFailed = "SyncFailed";
     public const string Restored = "Restored";
 }

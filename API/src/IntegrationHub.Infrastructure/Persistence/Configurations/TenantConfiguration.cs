@@ -30,10 +30,5 @@ internal sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
 
         // Tenant identifiers must be unique, URL-safe slugs.
         builder.HasIndex(t => t.Identifier).IsUnique().HasFilter("[Deleted] = 0");
-
-        builder.HasMany(t => t.ApiConfigurations)
-            .WithOne(c => c.Tenant!)
-            .HasForeignKey(c => c.TenantId)
-            .OnDelete(DeleteBehavior.Cascade);
     }
 }

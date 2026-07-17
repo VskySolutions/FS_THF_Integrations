@@ -18,9 +18,6 @@ export const ApiErrorCodes = Object.freeze({
   TenantInactive: "TENANT_INACTIVE",
   TenantNotFound: "TENANT_NOT_FOUND",
   TenantArchived: "TENANT_ARCHIVED",
-  ActiveJobsExist: "ACTIVE_JOBS_EXIST",
-  JobNotFound: "JOB_NOT_FOUND",
-  CredentialsNotConfigured: "CREDENTIALS_NOT_CONFIGURED",
   InternalError: "INTERNAL_ERROR"
 });
 
@@ -81,13 +78,7 @@ export const tenantApi = {
   create: (payload) => api.post("/api/admin/tenants", payload).then(unwrap),
   update: (id, payload) => api.put(`/api/admin/tenants/${id}`, payload).then(unwrap),
   setStatus: (id, isActive) => api.put(`/api/admin/tenants/${id}/status`, { isActive }).then(unwrap),
-  archive: (id) => api.put(`/api/admin/tenants/${id}/archive`).then(unwrap),
-  setConcurConfig: (id, payload) => api.put(`/api/admin/tenants/${id}/concur-config`, payload).then(envelope),
-  setMaconomyConfig: (id, payload) => api.put(`/api/admin/tenants/${id}/maconomy-config`, payload).then(envelope),
-  clearConcurConfig: (id) => api.delete(`/api/admin/tenants/${id}/concur-config`).then(envelope),
-  clearMaconomyConfig: (id) => api.delete(`/api/admin/tenants/${id}/maconomy-config`).then(envelope),
-  testConcurConfig: (id) => api.post(`/api/admin/tenants/${id}/concur-config/test`).then(unwrap),
-  testMaconomyConfig: (id) => api.post(`/api/admin/tenants/${id}/maconomy-config/test`).then(unwrap)
+  archive: (id) => api.put(`/api/admin/tenants/${id}/archive`).then(unwrap)
 };
 
 export const personApi = {
@@ -195,38 +186,6 @@ export const mediaApi = {
   absoluteUrl: (publicUrl) => (publicUrl ? `${process.env.API_BASE_URL || ""}${publicUrl}` : null)
 };
 
-// Field mappings scoped per tenant + flow (e.g. ExpenseImport). One field set per flow.
-export const flowMappingApi = {
-  list: (tenantId) => api.get(`/api/admin/tenants/${tenantId}/flow-mappings`).then(unwrap),
-  get: (tenantId, interfaceName) => api.get(`/api/admin/tenants/${tenantId}/flow-mappings/${interfaceName}`).then(unwrap),
-  save: (tenantId, interfaceName, fields) => api.put(`/api/admin/tenants/${tenantId}/flow-mappings/${interfaceName}`, { fields }).then(unwrap),
-  clear: (tenantId, interfaceName) => api.delete(`/api/admin/tenants/${tenantId}/flow-mappings/${interfaceName}`).then(envelope)
-};
-
-export const jobApi = {
-  // The flow's field mappings are resolved server-side from the tenant + flow rules.
-  // tenantId is optional: Super Admins target a tenant; others run for their active tenant.
-  importExpenses: (tenantId) => api.post("/api/concur/expenses/import", null, { params: tenantId ? { tenantId } : undefined }).then(envelope),
-  importInvoices: (tenantId) => api.post("/api/concur/invoices/import", null, { params: tenantId ? { tenantId } : undefined }).then(envelope),
-  importPayments: (tenantId) => api.post("/api/concur/payments/import", null, { params: tenantId ? { tenantId } : undefined }).then(envelope),
-  list: (params) => api.get("/api/admin/jobs", { params }).then(envelope),
-  retry: (jobId) => api.post(`/api/admin/retry/${jobId}`).then(unwrap),
-  retries: (params) => api.get("/api/admin/retries", { params }).then(envelope),
-  remove: (jobId) => api.delete(`/api/admin/jobs/${jobId}`).then(envelope)
-};
-
-export const logApi = {
-  list: (params) => api.get("/api/admin/logs", { params }).then(envelope)
-};
-
-export const scheduleApi = {
-  // Per-tenant import schedules. tenantId is optional (Super Admin targets a tenant; others are
-  // scoped to their active tenant). update payload: { cronExpression, isActive }.
-  list: (tenantId) => api.get("/api/admin/job-schedules", { params: { tenantId } }).then(unwrap),
-  update: (jobName, payload, tenantId) =>
-    api.put(`/api/admin/job-schedules/${jobName}`, payload, { params: { tenantId } }).then(unwrap)
-};
-
 // Customer onboarding & approval workflow (WO-65). Super Admins target a tenant via the `tenantId`
 // query param on list and `tenantId` in the create body; everyone else is auto-scoped server-side.
 export const customerApi = {
@@ -254,7 +213,6 @@ export const customerApi = {
   // Reviewer returns a request under review to data entry. body: { notes, fields[] } → { customerId, status }
   returnForCorrections: (id, notes, fields = []) =>
     api.post(`/api/customers/${id}/return`, { notes, fields }).then(unwrap),
-  retrySync: (id) => api.post(`/api/customers/${id}/retry-sync`).then(unwrap),
   reopen: (id) => api.post(`/api/customers/${id}/reopen`).then(unwrap),
   // ---- Documents ----
   listDocuments: (id) => api.get(`/api/customers/${id}/documents`).then(unwrap),
@@ -303,10 +261,6 @@ export const emailTemplateApi = {
   preview: (key, payload, params) => api.post(`/api/admin/email-templates/${key}/preview`, payload, { params }).then(unwrap)
 };
 
-export const adminApi = {
-  health: () => api.get("/api/admin/health").then(unwrap)
-};
-
 // How an option list orders its items. Mirrors IntegrationHub.Domain.Enums.OptionItemSortMode.
 export const OptionItemSortMode = Object.freeze({
   AlphabeticalAsc: "AlphabeticalAsc",
@@ -328,9 +282,9 @@ export const optionSetApi = {
   // payload: { name, itemSortMode, isActive }
   update: (id, payload) => api.put(`/api/option-sets/${id}`, payload).then(unwrap),
   remove: (id) => api.delete(`/api/option-sets/${id}`).then(unwrap),
-  // payload: { value, label, parentItemId?, isDefault, metadataJson? }
+  // payload: { value, label, parentItemId?, isDefault, backgroundColor?, textColor?, metadataJson? }
   createItem: (setId, payload) => api.post(`/api/option-sets/${setId}/items`, payload).then(unwrap),
-  // payload: { value, label, parentItemId?, isDefault, isActive, metadataJson? }
+  // payload: { value, label, parentItemId?, isDefault, isActive, backgroundColor?, textColor?, metadataJson? }
   updateItem: (setId, itemId, payload) => api.put(`/api/option-sets/${setId}/items/${itemId}`, payload).then(unwrap),
   removeItem: (setId, itemId) => api.delete(`/api/option-sets/${setId}/items/${itemId}`).then(unwrap),
   // payload: itemIds in the desired order.
@@ -339,12 +293,11 @@ export const optionSetApi = {
 
 // ---------------------------------------------------------------------------
 // Universal Features (Phase 14/15). Attach to any entity via (entityType, entityId).
-// EntityType enum: CustomerRequest=1, IntegrationJob=2, Tenant=3, User=4, UserGroup=5.
+// EntityType enum: CustomerRequest=1, Tenant=3, User=4, UserGroup=5.
 // ---------------------------------------------------------------------------
 
 export const EntityType = Object.freeze({
   CustomerRequest: 1,
-  IntegrationJob: 2,
   Tenant: 3,
   User: 4,
   UserGroup: 5
@@ -487,8 +440,6 @@ export const ufModifiedLogApi = {
 // endpoints auto-scope to the active tenant; Super Admins may target a tenant via `tenantId`.
 // `params` carries `{ dateRange, tenantId? }`. All responses use the standard ApiResponse envelope.
 export const dashboardApi = {
-  jobs: (params) => api.get("/api/dashboard/jobs", { params }).then(unwrap),
-  health: () => api.get("/api/dashboard/health").then(unwrap),
   customers: (params) => api.get("/api/dashboard/customers", { params }).then(unwrap),
   users: (params) => api.get("/api/dashboard/users", { params }).then(unwrap),
   // Super Admin platform overview. `forceRefresh` bypasses the server cache via a request header.

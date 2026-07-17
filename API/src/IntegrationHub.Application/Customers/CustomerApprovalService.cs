@@ -7,24 +7,21 @@ using IntegrationHub.Domain.Enums;
 namespace IntegrationHub.Application.Customers;
 
 /// <summary>
-/// Default <see cref="ICustomerApprovalService"/> implementation. Encapsulates the workflow
-/// state machine and is the single place final approval triggers a Maconomy sync.
+/// Default <see cref="ICustomerApprovalService"/> implementation. Encapsulates the
+/// customer-request approval workflow state machine.
 /// </summary>
 public sealed class CustomerApprovalService : ICustomerApprovalService
 {
     private readonly ICustomerAuditRepository _audit;
-    private readonly ICustomerSyncDispatcher _syncDispatcher;
     private readonly IActivityEventWriter _activity;
     private readonly IUnitOfWork _unitOfWork;
 
     public CustomerApprovalService(
         ICustomerAuditRepository audit,
-        ICustomerSyncDispatcher syncDispatcher,
         IActivityEventWriter activity,
         IUnitOfWork unitOfWork)
     {
         _audit = audit;
-        _syncDispatcher = syncDispatcher;
         _activity = activity;
         _unitOfWork = unitOfWork;
     }
@@ -71,10 +68,10 @@ public sealed class CustomerApprovalService : ICustomerApprovalService
         {
             request.ApprovedById = actorId;
             request.ApprovedOnUtc = DateTime.UtcNow;
-            // Approved → immediately queued for sync (REQ-CUS-010.1).
-            request.Status = CustomerRequestStatus.SyncInProgress;
+            // Final approval is the terminal success state of the workflow.
+            request.Status = CustomerRequestStatus.Approved;
             await AppendAuditAsync(request, CustomerAuditActionType.Approved, actorId, actorName,
-                "Final approval granted; Maconomy sync enqueued.", cancellationToken);
+                "Final approval granted.", cancellationToken);
         }
         else
         {
@@ -85,12 +82,6 @@ public sealed class CustomerApprovalService : ICustomerApprovalService
 
         await WriteStatusChangeAsync(request, previousStatus, actorId, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        // Enqueue only after the SyncInProgress state is committed so the job sees a consistent row.
-        if (isFinal)
-        {
-            _syncDispatcher.Enqueue(request.Id, request.TenantId);
-        }
     }
 
     public async Task RejectAsync(CustomerRequest request, string reason, Guid? actorId, string? actorName, CancellationToken cancellationToken = default)
@@ -98,10 +89,6 @@ public sealed class CustomerApprovalService : ICustomerApprovalService
         if (string.IsNullOrWhiteSpace(reason))
         {
             throw new CustomerWorkflowException("A rejection reason is required.");
-        }
-        if (request.Status is CustomerRequestStatus.Synced or CustomerRequestStatus.SyncInProgress)
-        {
-            throw new CustomerWorkflowException("A synced or in-progress request cannot be rejected.", $"Current status: {request.Status}.");
         }
 
         var previousStatus = request.Status;

@@ -154,7 +154,7 @@ public sealed class OptionSetsController : ControllerBase
     [ProducesResponseType<ApiResponse<OptionSetItemResponse>>(StatusCodes.Status201Created)]
     public async Task<IActionResult> CreateItem(Guid id, [FromBody] CreateOptionItemRequest body, CancellationToken cancellationToken)
     {
-        var input = new CreateOptionItemInput(id, body.Value, body.Label, body.ParentItemId, body.IsDefault, body.MetadataJson);
+        var input = new CreateOptionItemInput(id, body.Value, body.Label, body.ParentItemId, body.IsDefault, body.BackgroundColor, body.TextColor, body.MetadataJson);
         try
         {
             var item = await _service.CreateItemAsync(input, cancellationToken);
@@ -172,7 +172,7 @@ public sealed class OptionSetsController : ControllerBase
     [RequirePermission(Permissions.OptionSetsManage)]
     public async Task<IActionResult> UpdateItem(Guid id, Guid itemId, [FromBody] UpdateOptionItemRequest body, CancellationToken cancellationToken)
     {
-        var input = new UpdateOptionItemInput(body.Value, body.Label, body.ParentItemId, body.IsDefault, body.IsActive, body.MetadataJson);
+        var input = new UpdateOptionItemInput(body.Value, body.Label, body.ParentItemId, body.IsDefault, body.IsActive, body.BackgroundColor, body.TextColor, body.MetadataJson);
         try
         {
             var item = await _service.UpdateItemAsync(id, itemId, input, cancellationToken);
@@ -245,7 +245,7 @@ public sealed class OptionSetsController : ControllerBase
 
     private static OptionSetItemResponse ToItem(OptionSetItem i) => new(
         i.Id, i.OptionSetId, i.ParentItemId, i.Value, i.Label, i.SortOrder,
-        i.IsDefault, i.IsActive, i.TenantId is null, i.MetadataJson);
+        i.IsDefault, i.IsActive, i.TenantId is null, i.BackgroundColor, i.TextColor, i.MetadataJson);
 
     private IActionResult MapError(OptionSetException ex) => ex.Code switch
     {

@@ -31,7 +31,7 @@ internal sealed class SecuritySchemeDocumentTransformer : IOpenApiDocumentTransf
         {
             Title = "IntegrationHub API",
             Version = "v1",
-            Description = "Integration platform API: Concur import triggers, administration, tenants, users, and auth.",
+            Description = "Customer management and administration platform API: tenants, customers, users, and auth.",
         };
 
         document.Components ??= new OpenApiComponents();

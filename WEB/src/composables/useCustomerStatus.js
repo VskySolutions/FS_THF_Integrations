@@ -2,7 +2,7 @@
 // future views colour and label the same status string identically.
 //
 // Status strings (mirror the API contract): Draft, Submitted, UnderReview, PendingApproval,
-// PartiallyApproved, Approved, SyncInProgress, Synced, Rejected, Returned, Failed.
+// PartiallyApproved, Approved, Rejected, Returned.
 
 import { usePermissions, Permissions } from "composables/usePermissions";
 
@@ -13,11 +13,8 @@ const STATUS_COLORS = Object.freeze({
   PendingApproval: "orange",
   PartiallyApproved: "orange",
   Approved: "positive",
-  SyncInProgress: "blue",
-  Synced: "positive",
   Rejected: "negative",
-  Returned: "warning",
-  Failed: "negative"
+  Returned: "warning"
 });
 
 // Human-friendly labels (split PascalCase into words).
@@ -28,11 +25,8 @@ const STATUS_LABELS = Object.freeze({
   PendingApproval: "Pending Approval",
   PartiallyApproved: "Partially Approved",
   Approved: "Approved",
-  SyncInProgress: "Sync In Progress",
-  Synced: "Synced",
   Rejected: "Rejected",
-  Returned: "Returned",
-  Failed: "Failed"
+  Returned: "Returned"
 });
 
 // The high-level workflow stages, in order, for the detail-page timeline/stepper.
@@ -41,8 +35,7 @@ export const CUSTOMER_STAGES = Object.freeze([
   { key: "Submitted", label: "Submitted" },
   { key: "UnderReview", label: "Under Review" },
   { key: "PendingApproval", label: "Pending Approval" },
-  { key: "Approved", label: "Approved" },
-  { key: "Synced", label: "Synced" }
+  { key: "Approved", label: "Approved" }
 ]);
 
 export function customerStatusColor (status) {

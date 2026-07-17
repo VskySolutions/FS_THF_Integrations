@@ -8,14 +8,14 @@ namespace IntegrationHub.Infrastructure.Persistence;
 
 /// <summary>
 /// EF Core unit of work for the IntegrationHub application schema. Owns the
-/// application tables (jobs, logs, retry queue, mapping configurations, audit
-/// trail). Schema migrations are applied by the Integration API on startup;
-/// the Background Worker and MCP Server are read/write consumers only.
+/// application tables (customers, access management, email, option sets, universal
+/// features, audit trail). Schema migrations are applied by the Integration API on
+/// startup; the Background Worker and MCP Server are read/write consumers only.
 /// <para>
 /// Tenant isolation is enforced here: tenant-scoped entities carry a global query
 /// filter on the resolved <see cref="ITenantContext.TenantId"/>, and inserts are
 /// stamped with the active tenant. When no tenant is resolved (background/global
-/// operations such as the retry scheduler, or design-time), the filter is a no-op.
+/// operations, or design-time), the filter is a no-op.
 /// </para>
 /// </summary>
 public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
@@ -33,21 +33,9 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
         _actorAccessor = actorAccessor;
     }
 
-    public DbSet<IntegrationJob> IntegrationJobs => Set<IntegrationJob>();
-
-    public DbSet<IntegrationLog> IntegrationLogs => Set<IntegrationLog>();
-
-    public DbSet<RetryQueueEntry> RetryQueue => Set<RetryQueueEntry>();
-
-    public DbSet<MappingConfiguration> MappingConfigurations => Set<MappingConfiguration>();
-
     public DbSet<AuditTrailEntry> AuditTrail => Set<AuditTrailEntry>();
 
     public DbSet<Tenant> Tenants => Set<Tenant>();
-
-    public DbSet<TenantApiConfiguration> TenantApiConfigurations => Set<TenantApiConfiguration>();
-
-    public DbSet<JobScheduleConfiguration> JobScheduleConfigurations => Set<JobScheduleConfiguration>();
 
     public DbSet<User> Users => Set<User>();
 
@@ -125,13 +113,8 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
 
         // Tenant isolation filters, combined with the soft-delete filter. The tenant
         // filter is bypassed when no tenant is resolved so global background operations
-        // (e.g. the cross-tenant retry scheduler) still work; soft-deleted rows are
-        // always excluded.
-        modelBuilder.Entity<IntegrationJob>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
-        modelBuilder.Entity<IntegrationLog>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
-        modelBuilder.Entity<RetryQueueEntry>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        // still work; soft-deleted rows are always excluded.
         modelBuilder.Entity<AuditTrailEntry>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
-        modelBuilder.Entity<MappingConfiguration>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<CustomerRequest>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<CustomerAuditEntry>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<CustomerDocument>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
@@ -174,8 +157,6 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
         modelBuilder.Entity<User>().HasQueryFilter(e => !e.Deleted);
         modelBuilder.Entity<UserTenantRole>().HasQueryFilter(e => !e.Deleted);
         modelBuilder.Entity<RefreshToken>().HasQueryFilter(e => !e.Deleted);
-        modelBuilder.Entity<TenantApiConfiguration>().HasQueryFilter(e => !e.Deleted);
-        modelBuilder.Entity<JobScheduleConfiguration>().HasQueryFilter(e => !e.Deleted);
         // Email templates carry a nullable TenantId (null = platform default); a tenant filter would
         // hide the defaults, so they use the soft-delete filter only and are scoped explicitly in the repo.
         modelBuilder.Entity<EmailTemplate>().HasQueryFilter(e => !e.Deleted);
@@ -261,20 +242,8 @@ public class IntegrationHubDbContext : DbContext, IDataProtectionKeyContext
 
             switch (entry.Entity)
             {
-                case IntegrationJob job when job.TenantId == Guid.Empty:
-                    job.TenantId = _tenantContext.TenantId;
-                    break;
-                case IntegrationLog log when log.TenantId == Guid.Empty:
-                    log.TenantId = _tenantContext.TenantId;
-                    break;
-                case RetryQueueEntry retry when retry.TenantId == Guid.Empty:
-                    retry.TenantId = _tenantContext.TenantId;
-                    break;
                 case AuditTrailEntry audit when audit.TenantId == Guid.Empty:
                     audit.TenantId = _tenantContext.TenantId;
-                    break;
-                case MappingConfiguration mapping when mapping.TenantId == Guid.Empty:
-                    mapping.TenantId = _tenantContext.TenantId;
                     break;
                 case CustomerRequest customer when customer.TenantId == Guid.Empty:
                     customer.TenantId = _tenantContext.TenantId;

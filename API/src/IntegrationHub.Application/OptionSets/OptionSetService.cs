@@ -120,7 +120,9 @@ public sealed class OptionSetService : IOptionSetService
             SortOrder = nextOrder,
             IsDefault = input.IsDefault,
             IsActive = true,
-            MetadataJson = string.IsNullOrWhiteSpace(input.MetadataJson) ? null : input.MetadataJson,
+            BackgroundColor = NullIfBlank(input.BackgroundColor),
+            TextColor = NullIfBlank(input.TextColor),
+            MetadataJson = NullIfBlank(input.MetadataJson),
         };
 
         await _sets.AddItemAsync(item, cancellationToken);
@@ -156,7 +158,9 @@ public sealed class OptionSetService : IOptionSetService
         item.ParentItemId = input.ParentItemId;
         item.IsDefault = input.IsDefault;
         item.IsActive = input.IsActive;
-        item.MetadataJson = string.IsNullOrWhiteSpace(input.MetadataJson) ? null : input.MetadataJson;
+        item.BackgroundColor = NullIfBlank(input.BackgroundColor);
+        item.TextColor = NullIfBlank(input.TextColor);
+        item.MetadataJson = NullIfBlank(input.MetadataJson);
 
         _sets.UpdateItem(item);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -226,4 +230,6 @@ public sealed class OptionSetService : IOptionSetService
             throw new OptionSetException(OptionSetErrorCodes.ReadOnlyStandardSet, "Standard lists are read-only and cannot be modified.");
         }
     }
+
+    private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

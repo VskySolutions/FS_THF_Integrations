@@ -80,7 +80,7 @@
 </template>
 
 <script setup>
-import { ref, computed, defineAsyncComponent, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, defineAsyncComponent, onMounted } from "vue";
 import AppListHeader from "components/common/AppListHeader.vue";
 import DashboardCustomisePanel from "modules/dashboard/DashboardCustomisePanel.vue";
 import { usePreferences } from "composables/usePreferences";
@@ -88,8 +88,6 @@ import { usePermissions, Permissions } from "composables/usePermissions";
 import { useDashboardLayout } from "composables/useDashboardLayout";
 import { useNotify } from "composables/useNotify";
 import {
-  useJobsDashboard,
-  useHealthDashboard,
   useCustomerDashboard,
   useUserDashboard,
   usePlatformDashboard
@@ -101,8 +99,7 @@ const notify = useNotify();
 
 // ---- Role resolution (must mirror DashboardController.ResolveDashboardRole) ----
 // Super Admin = platform admin (can manage tenants). Tenant Admin = manages users + reads tenants.
-// Customer-workflow users (data entry / review / approve) land on the customer dashboard. Everyone
-// else gets the common (jobs + health) dashboard.
+// Customer-workflow users (data entry / review / approve) land on the customer dashboard.
 const role = computed(() => {
   if (has(Permissions.TenantsWrite)) return "superAdmin";
   if (has(Permissions.UsersRead) && has(Permissions.TenantsRead)) return "tenantAdmin";
@@ -128,8 +125,6 @@ const setDateRange = (val) => {
 const layout = useDashboardLayout(role);
 
 // ---- Data composables (instantiated once per category the role needs) ----
-const jobs = useJobsDashboard(dateRange);
-const health = useHealthDashboard();
 const isTenantAdmin = role === "tenantAdmin" || role === "superAdmin";
 const isSuperAdmin = role === "superAdmin";
 // Customer widgets are shown to Tenant/Super Admins and to customer-workflow users.
@@ -138,7 +133,7 @@ const customers = showsCustomers ? useCustomerDashboard(dateRange) : null;
 const users = isTenantAdmin ? useUserDashboard(dateRange) : null;
 const platform = isSuperAdmin ? usePlatformDashboard(dateRange) : null;
 
-const sources = [jobs, health, customers, users, platform].filter(Boolean);
+const sources = [customers, users, platform].filter(Boolean);
 const anyLoading = computed(() => sources.some((s) => s.loading.value));
 
 // ---- Component resolution (lazy, cached per key) ----
@@ -155,10 +150,6 @@ const resolveComponent = (widget) => {
 // by the stubs (extra attrs simply fall through).
 const dataFor = (widget) => {
   switch (widget.category) {
-    case "jobs":
-      return jobsProps(widget.key);
-    case "health":
-      return { loading: health.loading.value, error: health.error.value, status: health.status.value, components: health.components.value, allOperational: health.allOperational.value };
     case "customers":
       return customersProps(widget.key);
     case "users":
@@ -170,19 +161,6 @@ const dataFor = (widget) => {
   }
 };
 
-const jobsProps = (key) => {
-  const base = { loading: jobs.loading.value, error: jobs.error.value };
-  switch (key) {
-    case "jobKpiCards": return { ...base, kpis: jobs.kpis.value };
-    case "jobSuccessGauge": return { ...base, successRate: jobs.successRate.value };
-    case "jobVolumeTrend": return { ...base, volumeChart: jobs.volumeChart.value };
-    case "flowBreakdown": return { ...base, flowBreakdown: jobs.flowBreakdown.value };
-    case "failedJobsPanel": return { ...base, failedJobs: jobs.failedJobs.value };
-    case "retryQueue": return { ...base, retryQueueCount: jobs.retryQueueCount.value, retryQueueNextRunUtc: jobs.retryQueueNextRunUtc.value };
-    default: return base;
-  }
-};
-
 const customersProps = (key) => {
   if (!customers) return {};
   const base = { loading: customers.loading.value, error: customers.error.value };
@@ -190,7 +168,6 @@ const customersProps = (key) => {
     case "customerKpiCards": return { ...base, kpis: customers.kpis.value };
     case "customerFunnel": return { ...base, funnel: customers.funnel.value };
     case "customerAgeing": return { ...base, ageing: customers.ageing.value };
-    case "customerSyncHealth": return { ...base, syncHealth: customers.syncHealth.value };
     case "customerActivityFeed": return { ...base, activityFeed: customers.activityFeed.value };
     case "customerSubmissionTrend": return { ...base, submissionTrend: customers.submissionTrend.value, topSubmitters: customers.topSubmitters.value };
     default: return base;
@@ -212,7 +189,6 @@ const platformProps = (key) => {
   const base = { loading: platform.loading.value, error: platform.error.value };
   switch (key) {
     case "tenantKpiCards": return { ...base, tenantKpis: platform.tenantKpis.value };
-    case "crossTenantJobChart": return { ...base, crossTenantJobs: platform.crossTenantJobs.value };
     case "tenantHealthTable": return { ...base, tenantHealth: platform.tenantHealth.value };
     case "platformGrowthChart": return { ...base, growth: platform.growth.value };
     case "tenantOnboardingPanel": return { ...base, onboarding: platform.onboarding.value };
@@ -228,8 +204,6 @@ const platformProps = (key) => {
 
 const retryFor = (widget) => {
   switch (widget.category) {
-    case "jobs": return jobs.refresh();
-    case "health": return health.refresh();
     case "customers": return customers?.refresh();
     case "users": return users?.refresh();
     case "platform": return platform?.refresh(true);
@@ -241,8 +215,6 @@ const retryFor = (widget) => {
 const customiseOpen = ref(false);
 
 const refreshAll = () => {
-  jobs.refresh();
-  health.refresh();
   customers?.refresh();
   users?.refresh();
   platform?.refresh(true);
@@ -311,27 +283,11 @@ const exportCsv = () => {
   const visibleKeys = new Set(layout.visibleWidgets.value.map((w) => w.key));
   const sections = [];
 
-  // Job KPIs
-  if (visibleKeys.has("jobKpiCards") && jobs.kpis.value) {
-    const k = jobs.kpis.value;
-    sections.push([["Job KPIs"], ["Metric", "Value"],
-      ["Total", k.total ?? 0], ["Completed", k.completed ?? 0],
-      ["Failed", k.failed ?? 0], ["Pending", k.pending ?? 0]]);
-  }
-  // Flow breakdown
-  if (visibleKeys.has("flowBreakdown") && jobs.flowBreakdown.value?.length) {
-    const head = ["Flow", "Completed", "Failed", "Pending", "Total"];
-    const body = jobs.flowBreakdown.value.map((f) =>
-      [f.flowName ?? f.name ?? "", f.completed ?? 0, f.failed ?? 0, f.pending ?? 0, f.total ?? 0]);
-    sections.push([["Flow Breakdown"], head, ...body]);
-  }
   // Tenant health (super)
   if (visibleKeys.has("tenantHealthTable") && platform?.tenantHealth.value?.length) {
-    const head = ["Tenant", "Concur", "Maconomy", "Success %", "Last Job Run (UTC)", "Pending Customers", "Active Users"];
+    const head = ["Tenant", "Pending Customers", "Active Users"];
     const body = platform.tenantHealth.value.map((t) => [
-      t.tenantName ?? "", t.concurConfigured ? "Configured" : "Not set",
-      t.maconomyConfigured ? "Configured" : "Not set", Math.round(t.successRate ?? 0),
-      t.lastJobRunUtc ?? "", t.pendingCustomers ?? 0, t.activeUsers ?? 0]);
+      t.tenantName ?? "", t.pendingCustomers ?? 0, t.activeUsers ?? 0]);
     sections.push([["Tenant Health"], head, ...body]);
   }
 
@@ -355,17 +311,8 @@ const exportPdf = () => {
 };
 
 // ---- Lifecycle ----
-let pollTimer = null;
 onMounted(async () => {
   await layout.loadLayout();
-  // Auto-refresh health + job KPIs every 60s.
-  pollTimer = setInterval(() => {
-    health.refresh();
-    jobs.refresh();
-  }, 60000);
-});
-onBeforeUnmount(() => {
-  if (pollTimer) clearInterval(pollTimer);
 });
 </script>
 

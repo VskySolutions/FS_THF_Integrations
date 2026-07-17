@@ -6,33 +6,28 @@ namespace IntegrationHub.Api.Dashboard;
 /// </summary>
 public static class DashboardDefaultLayouts
 {
-    /// <summary>Widgets every authenticated user sees (jobs + health).</summary>
-    public static readonly string[] Common =
-    {
-        "jobKpiCards", "jobSuccessGauge", "jobVolumeTrend", "flowBreakdown",
-        "systemHealth", "failedJobsPanel", "retryQueue",
-    };
+    /// <summary>Widgets every authenticated user sees. No generic (non-customer/non-user) widgets remain.</summary>
+    public static readonly string[] Common = Array.Empty<string>();
 
     /// <summary>The customer onboarding charts/reports (shared by the Customer and Tenant Admin tiers).</summary>
     private static readonly string[] CustomerWidgets =
     {
-        "customerKpiCards", "customerFunnel", "customerAgeing", "customerSyncHealth",
+        "customerKpiCards", "customerFunnel", "customerAgeing",
         "customerActivityFeed", "customerSubmissionTrend",
     };
 
-    /// <summary>Customer-workflow users (data entry / review / approve) = Common + the customer widgets.</summary>
-    public static readonly string[] Customer = Common.Concat(CustomerWidgets).ToArray();
+    /// <summary>Customer-workflow users (data entry / review / approve) = the customer widgets.</summary>
+    public static readonly string[] Customer = CustomerWidgets.ToArray();
 
-    /// <summary>Tenant Admin = Common + user widgets + customer widgets.</summary>
-    public static readonly string[] TenantAdmin = Common
-        .Concat(new[] { "userSummary", "userRoleDistribution" })
+    /// <summary>Tenant Admin = user widgets + customer widgets.</summary>
+    public static readonly string[] TenantAdmin = new[] { "userSummary", "userRoleDistribution" }
         .Concat(CustomerWidgets)
         .ToArray();
 
     /// <summary>Super Admin = TenantAdmin + platform/cross-tenant widgets.</summary>
     public static readonly string[] SuperAdmin = TenantAdmin.Concat(new[]
     {
-        "tenantKpiCards", "crossTenantJobChart", "tenantHealthTable", "platformGrowthChart",
+        "tenantKpiCards", "tenantHealthTable", "platformGrowthChart",
         "tenantOnboardingPanel", "systemAlertsPanel", "platformUserAnalytics", "crossTenantCustomerKpi",
         "customerIssuesTable", "crossTenantCustomerChart", "customerConversionFunnel",
     }).ToArray();

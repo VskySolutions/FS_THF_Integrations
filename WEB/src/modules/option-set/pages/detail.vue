@@ -72,7 +72,14 @@
             </q-item-section>
             <q-item-section>
               <q-item-label>
-                {{ item.label }}
+                <!-- Render the value with its configured display colours when set. -->
+                <q-chip
+                  v-if="item.backgroundColor || item.textColor"
+                  dense
+                  :style="{ backgroundColor: item.backgroundColor || '#e0e0e0', color: item.textColor || '#212121' }"
+                  :label="item.label"
+                />
+                <span v-else>{{ item.label }}</span>
                 <q-badge v-if="item.isDefault" color="teal" label="Default" class="q-ml-sm" />
                 <q-badge v-if="!item.isActive" color="grey-5" label="Inactive" class="q-ml-xs" />
               </q-item-label>

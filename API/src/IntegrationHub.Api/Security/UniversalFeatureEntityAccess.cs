@@ -20,7 +20,6 @@ public static class UniversalFeatureEntityAccess
     public static IReadOnlyList<string> RequiredReadPermissions(EntityType entityType) => entityType switch
     {
         EntityType.CustomerRequest => new[] { Permissions.CustomersDataEntry, Permissions.CustomersReview, Permissions.CustomersApprove },
-        EntityType.IntegrationJob => new[] { Permissions.JobsRead },
         EntityType.Tenant => new[] { Permissions.TenantsRead },
         EntityType.User => new[] { Permissions.UsersRead },
         EntityType.UserGroup => new[] { Permissions.UsersRead },

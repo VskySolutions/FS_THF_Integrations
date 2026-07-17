@@ -57,7 +57,7 @@ public sealed class EnrichCustomerRequest
     public string? RiskCategory { get; set; }
 }
 
-/// <summary>Step 2 Maconomy Fields (Customer Approver only).</summary>
+/// <summary>Step 2 Additional Business Details (Customer Approver only).</summary>
 public sealed class Step2Fields
 {
     public string? TaxNumber { get; set; }
@@ -107,7 +107,6 @@ public sealed record CustomerSummaryResponse(
     Guid? SubmittedById,
     Guid TenantId,
     string? TenantName,
-    string? MaconomyCustomerNumber,
     DateTime CreatedOnUtc,
     DateTime UpdatedOnUtc);
 
@@ -183,7 +182,6 @@ public sealed record CustomerDetailResponse
     public Step2Fields? Step2 { get; init; }
 
     // Workflow
-    public string? MaconomyCustomerNumber { get; init; }
     public Guid? SubmittedById { get; init; }
     public DateTime? SubmittedOnUtc { get; init; }
     public Guid? ApprovedById { get; init; }
@@ -193,7 +191,6 @@ public sealed record CustomerDetailResponse
     public string? RejectionReason { get; init; }
     public string? ReturnNotes { get; init; }
     public IReadOnlyList<string> UnlockedFields { get; init; } = Array.Empty<string>();
-    public string? LastSyncError { get; init; }
     public DateTime CreatedOnUtc { get; init; }
     public DateTime UpdatedOnUtc { get; init; }
 
@@ -222,6 +219,5 @@ public sealed record CustomerActions
     public bool CanRevertToReviewer { get; init; }
     /// <summary>Reviewer returns the request to data entry.</summary>
     public bool CanReturn { get; init; }
-    public bool CanRetrySync { get; init; }
     public bool CanReopen { get; init; }
 }

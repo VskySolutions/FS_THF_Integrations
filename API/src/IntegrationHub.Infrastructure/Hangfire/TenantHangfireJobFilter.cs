@@ -10,11 +10,11 @@ public readonly record struct TenantSnapshot(Guid TenantId, string Identifier);
 
 /// <summary>
 /// Propagates the active tenant across the API → Background Worker boundary (Multi-Tenancy
-/// ADR / Concur ADR-002). On enqueue (client side, API) it captures the current tenant —
+/// ADR-002). On enqueue (client side, API) it captures the current tenant —
 /// supplied by <c>clientTenantProvider</c> so Infrastructure stays free of any HTTP
 /// dependency — into the job payload. On execution (server side, Worker) it reconstructs
 /// <see cref="ITenantContext"/> from the payload before the job method runs, so all
-/// downstream data access and connector calls are tenant-scoped.
+/// downstream data access is tenant-scoped.
 /// </summary>
 public sealed class TenantHangfireJobFilter : IClientFilter, IServerFilter
 {

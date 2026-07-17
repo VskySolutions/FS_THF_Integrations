@@ -4,10 +4,9 @@ namespace IntegrationHub.Domain.Entities;
 
 /// <summary>
 /// A customer onboarding request that moves through a structured workflow (Draft → Submitted →
-/// Under Review → Pending Approval → Approved → Synced). Step 1 (Basic Information) is completed
-/// by any platform user; Step 2 (Maconomy Fields) is completed exclusively by a Customer Approver.
-/// Fully tenant-scoped. On final approval the record is synchronised to Maconomy and the resulting
-/// Maconomy Customer Number is recorded here.
+/// Under Review → Pending Approval → Approved). Step 1 (Basic Information) is completed by any
+/// platform user; Step 2 (additional business details) is completed exclusively by a Customer
+/// Approver. Fully tenant-scoped. Final approval is the terminal success state.
 /// </summary>
 public class CustomerRequest : AuditableEntity
 {
@@ -48,14 +47,14 @@ public class CustomerRequest : AuditableEntity
     [TrackedField(Enums.EntityType.CustomerRequest, "Risk Category", isSystemTracked: false)]
     public string? RiskCategory { get; set; }
 
-    // ---- Step 2: Maconomy Fields (customers.approve only) ----
+    // ---- Step 2: Additional Business Details (customers.approve only) ----
     public string? TaxNumber { get; set; }
     public string? RegistrationNumber { get; set; }
     public string? BusinessUnit { get; set; }
     public string? Currency { get; set; }
     public string? CustomerGroup { get; set; }
 
-    /// <summary>Maconomy payment terms. System Tracked field — change history is always captured.</summary>
+    /// <summary>Payment terms. System Tracked field — change history is always captured.</summary>
     [TrackedField(Enums.EntityType.CustomerRequest, "Payment Terms", isSystemTracked: true)]
     public string? PaymentTerms { get; set; }
 
@@ -67,9 +66,6 @@ public class CustomerRequest : AuditableEntity
     public string? BillingEmail { get; set; }
 
     // ---- Workflow metadata ----
-    /// <summary>Maconomy customer number, populated on successful sync.</summary>
-    public string? MaconomyCustomerNumber { get; set; }
-
     /// <summary>User who first submitted the request.</summary>
     public Guid? SubmittedById { get; set; }
 
@@ -96,12 +92,6 @@ public class CustomerRequest : AuditableEntity
 
     /// <summary>JSON array of field names unlocked for editing by a Return/Reopen action.</summary>
     public string? UnlockedFields { get; set; }
-
-    /// <summary>Number of sync attempts made (transient retries + manual retries).</summary>
-    public int SyncAttempts { get; set; }
-
-    /// <summary>Last Maconomy sync error message, if any.</summary>
-    public string? LastSyncError { get; set; }
 
     // ---- Navigations ----
     public Tenant? Tenant { get; set; }

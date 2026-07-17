@@ -22,21 +22,12 @@ public enum CustomerRequestStatus
     /// <summary>One or more (but not all) approval stages completed in a multi-stage flow.</summary>
     PartiallyApproved = 4,
 
-    /// <summary>All approval stages completed; queued for Maconomy synchronisation.</summary>
+    /// <summary>All approval stages completed; terminal success state of the workflow.</summary>
     Approved = 5,
-
-    /// <summary>The Maconomy synchronisation job is running.</summary>
-    SyncInProgress = 6,
-
-    /// <summary>Successfully synchronised to Maconomy; Maconomy Customer Number recorded.</summary>
-    Synced = 7,
 
     /// <summary>Rejected by an approver; only a Tenant/Super Admin may reopen it.</summary>
     Rejected = 8,
 
     /// <summary>Returned for corrections; identified fields are unlocked for editing.</summary>
-    Returned = 9,
-
-    /// <summary>Maconomy synchronisation failed (after retries or non-retriable error).</summary>
-    Failed = 10
+    Returned = 9
 }

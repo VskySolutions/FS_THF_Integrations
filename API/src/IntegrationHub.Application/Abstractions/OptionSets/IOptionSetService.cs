@@ -40,6 +40,8 @@ public sealed record CreateOptionItemInput(
     string Label,
     Guid? ParentItemId,
     bool IsDefault,
+    string? BackgroundColor,
+    string? TextColor,
     string? MetadataJson);
 
 public sealed record UpdateOptionItemInput(
@@ -48,6 +50,8 @@ public sealed record UpdateOptionItemInput(
     Guid? ParentItemId,
     bool IsDefault,
     bool IsActive,
+    string? BackgroundColor,
+    string? TextColor,
     string? MetadataJson);
 
 /// <summary>Stable error codes raised by <see cref="IOptionSetService"/> for the API to map to HTTP.</summary>

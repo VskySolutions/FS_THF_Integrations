@@ -1,6 +1,6 @@
-# IntegrationHub — Development Guidelines
+# EMS Portal — Development Guidelines
 
-This document defines how the IntegrationHub codebase is organized and how to extend it consistently. Read it before adding features. It complements the [README](../README.md).
+This document defines how the EMS Portal codebase is organized and how to extend it consistently. Read it before adding features. It complements the [README](../README.md).
 
 ---
 
@@ -49,7 +49,7 @@ Conventions:
 
 ## 3. Persistence
 
-- One `DbContext`: `IntegrationHubDbContext`. Entity mappings live in `Persistence/Configurations/*` as `IEntityTypeConfiguration<T>` (applied via `ApplyConfigurationsFromAssembly`). **No data annotations on entities.**
+- One `DbContext`: `EmsPortalDbContext`. Entity mappings live in `Persistence/Configurations/*` as `IEntityTypeConfiguration<T>` (applied via `ApplyConfigurationsFromAssembly`). **No data annotations on entities.**
 - **Repositories stage changes; they do not save.** Commit via `IUnitOfWork.SaveChangesAsync()`. This lets an action and its audit entry commit in one transaction.
 - The `AuditTrail` repository is **append-only** — expose `AddAsync` only; never an update/delete path. The Universal Features `ActivityEvent` and `FieldModifiedLog` tables are append-only the same way (read API only; written in-process).
 - All public repo methods are `async` and take a `CancellationToken` (default it).
@@ -60,8 +60,8 @@ Conventions:
 
 ```bash
 dotnet ef migrations add <Name> \
-  --project src/IntegrationHub.Infrastructure \
-  --startup-project src/IntegrationHub.Api \
+  --project src/EmsPortal.Infrastructure \
+  --startup-project src/EmsPortal.Api \
   --output-dir Persistence/Migrations
 ```
 
@@ -72,7 +72,7 @@ The API applies migrations on startup. Never edit an already-applied migration �
 ## 4. Multi-tenancy (non-negotiable)
 
 - Tenant-scoped entities (`IntegrationJob`, `IntegrationLog`, `RetryQueue`, `AuditTrail`, `MappingConfiguration`, `CustomerRequest`, `Person`, `SmtpAccount`, and **every Universal Features table**) carry a `TenantId`.
-- `IntegrationHubDbContext` applies a **global query filter** keyed to `ITenantContext.TenantId`, and **stamps `TenantId` on insert** in `SaveChanges`. You normally don't write tenant filters by hand.
+- `EmsPortalDbContext` applies a **global query filter** keyed to `ITenantContext.TenantId`, and **stamps `TenantId` on insert** in `SaveChanges`. You normally don't write tenant filters by hand.
 - **Checklist for any new tenant-scoped entity** (miss one and it leaks across tenants): (1) add the `DbSet`, (2) add the combined filter `(!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted` in `OnModelCreating`, (3) add a `StampTenant` switch case. Append-only tables with no soft-delete (e.g. `FieldModifiedLog`) drop the `&& !e.Deleted` part.
 - The filter is a **no-op when no tenant is resolved** (background/global ops). For cross-tenant admin queries (Super Admin), use `.IgnoreQueryFilters()` with an explicit `TenantId` filter.
 - `ITenantContext` is set by `TenantResolutionMiddleware` (API) from the JWT `activeTenantId`, and by the Hangfire tenant filter (Worker) from the job payload — **before** any data access.
@@ -108,7 +108,7 @@ Pipeline order (API): `CorrelationId → ExceptionHandling → RequestResponseLo
 - JWTs are RS256, signed and validated with the same key (`ISigningKeyProvider`). Claims: `sub`, `email`, `activeTenantId`, `role`, `tokenVersion`, `tenantAssignments`, and permission claims.
 - Increment `tokenVersion` on password change, deactivation, email change, and logout to invalidate outstanding tokens.
 - Tenant credentials are encrypted at rest via `ICredentialEncryptionService`; GET responses return masked indicators only.
-- **Permission-based RBAC.** Gate endpoints with `[RequirePermission(Permissions.<Area><Action>)]` (keys live in `IntegrationHub.Shared.Security.Permissions`). Seeded system-role permission sets (`ForSuperAdmin`/`ForTenantAdmin`/`ForOperator`) are re-applied on every startup by `BootstrapSeeder`, so adding a key to the catalogue grants it to system roles without a data migration.
+- **Permission-based RBAC.** Gate endpoints with `[RequirePermission(Permissions.<Area><Action>)]` (keys live in `EmsPortal.Shared.Security.Permissions`). Seeded system-role permission sets (`ForSuperAdmin`/`ForTenantAdmin`/`ForOperator`) are re-applied on every startup by `BootstrapSeeder`, so adding a key to the catalogue grants it to system roles without a data migration.
 - **Super-Admin-only actions** (delete a `Person`, assign/remove a user's tenant role) carry an explicit `User.IsSuperAdmin()` guard in the controller *in addition to* `[RequirePermission]`, so they stay Super-Admin-only even if a custom role is granted the permission. Tenant Admins do **not** hold `persons.delete` or `roles.assign`.
 - **Identity (WO-61):** a `User` holds auth/account data only; personal/contact/professional data lives on a linked `Person` master record (with `Address`/`Media`). Creating a user **promotes an existing `Person`** (`personId`) rather than creating identity inline.
 
@@ -138,7 +138,7 @@ Add a controller action gated by `[RequirePermission(Permissions.<key>)]`, a Flu
 
 ### Add a permission
 
-Add the key to `IntegrationHub.Shared.Security.Permissions` (`area.action`), include it in `All` and the relevant `For<Role>()` set(s). It is re-seeded onto system roles on the next startup. Mirror the key into the web side (`WEB/src/composables/usePermissions.js`) so the UI can gate controls. *(Phase 14 added `settings.manage` and `records.adminDelete` this way — both granted to Tenant Admin + Super Admin.)*
+Add the key to `EmsPortal.Shared.Security.Permissions` (`area.action`), include it in `All` and the relevant `For<Role>()` set(s). It is re-seeded onto system roles on the next startup. Mirror the key into the web side (`WEB/src/composables/usePermissions.js`) so the UI can gate controls. *(Phase 14 added `settings.manage` and `records.adminDelete` this way — both granted to Tenant Admin + Super Admin.)*
 
 ### Add a new feature module (full-stack checklist)
 
@@ -151,7 +151,7 @@ This is the canonical "where do I put everything" list for a new CRUD-style modu
 | 1 | `Domain/Entities` | `Widget.cs` (extends `AuditableEntity`; `Guid Id`; `Guid TenantId` if tenant-scoped) | Entity = singular PascalCase. Properties PascalCase. UTC fields suffixed `…OnUtc`. |
 | 2 | `Domain/Enums` | `WidgetStatus.cs` (if needed) | Enum singular PascalCase; explicit integer values when persisted. |
 | 3 | `Infrastructure/Persistence/Configurations` | `WidgetConfiguration.cs` (`IEntityTypeConfiguration<Widget>`, `internal sealed`) | `<Entity>Configuration`. Table name plural (`builder.ToTable("Widgets")`). Unique indexes filtered `[Deleted] = 0`. |
-| 4 | `Infrastructure/Persistence/IntegrationHubDbContext.cs` | add `DbSet<Widget>`, query filter, `StampTenant` case (see the tenant checklist above) | DbSet name plural. |
+| 4 | `Infrastructure/Persistence/EmsPortalDbContext.cs` | add `DbSet<Widget>`, query filter, `StampTenant` case (see the tenant checklist above) | DbSet name plural. |
 | 5 | `Application/Abstractions/Persistence` | `IWidgetRepository.cs` (interface; `async` + `CancellationToken`; repos **stage**, never save) | `I<Entity>Repository`. Methods `GetByIdAsync`/`ListAsync`/`AddAsync`/`Update`/`Remove`; Super-Admin reads via a `…ForTenantAsync`/`…UnscopedAsync` variant. |
 | 6 | `Infrastructure/Persistence/Repositories` | `WidgetRepository.cs` (`internal sealed`, implements the interface) | `<Entity>Repository`. |
 | 7 | `Infrastructure/DependencyInjection.cs` | `services.AddScoped<IWidgetRepository, WidgetRepository>();` in `AddPersistence` | interface → implementation, **Scoped** for anything touching the DbContext. |
@@ -161,7 +161,7 @@ This is the canonical "where do I put everything" list for a new CRUD-style modu
 | 11 | `Api/Validators/<Area>` | `WidgetValidators.cs` (`AbstractValidator<TRequest>`, auto-registered) | `<Request>Validator`. |
 | 12 | `Api/Controllers` | `WidgetsController.cs` (`[ApiController]`, `[Authorize]`, `[RequirePermission(...)]`, every response via `ApiResponseFactory`) | `<Plural>Controller`. Route `/api/admin/<plural>` (admin) or `/api/<plural>`. |
 | 13 | migration | `dotnet ef migrations add Add<Feature>` | descriptive PascalCase; never edit an applied migration. |
-| 14 | `tests/IntegrationHub.UnitTests` | `<Type>Tests.cs` (xUnit + Moq + FluentAssertions) | `<Type>Tests`; one fact per behaviour. |
+| 14 | `tests/EmsPortal.UnitTests` | `<Type>Tests.cs` (xUnit + Moq + FluentAssertions) | `<Type>Tests`; one fact per behaviour. |
 
 **Frontend (`WEB/src`)** — see also `WEB/README.md`:
 
@@ -214,10 +214,10 @@ Option Sets are admin-managed dropdown value lists keyed by `(EntityType, Key)` 
 
 ## 10. Testing
 
-- **Unit tests** (`tests/IntegrationHub.UnitTests`): xUnit + Moq + FluentAssertions. Mock all dependencies; test pure logic (validators, rule evaluator, backoff, hashing), services with mocked repos, and controllers by instantiating them with a mocked `ClaimsPrincipal` (`WithUser(...)`). `InternalsVisibleTo` exposes Infrastructure internals.
-- **Integration tests** (`tests/IntegrationHub.IntegrationTests`): `WebApplicationFactory<Program>` against a dedicated SQL test DB; a shared collection fixture boots the app once. Cover endpoint auth/status codes, repository round-trips, and migration idempotency.
+- **Unit tests** (`tests/EmsPortal.UnitTests`): xUnit + Moq + FluentAssertions. Mock all dependencies; test pure logic (validators, rule evaluator, backoff, hashing), services with mocked repos, and controllers by instantiating them with a mocked `ClaimsPrincipal` (`WithUser(...)`). `InternalsVisibleTo` exposes Infrastructure internals.
+- **Integration tests** (`tests/EmsPortal.IntegrationTests`): `WebApplicationFactory<Program>` against a dedicated SQL test DB; a shared collection fixture boots the app once. Cover endpoint auth/status codes, repository round-trips, and migration idempotency.
 - RBAC **policy** enforcement (e.g. `SuperAdminOnly`) is verified by integration tests, not unit tests (policies aren't applied when a controller method is called directly).
-- Run `dotnet test IntegrationHub.sln` before opening a PR; keep it green.
+- Run `dotnet test EmsPortal.sln` before opening a PR; keep it green.
 
 ---
 

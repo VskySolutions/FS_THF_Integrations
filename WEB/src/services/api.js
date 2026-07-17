@@ -6,7 +6,7 @@ import { http, http2 } from "boot/axios";
 export const api = http;
 export const anonApi = http2;
 
-// Platform-wide stable error codes — mirrors IntegrationHub.Shared.Contracts.ApiErrorCodes.
+// Platform-wide stable error codes — mirrors EmsPortal.Shared.Contracts.ApiErrorCodes.
 export const ApiErrorCodes = Object.freeze({
   ValidationFailed: "VALIDATION_FAILED",
   Unauthorized: "UNAUTHORIZED",
@@ -57,7 +57,7 @@ const unwrap = (response) => response?.data?.data;
 const envelope = (response) => response?.data;
 
 // ---------------------------------------------------------------------------
-// Resource groups (mapped to the IntegrationHub API controllers)
+// Resource groups (mapped to the EMS Portal API controllers)
 // ---------------------------------------------------------------------------
 
 export const authApi = {
@@ -261,7 +261,7 @@ export const emailTemplateApi = {
   preview: (key, payload, params) => api.post(`/api/admin/email-templates/${key}/preview`, payload, { params }).then(unwrap)
 };
 
-// How an option list orders its items. Mirrors IntegrationHub.Domain.Enums.OptionItemSortMode.
+// How an option list orders its items. Mirrors EmsPortal.Domain.Enums.OptionItemSortMode.
 export const OptionItemSortMode = Object.freeze({
   AlphabeticalAsc: "AlphabeticalAsc",
   AlphabeticalDesc: "AlphabeticalDesc",

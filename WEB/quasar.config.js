@@ -158,7 +158,7 @@ export default defineConfig((ctx) => {
       bundler: "packager",
       packager: {},
       builder: {
-        appId: "THFIntegration"
+        appId: "EmsPortal"
       }
     },
 

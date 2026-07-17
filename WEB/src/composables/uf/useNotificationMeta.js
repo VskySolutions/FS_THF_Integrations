@@ -1,4 +1,4 @@
-// NotificationType enum mirror (backend IntegrationHub.Domain.Enums.NotificationType).
+// NotificationType enum mirror (backend EmsPortal.Domain.Enums.NotificationType).
 export const NotificationType = Object.freeze({
   Mention: 1,
   ReminderDue: 2,

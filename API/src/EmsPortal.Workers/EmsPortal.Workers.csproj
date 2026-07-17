@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-EmsPortal.Workers-b9a55ef0-f63d-4039-8b16-3dfe8ea459a0</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Hangfire.NetCore" Version="1.8.14" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EmsPortal.Shared\EmsPortal.Shared.csproj" />
+    <ProjectReference Include="..\EmsPortal.Infrastructure\EmsPortal.Infrastructure.csproj" />
+    <ProjectReference Include="..\EmsPortal.Application\EmsPortal.Application.csproj" />
+  </ItemGroup>
+</Project>

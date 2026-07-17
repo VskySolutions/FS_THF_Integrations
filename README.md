@@ -1,4 +1,4 @@
-# IntegrationHub
+# EMS Portal
 
 A multi-tenant integration platform that automates the import of financial data from **Concur** into **Maconomy** (expense reports, vendor invoices, vendor payments). It exposes a REST API for triggering and administering integration flows, runs the flows asynchronously on a background worker via Hangfire, and isolates every tenant's data and credentials.
 
@@ -31,9 +31,9 @@ The platform is three deployable containers sharing one SQL Server database:
 
 | Container | Project | Responsibility |
 |-----------|---------|----------------|
-| **Integration API** | `IntegrationHub.Api` | HTTP entry point. Authenticates requests, triggers flows (enqueues Hangfire jobs), serves admin/tenant/user/auth endpoints, owns EF Core migrations. Never calls external systems directly. |
-| **Background Worker** | `IntegrationHub.Workers` | Runs the Hangfire server. Executes recurring and enqueued integration jobs; the only container that calls Concur and Maconomy. |
-| **MCP Server** | `IntegrationHub.McpServer` | Host placeholder for the Model Context Protocol surface (AI-agent access). |
+| **Integration API** | `EmsPortal.Api` | HTTP entry point. Authenticates requests, triggers flows (enqueues Hangfire jobs), serves admin/tenant/user/auth endpoints, owns EF Core migrations. Never calls external systems directly. |
+| **Background Worker** | `EmsPortal.Workers` | Runs the Hangfire server. Executes recurring and enqueued integration jobs; the only container that calls Concur and Maconomy. |
+| **MCP Server** | `EmsPortal.McpServer` | Host placeholder for the Model Context Protocol surface (AI-agent access). |
 
 Layering follows Clean Architecture — dependencies point inward:
 
@@ -72,18 +72,18 @@ Domain  ←  Application  ←  Infrastructure  ←  Api / Workers / McpServer
 ## Solution structure
 
 ```
-IntegrationHub.sln
+EmsPortal.sln
 ├── src/
-│   ├── IntegrationHub.Domain          # entities, enums
-│   ├── IntegrationHub.Shared          # contracts, config options, security constants
-│   ├── IntegrationHub.Application      # abstractions, MediatR flows, transformers, validators
-│   ├── IntegrationHub.Infrastructure   # EF Core, repos, connectors, Hangfire, security, logging
-│   ├── IntegrationHub.Api              # ASP.NET Core host (controllers, middleware, auth, OpenAPI)
-│   ├── IntegrationHub.Workers          # Hangfire worker + DB-driven scheduler
-│   └── IntegrationHub.McpServer        # console host (MCP placeholder)
+│   ├── EmsPortal.Domain          # entities, enums
+│   ├── EmsPortal.Shared          # contracts, config options, security constants
+│   ├── EmsPortal.Application      # abstractions, MediatR flows, transformers, validators
+│   ├── EmsPortal.Infrastructure   # EF Core, repos, connectors, Hangfire, security, logging
+│   ├── EmsPortal.Api              # ASP.NET Core host (controllers, middleware, auth, OpenAPI)
+│   ├── EmsPortal.Workers          # Hangfire worker + DB-driven scheduler
+│   └── EmsPortal.McpServer        # console host (MCP placeholder)
 └── tests/
-    ├── IntegrationHub.UnitTests        # xUnit/Moq unit tests
-    └── IntegrationHub.IntegrationTests # WebApplicationFactory + real SQL
+    ├── EmsPortal.UnitTests        # xUnit/Moq unit tests
+    └── EmsPortal.IntegrationTests # WebApplicationFactory + real SQL
 ```
 
 ---
@@ -100,14 +100,14 @@ IntegrationHub.sln
 ```bash
 git clone https://github.com/VskySolutions/FS_THF_Integrations.git
 cd FS_THF_Integrations
-dotnet build IntegrationHub.sln -c Release
+dotnet build EmsPortal.sln -c Release
 ```
 
 ---
 
 ## Configuration
 
-Configuration lives in each host's `appsettings.json` and is overridable via environment variables / secrets. Key sections (`IntegrationHub.Api`):
+Configuration lives in each host's `appsettings.json` and is overridable via environment variables / secrets. Key sections (`EmsPortal.Api`):
 
 | Section | Purpose |
 |---------|---------|
@@ -131,10 +131,10 @@ The **API** owns schema migrations and seeds a bootstrap Super Admin on first ru
 
 ```bash
 # Terminal 1 — API (applies migrations + seeds, serves HTTP)
-dotnet run --project src/IntegrationHub.Api --urls http://localhost:5080
+dotnet run --project src/EmsPortal.Api --urls http://localhost:5080
 
 # Terminal 2 — Worker (Hangfire server: executes jobs)
-dotnet run --project src/IntegrationHub.Workers
+dotnet run --project src/EmsPortal.Workers
 ```
 
 In **Development** the API serves:
@@ -185,7 +185,7 @@ All responses use the standard envelope (`ApiResponse<T>` / `ApiErrorResponse`).
 ## Authentication & roles
 
 - **Two schemes:** platform JWT (RS256, primary) and API Key (`X-Api-Key`, machine-to-machine). A composite `AnyOf` scheme tries JWT first.
-- **Permission-based RBAC:** endpoints are gated by `[RequirePermission("area.action")]` against the permission keys carried on the caller's role. Seeded **system roles** — `SuperAdmin` (all permissions) > `TenantAdmin` > `Operator` — can be supplemented by custom roles. Permission catalogue (`IntegrationHub.Shared.Security.Permissions`): `tenants.*`, `persons.*`, `users.*`, `roles.*`, `mappings.*`, `jobs.*`, `logs.read`, `health.read`. System-role permission sets are re-seeded on every startup, so catalogue changes apply without a data migration.
+- **Permission-based RBAC:** endpoints are gated by `[RequirePermission("area.action")]` against the permission keys carried on the caller's role. Seeded **system roles** — `SuperAdmin` (all permissions) > `TenantAdmin` > `Operator` — can be supplemented by custom roles. Permission catalogue (`EmsPortal.Shared.Security.Permissions`): `tenants.*`, `persons.*`, `users.*`, `roles.*`, `mappings.*`, `jobs.*`, `logs.read`, `health.read`. System-role permission sets are re-seeded on every startup, so catalogue changes apply without a data migration.
 - **Super-Admin-only actions:** deleting a `Person` and changing a user's role assignment (assign/remove tenant roles) are restricted to **Super Admins** regardless of any granted permission — Tenant Admins no longer hold `persons.delete` or `roles.assign`.
 - **Tenant isolation:** the JWT carries `activeTenantId`; `TenantResolutionMiddleware` resolves and validates it, and all tenant-scoped queries filter by it automatically (EF global query filters). Background jobs carry the tenant id in their Hangfire payload.
 - **Session invalidation:** a `tokenVersion` on the user is incremented on password change, deactivation, email change, and logout; the JWT handler rejects stale tokens.
@@ -199,8 +199,8 @@ All responses use the standard envelope (`ApiResponse<T>` / `ApiErrorResponse`).
 
 ```bash
 dotnet ef migrations add <Name> \
-  --project src/IntegrationHub.Infrastructure \
-  --startup-project src/IntegrationHub.Api \
+  --project src/EmsPortal.Infrastructure \
+  --startup-project src/EmsPortal.Api \
   --output-dir Persistence/Migrations
 ```
 
@@ -220,14 +220,14 @@ dotnet ef migrations add <Name> \
 
 ```bash
 # All tests
-dotnet test IntegrationHub.sln
+dotnet test EmsPortal.sln
 
 # Unit only
-dotnet test tests/IntegrationHub.UnitTests
+dotnet test tests/EmsPortal.UnitTests
 ```
 
 - **Unit tests** mock all external dependencies.
-- **Integration tests** boot the real app via `WebApplicationFactory` against a dedicated SQL test database (`FS_THF_Integration_Test`), created by EF migrations on first run. Ensure SQL Server is reachable.
+- **Integration tests** boot the real app via `WebApplicationFactory` against a dedicated SQL test database (`EMS_Portal_Test`), created by EF migrations on first run. Ensure SQL Server is reachable.
 
 ---
 

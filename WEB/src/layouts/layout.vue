@@ -5,7 +5,7 @@
         <div class="flex items-center">
           <q-btn v-if="isLoggedIn" flat dense round icon="o_menu" class="text-black" aria-label="Menu" @click="toggleLeftDrawer" />
           <q-btn flat no-caps class="no-padding q-ml-md" @click="$router.push('/')">
-            <span class="text-weight-bold fs-18 text-primary">THF Integration</span>
+            <span class="text-weight-bold fs-18 text-primary">EMS Portal</span>
           </q-btn>
         </div>
         <!-- User menu when signed in, otherwise a login action -->

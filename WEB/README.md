@@ -1,8 +1,8 @@
-# IntegrationHub — Web
+# EMS Portal — Web
 
-The admin SPA for IntegrationHub, built with **Quasar 2 / Vue 3**. It provides the UI for tenants,
+The admin SPA for EMS Portal, built with **Quasar 2 / Vue 3**. It provides the UI for tenants,
 people, users, roles, mapping configuration, and integration monitoring (jobs, logs, retries)
-against the IntegrationHub REST API.
+against the EMS Portal REST API.
 
 ## Getting started
 

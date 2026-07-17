@@ -6,7 +6,7 @@
         <div class="auth-brand gt-sm column justify-between text-white">
           <div class="row items-center">
             <img src="~assets/logo.png" alt="logo" class="auth-brand__logo">
-            <span class="text-h5 text-weight-bold q-ml-sm">THF Integration</span>
+            <span class="text-h5 text-weight-bold q-ml-sm">EMS Portal</span>
           </div>
 
           <div>

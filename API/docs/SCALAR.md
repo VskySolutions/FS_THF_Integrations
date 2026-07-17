@@ -1,6 +1,6 @@
 # Scalar API Reference
 
-IntegrationHub documents its HTTP API with the native ASP.NET Core OpenAPI generator and serves an interactive reference UI with **Scalar**.
+EMS Portal documents its HTTP API with the native ASP.NET Core OpenAPI generator and serves an interactive reference UI with **Scalar**.
 
 See also: [README](../README.md) · [RUN](RUN.md)
 
@@ -22,7 +22,7 @@ See also: [README](../README.md) · [RUN](RUN.md)
 Run the API in Development (the `http` launch profile does this and opens Scalar automatically):
 
 ```bash
-dotnet run --project src/IntegrationHub.Api
+dotnet run --project src/EmsPortal.Api
 # → http://localhost:5032/scalar/v1
 ```
 
@@ -30,9 +30,9 @@ If you start without the launch profile, force the environment:
 
 ```bash
 # bash
-ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/IntegrationHub.Api --urls http://localhost:5080
+ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/EmsPortal.Api --urls http://localhost:5080
 # PowerShell
-$env:ASPNETCORE_ENVIRONMENT="Development"; dotnet run --project src/IntegrationHub.Api --urls http://localhost:5080
+$env:ASPNETCORE_ENVIRONMENT="Development"; dotnet run --project src/EmsPortal.Api --urls http://localhost:5080
 ```
 
 Then browse to `http://localhost:<port>/scalar/v1`.
@@ -107,7 +107,7 @@ curl http://localhost:5032/openapi/v1.json -o integrationhub-openapi.json
 
 ## 7. How it's wired (for maintainers)
 
-- `builder.Services.AddIntegrationHubOpenApi()` registers the OpenAPI document and a transformer that sets the title and the `Jwt` + `ApiKey` security schemes (`Api/OpenApi/OpenApiConfiguration.cs`).
+- `builder.Services.AddEmsPortalOpenApi()` registers the OpenAPI document and a transformer that sets the title and the `Jwt` + `ApiKey` security schemes (`Api/OpenApi/OpenApiConfiguration.cs`).
 - `app.MapOpenApi()` and `app.MapScalarApiReference(...)` are mapped only when `IsDevelopment() || IsStaging()` (`Program.cs`).
 - Controllers carry `[Tags("…")]` and `[ProducesResponseType<…>]` so the document reflects the real grouping and envelope shapes. XML doc comments are compiled in (`GenerateDocumentationFile`).
 </content>

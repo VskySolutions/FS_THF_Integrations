@@ -1,7 +1,7 @@
 // Shared option lists and label maps for SMTP email accounts (WO-81). Centralised so the form
 // drawer, the list table, and the test dialog all use identical values/labels (DRY).
 
-// Encryption types — values mirror IntegrationHub.Domain.Enums.SmtpEncryptionType names. "Auto" (the
+// Encryption types — values mirror EmsPortal.Domain.Enums.SmtpEncryptionType names. "Auto" (the
 // default) negotiates transport security from the server's capabilities and port.
 export const SMTP_ENCRYPTION_OPTIONS = [
   { label: "Auto", value: "Auto" },
@@ -10,7 +10,7 @@ export const SMTP_ENCRYPTION_OPTIONS = [
   { label: "SSL/TLS", value: "SslTls" }
 ];
 
-// Auth types — values mirror IntegrationHub.Domain.Enums.SmtpAuthType names.
+// Auth types — values mirror EmsPortal.Domain.Enums.SmtpAuthType names.
 export const SMTP_AUTH_OPTIONS = [
   { label: "None", value: "None" },
   { label: "Plain", value: "Plain" },

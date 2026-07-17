@@ -1,8 +1,8 @@
 {
-  "name": "THFIntegration",
+  "name": "ems-portal",
   "version": "0.0.1",
-  "description": "THFIntegration",
-  "productName": "THFIntegration",
+  "description": "EMS Portal",
+  "productName": "EMS Portal",
   "author": "Mohit Tambe <mohit.tambe@vskysolutions.com>",
   "private": true,
   "type": "module",

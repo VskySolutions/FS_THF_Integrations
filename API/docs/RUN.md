@@ -1,4 +1,4 @@
-# Running IntegrationHub
+# Running EMS Portal
 
 How to build, configure, and run the platform locally, and how to verify it end-to-end.
 
@@ -19,7 +19,7 @@ See also: [README](../README.md) · [DEVELOPMENT](DEVELOPMENT.md) · [SCALAR](SC
 ```bash
 git clone https://github.com/VskySolutions/FS_THF_Integrations.git
 cd FS_THF_Integrations
-dotnet build IntegrationHub.sln -c Release
+dotnet build EmsPortal.sln -c Release
 ```
 
 ---
@@ -30,7 +30,7 @@ The platform uses one shared SQL Server database. Set the connection string for 
 
 ```jsonc
 "ConnectionStrings": {
-  "SqlServer": "Data Source=.\\SQLEXPRESS;Initial Catalog=FS_THF_Integration;Trusted_Connection=True;MultipleActiveResultSets=True;TrustServerCertificate=True;"
+  "SqlServer": "Data Source=.\\SQLEXPRESS;Initial Catalog=EMS_Portal;Trusted_Connection=True;MultipleActiveResultSets=True;TrustServerCertificate=True;"
 }
 ```
 
@@ -50,7 +50,7 @@ You do **not** create the schema manually:
 
 > **Change the bootstrap password** (and don't commit real secrets) before any shared/deployed environment. Prefer `dotnet user-secrets`, environment variables, or a secrets manager for the connection string, the RSA signing key, and the bootstrap password.
 
-Other notable settings (`IntegrationHub.Api`): `Authentication` (JWT/RS256 + token lifetimes), `ApiKeys`, `Hangfire`, `Retry`, `ExternalSystems`, `Serilog`, `ErrorHandling`. See the [README configuration table](../README.md#configuration).
+Other notable settings (`EmsPortal.Api`): `Authentication` (JWT/RS256 + token lifetimes), `ApiKeys`, `Hangfire`, `Retry`, `ExternalSystems`, `Serilog`, `ErrorHandling`. See the [README configuration table](../README.md#configuration).
 
 ---
 
@@ -62,7 +62,7 @@ Start the **API first** (it owns migrations + seeding).
 
 ```bash
 # Development profile (recommended) — sets ASPNETCORE_ENVIRONMENT=Development, opens Scalar
-dotnet run --project src/IntegrationHub.Api
+dotnet run --project src/EmsPortal.Api
 # → http://localhost:5032  (Scalar opens at /scalar/v1)
 ```
 
@@ -70,9 +70,9 @@ To run on a custom URL or force the environment explicitly (e.g. when not using 
 
 ```bash
 # bash
-ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/IntegrationHub.Api --urls http://localhost:5080
+ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/EmsPortal.Api --urls http://localhost:5080
 # PowerShell
-$env:ASPNETCORE_ENVIRONMENT="Development"; dotnet run --project src/IntegrationHub.Api --urls http://localhost:5080
+$env:ASPNETCORE_ENVIRONMENT="Development"; dotnet run --project src/EmsPortal.Api --urls http://localhost:5080
 ```
 
 ### Worker (executes jobs)
@@ -80,7 +80,7 @@ $env:ASPNETCORE_ENVIRONMENT="Development"; dotnet run --project src/IntegrationH
 The API only **enqueues** jobs; the Worker runs them. Start it to actually process imports and recurring schedules.
 
 ```bash
-dotnet run --project src/IntegrationHub.Workers
+dotnet run --project src/EmsPortal.Workers
 ```
 
 It boots the Hangfire server and the DB-driven scheduler (requires the same `ConnectionStrings:SqlServer`).
@@ -88,7 +88,7 @@ It boots the Hangfire server and the DB-driven scheduler (requires the same `Con
 ### MCP Server (optional)
 
 ```bash
-dotnet run --project src/IntegrationHub.McpServer
+dotnet run --project src/EmsPortal.McpServer
 ```
 
 ---
@@ -142,14 +142,14 @@ curl http://localhost:5032/api/admin/jobs -H "Authorization: Bearer $TOKEN"
 ## 8. Run the tests
 
 ```bash
-dotnet test IntegrationHub.sln              # all tests
-dotnet test tests/IntegrationHub.UnitTests  # unit only (no DB needed)
+dotnet test EmsPortal.sln              # all tests
+dotnet test tests/EmsPortal.UnitTests  # unit only (no DB needed)
 ```
 
-Integration tests boot the real app against a dedicated test database `FS_THF_Integration_Test` (created by migrations on first run). If your SQL login can't auto-create databases, pre-create it once:
+Integration tests boot the real app against a dedicated test database `EMS_Portal_Test` (created by migrations on first run). If your SQL login can't auto-create databases, pre-create it once:
 
 ```sql
-IF DB_ID('FS_THF_Integration_Test') IS NULL CREATE DATABASE [FS_THF_Integration_Test];
+IF DB_ID('EMS_Portal_Test') IS NULL CREATE DATABASE [EMS_Portal_Test];
 ```
 
 ---
@@ -161,7 +161,7 @@ IF DB_ID('FS_THF_Integration_Test') IS NULL CREATE DATABASE [FS_THF_Integration_
 | `Cannot open database … login failed` | Connection string wrong, SQL not running, or the login lacks rights. For the test DB, pre-create it (section 8). |
 | `/scalar/v1` returns 404 | App is running in **Production**. Use the `http` launch profile or set `ASPNETCORE_ENVIRONMENT=Development`. |
 | Login returns 401 for the bootstrap admin | Seeder didn't run (a user already exists) or the `Bootstrap` password differs. Check the `Users` table / config. |
-| Triggered import stays `Created` | The **Worker isn't running** — start `IntegrationHub.Workers`. |
+| Triggered import stays `Created` | The **Worker isn't running** — start `EmsPortal.Workers`. |
 | Port already in use | Pass a free port with `--urls http://localhost:<port>`. |
 | `dotnet --version` is not 9.x | Install the .NET 9 SDK; `global.json` pins it. |
 </content>

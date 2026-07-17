@@ -1,6 +1,6 @@
 import { useAuthStore } from "stores/auth";
 
-// Permission catalogue keys (mirror IntegrationHub.Shared.Security.Permissions). Centralised so
+// Permission catalogue keys (mirror EmsPortal.Shared.Security.Permissions). Centralised so
 // components reference a constant rather than scattering magic strings.
 export const Permissions = Object.freeze({
   TenantsRead: "tenants.read",

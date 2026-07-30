@@ -95,6 +95,13 @@ internal sealed class SmtpEmailSender : ISmtpEmailSender
         mime.From.Add(new MailboxAddress(credentials.FromName, credentials.FromEmail));
         mime.To.Add(MailboxAddress.Parse(message.ToEmail));
         mime.Subject = message.Subject;
+        // Pin the outbound Message-ID only when the caller supplied one (WO-121): it lets a delivery
+        // provider echo the id back on its callbacks so we can correlate the event. All other emails leave
+        // it unset and MailKit generates one as before.
+        if (!string.IsNullOrWhiteSpace(message.MessageId))
+        {
+            mime.MessageId = message.MessageId;
+        }
         mime.Body = new TextPart(message.IsHtml ? "html" : "plain") { Text = message.Body };
         return mime;
     }

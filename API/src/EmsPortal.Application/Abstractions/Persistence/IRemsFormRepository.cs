@@ -67,6 +67,32 @@ public interface IRemsFormRepository
     Task<IReadOnlyList<REMSFormEmailEvent>> ListEmailEventsAsync(Guid remsFormId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// The anchoring <c>Sent</c> event that carries a provider message id, resolved WITHOUT the tenant /
+    /// soft-delete query filters — the WO-121 delivery-event webhook runs with no tenant context. Its
+    /// <see cref="REMSFormEmailEvent.TenantId"/> + <see cref="REMSFormEmailEvent.REMSFormId"/> anchor any
+    /// provider-reported delivery/open/failed event for the same message. Null when the id is unmatched.
+    /// </summary>
+    Task<REMSFormEmailEvent?> GetSentEventByProviderMessageIdUnscopedAsync(
+        string providerMessageId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Whether an email event already exists for (<paramref name="tenantId"/>,
+    /// <paramref name="providerMessageId"/>, <paramref name="eventType"/>) — the filtered unique-index key
+    /// that makes webhook ingestion idempotent (WO-121). Evaluated without the tenant query filter.
+    /// </summary>
+    Task<bool> EmailEventExistsAsync(
+        Guid tenantId, string providerMessageId, RemsFormEmailEventType eventType, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Appends a provider-reported email event and commits it immediately (WO-121), returning <c>false</c>
+    /// when the filtered unique index <c>(TenantId, ProviderMessageId, EventType)</c> rejects it as a
+    /// concurrent duplicate. The row is inserted from an unauthenticated context, so its
+    /// <see cref="REMSFormEmailEvent.TenantId"/> must already be set by the caller (from the anchor).
+    /// </summary>
+    Task<bool> TryAppendProviderEmailEventAsync(
+        REMSFormEmailEvent emailEvent, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// The paginated EMS Inbox: every request that has a form, newest-modified first, with the latest
     /// email-event state (WO-112, AC-REMS-009). Tenant-scoped by the ambient query filter.
     /// </summary>

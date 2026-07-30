@@ -24,4 +24,7 @@ public static class ConfigurationSections
 
     /// <summary>Registered machine-to-machine API keys.</summary>
     public const string ApiKeys = "ApiKeys";
+
+    /// <summary>REMS provider email-event webhook (shared secret) configuration (WO-121).</summary>
+    public const string RemsEmailWebhook = "Rems:EmailWebhook";
 }

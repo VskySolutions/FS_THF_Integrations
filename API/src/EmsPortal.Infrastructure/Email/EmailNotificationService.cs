@@ -49,6 +49,7 @@ internal sealed class EmailNotificationService : IEmailNotificationService
         EmailTemplateKey key,
         string? toEmail,
         IReadOnlyDictionary<string, string?> model,
+        string? messageId = null,
         CancellationToken cancellationToken = default)
     {
         // Central email allowlist (WO-124, AC-ETPL-005.5): only account-security + REMS external templates
@@ -105,7 +106,7 @@ internal sealed class EmailNotificationService : IEmailNotificationService
                 account.FromName,
                 account.FromEmail);
 
-            var message = new SmtpMessage(toEmail.Trim(), rendered.Subject, rendered.Body, IsHtml: true);
+            var message = new SmtpMessage(toEmail.Trim(), rendered.Subject, rendered.Body, IsHtml: true, MessageId: messageId);
             var result = await _sender.SendAsync(credentials, message, cancellationToken);
             if (!result.Success)
             {

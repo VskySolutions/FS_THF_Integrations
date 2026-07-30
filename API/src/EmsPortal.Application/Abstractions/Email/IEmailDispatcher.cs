@@ -10,6 +10,10 @@ namespace EmsPortal.Application.Abstractions.Email;
 /// </summary>
 public interface IEmailDispatcher
 {
-    /// <summary>Queues a transactional email for best-effort delivery in the background (fire-and-forget).</summary>
-    void Enqueue(Guid tenantId, EmailTemplateKey key, string? toEmail, IReadOnlyDictionary<string, string?> model);
+    /// <summary>
+    /// Queues a transactional email for best-effort delivery in the background (fire-and-forget).
+    /// <paramref name="messageId"/> pins the outbound Message-ID for delivery-event correlation (WO-121)
+    /// when supplied; leave it null (the default) for every other email.
+    /// </summary>
+    void Enqueue(Guid tenantId, EmailTemplateKey key, string? toEmail, IReadOnlyDictionary<string, string?> model, string? messageId = null);
 }

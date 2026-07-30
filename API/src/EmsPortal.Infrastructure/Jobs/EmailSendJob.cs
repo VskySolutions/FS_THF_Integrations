@@ -14,7 +14,10 @@ public sealed class EmailSendJob
 
     public EmailSendJob(IEmailNotificationService email) => _email = email;
 
-    /// <summary>Renders and sends the queued email. The model is a concrete dictionary for Hangfire serialization.</summary>
-    public Task SendAsync(Guid tenantId, EmailTemplateKey key, string? toEmail, Dictionary<string, string?> model, CancellationToken cancellationToken)
-        => _email.SendAsync(tenantId, key, toEmail, model, cancellationToken);
+    /// <summary>
+    /// Renders and sends the queued email. The model is a concrete dictionary for Hangfire serialization;
+    /// <paramref name="messageId"/> pins the outbound Message-ID when supplied (WO-121), else null.
+    /// </summary>
+    public Task SendAsync(Guid tenantId, EmailTemplateKey key, string? toEmail, Dictionary<string, string?> model, string? messageId, CancellationToken cancellationToken)
+        => _email.SendAsync(tenantId, key, toEmail, model, messageId, cancellationToken);
 }

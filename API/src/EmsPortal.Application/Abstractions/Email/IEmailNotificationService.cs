@@ -15,6 +15,7 @@ public interface IEmailNotificationService
         EmailTemplateKey key,
         string? toEmail,
         IReadOnlyDictionary<string, string?> model,
+        string? messageId = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

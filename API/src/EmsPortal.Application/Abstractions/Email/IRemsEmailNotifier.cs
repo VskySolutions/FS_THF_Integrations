@@ -15,8 +15,12 @@ namespace EmsPortal.Application.Abstractions.Email;
 /// </summary>
 public interface IRemsEmailNotifier
 {
-    /// <summary>Queues the "complete your form" email to a client for a REMS request.</summary>
-    void SendFormLink(Guid tenantId, string toEmail, RemsFormLinkEmail model);
+    /// <summary>
+    /// Queues the "complete your form" email to a client for a REMS request. Pass <paramref name="messageId"/>
+    /// (WO-121) to pin the outbound Message-ID so a delivery provider's callbacks can be correlated back to
+    /// the request; it is the same value stored as <c>ProviderMessageId</c> on the Sent email event.
+    /// </summary>
+    void SendFormLink(Guid tenantId, string toEmail, RemsFormLinkEmail model, string? messageId = null);
 
     /// <summary>Queues the "form submitted" email to the assigned Admin + CSE for a REMS request.</summary>
     void SendFormSubmitted(Guid tenantId, string toEmail, RemsFormSubmittedEmail model);

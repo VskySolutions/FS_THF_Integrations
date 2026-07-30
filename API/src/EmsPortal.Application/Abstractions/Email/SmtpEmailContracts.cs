@@ -21,7 +21,8 @@ public sealed record SmtpMessage(
     string ToEmail,
     string Subject,
     string Body,
-    bool IsHtml = false);
+    bool IsHtml = false,
+    string? MessageId = null);
 
 /// <summary>Low-level outcome of a single SMTP send attempt.</summary>
 public sealed record SmtpSendResult(

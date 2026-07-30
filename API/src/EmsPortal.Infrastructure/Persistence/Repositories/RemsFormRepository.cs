@@ -1,5 +1,7 @@
 using EmsPortal.Application.Abstractions.Persistence;
 using EmsPortal.Domain.Entities;
+using EmsPortal.Domain.Enums;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace EmsPortal.Infrastructure.Persistence.Repositories;
@@ -61,6 +63,48 @@ internal sealed class RemsFormRepository : IRemsFormRepository
             .OrderByDescending(e => e.OccurredOnUtc)
             .ThenByDescending(e => e.CreatedOnUtc)
             .ToListAsync(cancellationToken);
+
+    public Task<REMSFormEmailEvent?> GetSentEventByProviderMessageIdUnscopedAsync(
+        string providerMessageId, CancellationToken cancellationToken = default)
+        // No tenant/user context on a webhook: ignore query filters so the anchor resolves across tenants,
+        // and read-only (AsNoTracking) since we only need its TenantId + REMSFormId.
+        => _dbContext.RemsFormEmailEvents
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                e => e.ProviderMessageId == providerMessageId && e.EventType == RemsFormEmailEventType.Sent,
+                cancellationToken);
+
+    public Task<bool> EmailEventExistsAsync(
+        Guid tenantId, string providerMessageId, RemsFormEmailEventType eventType, CancellationToken cancellationToken = default)
+        => _dbContext.RemsFormEmailEvents
+            .IgnoreQueryFilters()
+            .AnyAsync(
+                e => e.TenantId == tenantId && e.ProviderMessageId == providerMessageId && e.EventType == eventType,
+                cancellationToken);
+
+    public async Task<bool> TryAppendProviderEmailEventAsync(
+        REMSFormEmailEvent emailEvent, CancellationToken cancellationToken = default)
+    {
+        await _dbContext.RemsFormEmailEvents.AddAsync(emailEvent, cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            // A concurrent post beat us to the filtered unique index (TenantId, ProviderMessageId, EventType).
+            // Detach the rejected entity so the shared context stays usable for the remaining events.
+            _dbContext.Entry(emailEvent).State = EntityState.Detached;
+            return false;
+        }
+    }
+
+    // SQL Server duplicate-key errors: 2627 (unique constraint) / 2601 (unique index).
+    private static bool IsUniqueConstraintViolation(DbUpdateException ex)
+        => ex.InnerException is SqlException sql
+            && sql.Errors.Cast<SqlError>().Any(e => e.Number is 2601 or 2627);
 
     public async Task<(IReadOnlyList<RemsInboxItem> Items, int Total)> ListInboxAsync(
         RemsInboxQuery query, CancellationToken cancellationToken = default)

@@ -33,6 +33,7 @@ public static class DependencyInjection
         services.Configure<AuthenticationOptions>(configuration.GetSection(ConfigurationSections.Authentication));
         services.Configure<ApiKeysOptions>(configuration.GetSection(ConfigurationSections.ApiKeys));
         services.Configure<AppOptions>(configuration.GetSection(ConfigurationSections.App));
+        services.Configure<RemsWebhookOptions>(configuration.GetSection(ConfigurationSections.RemsEmailWebhook));
 
         services.AddSecurity();
         services.AddEmail();

@@ -18,14 +18,14 @@ internal sealed class RemsEmailNotifier : IRemsEmailNotifier
         _dispatcher = dispatcher;
     }
 
-    public void SendFormLink(Guid tenantId, string toEmail, RemsFormLinkEmail model)
+    public void SendFormLink(Guid tenantId, string toEmail, RemsFormLinkEmail model, string? messageId = null)
         => _dispatcher.Enqueue(tenantId, EmailTemplateKey.RemsFormLink, toEmail, new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
         {
             ["ClientName"] = model.ClientName,
             ["FormLink"] = model.FormLink,
             ["RemsNumber"] = model.RemsNumber,
             ["RequestTitle"] = model.RequestTitle,
-        });
+        }, messageId);
 
     public void SendFormSubmitted(Guid tenantId, string toEmail, RemsFormSubmittedEmail model)
         => _dispatcher.Enqueue(tenantId, EmailTemplateKey.RemsFormSubmitted, toEmail, new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)

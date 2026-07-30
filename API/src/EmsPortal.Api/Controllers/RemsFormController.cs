@@ -251,16 +251,23 @@ public sealed class RemsFormController : ControllerBase
         var now = DateTime.UtcNow;
         var formLink = BuildFormLink(form.InviteCode);
 
+        // Mint a stable outbound Message-ID and store it as the ProviderMessageId on the Sent event so a
+        // delivery provider can echo it back on delivery/open/failed callbacks that WO-121 ingests. The same
+        // id is threaded to the email pipeline and pinned on the MimeMessage.
+        var messageId = BuildOutboundMessageId();
+
         form.Status = RemsFormStatus.Sent;
         form.SentOnUtc = now;
         form.InviteLockedOnUtc = now;
         _forms.Update(form);
 
-        // Record the Sent delivery event (later delivery/open/failed events are ingested by WO-121).
+        // Record the Sent delivery event (later delivery/open/failed events are ingested by WO-121, matched
+        // to this row by ProviderMessageId).
         await _forms.AddEmailEventAsync(new REMSFormEmailEvent
         {
             Id = Guid.NewGuid(),
             REMSFormId = form.Id,
+            ProviderMessageId = messageId,
             EventType = RemsFormEmailEventType.Sent,
             RecipientEmail = email,
             OccurredOnUtc = now,
@@ -277,7 +284,7 @@ public sealed class RemsFormController : ControllerBase
         // Enqueue the email only after the Sent state is durably persisted. Delivery is best-effort on a
         // Hangfire worker and never throws — a send failure must not roll the request back.
         _emailNotifier.SendFormLink(
-            tenantId, email, new RemsFormLinkEmail(rems.RequestedClientName, formLink, rems.REMSNumber, rems.Title));
+            tenantId, email, new RemsFormLinkEmail(rems.RequestedClientName, formLink, rems.REMSNumber, rems.Title), messageId);
 
         var refreshed = await _forms.GetByRemsIdAsync(remsId, cancellationToken) ?? form;
         var screen = await BuildScreenAsync(rems, refreshed, cancellationToken);
@@ -377,6 +384,20 @@ public sealed class RemsFormController : ControllerBase
     /// <summary>The public EMS-form URL (the route WO-113/116 serve), built from <c>App:BaseUrl</c> as the email pipeline does.</summary>
     private string BuildFormLink(string inviteCode)
         => $"{_baseUrl.TrimEnd('/')}/rems/form/{inviteCode}";
+
+    /// <summary>
+    /// A stable, RFC-5322-style Message-ID (<c>{guid:N}@{host}</c>, no angle brackets) minted at send time
+    /// (WO-121). Stored as the Sent event's <c>ProviderMessageId</c> and pinned on the outbound email so a
+    /// provider's delivery/open/failed callbacks correlate back to this request. Host derives from
+    /// <c>App:BaseUrl</c>, falling back to a placeholder when it is not an absolute URL.
+    /// </summary>
+    private string BuildOutboundMessageId()
+    {
+        var host = Uri.TryCreate(_baseUrl, UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.Host)
+            ? uri.Host
+            : "emsportal.local";
+        return $"{Guid.NewGuid():N}@{host}";
+    }
 
     /// <summary>
     /// Mints an opaque, URL-safe invite code (22 chars, 128 bits) unique per tenant. Uniqueness is backed

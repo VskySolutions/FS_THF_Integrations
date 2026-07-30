@@ -20,7 +20,7 @@ internal sealed class EmailDispatcher : IEmailDispatcher
         _logger = logger;
     }
 
-    public void Enqueue(Guid tenantId, EmailTemplateKey key, string? toEmail, IReadOnlyDictionary<string, string?> model)
+    public void Enqueue(Guid tenantId, EmailTemplateKey key, string? toEmail, IReadOnlyDictionary<string, string?> model, string? messageId = null)
     {
         // Central email allowlist (WO-124, AC-ETPL-005.5): never queue a job for an in-app-only type.
         if (!EmailSendPolicy.IsEmailAllowed(key))
@@ -31,6 +31,6 @@ internal sealed class EmailDispatcher : IEmailDispatcher
 
         // Hangfire serializes the call arguments, so copy the model into a concrete dictionary.
         var payload = new Dictionary<string, string?>(model, StringComparer.OrdinalIgnoreCase);
-        _backgroundJobs.Enqueue<EmailSendJob>(job => job.SendAsync(tenantId, key, toEmail, payload, CancellationToken.None));
+        _backgroundJobs.Enqueue<EmailSendJob>(job => job.SendAsync(tenantId, key, toEmail, payload, messageId, CancellationToken.None));
     }
 }

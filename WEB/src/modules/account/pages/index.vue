@@ -91,7 +91,10 @@
                 <q-item-label caption>{{ t.identifier }}</q-item-label>
               </q-item-section>
               <q-item-section side>
-                <q-badge color="primary" class="text-capitalize">{{ t.role }}</q-badge>
+                <div class="row q-gutter-xs justify-end">
+                  <q-badge v-for="r in (t.roleNames || [])" :key="r" color="primary" class="text-capitalize">{{ r }}</q-badge>
+                  <span v-if="!(t.roleNames || []).length" class="text-caption text-grey-6">No roles</span>
+                </div>
               </q-item-section>
             </q-item>
             <q-item v-if="!assignments.length">
@@ -147,7 +150,8 @@ const jobLine = computed(() =>
 
 // Assignments come from the tenant store (kept in sync with the auth profile).
 const assignments = computed(() => tenantStore.assignments || authStore.user?.tenants || []);
-const roleChips = computed(() => [...new Set(assignments.value.map((t) => t.role).filter(Boolean))]);
+// Distinct role names across every tenant assignment (multi-role, WO-123).
+const roleChips = computed(() => [...new Set(assignments.value.flatMap((t) => t.roleNames || []))]);
 
 const contactRows = computed(() => [
   { icon: "o_mail", label: "Email", value: email.value },

@@ -31,7 +31,7 @@
               >
                 <q-item-section>
                   <q-item-label>{{ t.name || t.identifier }}</q-item-label>
-                  <q-item-label caption class="text-capitalize">{{ t.roleName || t.role }}</q-item-label>
+                  <q-item-label caption class="text-capitalize">{{ (t.roleNames || []).join(", ") || "No roles" }}</q-item-label>
                 </q-item-section>
                 <q-item-section v-if="t.tenantId === activeTenantId" side>
                   <q-icon name="o_check" color="primary" />
@@ -39,6 +39,18 @@
               </q-item>
             </q-list>
           </q-btn-dropdown>
+
+          <!-- Active-tenant roles (AC-REMS-001.8): the user's roles for the active tenant, shown on
+               every authenticated screen alongside their name (in user-info). Hidden on very small
+               screens where they are still reachable from the user menu. -->
+          <div v-if="isLoggedIn && activeRoles.length" class="gt-xs row items-center q-gutter-xs">
+            <q-chip
+              v-for="r in activeRoles" :key="r" dense square color="blue-1" text-color="primary"
+              class="text-capitalize q-my-none"
+            >
+              {{ r }}
+            </q-chip>
+          </div>
 
           <notification-centre v-if="isLoggedIn" />
           <user-info v-if="isLoggedIn" />
@@ -98,6 +110,8 @@ const toggleLeftDrawer = () => { leftDrawerOpen.value = !leftDrawerOpen.value; }
 const tenantStore = useTenantStore();
 const { assignments, activeTenantId } = storeToRefs(tenantStore);
 const hasMultipleTenants = computed(() => tenantStore.hasMultipleTenants);
+// The role names the user holds in the active tenant (multi-role), shown in the header.
+const activeRoles = computed(() => tenantStore.activeRoles);
 const activeTenantLabel = computed(() => {
   const t = tenantStore.activeTenant;
   return t?.name || t?.identifier || "Tenant";

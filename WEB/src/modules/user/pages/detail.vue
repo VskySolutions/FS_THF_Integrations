@@ -58,14 +58,24 @@
           <q-item v-for="a in visibleAssignments" :key="a.tenantId">
             <q-item-section>
               <q-item-label>{{ tenantName(a.tenantId) }}</q-item-label>
-              <q-item-label caption class="text-capitalize">{{ a.roleName || a.role }}</q-item-label>
+              <!-- All roles held in this tenant, each chip coloured by its category (AC-ADM-006.6). -->
+              <q-item-label caption>
+                <div class="row items-center q-gutter-xs q-mt-xs">
+                  <q-chip
+                    v-for="r in (a.roles || [])" :key="r.roleId" dense size="sm"
+                    :color="roleCategoryChip(r.roleName || r.role).color" text-color="white" class="text-capitalize"
+                  >
+                    {{ r.roleName || r.role }}
+                    <q-tooltip>{{ roleCategoryChip(r.roleName || r.role).category }}</q-tooltip>
+                  </q-chip>
+                  <span v-if="!(a.roles || []).length" class="text-grey-6">No roles</span>
+                </div>
+              </q-item-label>
             </q-item-section>
             <q-item-section side>
               <div class="row items-center no-wrap">
-                <q-btn flat round dense color="primary" icon="o_manage_accounts" @click="openChangeRole(a)">
-                  <q-tooltip>Change role</q-tooltip>
-                </q-btn>
-                <q-btn flat round dense color="negative" icon="o_delete" @click="removeAssignment(a)">
+                <q-btn flat no-caps dense color="primary" icon="o_manage_accounts" label="Manage Roles" class="q-px-sm" @click="openChangeRole(a)" />
+                <q-btn flat round dense color="negative" icon="o_delete" class="q-ml-xs" @click="removeAssignment(a)">
                   <q-tooltip>Remove</q-tooltip>
                 </q-btn>
               </div>
@@ -148,7 +158,10 @@
           v-if="isPlatformAdmin" v-model="assign.tenantId" :options="tenantOptions" :loading="loadingTenants"
           label="Tenant *" class="q-mb-md" :clearable="false" :disable="assignMode === 'edit'" @update:model-value="onAssignTenantChange"
         />
-        <app-select v-model="assign.roleId" :options="roleOptions" :loading="loadingRoles" label="Role *" :clearable="false" />
+        <app-select
+          v-model="assign.roleIds" :options="roleOptions" :loading="loadingRoles" label="Roles *" multiple
+          hint="Grouped by category. The assignment is reconciled to exactly these roles."
+        />
       </q-form>
     </app-form-drawer>
 
@@ -159,9 +172,10 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from "vue";
 import { useRoute } from "vue-router";
-import { userApi, tenantApi, roleApi, userGroupApi, getApiErrorMessage } from "services/api";
+import { userApi, tenantApi, userGroupApi, getApiErrorMessage } from "services/api";
 import { useTenantStore } from "stores/tenant";
 import { usePermissions, Permissions } from "composables/usePermissions";
+import { useRoleOptions, roleCategoryChip } from "composables/useRoleOptions";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
@@ -195,10 +209,11 @@ const saving = ref(false);
 const tenantOptions = ref([]);
 const loadingTenants = ref(false);
 
-const roleOptions = ref([]);
-const loadingRoles = ref(false);
+// Grouped, category-labelled multi-role options (SuperAdmin excluded for non-Super-Admin callers).
+const { roleOptions, loading: loadingRoles, loadForTenant } = useRoleOptions();
 
-const targetIsSuperAdmin = computed(() => !!user.value?.assignments?.some((a) => a.role === "SuperAdmin"));
+const targetIsSuperAdmin = computed(() =>
+  !!user.value?.assignments?.some((a) => (a.roles || []).some((r) => r.role === "SuperAdmin")));
 const canManageTarget = computed(() => isPlatformAdmin.value || !targetIsSuperAdmin.value);
 
 // Platform admins see every assignment; tenant admins see only their active tenant's.
@@ -222,18 +237,12 @@ const loadTenants = async () => {
   }
 };
 
-// Roles assignable within a tenant (system + the tenant's custom roles).
+// Roles assignable within a tenant (system + the tenant's custom roles), grouped by category.
 const loadRoles = async (tenantId) => {
-  roleOptions.value = [];
-  if (!tenantId) return;
-  loadingRoles.value = true;
   try {
-    const roles = await roleApi.tenantRoles(tenantId);
-    roleOptions.value = (roles || []).map((r) => ({ label: r.name, value: r.id }));
+    await loadForTenant(tenantId);
   } catch (err) {
     notify.error(getApiErrorMessage(err));
-  } finally {
-    loadingRoles.value = false;
   }
 };
 
@@ -305,33 +314,33 @@ const resetPassword = async () => {
 const assignOpen = ref(false);
 const assignSaving = ref(false);
 const assignForm = ref(null);
-const assign = reactive({ tenantId: null, roleId: null });
-// "add" = new tenant assignment; "edit" = change the role on an existing assignment (tenant locked).
+const assign = reactive({ tenantId: null, roleIds: [] });
+// "add" = new tenant assignment; "edit" = manage the roles on an existing assignment (tenant locked).
 const assignMode = ref("add");
-const assignTitle = computed(() => (assignMode.value === "edit" ? "Change role" : "Add assignment"));
+const assignTitle = computed(() => (assignMode.value === "edit" ? "Manage Roles" : "Add assignment"));
 
 const onAssignTenantChange = (tenantId) => {
   assign.tenantId = tenantId;
-  assign.roleId = null;
+  assign.roleIds = [];
   loadRoles(assign.tenantId);
 };
 
-// Change the role on an existing assignment: pre-fill the tenant (locked) + current role, then reuse
-// the assign endpoint which updates the existing assignment in place.
+// Manage the roles on an existing assignment: pre-fill the tenant (locked) + its current role set, then
+// reuse the assign endpoint which reconciles the assignment to exactly the submitted roles.
 const openChangeRole = async (a) => {
   assignMode.value = "edit";
   assign.tenantId = a.tenantId;
   await loadRoles(a.tenantId);
-  assign.roleId = a.roleId || null;
+  assign.roleIds = (a.roles || []).map((r) => r.roleId);
   assignOpen.value = true;
 };
 
 const openAssign = async () => {
   assignMode.value = "add";
-  assign.roleId = null;
+  assign.roleIds = [];
   if (isPlatformAdmin.value) {
     assign.tenantId = null;
-    roleOptions.value = [];
+    await loadRoles(null); // clear any roles carried over from a previous open
     await loadTenants();
   } else {
     // Tenant Admin: assignment is scoped to their active tenant.
@@ -347,13 +356,14 @@ const submitAssign = async ({ clearDraft } = {}) => {
     notify.error("Select a tenant.");
     return;
   }
-  if (!assign.roleId) {
-    notify.error("Select a role.");
+  if (!assign.roleIds.length) {
+    notify.error("Select at least one role.");
     return;
   }
   assignSaving.value = true;
   try {
-    await userApi.assignTenantRole(userId, { tenantId: assign.tenantId, roleId: assign.roleId });
+    // Reconcile: the endpoint adds/removes so the tenant's role set matches exactly (no remove/re-add).
+    await userApi.assignTenantRole(userId, { tenantId: assign.tenantId, roleIds: assign.roleIds });
     notify.success("Assignment saved.");
     clearDraft?.();
     assignOpen.value = false;
@@ -366,9 +376,10 @@ const submitAssign = async ({ clearDraft } = {}) => {
 };
 
 const removeAssignment = async (a) => {
+  const roleLabel = (a.roles || []).map((r) => r.roleName || r.role).join(", ") || "all roles";
   const ok = await confirm({
     title: "Remove assignment",
-    message: `Remove ${a.roleName || a.role} on ${tenantName(a.tenantId)}?`,
+    message: `Remove ${roleLabel} on ${tenantName(a.tenantId)}?`,
     confirmLabel: "Remove",
     type: "danger"
   });

@@ -94,13 +94,15 @@ export const personApi = {
 export const userApi = {
   list: (params) => api.get("/api/admin/users", { params }).then(envelope),
   get: (id) => api.get(`/api/admin/users/${id}`).then(unwrap),
-  // payload: { personId, email?, phoneNumber?, countryCode?, tenantId, roleId } — promotes a Person to a login account.
+  // payload: { personId, email?, phoneNumber?, countryCode?, tenantId, roleIds[] } — promotes a Person
+  // to a login account with one or more RBAC roles in the tenant (multi-role, WO-123).
   create: (payload) => api.post("/api/admin/users", payload).then(unwrap),
   update: (id, payload) => api.put(`/api/admin/users/${id}`, payload).then(unwrap),
   setStatus: (id, isActive) => api.put(`/api/admin/users/${id}/status`, { isActive }).then(unwrap),
   // Admin password reset (REQ-ADM-013) — returns a new temporary password.
   resetPassword: (id) => api.post(`/api/admin/users/${id}/reset-password`).then(unwrap),
-  // payload: { tenantId, role?, roleId? } — roleId (RBAC) takes precedence over the legacy role enum.
+  // payload: { tenantId, roleIds[] } — reconciles the full set of roles the user holds in the tenant
+  // (adds/removes to match; an empty set removes tenant access). WO-123 multi-role.
   assignTenantRole: (id, payload) =>
     api.post(`/api/admin/users/${id}/tenant-assignments`, payload).then(unwrap),
   removeTenantRole: (id, tenantId) =>

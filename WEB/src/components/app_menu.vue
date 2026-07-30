@@ -76,6 +76,20 @@ const sections = [
     ]
   },
   {
+    // REMS (Phase 15). Each item is gated by its own permission — never a role name — so a user sees
+    // only the areas their roles grant (e.g. an Approver-only user holds just rems.approvals.act and
+    // therefore sees only "Approvals", never the Partner/Admin items). AC-ADM-019.5 / REQ-REMS-001.7.
+    key: "rems",
+    label: "REMS",
+    items: [
+      { label: "Partner Dashboard", icon: "o_space_dashboard", to: "/rems/partner", permissions: [Permissions.RemsRequestsRead] },
+      { label: "Admin Pool", icon: "o_inbox", to: "/rems/admin-pool", permissions: [Permissions.RemsPoolRead] },
+      { label: "EMS Inbox", icon: "o_move_to_inbox", to: "/rems/ems-inbox", permissions: [Permissions.RemsFormsManage] },
+      { label: "Client Forms", icon: "o_dynamic_form", to: "/rems/client-forms", permissions: [Permissions.RemsEngagementsManage] },
+      { label: "Approvals", icon: "o_approval", to: "/rems/approvals", permissions: [Permissions.RemsApprovalsAct] }
+    ]
+  },
+  {
     key: "account",
     label: "Account",
     items: [

@@ -97,7 +97,10 @@
           v-if="canChooseTenant" v-model="form.tenantId" :options="tenantOptions" label="Tenant *"
           :loading="loadingTenants" class="q-mb-md" :clearable="false" @update:model-value="onTenantChange"
         />
-        <app-select v-model="form.roleId" :options="roleOptions" label="Role *" class="q-mb-md" :clearable="false" :loading="loadingRoles" />
+        <app-select
+          v-model="form.roleIds" :options="roleOptions" label="Roles *" multiple class="q-mb-md"
+          :loading="loadingRoles" hint="Grouped by category. Assign one or more roles."
+        />
 
         <q-toggle
           v-model="form.sendInvitation" color="primary"
@@ -120,9 +123,10 @@
 import { ref, reactive, computed, watch, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { debounce } from "quasar";
-import { userApi, personApi, roleApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
+import { userApi, personApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import { useTenantOptions } from "composables/useTenantOptions";
+import { useRoleOptions } from "composables/useRoleOptions";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
@@ -204,10 +208,10 @@ const formOpen = ref(false);
 const saving = ref(false);
 const emailError = ref("");
 const formRef = ref(null);
-const form = reactive({ personId: null, email: "", roleId: null, tenantId: null, sendInvitation: false });
+const form = reactive({ personId: null, email: "", roleIds: [], tenantId: null, sendInvitation: false });
 const personDialogOpen = ref(false);
-const roleOptions = ref([]);
-const loadingRoles = ref(false);
+// Grouped, category-labelled multi-role options (SuperAdmin excluded for non-Super-Admin callers).
+const { roleOptions, loading: loadingRoles, loadForTenant } = useRoleOptions();
 
 // ---- Person dropdown (the user is created by promoting an existing person) ----
 const allPersons = ref([]);
@@ -277,20 +281,13 @@ const onPersonCreated = (detail) => {
 // The tenant the user is being created in: chosen by platform admins, else the caller's own.
 const targetTenantId = computed(() => (canChooseTenant.value ? form.tenantId : activeTenantId.value));
 
-// Role options come from the tenant's assignable roles (system roles + the tenant's custom roles).
+// Role options come from the tenant's assignable roles (system + custom), grouped by category.
 const loadRoles = async () => {
-  const tid = targetTenantId.value;
-  roleOptions.value = [];
-  form.roleId = null;
-  if (!tid) return;
-  loadingRoles.value = true;
+  form.roleIds = [];
   try {
-    const roles = await roleApi.tenantRoles(tid);
-    roleOptions.value = (roles || []).map((r) => ({ label: r.name, value: r.id }));
+    await loadForTenant(targetTenantId.value);
   } catch (err) {
     notify.error(getApiErrorMessage(err));
-  } finally {
-    loadingRoles.value = false;
   }
 };
 
@@ -302,10 +299,9 @@ const onTenantChange = (tenantId) => {
 const resetForm = () => {
   form.personId = null;
   form.email = "";
-  form.roleId = null;
+  form.roleIds = [];
   form.tenantId = null;
   form.sendInvitation = false;
-  roleOptions.value = [];
   emailError.value = "";
   personLocked.value = false;
 };
@@ -346,8 +342,8 @@ const submitForm = async ({ clearDraft } = {}) => {
     return;
   }
   if (!(await formRef.value?.validate())) return;
-  if (!form.roleId) {
-    notify.error("Select a role.");
+  if (!form.roleIds.length) {
+    notify.error("Select at least one role.");
     return;
   }
   const tenantId = targetTenantId.value;
@@ -360,7 +356,7 @@ const submitForm = async ({ clearDraft } = {}) => {
     const payload = {
       personId: form.personId,
       email: form.email,
-      roleId: form.roleId,
+      roleIds: form.roleIds,
       tenantId,
       sendInvitation: form.sendInvitation
     };

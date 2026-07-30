@@ -110,7 +110,12 @@
             <q-item-label>{{ t.name || t.identifier }}</q-item-label>
             <q-item-label caption>{{ t.identifier }}</q-item-label>
           </q-item-section>
-          <q-item-section side><q-badge color="primary" class="text-capitalize">{{ t.role }}</q-badge></q-item-section>
+          <q-item-section side>
+            <div class="row q-gutter-xs justify-end">
+              <q-badge v-for="r in (t.roleNames || [])" :key="r" color="primary" class="text-capitalize">{{ r }}</q-badge>
+              <span v-if="!(t.roleNames || []).length" class="text-caption text-grey-6">No roles</span>
+            </div>
+          </q-item-section>
         </q-item>
         <q-item v-if="!assignments.length"><q-item-section class="text-grey-6">No assignments.</q-item-section></q-item>
       </q-list>

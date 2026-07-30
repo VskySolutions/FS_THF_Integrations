@@ -15,16 +15,21 @@ export const useTenantStore = defineStore("tenant", {
   getters: {
     activeTenant: (state) =>
       state.assignments.find((t) => t.tenantId === state.activeTenantId) || state.assignments[0] || null,
-    activeRole: (state) => {
-      const t = state.assignments.find((x) => x.tenantId === state.activeTenantId);
-      // Prefer the RBAC role name (custom roles); fall back to the legacy enum role.
-      return t?.roleName || t?.role || null;
+    // WO-123 multi-role: every RBAC role name the user holds in the active tenant.
+    activeRoles () {
+      return this.activeTenant?.roleNames || [];
+    },
+    // Back-compat: the first active role, for any legacy read that still expects a single role.
+    activeRole () {
+      return this.activeRoles[0] || null;
     },
     hasMultipleTenants: (state) => state.assignments.length > 1
   },
 
   actions: {
     setAssignments (list) {
+      // Each membership carries its full roleNames[] (WO-123 multi-role); stored verbatim so the
+      // active-tenant role getters read straight from here.
       this.assignments = Array.isArray(list) ? list : [];
       LocalStorage.set("tenantAssignments", this.assignments);
       if (!this.activeTenantId && this.assignments.length) {

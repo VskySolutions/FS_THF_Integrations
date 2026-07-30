@@ -23,7 +23,16 @@ export const Permissions = Object.freeze({
   RecordsAdminDelete: "records.adminDelete",
   // Option Sets (tenant-configurable input value lists).
   OptionSetsRead: "optionSets.read",
-  OptionSetsManage: "optionSets.manage"
+  OptionSetsManage: "optionSets.manage",
+  // REMS (Phase 15) — role-aware navigation is gated per permission, not per role name.
+  RemsRequestsRead: "rems.requests.read",
+  RemsRequestsCreate: "rems.requests.create",
+  RemsPoolRead: "rems.pool.read",
+  RemsFormsManage: "rems.forms.manage",
+  RemsEmailLogRead: "rems.emailLog.read",
+  RemsEngagementsManage: "rems.engagements.manage",
+  RemsApprovalsSend: "rems.approvals.send",
+  RemsApprovalsAct: "rems.approvals.act"
 });
 
 // Reactive permission checks for the active tenant. `has`/`hasAny` read the auth store's

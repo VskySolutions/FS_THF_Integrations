@@ -44,6 +44,32 @@ export default [
         name: "rems_build_ems",
         component: () => import("modules/rems/pages/BuildEmsPage.vue"),
         meta: { requiresAuth: true, permissions: ["rems.forms.manage"], title: "Build EMS Form" }
+      },
+      {
+        // The staff REMS engagement workspace (WO-117): entity setup, marketing, commission and
+        // send-for-approval for a submitted request. Reached from Client Forms / EMS Inbox. The approver
+        // decision/checklist UI is a SEPARATE surface (the Approvals inbox) and does not live here.
+        path: "engagements/:remsId",
+        name: "rems_engagement",
+        component: () => import("modules/rems/pages/EngagementWorkspace.vue"),
+        meta: { requiresAuth: true, permissions: ["rems.engagements.manage"], title: "Engagement Workspace" }
+      },
+      {
+        // The task-isolated Approval Inbox (WO-117 Part B): the approver's OWN pending + historical tasks.
+        // Task-isolation is enforced server-side (the list returns only the caller's tasks; the detail 404s
+        // anyone else's), so this surface never exposes another approver's tasks or an approver picker.
+        path: "approvals",
+        name: "rems_approvals",
+        component: () => import("modules/rems/pages/ApprovalInbox.vue"),
+        meta: { requiresAuth: true, permissions: ["rems.approvals.act"], title: "REMS Approvals" }
+      },
+      {
+        // The role-scoped approval-task detail: the review data the approver's role is entitled to, the
+        // per-role checklist, and the checklist-gated Approve / reason-required Reject decision.
+        path: "approvals/:taskId",
+        name: "rems_approval_task",
+        component: () => import("modules/rems/pages/ApprovalTaskDetail.vue"),
+        meta: { requiresAuth: true, permissions: ["rems.approvals.act"], title: "Approval Task" }
       }
     ]
   },

@@ -117,7 +117,7 @@ public static class Permissions
     /// <summary>REMS Partner: works their own requests (read/create/update) and assigns them.</summary>
     public static IReadOnlyList<string> ForPartner() => new[]
     {
-        RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsAssign
+        RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsAssign, OptionSetsRead
     };
 
     /// <summary>REMS Admin: full request lifecycle plus pool, forms, engagements, approvals routing and the email log.</summary>
@@ -125,7 +125,7 @@ public static class Permissions
     {
         RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsDelete, RemsRequestsAssign,
         RemsPoolRead, RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
-        RemsApprovalsSend, RemsEmailLogRead
+        RemsApprovalsSend, RemsEmailLogRead, OptionSetsRead
     };
 
     /// <summary>

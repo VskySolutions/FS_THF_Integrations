@@ -17,6 +17,13 @@ const META = {
     label: "User Group",
     icon: "o_groups",
     route: () => ({ name: "user_groups" })
+  },
+  // REMS request/approval (Phase 15). REMS notifications carry the REMS request id, so they deep-link to
+  // the shared request detail (/rems/requests/:id) — clicking the notification navigates there + marks read.
+  [EntityType.Rems]: {
+    label: "REMS",
+    icon: "o_assignment",
+    route: (id) => ({ name: "rems_request_detail", params: { id } })
   }
 };
 

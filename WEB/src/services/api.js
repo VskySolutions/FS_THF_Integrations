@@ -461,7 +461,71 @@ export const remsApi = {
   clientForms: (params) => api.get("/api/rems/client-forms", { params }).then(envelope),
   // The immutable submitted-form snapshot: { submissionId, remsId, remsNumber, industryGroup, lockedEmail,
   //   submittedOnUtc, payload } — payload is the RemsFormPayloadV1 wire shape, rendered read-only, grouped.
-  submission: (remsId) => api.get(`/api/rems/requests/${remsId}/submission`).then(unwrap)
+  submission: (remsId) => api.get(`/api/rems/requests/${remsId}/submission`).then(unwrap),
+
+  // ---- Engagement workspace (WO-117 / WO-114) ----
+  // The editable engagement workspace graph: { remsId, remsNumber, requestStatus, client, entities[] }.
+  // client: { id, name, email(locked), mobileNumber, referralSource, billingContactName, billingEmail,
+  //   billingAddress:{ id, street, city, state, zip }|null }. entities[]: { id, name, ein, isMainEntity,
+  //   addresses:[{ id, addressType, address }], contacts:[{ id, role, isRequired, name, email, phone }],
+  //   engagement:{ id, department, serviceLine, departmentDirector, engagementExecutive, billingManager,
+  //     firstYearFeeEstimate, realizationPercentage, status, marketingMethodIds[], commissionSplits[],
+  //     audit, government, tax }|null }.
+  engagement: (remsId) => api.get(`/api/rems/requests/${remsId}/engagement`).then(unwrap),
+  // payload: { name?, mobileNumber?, referralSource?, billingContactName?, billingEmail?,
+  //   billingAddress?:{ street, city, state, zip } } — the client email is LOCKED (never sent/changed).
+  updateClient: (remsId, payload) => api.put(`/api/rems/requests/${remsId}/client`, payload).then(unwrap),
+  // payload: { physicalAddress?, mailingAddress? } — each { street, city, state, zip }; null/all-blank removes.
+  updateEntityAddresses: (entityId, payload) => api.put(`/api/rems/entities/${entityId}/addresses`, payload).then(unwrap),
+  // payload: { contacts: [{ role, name?, email?, phone?, isRequired }] } — upserted by role.
+  updateEntityContacts: (entityId, payload) => api.put(`/api/rems/entities/${entityId}/contacts`, payload).then(unwrap),
+  // payload: any subset of { department, serviceLine, departmentDirectorId, engagementExecutiveId,
+  //   billingManagerId, firstYearFeeEstimate, realizationPercentage } — null fields are left unchanged.
+  // Returns { engagement, mappedDepartmentDirectorId } — the director the chosen department maps to (hint).
+  updateEngagement: (id, payload) => api.put(`/api/rems/engagements/${id}`, payload).then(unwrap),
+  // Link a previously-uploaded media id as the signed client-acceptance form (audit engagements).
+  uploadCaf: (id, mediaId) => api.post(`/api/rems/engagements/${id}/audit/client-acceptance-form`, { mediaId }).then(unwrap),
+  // payload: { contractNumber?, floridaOnePercentStateFeeApplies?, contractStartDate?, contractEndDate?,
+  //   originalTerm?, renewalTerms?, purchaseOrderStartDate?, purchaseOrderEndDate? } (government audit).
+  updateGovernment: (id, payload) => api.put(`/api/rems/engagements/${id}/government`, payload).then(unwrap),
+  // payload: { fiscalYearEnd?, taxFormIds:[] } — the response tax detail carries the recomputed due dates.
+  updateTax: (id, payload) => api.put(`/api/rems/engagements/${id}/tax`, payload).then(unwrap),
+  // One-time copy of another entity's engagement setup (address/department/service line/executive/billing).
+  copyEngagement: (id, sourceId) => api.post(`/api/rems/engagements/${id}/copy-from/${sourceId}`).then(unwrap),
+  // Set the marketing tags (≥1 required to save; saving makes approval reachable). Returns the engagement.
+  updateMarketing: (id, marketingMethodIds) => api.put(`/api/rems/engagements/${id}/marketing`, { marketingMethodIds }).then(unwrap),
+  // Set the commission splits (≤10 recipients, each > 0 and ≤ 100). splits: [{ employeeId, percentage }].
+  updateCommission: (id, splits) => api.put(`/api/rems/engagements/${id}/commission`, { splits }).then(unwrap),
+  // The live suggested approver list: { engagementId, engagementStatus, approvers:[{ user:{id,name}, role }] }.
+  approvers: (id) => api.get(`/api/rems/engagements/${id}/approvers`).then(unwrap),
+  // Route the engagement for approval; returns the (now locked) approver list with engagementStatus updated.
+  sendApproval: (id) => api.post(`/api/rems/engagements/${id}/approval/send`).then(unwrap),
+  // Resubmit a rejected engagement for a fresh approval round (staff, rems.approvals.send). Returns the
+  // regenerated (locked) approver list with engagementStatus now PendingApproval again.
+  resubmitApproval: (engagementId) => api.post(`/api/rems/engagements/${engagementId}/approval/resubmit`).then(unwrap),
+
+  // ---- Approval inbox (WO-117 Part B / WO-114) — the caller's OWN approval tasks only ----
+  // The caller's own approval tasks (pending + historical), newest round first. Rows:
+  //   { taskId, roundId, roundNumber, role, status, sentOnUtc, decidedOnUtc, roundStatus,
+  //     engagementId, remsId, remsNumber, clientName, entityName }.
+  myApprovalTasks: () => api.get("/api/rems/approval-tasks").then(unwrap),
+  // The role-scoped view of the caller's own task (404 for anyone else's task). Shape:
+  //   { taskId, roundId, roundNumber, role, status, decidedOnUtc, rejectionReason, canDecide,
+  //     checklist:[{ id, displayOrder, label, isCompleted, completedOnUtc }],
+  //     engagement:{ engagementId, remsId, remsNumber, entityName, department, serviceLine,
+  //       client:{ id, name, email, mobileNumber, referralSource, entities:[{ id, name, ein, isMainEntity }] }|null,
+  //       firstYearFeeEstimate, realizationPercentage, departmentDirector, engagementExecutive, billingManager,
+  //       commissionSplits:[{ id, employee:{ id, name }, percentage }]|null, marketingMethodIds:[guid]|null } }.
+  // Sections not relevant to the approver's role are null (the server omits them).
+  approvalTask: (taskId) => api.get(`/api/rems/approval-tasks/${taskId}`).then(unwrap),
+  // Check / uncheck one checklist item on the caller's own task. Returns the updated item view.
+  setChecklistItem: (taskId, itemId, isCompleted) =>
+    api.put(`/api/rems/approval-tasks/${taskId}/checklist/${itemId}`, { isCompleted }).then(unwrap),
+  // Approve the caller's own task. 409 (REMS_CHECKLIST_INCOMPLETE) when the server re-verify finds an
+  // incomplete checklist. Returns the (now read-only) task view.
+  approveTask: (taskId) => api.post(`/api/rems/approval-tasks/${taskId}/approve`).then(unwrap),
+  // Reject the caller's own task; payload { reason } is required. Returns the (now read-only) task view.
+  rejectTask: (taskId, payload) => api.post(`/api/rems/approval-tasks/${taskId}/reject`, payload).then(unwrap)
 };
 
 // REMS public client EMS form (Phase 15, WO-113/116). The anonymous, no-login client onboarding flow

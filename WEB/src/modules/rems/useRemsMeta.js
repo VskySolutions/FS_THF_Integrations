@@ -71,6 +71,23 @@ const EMS_STATE_COLORS = {
 };
 const SUBMISSION_STATE_LABELS = { Submitted: "Submitted", AwaitingCustomer: "Awaiting customer" };
 
+// Approval-task metadata (WO-117 Part B). Approver roles mirror the backend RemsApproverRole enum; the
+// task/round status strings mirror RemsApprovalTaskStatus / RemsApprovalRoundStatus.
+const APPROVER_ROLE_LABELS = {
+  CSE: "CSE",
+  DepartmentDirector: "Department Director",
+  ManagingShareholder: "Managing Shareholder",
+  CommissionRecipient: "Commission Recipient"
+};
+const APPROVER_ROLE_ICONS = {
+  CSE: "o_support_agent",
+  DepartmentDirector: "o_account_tree",
+  ManagingShareholder: "o_workspace_premium",
+  CommissionRecipient: "o_payments"
+};
+const APPROVAL_STATUS_LABELS = { Pending: "Pending", Approved: "Approved", Rejected: "Rejected" };
+const APPROVAL_STATUS_COLORS = { Pending: "orange-8", Approved: "positive", Rejected: "negative" };
+
 // Provider email-delivery events (RemsFormEmailEventType). These are the ONLY events rendered — the UI
 // never synthesises delivery/open state; it shows exactly what the server's email log returns.
 const EMAIL_EVENT_LABELS = { Sent: "Sent", Delivered: "Delivered", Opened: "Opened", Failed: "Failed" };
@@ -93,6 +110,10 @@ export function useRemsMeta () {
   const emailEventLabel = (v) => EMAIL_EVENT_LABELS[v] || v || "—";
   const emailEventColor = (v) => EMAIL_EVENT_COLORS[v] || "grey-6";
   const emailEventIcon = (v) => EMAIL_EVENT_ICONS[v] || "o_mail";
+  const approverRoleLabel = (v) => APPROVER_ROLE_LABELS[v] || v || "—";
+  const approverRoleIcon = (v) => APPROVER_ROLE_ICONS[v] || "o_person";
+  const approvalStatusLabel = (v) => APPROVAL_STATUS_LABELS[v] || v || "—";
+  const approvalStatusColor = (v) => APPROVAL_STATUS_COLORS[v] || "grey-6";
 
   // The EMS engagement/detail action becomes available only once the customer has submitted their
   // form (AC-REMS-002.5 / 005.6); until then it stays disabled.
@@ -114,6 +135,10 @@ export function useRemsMeta () {
     emailEventLabel,
     emailEventColor,
     emailEventIcon,
+    approverRoleLabel,
+    approverRoleIcon,
+    approvalStatusLabel,
+    approvalStatusColor,
     emsDetailAvailable,
     emsFormActivity
   };
@@ -140,6 +165,125 @@ export function useRemsOptionSets () {
   ]);
 
   return { typeOptions, priorityOptions, load };
+}
+
+// ---- Engagement workspace (WO-117) option sets + conditional logic ----
+
+// Department + Service Line are stored as string codes, so — like Type/Priority/IndustryGroup — the closed
+// seed lists are a safe fallback when the resolve endpoint 403s (the REMS Admin role lacks optionSets.read).
+export const REMS_DEPARTMENT_CODES = Object.freeze({ CAS: "cas", TAX: "tax", AUDIT: "audit", GCS: "gcs" });
+export const REMS_SERVICE_LINE_GOVERNMENT = "government";
+
+export const REMS_DEPARTMENT_OPTIONS = [
+  { label: "CAS", value: "cas" },
+  { label: "Tax", value: "tax" },
+  { label: "Audit", value: "audit" },
+  { label: "GCS", value: "gcs" }
+];
+
+export const REMS_SERVICE_LINE_OPTIONS = [
+  { label: "Commercial", value: "commercial" },
+  { label: "Non-Profit", value: "non_profit" },
+  { label: "Government", value: "government" },
+  { label: "Individual", value: "individual" }
+];
+
+// The REMS.Marketing groups (from each item's MetadataJson `group` tag), in display order.
+const MARKETING_GROUPS = [
+  { key: "Global", label: "Global" },
+  { key: "Geography", label: "Geography" },
+  { key: "Service/Education", label: "Service / Education" },
+  { key: "Event", label: "Event" }
+];
+
+// Conditional engagement-detail predicates — mirror the backend RemsEngagementCodes helper exactly.
+export const isAuditDepartment = (department) => department === REMS_DEPARTMENT_CODES.AUDIT;
+export const isTaxDepartment = (department) => department === REMS_DEPARTMENT_CODES.TAX;
+export const isGovernmentAudit = (department, serviceLine) =>
+  isAuditDepartment(department) && serviceLine === REMS_SERVICE_LINE_GOVERNMENT;
+
+// Loads the engagement Department / Service Line / Marketing / Tax-Form option sets for the workspace.
+// Department + Service Line degrade to the closed code lists above. Marketing + Tax Form are keyed by
+// OptionSetItem *id* (the REMSEngagementMarketingMethod / REMSEngagementTaxForm FKs), so there is no closed
+// fallback for their ids — the pickers are simply empty (flagged `*Unavailable`) when resolve is denied.
+export function useRemsEngagementOptionSets () {
+  const departmentOptions = ref(REMS_DEPARTMENT_OPTIONS);
+  const serviceLineOptions = ref(REMS_SERVICE_LINE_OPTIONS);
+  const marketingGroups = ref([]);
+  const marketingUnavailable = ref(false);
+  const taxFormOptions = ref([]);
+  const taxFormUnavailable = ref(false);
+
+  const resolveCodes = async (key, target, fallback) => {
+    try {
+      const items = await optionSetApi.resolve({ entityType: EntityType.Rems, key });
+      target.value = items?.length ? items.map((i) => ({ label: i.label, value: i.value })) : fallback;
+    } catch {
+      target.value = fallback;
+    }
+  };
+
+  const groupOf = (metadataJson) => {
+    try {
+      return JSON.parse(metadataJson || "{}").group || "Other";
+    } catch {
+      return "Other";
+    }
+  };
+
+  const resolveMarketing = async () => {
+    try {
+      const items = await optionSetApi.resolve({
+        entityType: EntityType.Rems,
+        key: "REMSMarketing_MarketingMethods.MarketingMethodId"
+      });
+      const byGroup = new Map();
+      (items || []).forEach((i) => {
+        const g = groupOf(i.metadataJson);
+        if (!byGroup.has(g)) byGroup.set(g, []);
+        byGroup.get(g).push({ value: i.id, label: i.label });
+      });
+      const known = MARKETING_GROUPS
+        .map((g) => ({ key: g.key, label: g.label, items: byGroup.get(g.key) || [] }))
+        .filter((g) => g.items.length);
+      const extra = [...byGroup.keys()]
+        .filter((k) => !MARKETING_GROUPS.some((g) => g.key === k))
+        .map((k) => ({ key: k, label: k, items: byGroup.get(k) }));
+      marketingGroups.value = [...known, ...extra];
+      marketingUnavailable.value = marketingGroups.value.length === 0;
+    } catch {
+      marketingGroups.value = [];
+      marketingUnavailable.value = true;
+    }
+  };
+
+  const resolveTaxForms = async () => {
+    try {
+      const items = await optionSetApi.resolve({ entityType: EntityType.Rems, key: "REMS.TaxForm" });
+      taxFormOptions.value = (items || []).map((i) => ({ value: i.id, label: i.label }));
+      taxFormUnavailable.value = taxFormOptions.value.length === 0;
+    } catch {
+      taxFormOptions.value = [];
+      taxFormUnavailable.value = true;
+    }
+  };
+
+  const load = () => Promise.all([
+    resolveCodes("REMS.Department", departmentOptions, REMS_DEPARTMENT_OPTIONS),
+    resolveCodes("REMS.ServiceLine", serviceLineOptions, REMS_SERVICE_LINE_OPTIONS),
+    resolveMarketing(),
+    resolveTaxForms()
+  ]);
+
+  return {
+    departmentOptions,
+    serviceLineOptions,
+    marketingGroups,
+    marketingUnavailable,
+    taxFormOptions,
+    taxFormUnavailable,
+    load
+  };
 }
 
 // Loads the tenant-configurable REMS.IndustryGroup option list for the Build-EMS picker, falling back to

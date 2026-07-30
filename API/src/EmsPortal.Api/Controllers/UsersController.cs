@@ -70,17 +70,24 @@ public sealed class UsersController : ControllerBase
     [ProducesResponseType<ApiResponse<CreateUserResponse>>(StatusCodes.Status201Created)]
     public async Task<IActionResult> Create([FromBody] CreateUserRequest request, CancellationToken cancellationToken)
     {
-        var (role, roleEntity, roleError) = await ResolveRequestRoleAsync(request.RoleId, request.Role, cancellationToken);
+        var (targetRoles, roleError) = await ResolveTargetRolesAsync(request.RoleIds, request.RoleId, request.Role, cancellationToken);
         if (roleError is not null)
         {
             return roleError;
         }
+        if (targetRoles.Count == 0)
+        {
+            return BadRequest(ApiResponseFactory.Error(
+                ApiErrorCodes.ValidationFailed, "Validation failed.", "At least one role is required."));
+        }
+
+        var anySuperAdmin = targetRoles.Any(IsSuperAdminRole);
 
         Guid? tenantId;
 
         if (User.IsSuperAdmin())
         {
-            if (role != UserRole.SuperAdmin && request.TenantId is null)
+            if (!anySuperAdmin && request.TenantId is null)
             {
                 return BadRequest(ApiResponseFactory.Error(
                     ApiErrorCodes.ValidationFailed, "Validation failed.", "tenantId is required for tenant-scoped roles."));
@@ -91,7 +98,7 @@ public sealed class UsersController : ControllerBase
         else
         {
             // Tenant Admin: may only create non-Super-Admin users in their own tenant.
-            if (role == UserRole.SuperAdmin)
+            if (anySuperAdmin)
             {
                 return StatusCode(StatusCodes.Status403Forbidden,
                     ApiResponseFactory.Forbidden("Tenant Admins cannot create Super Admin users."));
@@ -172,24 +179,22 @@ public sealed class UsersController : ControllerBase
 
         if (tenantId is { } tid)
         {
-            var (assignedRoleId, availabilityError) = await ResolveAssignmentRoleIdAsync(role, roleEntity, tid, cancellationToken);
-            if (availabilityError is not null)
+            // One row per role — the user may hold several roles in the tenant (multi-role).
+            foreach (var targetRole in targetRoles)
             {
-                return availabilityError;
+                await _users.AddAssignmentAsync(new UserTenantRole
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = user.Id,
+                    TenantId = tid,
+                    Role = targetRole.LegacyRole,
+                    RoleId = targetRole.RoleId,
+                }, cancellationToken);
             }
-
-            await _users.AddAssignmentAsync(new UserTenantRole
-            {
-                Id = Guid.NewGuid(),
-                UserId = user.Id,
-                TenantId = tid,
-                Role = role,
-                RoleId = assignedRoleId,
-            }, cancellationToken);
         }
 
         await _audit.AddAsync(nameof(User), user.Id.ToString(), "Created",
-            details: $"role={role}; tenant={tenantId}", cancellationToken: cancellationToken);
+            details: $"roles={string.Join(",", targetRoles.Select(r => r.Entity.Name))}; tenant={tenantId}", cancellationToken: cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         // Optionally email the invitation (with the temporary password) via the tenant's active SMTP
@@ -487,65 +492,27 @@ public sealed class UsersController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("User not found."));
         }
 
-        // Tenant Admins are scoped to their active tenant (Super Admins are unrestricted).
-        if (!User.IsSuperAdmin())
-        {
-            var activeTenant = User.GetActiveTenantId();
-            if (activeTenant is null || request.TenantId != activeTenant)
-            {
-                return StatusCode(StatusCodes.Status403Forbidden,
-                    ApiResponseFactory.Forbidden("Tenant Admins can only assign roles within their active tenant."));
-            }
-
-            if (user.TenantRoles.Any(r => r.Role == UserRole.SuperAdmin))
-            {
-                return StatusCode(StatusCodes.Status403Forbidden,
-                    ApiResponseFactory.Forbidden("Tenant Admins cannot manage Super Admin users."));
-            }
-        }
-
-        var (role, roleEntity, roleError) = await ResolveRequestRoleAsync(request.RoleId, request.Role, cancellationToken);
+        var (targetRoles, roleError) = await ResolveTargetRolesAsync(request.RoleIds, request.RoleId, request.Role, cancellationToken);
         if (roleError is not null)
         {
             return roleError;
         }
-
-        if (!User.IsSuperAdmin() && role == UserRole.SuperAdmin)
+        if (targetRoles.Count == 0)
         {
-            return StatusCode(StatusCodes.Status403Forbidden,
-                ApiResponseFactory.Forbidden("Tenant Admins cannot assign the Super Admin role."));
+            return BadRequest(ApiResponseFactory.Error(
+                ApiErrorCodes.ValidationFailed, "Validation failed.", "At least one role is required."));
         }
 
-        var (assignedRoleId, availabilityError) = await ResolveAssignmentRoleIdAsync(role, roleEntity, request.TenantId, cancellationToken);
-        if (availabilityError is not null)
-        {
-            return availabilityError;
-        }
+        // Reconcile the tenant's role set to exactly the requested roles: add missing, soft-delete absent
+        // (AC-ADM-006.2). The validator guarantees a non-empty set here.
+        await ReconcileTenantRolesAsync(id, request.TenantId, targetRoles, cancellationToken);
 
-        var existing = await _users.GetAssignmentAsync(id, request.TenantId, cancellationToken);
-        if (existing is not null)
-        {
-            // reassignment updates rather than duplicates (AC-ADM-006.2)
-            existing.Role = role;
-            existing.RoleId = assignedRoleId;
-        }
-        else
-        {
-            await _users.AddAssignmentAsync(new UserTenantRole
-            {
-                Id = Guid.NewGuid(),
-                UserId = id,
-                TenantId = request.TenantId,
-                Role = role,
-                RoleId = assignedRoleId,
-            }, cancellationToken);
-        }
-
+        var roleNames = targetRoles.Select(r => r.Entity.Name).ToArray();
         await _audit.AddAsync(nameof(User), id.ToString(), "TenantRoleAssigned",
-            details: $"tenant={request.TenantId}; role={role}", cancellationToken: cancellationToken);
+            details: $"tenant={request.TenantId}; roles={string.Join(",", roleNames)}", cancellationToken: cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return Ok(ApiResponseFactory.Success(new { userId = id, tenantId = request.TenantId, role = role.ToString() }, "Assignment saved."));
+        return Ok(ApiResponseFactory.Success(new { userId = id, tenantId = request.TenantId, roleNames }, "Assignment saved."));
     }
 
     [HttpDelete("/api/admin/users/{id:guid}/tenant-assignments/{tenantId:guid}")]
@@ -559,26 +526,19 @@ public sealed class UsersController : ControllerBase
                 ApiResponseFactory.Forbidden("Only a Super Admin can change role assignments."));
         }
 
-        // Tenant Admins are scoped to their active tenant (Super Admins are unrestricted).
-        if (!User.IsSuperAdmin() && User.GetActiveTenantId() != tenantId)
-        {
-            return StatusCode(StatusCodes.Status403Forbidden,
-                ApiResponseFactory.Forbidden("Tenant Admins can only remove roles within their active tenant."));
-        }
-
-        var existing = await _users.GetAssignmentAsync(id, tenantId, cancellationToken);
-        if (existing is null)
+        var existing = await _users.GetAssignmentsAsync(id, tenantId, cancellationToken);
+        if (existing.Count == 0)
         {
             return NotFound(ApiResponseFactory.NotFound("Assignment not found."));
         }
 
-        if (!User.IsSuperAdmin() && existing.Role == UserRole.SuperAdmin)
+        // Remove tenant access entirely: soft-delete every role the user holds in the tenant
+        // (the resulting set is empty — AC-ADM-006.3).
+        foreach (var assignment in existing)
         {
-            return StatusCode(StatusCodes.Status403Forbidden,
-                ApiResponseFactory.Forbidden("Tenant Admins cannot remove a Super Admin assignment."));
+            _users.RemoveAssignment(assignment);
         }
 
-        _users.RemoveAssignment(existing);
         await _audit.AddAsync(nameof(User), id.ToString(), "TenantRoleRemoved",
             details: $"tenant={tenantId}", cancellationToken: cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -628,50 +588,92 @@ public sealed class UsersController : ControllerBase
         return Ok(ApiResponseFactory.Success(new { userId = id, groupIds = requested.ToList() }, "Groups updated."));
     }
 
+    /// <summary>A concrete role to assign: its id, the loaded RBAC role, and its legacy fixed-tier shadow.</summary>
+    private sealed record ResolvedRole(Guid RoleId, Role Entity, UserRole LegacyRole);
+
+    private static bool IsSuperAdminRole(ResolvedRole role)
+        => string.Equals(role.Entity.Name, Roles.SuperAdmin, StringComparison.Ordinal);
+
     /// <summary>
-    /// Resolves the role to assign from either an explicit <paramref name="roleId"/> (RBAC) or the
-    /// legacy <paramref name="roleName"/> enum, returning the legacy enum (for transition-era policies)
-    /// and the loaded RBAC role when one was supplied.
+    /// Resolves an assignment request into the concrete set of roles to reconcile: the multi-role
+    /// <paramref name="roleIds"/> plus the legacy single <paramref name="legacyRoleId"/>; or — only when
+    /// no ids are supplied — the legacy <paramref name="legacyRoleName"/> enum mapped to its seeded system
+    /// role (back-compat). Every id must resolve to a known role. Duplicates collapse to one.
     /// </summary>
-    private async Task<(UserRole Role, Role? RoleEntity, IActionResult? Error)> ResolveRequestRoleAsync(
-        Guid? roleId, string? roleName, CancellationToken cancellationToken)
+    private async Task<(IReadOnlyList<ResolvedRole> Roles, IActionResult? Error)> ResolveTargetRolesAsync(
+        IEnumerable<Guid> roleIds, Guid? legacyRoleId, string? legacyRoleName, CancellationToken cancellationToken)
     {
-        if (roleId is { } rid)
+        var ids = roleIds?.ToList() ?? new List<Guid>();
+        if (legacyRoleId is { } single)
         {
-            var roleEntity = await _roles.GetByIdAsync(rid, cancellationToken);
-            if (roleEntity is null)
+            ids.Add(single);
+        }
+
+        var resolved = new List<ResolvedRole>();
+        foreach (var roleId in ids.Distinct())
+        {
+            var entity = await _roles.GetByIdAsync(roleId, cancellationToken);
+            if (entity is null)
             {
-                return (default, null, BadRequest(ApiResponseFactory.Error(
-                    ApiErrorCodes.ValidationFailed, "Validation failed.", "Unknown roleId.")));
+                return (Array.Empty<ResolvedRole>(), BadRequest(ApiResponseFactory.Error(
+                    ApiErrorCodes.ValidationFailed, "Validation failed.", $"Unknown roleId {roleId}.")));
             }
 
-            return (MapLegacyRole(roleEntity, roleName), roleEntity, null);
+            resolved.Add(new ResolvedRole(entity.Id, entity, MapLegacyRole(entity, null)));
         }
 
-        if (string.IsNullOrWhiteSpace(roleName) || !Enum.TryParse<UserRole>(roleName, ignoreCase: false, out var enumValue))
+        // Legacy single-role-by-name fallback (only when no ids were supplied).
+        if (resolved.Count == 0 && !string.IsNullOrWhiteSpace(legacyRoleName))
         {
-            return (default, null, BadRequest(ApiResponseFactory.Error(
-                ApiErrorCodes.ValidationFailed, "Validation failed.", "A valid role or roleId is required.")));
+            if (!Enum.TryParse<UserRole>(legacyRoleName, ignoreCase: false, out var enumValue))
+            {
+                return (Array.Empty<ResolvedRole>(), BadRequest(ApiResponseFactory.Error(
+                    ApiErrorCodes.ValidationFailed, "Validation failed.", "A valid role or roleId is required.")));
+            }
+
+            var entity = await _roles.GetByNameAsync(legacyRoleName, cancellationToken);
+            if (entity is null)
+            {
+                return (Array.Empty<ResolvedRole>(), BadRequest(ApiResponseFactory.Error(
+                    ApiErrorCodes.ValidationFailed, "Validation failed.", "No RBAC role matches the requested role.")));
+            }
+
+            resolved.Add(new ResolvedRole(entity.Id, entity, enumValue));
         }
 
-        return (enumValue, null, null);
+        return (resolved, null);
     }
 
     /// <summary>
-    /// Determines the <see cref="UserTenantRole.RoleId"/> to persist. Every role (system or custom) is
-    /// universally assignable, so an RBAC role resolves directly to its id; enum-driven assignments link
-    /// to the matching seeded system role when present.
+    /// Reconciles the user's active role assignments in a tenant to exactly <paramref name="target"/>:
+    /// missing roles are added, roles no longer present are soft-deleted. An empty target removes the
+    /// user's tenant access entirely (AC-ADM-006.3).
     /// </summary>
-    private async Task<(Guid? RoleId, IActionResult? Error)> ResolveAssignmentRoleIdAsync(
-        UserRole role, Role? roleEntity, Guid tenantId, CancellationToken cancellationToken)
+    private async Task ReconcileTenantRolesAsync(
+        Guid userId, Guid tenantId, IReadOnlyList<ResolvedRole> target, CancellationToken cancellationToken)
     {
-        if (roleEntity is not null)
+        var existing = await _users.GetAssignmentsAsync(userId, tenantId, cancellationToken);
+        var targetIds = target.Select(t => t.RoleId).ToHashSet();
+        var existingIds = existing.Select(e => e.RoleId).ToHashSet();
+
+        // Soft-delete assignments no longer in the target set.
+        foreach (var assignment in existing.Where(e => !targetIds.Contains(e.RoleId)))
         {
-            return (roleEntity.Id, null);
+            _users.RemoveAssignment(assignment);
         }
 
-        var systemRole = await _roles.GetByNameAsync(role.ToString(), cancellationToken);
-        return (systemRole?.Id, null);
+        // Add roles the user does not yet hold in the tenant.
+        foreach (var role in target.Where(t => !existingIds.Contains(t.RoleId)))
+        {
+            await _users.AddAssignmentAsync(new UserTenantRole
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                TenantId = tenantId,
+                Role = role.LegacyRole,
+                RoleId = role.RoleId,
+            }, cancellationToken);
+        }
     }
 
     /// <summary>
@@ -723,7 +725,13 @@ public sealed class UsersController : ControllerBase
             user.DisplayName,
             user.IsActive,
             user.MustChangePassword,
-            user.TenantRoles.Select(r => new TenantAssignmentDto(r.TenantId, r.Role.ToString(), r.RoleId, r.RoleEntity?.Name)).ToList(),
+            // Group the (multi-role) assignments by tenant → one row carrying all roles held there.
+            user.TenantRoles
+                .GroupBy(r => r.TenantId)
+                .Select(g => new TenantAssignmentDto(
+                    g.Key,
+                    g.Select(r => new TenantAssignmentRoleDto(r.RoleId, r.RoleEntity?.Name, r.Role.ToString())).ToList()))
+                .ToList(),
             // GetByIdAsync already scopes memberships to the active tenant via the ambient filter.
             GroupsFor(user, null));
     }

@@ -1,6 +1,5 @@
 using FluentValidation;
 using EmsPortal.Api.Models.Users;
-using EmsPortal.Shared.Security;
 
 namespace EmsPortal.Api.Validators.Users;
 
@@ -12,13 +11,10 @@ public sealed class CreateUserRequestValidator : AbstractValidator<CreateUserReq
         RuleFor(x => x.PersonId).NotEmpty().WithMessage("personId is required.");
         // Email is optional here — it defaults to the person's primary email when omitted.
         RuleFor(x => x.Email).EmailAddress().MaximumLength(256).When(x => !string.IsNullOrWhiteSpace(x.Email));
+        // At least one role (multi-role roleIds, the legacy single roleId, or the legacy role name).
         RuleFor(x => x)
-            .Must(x => x.RoleId is not null || !string.IsNullOrWhiteSpace(x.Role))
-            .WithMessage("Either role or roleId is required.");
-        RuleFor(x => x.Role)
-            .Must(role => role == Roles.SuperAdmin || role == Roles.TenantAdmin)
-            .When(x => !string.IsNullOrWhiteSpace(x.Role))
-            .WithMessage("Role must be one of: SuperAdmin, TenantAdmin.");
+            .Must(x => x.RoleIds is { Count: > 0 } || x.RoleId is not null || !string.IsNullOrWhiteSpace(x.Role))
+            .WithMessage("At least one role is required (roleIds, roleId, or role).");
     }
 }
 
@@ -46,12 +42,9 @@ public sealed class AssignTenantRoleRequestValidator : AbstractValidator<AssignT
     public AssignTenantRoleRequestValidator()
     {
         RuleFor(x => x.TenantId).NotEmpty();
+        // At least one role id is required — the request reconciles the tenant's full role set.
         RuleFor(x => x)
-            .Must(x => x.RoleId is not null || !string.IsNullOrWhiteSpace(x.Role))
-            .WithMessage("Either role or roleId is required.");
-        RuleFor(x => x.Role)
-            .Must(role => role == Roles.SuperAdmin || role == Roles.TenantAdmin)
-            .When(x => !string.IsNullOrWhiteSpace(x.Role))
-            .WithMessage("Role must be one of: SuperAdmin, TenantAdmin.");
+            .Must(x => x.RoleIds is { Count: > 0 } || x.RoleId is not null || !string.IsNullOrWhiteSpace(x.Role))
+            .WithMessage("At least one role is required (roleIds, roleId, or role).");
     }
 }

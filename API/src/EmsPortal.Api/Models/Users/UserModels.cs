@@ -12,10 +12,12 @@ public sealed class CreateUserRequest
     public string? CountryCode { get; set; }
     /// <summary>Target tenant. Ignored for Tenant Admins (forced to their active tenant).</summary>
     public Guid? TenantId { get; set; }
-    /// <summary>Legacy fixed-tier role. Optional when <see cref="RoleId"/> is supplied.</summary>
-    public string Role { get; set; } = string.Empty;
-    /// <summary>RBAC role to assign. When set, takes precedence and must be available to the tenant.</summary>
+    /// <summary>The RBAC roles to assign in the tenant (multi-role). Each must resolve to a known role.</summary>
+    public List<Guid> RoleIds { get; set; } = new();
+    /// <summary>Legacy single RBAC role. Folded into <see cref="RoleIds"/> for back-compat.</summary>
     public Guid? RoleId { get; set; }
+    /// <summary>Legacy fixed-tier role name. Used only when no role ids are supplied (back-compat).</summary>
+    public string Role { get; set; } = string.Empty;
     /// <summary>When true, email the new user an invitation with their temporary password (via the tenant's active SMTP account).</summary>
     public bool SendInvitation { get; set; }
 }
@@ -39,16 +41,27 @@ public sealed class UpdateUserStatusRequest
     public bool IsActive { get; set; }
 }
 
+/// <summary>
+/// Reconciles the full set of roles a user holds in a tenant (multi-role). The active assignment set
+/// is made to match <see cref="RoleIds"/> — missing roles are added, absent ones soft-deleted; an
+/// empty resulting set removes tenant access entirely (AC-ADM-006.2/006.3).
+/// </summary>
 public sealed class AssignTenantRoleRequest
 {
     public Guid TenantId { get; set; }
-    /// <summary>Legacy fixed-tier role. Optional when <see cref="RoleId"/> is supplied.</summary>
-    public string? Role { get; set; }
-    /// <summary>RBAC role to assign. When set, takes precedence and must be available to the tenant.</summary>
+    /// <summary>The RBAC roles the user should hold in the tenant. Each must resolve to a known role.</summary>
+    public List<Guid> RoleIds { get; set; } = new();
+    /// <summary>Legacy single RBAC role. Folded into <see cref="RoleIds"/> for back-compat.</summary>
     public Guid? RoleId { get; set; }
+    /// <summary>Legacy fixed-tier role name. Used only when no role ids are supplied (back-compat).</summary>
+    public string? Role { get; set; }
 }
 
-public sealed record TenantAssignmentDto(Guid TenantId, string Role, Guid? RoleId, string? RoleName);
+/// <summary>A user's roles within a single tenant (grouped — multi-role).</summary>
+public sealed record TenantAssignmentDto(Guid TenantId, IReadOnlyList<TenantAssignmentRoleDto> Roles);
+
+/// <summary>One role held in a tenant: its RBAC id/name plus the legacy fixed-tier shadow.</summary>
+public sealed record TenantAssignmentRoleDto(Guid RoleId, string? RoleName, string Role);
 
 // ---- User groups ----
 

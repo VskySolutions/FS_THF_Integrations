@@ -46,7 +46,9 @@ public sealed class PermissionAuthorizationHandler : AuthorizationHandler<Permis
             return true;
         }
 
-        var role = user.FindFirst(ClaimTypeNames.Role)?.Value;
-        return Permissions.ForSystemRole(role).Contains(permission);
+        // Fallback: the union of the seeded permission sets across ALL of the caller's role claims
+        // (a multi-role user emits one `role` claim per role name).
+        return user.FindAll(ClaimTypeNames.Role)
+            .Any(role => Permissions.ForSystemRole(role.Value).Contains(permission));
     }
 }

@@ -31,8 +31,8 @@ public sealed record LoginTokenResponse(string AccessToken, int ExpiresIn, strin
 
 public sealed record RefreshTokenResponse(string AccessToken, int ExpiresIn, string RefreshToken);
 
-public sealed record SwitchTenantResponse(string AccessToken, int ExpiresIn, string TenantIdentifier, string Role);
+public sealed record SwitchTenantResponse(string AccessToken, int ExpiresIn, string TenantIdentifier, IReadOnlyList<string> RoleNames);
 
-public sealed record TenantMembershipDto(Guid TenantId, string Identifier, string Name, string Role, string? RoleName, string TimeZoneId);
+public sealed record TenantMembershipDto(Guid TenantId, string Identifier, string Name, IReadOnlyList<string> RoleNames, string TimeZoneId);
 
 public sealed record UserProfileResponse(Guid UserId, string Email, string DisplayName, IReadOnlyList<TenantMembershipDto> Tenants);

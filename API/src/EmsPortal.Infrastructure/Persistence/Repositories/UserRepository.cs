@@ -151,9 +151,11 @@ internal sealed class UserRepository : IUserRepository
 
     public void Update(User user) => _dbContext.Users.Update(user);
 
-    public Task<UserTenantRole?> GetAssignmentAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default)
-        => _dbContext.UserTenantRoles.FirstOrDefaultAsync(
-            r => r.UserId == userId && r.TenantId == tenantId, cancellationToken);
+    public async Task<IReadOnlyList<UserTenantRole>> GetAssignmentsAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default)
+        // The soft-delete query filter excludes removed rows, so this returns only the active set.
+        => await _dbContext.UserTenantRoles.Include(r => r.RoleEntity)
+            .Where(r => r.UserId == userId && r.TenantId == tenantId)
+            .ToListAsync(cancellationToken);
 
     public async Task AddAssignmentAsync(UserTenantRole assignment, CancellationToken cancellationToken = default)
         => await _dbContext.UserTenantRoles.AddAsync(assignment, cancellationToken);

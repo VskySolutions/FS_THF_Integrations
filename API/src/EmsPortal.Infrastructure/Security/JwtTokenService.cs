@@ -11,10 +11,11 @@ using Microsoft.Extensions.Options;
 namespace EmsPortal.Infrastructure.Security;
 
 /// <summary>
-/// Issues RS256 access tokens carrying sub/email/activeTenantId/role/tokenVersion and a
-/// serialized tenantAssignments array (Admin User &amp; Role Management). The role claim is
-/// the user's role in the active tenant; a Super Admin assignment grants SuperAdmin in any
-/// tenant (AC-ADM-008.6).
+/// Issues RS256 access tokens carrying sub/email/activeTenantId/tokenVersion, one <c>role</c> claim
+/// per distinct role NAME the user holds in the active tenant (multi-role), the union of those roles'
+/// effective permissions, and a serialized tenantAssignments array grouped by tenant
+/// (<c>[{ tenantId, roleNames:[...] }]</c>). A Super Admin assignment grants SuperAdmin in any tenant
+/// (AC-ADM-008.6).
 /// </summary>
 internal sealed class JwtTokenService : IJwtTokenService
 {
@@ -29,9 +30,14 @@ internal sealed class JwtTokenService : IJwtTokenService
 
     public AccessToken CreateAccessToken(User user, Guid activeTenantId)
     {
-        var role = ResolveRole(user, activeTenantId);
+        // Tenant assignments grouped by tenant → the distinct role names held in each (multi-role).
         var assignments = user.TenantRoles
-            .Select(r => new { tenantId = r.TenantId, role = r.Role.ToString() })
+            .GroupBy(r => r.TenantId)
+            .Select(g => new
+            {
+                tenantId = g.Key,
+                roleNames = g.Select(RoleNameOf).Distinct(StringComparer.Ordinal).OrderBy(n => n, StringComparer.Ordinal).ToArray(),
+            })
             .ToArray();
 
         var claims = new List<Claim>
@@ -42,9 +48,12 @@ internal sealed class JwtTokenService : IJwtTokenService
             new(ClaimTypeNames.TokenVersion, user.TokenVersion.ToString()),
             new(ClaimTypeNames.TenantAssignments, JsonSerializer.Serialize(assignments)),
         };
-        if (role is not null)
+
+        // One `role` claim per distinct role NAME the user holds in the active tenant (RequireRole
+        // matches any). A Super Admin assignment anywhere collapses to a single SuperAdmin claim.
+        foreach (var roleName in ResolveRoleNames(user, activeTenantId))
         {
-            claims.Add(new Claim(ClaimTypeNames.Role, role));
+            claims.Add(new Claim(ClaimTypeNames.Role, roleName));
         }
 
         // Effective permissions for the active tenant — the union of the assigned roles' permission
@@ -68,37 +77,51 @@ internal sealed class JwtTokenService : IJwtTokenService
         return new AccessToken(encoded, expiresIn);
     }
 
-    private static string? ResolveRole(User user, Guid activeTenantId)
+    /// <summary>
+    /// The distinct role NAMES the user holds in the active tenant — one JWT <c>role</c> claim per
+    /// name. A Super Admin assignment (in any tenant) grants SuperAdmin everywhere (AC-ADM-008.6);
+    /// otherwise the RBAC role name of each active-tenant assignment (falling back to the legacy enum
+    /// name only when no RBAC role is linked).
+    /// </summary>
+    private static IReadOnlyList<string> ResolveRoleNames(User user, Guid activeTenantId)
     {
-        if (user.TenantRoles.Any(r => r.Role == UserRole.SuperAdmin))
+        if (user.TenantRoles.Any(IsSuperAdminAssignment))
         {
-            return Roles.SuperAdmin;
+            return new[] { Roles.SuperAdmin };
         }
 
-        var assignment = user.TenantRoles.FirstOrDefault(r => r.TenantId == activeTenantId);
-        return assignment?.Role.ToString();
+        return user.TenantRoles
+            .Where(r => r.TenantId == activeTenantId)
+            .Select(RoleNameOf)
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
     }
 
     /// <summary>
     /// The user's effective permissions in the active tenant: the full catalogue for a Super Admin
-    /// (assigned anywhere), otherwise the active tenant assignment's RBAC role permissions — the union
-    /// of the role's direct keys and the group-derived cache (<see cref="Role.EffectivePermissions"/>,
-    /// Permission Groups feature) — falling back to the seeded set for the legacy enum when the role
-    /// carries no keys from either source.
+    /// (assigned anywhere), otherwise the UNION across every active-tenant assignment of that
+    /// assignment's effective permission set — each role's direct keys ∪ its group-derived cache
+    /// (<see cref="Role.EffectivePermissions"/>, Permission Groups feature) — falling back to the
+    /// seeded set for the role name when a role carries no keys from either source.
     /// </summary>
     private static IReadOnlyList<string> ResolvePermissions(User user, Guid activeTenantId)
     {
-        if (user.TenantRoles.Any(r => r.Role == UserRole.SuperAdmin))
+        if (user.TenantRoles.Any(IsSuperAdminAssignment))
         {
             return Permissions.ForSuperAdmin();
         }
 
-        var assignment = user.TenantRoles.FirstOrDefault(r => r.TenantId == activeTenantId);
-        if (assignment is null)
-        {
-            return Array.Empty<string>();
-        }
+        return user.TenantRoles
+            .Where(r => r.TenantId == activeTenantId)
+            .SelectMany(EffectivePermissionsFor)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
 
+    /// <summary>The effective permission keys contributed by a single assignment.</summary>
+    private static IEnumerable<string> EffectivePermissionsFor(UserTenantRole assignment)
+    {
         if (assignment.RoleEntity is { } roleEntity)
         {
             // Direct role permissions ∪ permissions contributed by composed Permission Groups.
@@ -112,6 +135,14 @@ internal sealed class JwtTokenService : IJwtTokenService
             }
         }
 
-        return Permissions.ForSystemRole(assignment.Role.ToString());
+        return Permissions.ForSystemRole(RoleNameOf(assignment));
     }
+
+    /// <summary>The RBAC role name for an assignment, falling back to the legacy enum string.</summary>
+    private static string RoleNameOf(UserTenantRole assignment)
+        => assignment.RoleEntity?.Name ?? assignment.Role.ToString();
+
+    /// <summary>True when an assignment resolves to the SuperAdmin role (by name, else legacy enum).</summary>
+    private static bool IsSuperAdminAssignment(UserTenantRole assignment)
+        => string.Equals(RoleNameOf(assignment), Roles.SuperAdmin, StringComparison.Ordinal);
 }

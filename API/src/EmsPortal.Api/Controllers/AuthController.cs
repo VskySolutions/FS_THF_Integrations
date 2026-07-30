@@ -170,9 +170,9 @@ public sealed class AuthController : ControllerBase
             return Unauthorized(ApiResponseFactory.Unauthorized("No user context."));
         }
 
-        var isSuperAdmin = user.TenantRoles.Any(r => r.Role == UserRole.SuperAdmin);
-        var assignment = user.TenantRoles.FirstOrDefault(r => r.TenantId == request.TenantId);
-        if (!isSuperAdmin && assignment is null)
+        var isSuperAdmin = user.TenantRoles.Any(IsSuperAdminAssignment);
+        var hasAssignment = user.TenantRoles.Any(r => r.TenantId == request.TenantId);
+        if (!isSuperAdmin && !hasAssignment)
         {
             return StatusCode(StatusCodes.Status403Forbidden,
                 ApiResponseFactory.Forbidden("You are not assigned to the requested tenant."));
@@ -185,10 +185,19 @@ public sealed class AuthController : ControllerBase
         }
 
         var access = _jwt.CreateAccessToken(user, request.TenantId);
-        var role = isSuperAdmin ? Roles.SuperAdmin : assignment!.Role.ToString();
+        // The distinct role names for the switched-to tenant (a Super Admin assignment wins everywhere).
+        var roleNames = isSuperAdmin
+            ? new[] { Roles.SuperAdmin }
+            : user.TenantRoles
+                .Where(r => r.TenantId == request.TenantId)
+                .Select(RoleNameOf)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(n => n, StringComparer.Ordinal)
+                .ToArray();
         // Refresh token is intentionally not rotated on switch (AC-ADM-011.5).
         return Ok(ApiResponseFactory.Success(
-            new SwitchTenantResponse(access.Token, access.ExpiresInSeconds, tenant.Identifier, role), "Tenant switched."));
+            new SwitchTenantResponse(access.Token, access.ExpiresInSeconds, tenant.Identifier, roleNames), "Tenant switched."));
     }
 
     [HttpGet("/api/auth/profile")]
@@ -202,17 +211,22 @@ public sealed class AuthController : ControllerBase
             return Unauthorized(ApiResponseFactory.Unauthorized("No user context."));
         }
 
+        // Group the (multi-role) assignments by tenant → one membership row carrying all role names.
         var memberships = new List<TenantMembershipDto>();
-        foreach (var assignment in user.TenantRoles)
+        foreach (var group in user.TenantRoles.GroupBy(r => r.TenantId))
         {
-            var tenant = await _tenants.GetByIdAsync(assignment.TenantId, cancellationToken);
+            var tenant = await _tenants.GetByIdAsync(group.Key, cancellationToken);
+            var roleNames = group
+                .Select(RoleNameOf)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(n => n, StringComparer.Ordinal)
+                .ToArray();
             memberships.Add(new TenantMembershipDto(
-                assignment.TenantId,
+                group.Key,
                 tenant?.Identifier ?? string.Empty,
                 tenant?.Name ?? string.Empty,
-                assignment.Role.ToString(),
-                // The RBAC role name (custom roles); falls back to the legacy enum for display.
-                assignment.RoleEntity?.Name ?? assignment.Role.ToString(),
+                roleNames,
                 tenant?.TimeZoneId ?? "UTC"));
         }
 
@@ -259,6 +273,14 @@ public sealed class AuthController : ControllerBase
 
         return Ok(ApiResponseFactory.Success(new { message = "Password changed." }, "Password changed."));
     }
+
+    /// <summary>The RBAC role name for an assignment, falling back to the legacy enum string.</summary>
+    private static string RoleNameOf(UserTenantRole assignment)
+        => assignment.RoleEntity?.Name ?? assignment.Role.ToString();
+
+    /// <summary>True when an assignment resolves to the SuperAdmin role (by name, else legacy enum).</summary>
+    private static bool IsSuperAdminAssignment(UserTenantRole assignment)
+        => string.Equals(RoleNameOf(assignment), Roles.SuperAdmin, StringComparison.Ordinal);
 
     private Task<User?> CurrentUserAsync(CancellationToken cancellationToken)
     {

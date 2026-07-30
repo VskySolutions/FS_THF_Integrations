@@ -32,7 +32,8 @@ public interface IUserRepository
 
     void Update(User user);
 
-    Task<UserTenantRole?> GetAssignmentAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default);
+    /// <summary>All active (non-deleted) role assignments a user holds in a tenant (multi-role).</summary>
+    Task<IReadOnlyList<UserTenantRole>> GetAssignmentsAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default);
 
     Task AddAssignmentAsync(UserTenantRole assignment, CancellationToken cancellationToken = default);
 

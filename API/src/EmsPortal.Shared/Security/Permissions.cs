@@ -50,6 +50,33 @@ public static class Permissions
     /// <summary>Create, edit, reorder, and delete a tenant's own option lists and values.</summary>
     public const string OptionSetsManage = "optionSets.manage";
 
+    // REMS — Real Estate Management System (WO-110+). The operational roles Partner/Admin/Approver
+    // are composed of these keys (see ForPartner/ForAdmin/ForApprover).
+    /// <summary>View REMS requests.</summary>
+    public const string RemsRequestsRead = "rems.requests.read";
+    /// <summary>Create REMS requests.</summary>
+    public const string RemsRequestsCreate = "rems.requests.create";
+    /// <summary>Edit REMS requests.</summary>
+    public const string RemsRequestsUpdate = "rems.requests.update";
+    /// <summary>Delete REMS requests.</summary>
+    public const string RemsRequestsDelete = "rems.requests.delete";
+    /// <summary>Assign a REMS request to a person/pool.</summary>
+    public const string RemsRequestsAssign = "rems.requests.assign";
+    /// <summary>View the shared REMS request pool.</summary>
+    public const string RemsPoolRead = "rems.pool.read";
+    /// <summary>Create, edit, and configure REMS forms.</summary>
+    public const string RemsFormsManage = "rems.forms.manage";
+    /// <summary>Send REMS forms to recipients.</summary>
+    public const string RemsFormsSend = "rems.forms.send";
+    /// <summary>Create and manage REMS engagements.</summary>
+    public const string RemsEngagementsManage = "rems.engagements.manage";
+    /// <summary>Initiate/route a REMS approval round.</summary>
+    public const string RemsApprovalsSend = "rems.approvals.send";
+    /// <summary>Act on (approve/reject) a REMS approval task assigned to the caller. Record-scoped.</summary>
+    public const string RemsApprovalsAct = "rems.approvals.act";
+    /// <summary>Read the REMS email log.</summary>
+    public const string RemsEmailLogRead = "rems.emailLog.read";
+
     /// <summary>Every defined permission key.</summary>
     public static readonly IReadOnlyList<string> All = new[]
     {
@@ -60,7 +87,10 @@ public static class Permissions
         GroupsManage,
         EmailManage,
         SettingsManage, RecordsAdminDelete,
-        OptionSetsRead, OptionSetsManage
+        OptionSetsRead, OptionSetsManage,
+        RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsDelete, RemsRequestsAssign,
+        RemsPoolRead, RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
+        RemsApprovalsSend, RemsApprovalsAct, RemsEmailLogRead
     };
 
     /// <summary>Permission sets for the seeded system roles.</summary>
@@ -84,15 +114,39 @@ public static class Permissions
         OptionSetsRead, OptionSetsManage
     };
 
+    /// <summary>REMS Partner: works their own requests (read/create/update) and assigns them.</summary>
+    public static IReadOnlyList<string> ForPartner() => new[]
+    {
+        RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsAssign
+    };
+
+    /// <summary>REMS Admin: full request lifecycle plus pool, forms, engagements, approvals routing and the email log.</summary>
+    public static IReadOnlyList<string> ForAdmin() => new[]
+    {
+        RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsDelete, RemsRequestsAssign,
+        RemsPoolRead, RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
+        RemsApprovalsSend, RemsEmailLogRead
+    };
+
     /// <summary>
-    /// The seeded permission set for a system role name (SuperAdmin/TenantAdmin), or an empty set
-    /// for any other name (including custom roles). Used as the fallback when a caller carries only a
-    /// role claim (API-key callers, pre-RBAC tokens) and no explicit permission claims.
+    /// REMS Approver: may act on approval tasks. Visibility is record-scoped to the caller's assigned
+    /// REMSApprovalTask rows (enforced in the REMS query layer), not tenant-wide.
+    /// </summary>
+    public static IReadOnlyList<string> ForApprover() => new[] { RemsApprovalsAct };
+
+    /// <summary>
+    /// The seeded permission set for a system role name (SuperAdmin/TenantAdmin and the REMS operational
+    /// roles Partner/Admin/Approver), or an empty set for any other name (including custom roles). Used
+    /// as the fallback when an assignment carries no explicit permission keys and when a caller holds
+    /// only a role claim (API-key callers, pre-RBAC tokens).
     /// </summary>
     public static IReadOnlyList<string> ForSystemRole(string? roleName) => roleName switch
     {
         Roles.SuperAdmin => ForSuperAdmin(),
         Roles.TenantAdmin => ForTenantAdmin(),
+        Roles.Partner => ForPartner(),
+        Roles.Admin => ForAdmin(),
+        Roles.Approver => ForApprover(),
         _ => Array.Empty<string>(),
     };
 }

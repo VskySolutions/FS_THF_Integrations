@@ -27,6 +27,9 @@ export const Permissions = Object.freeze({
   // REMS (Phase 15) — role-aware navigation is gated per permission, not per role name.
   RemsRequestsRead: "rems.requests.read",
   RemsRequestsCreate: "rems.requests.create",
+  RemsRequestsUpdate: "rems.requests.update",
+  RemsRequestsDelete: "rems.requests.delete",
+  RemsRequestsAssign: "rems.requests.assign",
   RemsPoolRead: "rems.pool.read",
   RemsFormsManage: "rems.forms.manage",
   RemsEmailLogRead: "rems.emailLog.read",

@@ -258,7 +258,8 @@ export const optionSetApi = {
 export const EntityType = Object.freeze({
   Tenant: 3,
   User: 4,
-  UserGroup: 5
+  UserGroup: 5,
+  Rems: 6
 });
 
 // Notes (@mention-aware annotations).
@@ -409,4 +410,30 @@ export const dashboardApi = {
   getLayout: () => api.get("/api/dashboard/layout").then(unwrap),
   // payload: { widgetOrder, hiddenWidgets, collapsedWidgets }
   saveLayout: (payload) => api.put("/api/dashboard/layout", payload).then(unwrap)
+};
+
+// REMS (Phase 15, WO-111/115). Request lifecycle: the Partner Dashboard + Admin Pool lists, the
+// create/edit/assign/duplicate/delete actions, and the client + admin pickers. Row visibility and the
+// per-row `actions` flags are enforced server-side; the UI additionally gates on permission keys.
+// The conversation thread / activity / attachments reuse the Universal Features endpoints keyed on
+// EntityType.Rems (see ufNotesApi) — this object deliberately does not duplicate them.
+export const remsApi = {
+  // params: { scope?, poolScope?, clientName?, contact?, status?, createdFrom?, createdTo?, page?, limit? }
+  // scope: "partner" | "pool"; poolScope: "unassigned" | "mine" | "all". Returns the standard envelope.
+  list: (params) => api.get("/api/rems/requests", { params }).then(envelope),
+  get: (id) => api.get(`/api/rems/requests/${id}`).then(unwrap),
+  // payload: { existingClientReferenceId?, clientName, type, priority, title, description?,
+  //            customerEmail?, customerMobileNumber?, mediaId?, submit, assignAdminUserId? }
+  create: (payload) => api.post("/api/rems/requests", payload).then(unwrap),
+  // payload: any subset of { title, description, type, priority, clientName, customerEmail,
+  //            customerMobileNumber, existingClientReferenceId, submit } — null fields are unchanged.
+  update: (id, payload) => api.put(`/api/rems/requests/${id}`, payload).then(unwrap),
+  assign: (id, adminUserId) => api.post(`/api/rems/requests/${id}/assign`, { adminUserId }).then(unwrap),
+  duplicate: (id) => api.post(`/api/rems/requests/${id}/duplicate`).then(unwrap),
+  remove: (id) => api.delete(`/api/rems/requests/${id}`).then(envelope),
+  // Client picker (2+ chars): [{ id, name, email, phone, parentCompany:null, pastWork:null }].
+  // parentCompany/pastWork are always null — no external client directory exists in this platform.
+  clientLookup: (q) => api.get("/api/rems/clients/lookup", { params: { q } }).then(unwrap),
+  // Users holding the REMS Admin role in the active tenant: [{ id, name, email }].
+  admins: () => api.get("/api/rems/admins").then(unwrap)
 };

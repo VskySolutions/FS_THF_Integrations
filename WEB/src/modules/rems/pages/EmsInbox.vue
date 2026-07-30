@@ -1,0 +1,237 @@
+<template>
+  <q-page padding>
+    <app-list-header
+      :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'EMS Inbox' }]"
+      show-filters
+      :filter-count="filterChips.length"
+      show-back
+      @filters="filterOpen = true"
+      @back="$router.back()"
+    />
+
+    <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
+      <app-column-filters v-model="filters" :columns="filterableColumns" />
+    </app-filter-drawer>
+
+    <app-data-table
+      page-key="rems-ems-inbox"
+      row-key="remsId"
+      title="EMS Inbox"
+      :rows="rows"
+      :columns="columns"
+      :loading="loading"
+      :total-records="totalRecords"
+      :pagination="pagination"
+      default-sort-by="formSentOnUtc"
+      @request="onRequest"
+      @refresh="load"
+    >
+      <template #body-cell-remsNumber="cell">
+        <q-td :props="cell">
+          <q-btn flat dense no-caps color="primary" class="text-weight-medium" :label="cell.row.remsNumber" @click="primaryOpen(cell.row)">
+            <q-tooltip>{{ openHint(cell.row) }}</q-tooltip>
+          </q-btn>
+        </q-td>
+      </template>
+
+      <template #body-cell-clientName="cell">
+        <q-td :props="cell">
+          <div class="text-weight-medium">{{ cell.row.clientName || "—" }}</div>
+        </q-td>
+      </template>
+
+      <template #body-cell-engagementType="cell">
+        <q-td :props="cell">{{ typeLabel(cell.row.engagementType) }}</q-td>
+      </template>
+
+      <template #body-cell-requestStatus="cell">
+        <q-td :props="cell">
+          <q-badge :color="statusColor(cell.row.requestStatus)">{{ statusLabel(cell.row.requestStatus) }}</q-badge>
+        </q-td>
+      </template>
+
+      <template #body-cell-formStatus="cell">
+        <q-td :props="cell">
+          <q-badge :color="emsStateColor(cell.row.formStatus)">{{ emsStateLabel(cell.row.formStatus) }}</q-badge>
+        </q-td>
+      </template>
+
+      <template #body-cell-formCreatedBy="cell">
+        <q-td :props="cell">{{ cell.row.formCreatedBy?.name || "—" }}</q-td>
+      </template>
+
+      <template #body-cell-formSentOnUtc="cell">
+        <q-td :props="cell">{{ cell.row.formSentOnUtc ? fmt.formatDateTime(cell.row.formSentOnUtc) : "—" }}</q-td>
+      </template>
+
+      <!-- Sent / delivery / open info, only when the provider has reported it (AC-REMS-023.4). -->
+      <template #body-cell-latestEvent="cell">
+        <q-td :props="cell">
+          <template v-if="cell.row.latestEmailEventType">
+            <q-badge :color="emailEventColor(cell.row.latestEmailEventType)">
+              {{ emailEventLabel(cell.row.latestEmailEventType) }}
+            </q-badge>
+            <div class="text-caption text-grey-7">{{ fmt.formatDateTime(cell.row.latestEmailEventOnUtc) }}</div>
+          </template>
+          <template v-else>—</template>
+        </q-td>
+      </template>
+
+      <template #body-cell-actions="cell">
+        <q-td :props="cell" class="text-right">
+          <q-btn flat round dense color="primary" :icon="openIcon(cell.row)" @click="primaryOpen(cell.row)">
+            <q-tooltip>{{ openHint(cell.row) }}</q-tooltip>
+          </q-btn>
+          <q-btn
+            v-if="canSendRow(cell.row)" flat round dense color="teal-7" icon="o_send" @click="openSend(cell.row)"
+          >
+            <q-tooltip>Preview &amp; Send</q-tooltip>
+          </q-btn>
+          <q-btn flat round dense icon="o_more_vert">
+            <q-menu auto-close>
+              <q-list style="min-width: 200px;">
+                <q-item clickable @click="openBuild(cell.row)">
+                  <q-item-section avatar><q-icon name="o_edit_note" /></q-item-section>
+                  <q-item-section>Build EMS</q-item-section>
+                </q-item>
+                <q-item v-if="canSendRow(cell.row)" clickable @click="openSend(cell.row)">
+                  <q-item-section avatar><q-icon name="o_send" /></q-item-section>
+                  <q-item-section>Preview &amp; Send</q-item-section>
+                </q-item>
+                <q-item v-if="showEmailLog(cell.row)" clickable @click="openEmailLog(cell.row)">
+                  <q-item-section avatar><q-icon name="o_history" /></q-item-section>
+                  <q-item-section>Email Log</q-item-section>
+                </q-item>
+                <q-item
+                  v-if="showEngagement" clickable
+                  :disable="cell.row.formStatus !== 'Submitted'"
+                  @click="cell.row.formStatus === 'Submitted' && openEngagement(cell.row)"
+                >
+                  <q-item-section avatar><q-icon name="o_engineering" /></q-item-section>
+                  <q-item-section>
+                    Engagement Setup
+                    <q-tooltip v-if="cell.row.formStatus !== 'Submitted'">Available once the client submits their form</q-tooltip>
+                  </q-item-section>
+                </q-item>
+              </q-list>
+            </q-menu>
+          </q-btn>
+        </q-td>
+      </template>
+
+      <template #no-data>
+        <div class="full-width column flex-center q-pa-xl text-grey-6">
+          <q-icon name="o_move_to_inbox" size="40px" class="q-mb-sm" />
+          <div class="text-subtitle1 q-mb-xs">No EMS forms yet</div>
+          <div>Build an EMS form from a request in the Admin Pool and it will appear here.</div>
+        </div>
+      </template>
+    </app-data-table>
+
+    <send-ems-dialog
+      v-model="sendOpen" :rems-id="actionRemsId" :subtitle="actionSubtitle"
+      :can-view-email-log="canViewEmailLog" @sent="onSent" @view-log="viewLogFromSend"
+    />
+    <email-log-dialog v-model="logOpen" :rems-id="actionRemsId" :subtitle="actionSubtitle" />
+  </q-page>
+</template>
+
+<script setup>
+import { ref, computed, watch } from "vue";
+import { debounce } from "quasar";
+import { useRouter } from "vue-router";
+import { remsApi, getApiErrorMessage } from "services/api";
+import { usePermissions, Permissions } from "composables/usePermissions";
+import { useNotify } from "composables/useNotify";
+import { useListTable } from "composables/useListTable";
+import { useColumnFilters } from "composables/useColumnFilters";
+import { useDateFormat } from "composables/useDateFormat";
+import { useRemsMeta, REMS_FORM_STATE_OPTIONS } from "modules/rems/useRemsMeta";
+
+import AppListHeader from "components/common/AppListHeader.vue";
+import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
+import AppColumnFilters from "components/common/AppColumnFilters.vue";
+import AppDataTable from "components/common/AppDataTable.vue";
+import SendEmsDialog from "modules/rems/components/SendEmsDialog.vue";
+import EmailLogDialog from "modules/rems/components/EmailLogDialog.vue";
+
+const router = useRouter();
+const notify = useNotify();
+const fmt = useDateFormat();
+const { has } = usePermissions();
+const {
+  typeLabel, statusLabel, statusColor, emsStateLabel, emsStateColor, emailEventLabel, emailEventColor
+} = useRemsMeta();
+
+const canViewEmailLog = computed(() => has(Permissions.RemsEmailLogRead));
+const showEngagement = computed(() => has(Permissions.RemsEngagementsManage));
+
+const columns = computed(() => [
+  { name: "remsNumber", label: "Request ID", field: "remsNumber", align: "left", sortable: true, default: true, filterable: false },
+  { name: "clientName", label: "Client", field: "clientName", align: "left", sortable: true, default: true, filterable: false },
+  { name: "engagementType", label: "Engagement Type", field: "engagementType", align: "left", default: true, filterable: false },
+  { name: "requestStatus", label: "Request Status", field: "requestStatus", align: "left", default: true, filterable: false },
+  { name: "formStatus", label: "EMS Form State", field: "formStatus", align: "left", default: true, filterOptions: REMS_FORM_STATE_OPTIONS },
+  { name: "formCreatedBy", label: "Form Creator", field: (r) => r.formCreatedBy?.name || "—", align: "left", default: true, filterable: false },
+  { name: "formSentOnUtc", label: "Sent", field: "formSentOnUtc", align: "left", sortable: true, default: true, filterable: false },
+  { name: "latestEvent", label: "Delivery / Open", field: "latestEmailEventType", align: "left", default: true, filterable: false },
+  { name: "actions", label: "Actions", field: "actions", align: "right" }
+]);
+
+const { rows, loading, totalRecords, filterOpen, pagination, load, onRequest } = useListTable({
+  fetcher: ({ page, limit }) =>
+    remsApi.inbox({
+      page,
+      limit,
+      formState: filters.formStatus || undefined
+    }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),
+  onError: (err) => notify.error(getApiErrorMessage(err))
+});
+
+// The inbox endpoint filters by form state server-side (no client-name search param exists on it).
+const { filters, filterableColumns, filterChips, removeFilter, clearFilters } = useColumnFilters(columns, rows, { server: true });
+const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);
+watch(filters, reload, { deep: true });
+
+// ---- State-based row navigation (AC-REMS-009.5) ----
+const openBuild = (row) => router.push({ name: "rems_build_ems", params: { id: row.remsId } });
+const openEngagement = (row) => router.push(`/rems/engagements/${row.remsId}`);
+
+const canSendRow = (row) => has(Permissions.RemsFormsSend) && row.formStatus === "Saved";
+const showEmailLog = (row) =>
+  has(Permissions.RemsEmailLogRead) &&
+  (!!row.formSentOnUtc || !!row.latestEmailEventType || ["Sent", "Submitted"].includes(row.formStatus));
+
+// Draft/Saved/Cancelled → Build EMS; Sent → Email Log; Submitted → Engagement Workspace. Falls back safely
+// when the user lacks the destination's permission.
+const primaryOpen = (row) => {
+  if (row.formStatus === "Submitted" && showEngagement.value) return openEngagement(row);
+  if (["Sent", "Submitted"].includes(row.formStatus) && has(Permissions.RemsEmailLogRead)) return openEmailLog(row);
+  return openBuild(row);
+};
+const openIcon = (row) => {
+  if (row.formStatus === "Submitted" && showEngagement.value) return "o_engineering";
+  if (["Sent", "Submitted"].includes(row.formStatus) && has(Permissions.RemsEmailLogRead)) return "o_history";
+  return "o_edit_note";
+};
+const openHint = (row) => {
+  if (row.formStatus === "Submitted" && showEngagement.value) return "Open Engagement Setup";
+  if (["Sent", "Submitted"].includes(row.formStatus) && has(Permissions.RemsEmailLogRead)) return "View Email Log";
+  return "Open Build EMS";
+};
+
+// ---- Row actions (Send / Email Log dialogs) ----
+const actionRemsId = ref(null);
+const actionSubtitle = ref("");
+const sendOpen = ref(false);
+const logOpen = ref(false);
+
+const setAction = (row) => {
+  actionRemsId.value = row.remsId;
+  actionSubtitle.value = `${row.remsNumber} — ${row.clientName || ""}`.trim();
+};
+const openSend = (row) => { setAction(row); sendOpen.value = true; };
+const openEmailLog = (row) => { setAction(row); logOpen.value = true; };
+const viewLogFromSend = () => { logOpen.value = true; };
+const onSent = () => load();
+</script>

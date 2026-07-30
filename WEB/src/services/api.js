@@ -434,6 +434,56 @@ export const remsApi = {
   // Client picker (2+ chars): [{ id, name, email, phone, parentCompany:null, pastWork:null }].
   // parentCompany/pastWork are always null — no external client directory exists in this platform.
   clientLookup: (q) => api.get("/api/rems/clients/lookup", { params: { q } }).then(unwrap),
-  // Users holding the REMS Admin role in the active tenant: [{ id, name, email }].
-  admins: () => api.get("/api/rems/admins").then(unwrap)
+  // Users holding the REMS Admin role in the active tenant: [{ id, name, email }]. Reused as the CSE
+  // picker source (WO-116) — there is no dedicated CSE endpoint, so the staff/Admin list stands in.
+  admins: () => api.get("/api/rems/admins").then(unwrap),
+
+  // ---- EMS form build / send / email-log (WO-112, WO-116) ----
+  // Build screen: { remsId, remsNumber, requestTitle, clientName, requestStatus, customerEmail,
+  //   customerMobileNumber, cse:{id,name}|null, form:{id,industryGroup,inviteCode,formLink,status,
+  //   sentOnUtc,submittedOnUtc,inviteLockedOnUtc,isLocked}|null }.
+  getForm: (remsId) => api.get(`/api/rems/requests/${remsId}/form`).then(unwrap),
+  // payload: { cseUserId, industryGroup } — both required (AC-REMS-007.7). Returns the build screen.
+  saveForm: (remsId, payload) => api.post(`/api/rems/requests/${remsId}/form`, payload).then(unwrap),
+  // Pre-send preview: { destinationEmail, formLink } (AC-REMS-008.1).
+  previewForm: (remsId) => api.get(`/api/rems/requests/${remsId}/form/preview`).then(unwrap),
+  // Sends the form-link email; returns the refreshed (now Sent/locked) build screen.
+  sendForm: (remsId) => api.post(`/api/rems/requests/${remsId}/form/send`).then(unwrap),
+  // Provider email events, newest first: [{ id, eventType, recipientEmail, occurredOnUtc, providerMessageId }].
+  emailLog: (remsId) => api.get(`/api/rems/requests/${remsId}/email-log`).then(unwrap),
+  // EMS Inbox (paginated envelope). Rows: { remsId, remsNumber, clientName, engagementType, requestStatus,
+  //   formStatus, formCreatedBy:{id,name}|null, formSentOnUtc, latestEmailEventType, latestEmailEventOnUtc }.
+  inbox: (params) => api.get("/api/rems/inbox", { params }).then(envelope),
+
+  // ---- Client forms + submitted-form review (WO-114, WO-116) ----
+  // Client Forms list (paginated envelope). Rows: { remsId, remsNumber, clientName, requestStatus, hasForm,
+  //   submitted, submittedOnUtc, assignedAdmin:{id,name}|null, cse:{id,name}|null }.
+  clientForms: (params) => api.get("/api/rems/client-forms", { params }).then(envelope),
+  // The immutable submitted-form snapshot: { submissionId, remsId, remsNumber, industryGroup, lockedEmail,
+  //   submittedOnUtc, payload } — payload is the RemsFormPayloadV1 wire shape, rendered read-only, grouped.
+  submission: (remsId) => api.get(`/api/rems/requests/${remsId}/submission`).then(unwrap)
+};
+
+// REMS public client EMS form (Phase 15, WO-113/116). The anonymous, no-login client onboarding flow
+// reached via the emailed invite link ({App:BaseUrl}/rems/form/{inviteCode}). These call the
+// AllowAnonymous `api/rems/public/forms` endpoints on the UNAUTHENTICATED `anonApi` instance (no Bearer
+// token / tenant headers) — the form is resolved by its unguessable invite code alone. All bodies are the
+// RemsFormPayloadV1 wire shape (mirrors EmsPortal.Api.Models.Rems.RemsPublicFormModels); the backend
+// re-validates every payload at review + submit, so partial drafts round-trip freely.
+export const remsPublicApi = {
+  // → { state: "Invalid"|"Unavailable"|"Submitted"|"Editable", clientName?, industryGroup?,
+  //     prefill?:{ clientName, email, mobileNumber }, draftPayload?:RemsFormPayloadV1 }. Always HTTP 200.
+  load: (inviteCode) => anonApi.get(`/api/rems/public/forms/${encodeURIComponent(inviteCode)}`).then(unwrap),
+  // Auto-save the single in-progress draft (partial payload allowed) → { lastSavedOnUtc }.
+  saveDraft: (inviteCode, payload) =>
+    anonApi.put(`/api/rems/public/forms/${encodeURIComponent(inviteCode)}/draft`, payload).then(unwrap),
+  // Validate + return the grouped read-only review model, or a 400 VALIDATION_FAILED envelope (per-field
+  // messages in error.details) when the form is incomplete.
+  review: (inviteCode, payload) =>
+    anonApi.post(`/api/rems/public/forms/${encodeURIComponent(inviteCode)}/review`, payload).then(unwrap),
+  // Transactionally submit (re-validates server-side); idempotent → returns the Submitted thank-you state.
+  submit: (inviteCode, payload) =>
+    anonApi.post(`/api/rems/public/forms/${encodeURIComponent(inviteCode)}/submit`, payload).then(unwrap),
+  // Non-destructive client cancellation acknowledgement (the draft is kept; the link stays usable).
+  cancel: (inviteCode) => anonApi.post(`/api/rems/public/forms/${encodeURIComponent(inviteCode)}/cancel`).then(unwrap)
 };

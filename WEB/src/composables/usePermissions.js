@@ -32,6 +32,7 @@ export const Permissions = Object.freeze({
   RemsRequestsAssign: "rems.requests.assign",
   RemsPoolRead: "rems.pool.read",
   RemsFormsManage: "rems.forms.manage",
+  RemsFormsSend: "rems.forms.send",
   RemsEmailLogRead: "rems.emailLog.read",
   RemsEngagementsManage: "rems.engagements.manage",
   RemsApprovalsSend: "rems.approvals.send",

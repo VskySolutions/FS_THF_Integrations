@@ -12,6 +12,12 @@
         <q-btn v-if="detail?.actions?.canEdit" flat round dense color="primary" icon="o_edit" @click="openEdit">
           <q-tooltip>Edit</q-tooltip>
         </q-btn>
+        <q-btn
+          v-if="canBuildEms" flat round dense color="primary" icon="o_dynamic_form"
+          :to="{ name: 'rems_build_ems', params: { id: requestId } }"
+        >
+          <q-tooltip>Build EMS Form</q-tooltip>
+        </q-btn>
         <q-btn v-if="detail?.actions?.canAssign" flat round dense color="primary" icon="o_person_add" @click="openAssign">
           <q-tooltip>{{ detail.assignedAdmin ? "Reassign Admin" : "Assign / Pick Up" }}</q-tooltip>
         </q-btn>
@@ -98,6 +104,7 @@
 import { ref, computed, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { remsApi, mediaApi, EntityType, getApiErrorMessage } from "services/api";
+import { usePermissions, Permissions } from "composables/usePermissions";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
@@ -112,12 +119,15 @@ const route = useRoute();
 const router = useRouter();
 const notify = useNotify();
 const { confirm } = useConfirm();
+const { has } = usePermissions();
 const fmt = useDateFormat();
 const {
   typeLabel, priorityLabel, statusLabel, priorityColor, statusColor, emsStateLabel, submissionStateLabel
 } = useRemsMeta();
 
 const requestId = route.params.id;
+// The Build EMS workspace is Admin-only (rems.forms.manage); Partners see the request but not this entry.
+const canBuildEms = computed(() => has(Permissions.RemsFormsManage));
 const loading = ref(true);
 const detail = ref(null);
 

@@ -34,6 +34,24 @@ export const REMS_STATUS_OPTIONS = [
 // Type codes that mean "an existing client is referenced" (drives the client-lookup type marking).
 export const REMS_EXISTING_CLIENT_TYPES = ["existing_client", "subsidiary_child_of_existing_client"];
 
+// Industry Group closed codes (mirror the backend REMS.IndustryGroup option set). The Build-EMS picker
+// resolves the tenant-configurable option set first (see useRemsIndustryGroups) and falls back to these
+// when the REMS role lacks optionSets.read (403), exactly as the type/priority pickers do.
+export const REMS_INDUSTRY_GROUP_OPTIONS = [
+  { label: "Individual", value: "individual" },
+  { label: "Business", value: "business" },
+  { label: "Government", value: "government" }
+];
+
+// EMS form-state codes (RemsFormStatus) used to filter the EMS Inbox by form state.
+export const REMS_FORM_STATE_OPTIONS = [
+  { label: "Draft", value: "Draft" },
+  { label: "Saved", value: "Saved" },
+  { label: "Sent", value: "Sent" },
+  { label: "Submitted", value: "Submitted" },
+  { label: "Cancelled", value: "Cancelled" }
+];
+
 const PRIORITY_COLORS = { urgent: "red-8", high: "deep-orange-7", medium: "amber-8", low: "blue-grey-5" };
 const STATUS_COLORS = {
   draft: "grey-6",
@@ -47,7 +65,17 @@ const STATUS_COLORS = {
 const EMS_STATE_LABELS = {
   NotStarted: "Not started", Draft: "Draft", Saved: "Saved", Sent: "Sent", Submitted: "Submitted", Cancelled: "Cancelled"
 };
+// Colour the EMS form-state chips consistently with the request-status palette.
+const EMS_STATE_COLORS = {
+  NotStarted: "grey-5", Draft: "grey-6", Saved: "primary", Sent: "teal-7", Submitted: "positive", Cancelled: "negative"
+};
 const SUBMISSION_STATE_LABELS = { Submitted: "Submitted", AwaitingCustomer: "Awaiting customer" };
+
+// Provider email-delivery events (RemsFormEmailEventType). These are the ONLY events rendered — the UI
+// never synthesises delivery/open state; it shows exactly what the server's email log returns.
+const EMAIL_EVENT_LABELS = { Sent: "Sent", Delivered: "Delivered", Opened: "Opened", Failed: "Failed" };
+const EMAIL_EVENT_COLORS = { Sent: "teal-7", Delivered: "positive", Opened: "primary", Failed: "negative" };
+const EMAIL_EVENT_ICONS = { Sent: "o_send", Delivered: "o_mark_email_read", Opened: "o_drafts", Failed: "o_error" };
 
 const labelFrom = (options, value) => options.find((o) => o.value === value)?.label || value || "—";
 
@@ -59,7 +87,12 @@ export function useRemsMeta () {
   const priorityColor = (v) => PRIORITY_COLORS[v] || "grey-6";
   const statusColor = (v) => STATUS_COLORS[v] || "grey-6";
   const emsStateLabel = (v) => EMS_STATE_LABELS[v] || v || "—";
+  const emsStateColor = (v) => EMS_STATE_COLORS[v] || "grey-6";
   const submissionStateLabel = (v) => (v ? (SUBMISSION_STATE_LABELS[v] || v) : "—");
+  const industryGroupLabel = (v) => labelFrom(REMS_INDUSTRY_GROUP_OPTIONS, v);
+  const emailEventLabel = (v) => EMAIL_EVENT_LABELS[v] || v || "—";
+  const emailEventColor = (v) => EMAIL_EVENT_COLORS[v] || "grey-6";
+  const emailEventIcon = (v) => EMAIL_EVENT_ICONS[v] || "o_mail";
 
   // The EMS engagement/detail action becomes available only once the customer has submitted their
   // form (AC-REMS-002.5 / 005.6); until then it stays disabled.
@@ -75,7 +108,12 @@ export function useRemsMeta () {
     priorityColor,
     statusColor,
     emsStateLabel,
+    emsStateColor,
     submissionStateLabel,
+    industryGroupLabel,
+    emailEventLabel,
+    emailEventColor,
+    emailEventIcon,
     emsDetailAvailable,
     emsFormActivity
   };
@@ -102,4 +140,24 @@ export function useRemsOptionSets () {
   ]);
 
   return { typeOptions, priorityOptions, load };
+}
+
+// Loads the tenant-configurable REMS.IndustryGroup option list for the Build-EMS picker, falling back to
+// the closed individual/business/government codes when resolve is unavailable (the REMS roles do not carry
+// optionSets.read, so the endpoint 403s for pure-REMS users — mirrors useRemsOptionSets, AC-REMS-007.3).
+export function useRemsIndustryGroups () {
+  const industryGroupOptions = ref(REMS_INDUSTRY_GROUP_OPTIONS);
+
+  const load = async () => {
+    try {
+      const items = await optionSetApi.resolve({ entityType: EntityType.Rems, key: "REMS.IndustryGroup" });
+      industryGroupOptions.value = items?.length
+        ? items.map((i) => ({ label: i.label, value: i.value }))
+        : REMS_INDUSTRY_GROUP_OPTIONS;
+    } catch {
+      industryGroupOptions.value = REMS_INDUSTRY_GROUP_OPTIONS;
+    }
+  };
+
+  return { industryGroupOptions, load };
 }

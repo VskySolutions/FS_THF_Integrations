@@ -46,6 +46,16 @@ public interface IRemsFormRepository
     /// <summary>The active form for a tenant's invite code (public link resolution).</summary>
     Task<REMSForm?> GetByInviteCodeAsync(Guid tenantId, string inviteCode, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Resolves a form by invite code alone, WITHOUT the tenant / soft-delete query filters (WO-113 public
+    /// client form). The public endpoints run with no resolved tenant, so the code — a 128-bit random value,
+    /// unique per tenant and unguessable — is the sole lookup key; the form's own <see cref="REMSForm.TenantId"/>
+    /// then becomes the authoritative tenant. The owning <see cref="REMS"/> request (including a soft-deleted
+    /// one, so the caller can surface an "unavailable" state) and the single in-progress draft are loaded and
+    /// TRACKED so the submit transaction can lock the form and flip the request status. Null when unmatched.
+    /// </summary>
+    Task<REMSForm?> GetByInviteCodeUnscopedAsync(string inviteCode, CancellationToken cancellationToken = default);
+
     /// <summary>Whether an invite code is already taken (active) for the tenant.</summary>
     Task<bool> InviteCodeExistsAsync(Guid tenantId, string inviteCode, CancellationToken cancellationToken = default);
 

@@ -34,6 +34,16 @@ internal sealed class RemsFormRepository : IRemsFormRepository
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(f => f.TenantId == tenantId && !f.Deleted && f.InviteCode == inviteCode, cancellationToken);
 
+    public Task<REMSForm?> GetByInviteCodeUnscopedAsync(string inviteCode, CancellationToken cancellationToken = default)
+        // Public form (no tenant context): resolve by invite code across tenants (IgnoreQueryFilters), and
+        // include the owning request — even soft-deleted — plus the drafts so the caller can inspect request
+        // state and upsert/submit. Tracked so the submit transaction can update the form + request.
+        => _dbContext.RemsForms
+            .IgnoreQueryFilters()
+            .Include(f => f.Rems)
+            .Include(f => f.Drafts)
+            .FirstOrDefaultAsync(f => !f.Deleted && f.InviteCode == inviteCode, cancellationToken);
+
     public Task<bool> InviteCodeExistsAsync(Guid tenantId, string inviteCode, CancellationToken cancellationToken = default)
         => _dbContext.RemsForms
             .IgnoreQueryFilters()

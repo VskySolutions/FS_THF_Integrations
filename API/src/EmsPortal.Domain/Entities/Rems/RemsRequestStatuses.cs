@@ -13,4 +13,7 @@ public static class RemsRequestStatuses
 
     /// <summary>Submitted to the Admin Pool. The Admin Pool is every request with a status other than <see cref="Draft"/>.</summary>
     public const string Submitted = "submitted";
+
+    /// <summary>The customer completed and submitted their EMS onboarding form (set on public submit, REMS WO-113).</summary>
+    public const string CustomerSubmitted = "customer_submitted";
 }

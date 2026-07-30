@@ -57,4 +57,7 @@ public static class ActivityEventTypes
     // ---- REMS EMS form lifecycle (WO-112) ----
     public const string RemsFormBuilt = "RemsFormBuilt";
     public const string RemsFormSent = "RemsFormSent";
+
+    // ---- REMS public client form (WO-113) ----
+    public const string RemsFormSubmitted = "RemsFormSubmitted";
 }

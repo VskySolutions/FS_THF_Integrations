@@ -23,4 +23,7 @@ public enum NotificationType
 
     /// <summary>A REMS onboarding form was emailed to the customer (in-app only — no email template, REMS WO-112).</summary>
     RemsFormSent = 9,
+
+    /// <summary>A customer submitted their REMS onboarding form (in-app only; the external email goes via IRemsEmailNotifier, REMS WO-113).</summary>
+    RemsFormSubmitted = 10,
 }

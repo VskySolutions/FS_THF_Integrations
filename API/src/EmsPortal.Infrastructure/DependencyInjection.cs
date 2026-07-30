@@ -101,6 +101,14 @@ public static class DependencyInjection
         services.AddScoped<Jobs.ReminderDispatchJob>();
         services.AddScoped<Jobs.StickyNoteExpiryJob>();
 
+        // REMS (WO-110) repositories and per-tenant request-number generation.
+        services.AddScoped<IRemsRepository, RemsRepository>();
+        services.AddScoped<IRemsFormRepository, RemsFormRepository>();
+        services.AddScoped<IRemsClientRepository, RemsClientRepository>();
+        services.AddScoped<IRemsEngagementRepository, RemsEngagementRepository>();
+        services.AddScoped<IRemsApprovalRepository, RemsApprovalRepository>();
+        services.AddScoped<IRemsNumberGenerator, Persistence.RemsNumberGenerator>();
+
         return services;
     }
 

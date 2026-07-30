@@ -15,4 +15,5 @@ public enum EntityType
     Tenant = 3,
     User = 4,
     UserGroup = 5,
+    Rems = 6,
 }

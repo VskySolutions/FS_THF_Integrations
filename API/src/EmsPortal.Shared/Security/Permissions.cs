@@ -95,18 +95,15 @@ public static class Permissions
         OptionSetsRead, OptionSetsManage
     };
 
-    public static IReadOnlyList<string> ForOperator() => Array.Empty<string>();
-
     /// <summary>
-    /// The seeded permission set for a system role name (SuperAdmin/TenantAdmin/Operator), or an
-    /// empty set for an unrecognised name. Used as the fallback when a caller carries only a role
-    /// claim (API-key callers, pre-RBAC tokens) and no explicit permission claims.
+    /// The seeded permission set for a system role name (SuperAdmin/TenantAdmin), or an empty set
+    /// for any other name (including custom roles). Used as the fallback when a caller carries only a
+    /// role claim (API-key callers, pre-RBAC tokens) and no explicit permission claims.
     /// </summary>
     public static IReadOnlyList<string> ForSystemRole(string? roleName) => roleName switch
     {
         Roles.SuperAdmin => ForSuperAdmin(),
         Roles.TenantAdmin => ForTenantAdmin(),
-        Roles.Operator => ForOperator(),
         _ => Array.Empty<string>(),
     };
 }

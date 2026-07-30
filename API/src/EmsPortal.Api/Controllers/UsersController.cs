@@ -15,7 +15,7 @@ namespace EmsPortal.Api.Controllers;
 
 /// <summary>
 /// User account management (WO-38). Super Admins manage all users; Tenant Admins manage
-/// Operators/Tenant Admins within their active tenant (REQ-ADM-001/002/003/009/010).
+/// Tenant Admins and custom-role users within their active tenant (REQ-ADM-001/002/003/009/010).
 /// </summary>
 [ApiController]
 [Produces("application/json")]
@@ -90,7 +90,7 @@ public sealed class UsersController : ControllerBase
         }
         else
         {
-            // Tenant Admin: may only create Operator/Tenant Admin in their own tenant.
+            // Tenant Admin: may only create non-Super-Admin users in their own tenant.
             if (role == UserRole.SuperAdmin)
             {
                 return StatusCode(StatusCodes.Status403Forbidden,
@@ -676,8 +676,8 @@ public sealed class UsersController : ControllerBase
 
     /// <summary>
     /// Maps an RBAC role to a legacy fixed-tier enum for the transition period: system roles map by
-    /// name; custom roles fall back to an explicit enum if given, otherwise least-privilege Operator
-    /// (the enum is superseded by permission-based authorization in Phase 3).
+    /// name; custom roles fall back to an explicit enum if given, otherwise the neutral
+    /// <see cref="UserRole.Custom"/> sentinel (the enum is superseded by permission-based authorization).
     /// </summary>
     private static UserRole MapLegacyRole(Role roleEntity, string? explicitRole)
     {
@@ -691,7 +691,7 @@ public sealed class UsersController : ControllerBase
             return explicitEnum;
         }
 
-        return UserRole.Operator;
+        return UserRole.Custom;
     }
 
     /// <summary>The tenant whose SMTP account should send a user's email: the caller's active tenant, else the user's first assignment.</summary>

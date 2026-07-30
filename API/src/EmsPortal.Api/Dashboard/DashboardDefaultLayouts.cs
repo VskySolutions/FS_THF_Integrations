@@ -44,7 +44,7 @@ public static class DashboardDefaultLayouts
     /// <summary>
     /// Widgets hidden by default: everything except the customer-related charts/reports. New users land
     /// on a customer-focused dashboard and can switch the rest on from Customise. Roles without any
-    /// customer widgets (e.g. Common/Operator) hide nothing, so their dashboard stays fully populated.
+    /// customer widgets (e.g. Common) hide nothing, so their dashboard stays fully populated.
     /// </summary>
     public static IReadOnlyList<string> DefaultHiddenFor(DashboardRole role)
     {

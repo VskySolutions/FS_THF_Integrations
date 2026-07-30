@@ -1,6 +1,6 @@
 using FluentValidation;
 using EmsPortal.Api.Models.Users;
-using EmsPortal.Domain.Enums;
+using EmsPortal.Shared.Security;
 
 namespace EmsPortal.Api.Validators.Users;
 
@@ -16,9 +16,9 @@ public sealed class CreateUserRequestValidator : AbstractValidator<CreateUserReq
             .Must(x => x.RoleId is not null || !string.IsNullOrWhiteSpace(x.Role))
             .WithMessage("Either role or roleId is required.");
         RuleFor(x => x.Role)
-            .Must(role => Enum.TryParse<UserRole>(role, ignoreCase: false, out _))
+            .Must(role => role == Roles.SuperAdmin || role == Roles.TenantAdmin)
             .When(x => !string.IsNullOrWhiteSpace(x.Role))
-            .WithMessage("Role must be one of: SuperAdmin, TenantAdmin, Operator.");
+            .WithMessage("Role must be one of: SuperAdmin, TenantAdmin.");
     }
 }
 
@@ -50,8 +50,8 @@ public sealed class AssignTenantRoleRequestValidator : AbstractValidator<AssignT
             .Must(x => x.RoleId is not null || !string.IsNullOrWhiteSpace(x.Role))
             .WithMessage("Either role or roleId is required.");
         RuleFor(x => x.Role)
-            .Must(role => Enum.TryParse<UserRole>(role, ignoreCase: false, out _))
+            .Must(role => role == Roles.SuperAdmin || role == Roles.TenantAdmin)
             .When(x => !string.IsNullOrWhiteSpace(x.Role))
-            .WithMessage("Role must be one of: SuperAdmin, TenantAdmin, Operator.");
+            .WithMessage("Role must be one of: SuperAdmin, TenantAdmin.");
     }
 }

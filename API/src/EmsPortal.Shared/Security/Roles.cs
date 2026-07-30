@@ -1,11 +1,11 @@
 namespace EmsPortal.Shared.Security;
 
 /// <summary>
-/// The three platform roles enforced by RBAC. SuperAdmin &gt; TenantAdmin &gt; Operator.
+/// The platform system roles enforced by RBAC (SuperAdmin &gt; TenantAdmin). All other access is
+/// governed by custom, permission-based roles.
 /// </summary>
 public static class Roles
 {
     public const string SuperAdmin = "SuperAdmin";
     public const string TenantAdmin = "TenantAdmin";
-    public const string Operator = "Operator";
 }

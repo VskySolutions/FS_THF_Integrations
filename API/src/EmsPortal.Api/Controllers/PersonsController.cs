@@ -65,7 +65,7 @@ public sealed class PersonsController : ControllerBase
         {
             Id = Guid.NewGuid(),
             PersonCode = await GeneratePersonCodeAsync(cancellationToken),
-            // A Tenant Admin/Operator can only create within their own tenant; a client-supplied
+            // A non-Super-Admin can only create within their own tenant; a client-supplied
             // TenantId is honoured only for Super Admins. (Falls back to active-tenant stamping.)
             TenantId = User.IsSuperAdmin() ? request.TenantId : User.GetActiveTenantId(),
             FirstName = request.FirstName,

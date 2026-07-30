@@ -81,11 +81,6 @@ public static class AuthenticationServiceCollectionExtensions
                 .AddAuthenticationSchemes(AuthenticationSchemes.Jwt, AuthenticationSchemes.ApiKey)
                 .RequireAuthenticatedUser()
                 .RequireRole(Roles.SuperAdmin, Roles.TenantAdmin));
-
-            options.AddPolicy(AuthorizationPolicies.OperatorOrAbove, policy => policy
-                .AddAuthenticationSchemes(AuthenticationSchemes.Jwt, AuthenticationSchemes.ApiKey)
-                .RequireAuthenticatedUser()
-                .RequireRole(Roles.SuperAdmin, Roles.TenantAdmin, Roles.Operator));
         });
 
         // Permission-based authorization: a dynamic policy provider materializes "perm:<key>"

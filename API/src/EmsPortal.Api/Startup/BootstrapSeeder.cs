@@ -104,8 +104,7 @@ public static class BootstrapSeeder
         var definitions = new (string Name, string Description, IReadOnlyList<string> Permissions)[]
         {
             (Roles.SuperAdmin, "Full platform access.", Permissions.ForSuperAdmin()),
-            (Roles.TenantAdmin, "Manage a tenant's users, mappings and integrations.", Permissions.ForTenantAdmin()),
-            (Roles.Operator, "Trigger and monitor integrations.", Permissions.ForOperator()),
+            (Roles.TenantAdmin, "Manage a tenant's users and configuration.", Permissions.ForTenantAdmin()),
         };
 
         foreach (var (name, description, permissions) in definitions)

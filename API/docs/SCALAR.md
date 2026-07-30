@@ -100,7 +100,7 @@ curl http://localhost:5032/openapi/v1.json -o integrationhub-openapi.json
 |---------|-----|
 | `/scalar/v1` or `/openapi/v1.json` returns **404** | App is in **Production**. Run with the `http` profile or set `ASPNETCORE_ENVIRONMENT=Development`. |
 | `401` on every call | No token set, or it expired — log in again / refresh and re-apply the bearer token in the auth panel. |
-| `403` on an admin/tenant call | Your role is insufficient (e.g. Operator calling a `TenantAdminOrAbove` endpoint), or you're acting on a different tenant. |
+| `403` on an admin/tenant call | Your role is insufficient (e.g. a Tenant Admin calling a `SuperAdminOnly` endpoint), or you're acting on a different tenant. |
 | Endpoint missing from the UI | Rebuild/restart the API — the OpenAPI document is generated from the running controllers. |
 
 ---

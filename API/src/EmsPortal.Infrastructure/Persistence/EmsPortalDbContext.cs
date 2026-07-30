@@ -119,7 +119,7 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
         modelBuilder.Entity<CustomerAuditEntry>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<CustomerDocument>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<PermissionGroup>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
-        // Persons are CRM master records owned by a tenant; scope them so a Tenant Admin/Operator never
+        // Persons are CRM master records owned by a tenant; scope them so a non-Super-Admin never
         // sees another tenant's people. Self-profile reads bypass this filter via GetByUserIdAsync.
         modelBuilder.Entity<Person>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         // User groups + memberships are tenant-scoped so a tenant only ever sees its own groups.

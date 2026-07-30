@@ -53,4 +53,8 @@ public static class ActivityEventTypes
     public const string RemsAssigned = "RemsAssigned";
     public const string RemsDuplicated = "RemsDuplicated";
     public const string RemsDeleted = "RemsDeleted";
+
+    // ---- REMS EMS form lifecycle (WO-112) ----
+    public const string RemsFormBuilt = "RemsFormBuilt";
+    public const string RemsFormSent = "RemsFormSent";
 }

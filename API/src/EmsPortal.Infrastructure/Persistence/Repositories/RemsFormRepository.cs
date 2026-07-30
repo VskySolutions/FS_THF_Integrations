@@ -20,6 +20,13 @@ internal sealed class RemsFormRepository : IRemsFormRepository
             .Include(f => f.EmailEvents)
             .FirstOrDefaultAsync(f => f.Id == id, cancellationToken);
 
+    public Task<REMSForm?> GetByRemsIdAsync(Guid remsId, CancellationToken cancellationToken = default)
+        // At most one active form per request (filtered unique index on (TenantId, REMSId)); tenant + soft-delete
+        // scoped by the ambient query filter. Email events are loaded so callers can read sent/locked state.
+        => _dbContext.RemsForms
+            .Include(f => f.EmailEvents)
+            .FirstOrDefaultAsync(f => f.REMSId == remsId, cancellationToken);
+
     public Task<REMSForm?> GetByInviteCodeAsync(Guid tenantId, string inviteCode, CancellationToken cancellationToken = default)
         => _dbContext.RemsForms
             .IgnoreQueryFilters()
@@ -47,4 +54,67 @@ internal sealed class RemsFormRepository : IRemsFormRepository
 
     public async Task AddEmailEventAsync(REMSFormEmailEvent emailEvent, CancellationToken cancellationToken = default)
         => await _dbContext.RemsFormEmailEvents.AddAsync(emailEvent, cancellationToken);
+
+    public async Task<IReadOnlyList<REMSFormEmailEvent>> ListEmailEventsAsync(Guid remsFormId, CancellationToken cancellationToken = default)
+        => await _dbContext.RemsFormEmailEvents
+            .Where(e => e.REMSFormId == remsFormId)
+            .OrderByDescending(e => e.OccurredOnUtc)
+            .ThenByDescending(e => e.CreatedOnUtc)
+            .ToListAsync(cancellationToken);
+
+    public async Task<(IReadOnlyList<RemsInboxItem> Items, int Total)> ListInboxAsync(
+        RemsInboxQuery query, CancellationToken cancellationToken = default)
+    {
+        // Every request that has a form is a candidate; the request must resolve through the (soft-delete +
+        // tenant) filter on REMS. Tenant isolation on the form itself is ambient.
+        var forms = _dbContext.RemsForms.Where(f => f.Rems != null);
+        if (query.FormState is { } state)
+        {
+            forms = forms.Where(f => f.Status == state);
+        }
+
+        var total = await forms.CountAsync(cancellationToken);
+
+        // Project the latest email event via an anonymous-type subquery (FirstOrDefault => null when the
+        // form has no events yet), then shape the record in memory.
+        var rows = await forms
+            .OrderByDescending(f => f.UpdatedOnUtc)
+            .ThenByDescending(f => f.CreatedOnUtc)
+            .Skip((query.Page - 1) * query.Limit)
+            .Take(query.Limit)
+            .Select(f => new
+            {
+                f.REMSId,
+                f.Rems!.REMSNumber,
+                ClientName = f.Rems!.RequestedClientName,
+                EngagementType = f.Rems!.Type,
+                RequestStatus = f.Rems!.Status,
+                f.Status,
+                f.UpdatedOnUtc,
+                f.CreatedByUserId,
+                f.SentOnUtc,
+                LatestEvent = f.EmailEvents
+                    .OrderByDescending(e => e.OccurredOnUtc)
+                    .Select(e => new { e.EventType, e.OccurredOnUtc })
+                    .FirstOrDefault(),
+            })
+            .ToListAsync(cancellationToken);
+
+        var items = rows
+            .Select(x => new RemsInboxItem(
+                x.REMSId,
+                x.REMSNumber,
+                x.ClientName,
+                x.EngagementType,
+                x.RequestStatus,
+                x.Status,
+                x.UpdatedOnUtc,
+                x.CreatedByUserId,
+                x.SentOnUtc,
+                x.LatestEvent is null ? null : x.LatestEvent.EventType,
+                x.LatestEvent is null ? null : x.LatestEvent.OccurredOnUtc))
+            .ToList();
+
+        return (items, total);
+    }
 }

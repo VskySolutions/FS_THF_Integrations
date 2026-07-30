@@ -17,4 +17,10 @@ public enum NotificationType
 
     /// <summary>A REMS request was assigned to the user (in-app only — no email template, REMS WO-111).</summary>
     RemsRequestAssigned = 7,
+
+    /// <summary>The user was assigned as the CSE on a REMS request/form (in-app only — no email template, REMS WO-112).</summary>
+    RemsCseAssigned = 8,
+
+    /// <summary>A REMS onboarding form was emailed to the customer (in-app only — no email template, REMS WO-112).</summary>
+    RemsFormSent = 9,
 }

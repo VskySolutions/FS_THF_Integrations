@@ -14,12 +14,10 @@ public static class UniversalFeatureEntityAccess
 {
     /// <summary>
     /// The base read permission(s) gating UF access to a given entity type. Holding ANY one grants
-    /// access. CustomerRequest accepts any customer-workflow capability (data entry / review / approve)
-    /// so everyone who can open a customer record can read its notes, tags, activity, etc.
+    /// access, so everyone who can open the parent record can read its notes, tags, activity, etc.
     /// </summary>
     public static IReadOnlyList<string> RequiredReadPermissions(EntityType entityType) => entityType switch
     {
-        EntityType.CustomerRequest => new[] { Permissions.CustomersDataEntry, Permissions.CustomersReview, Permissions.CustomersApprove },
         EntityType.Tenant => new[] { Permissions.TenantsRead },
         EntityType.User => new[] { Permissions.UsersRead },
         EntityType.UserGroup => new[] { Permissions.UsersRead },

@@ -2,7 +2,6 @@
 export const NotificationType = Object.freeze({
   Mention: 1,
   ReminderDue: 2,
-  CustomerStatusChanged: 3,
   SyncCompleted: 4,
   SyncFailed: 5,
   System: 6
@@ -11,7 +10,6 @@ export const NotificationType = Object.freeze({
 const META = {
   [NotificationType.Mention]: { label: "Mention", icon: "o_alternate_email", color: "primary" },
   [NotificationType.ReminderDue]: { label: "Reminder", icon: "o_alarm", color: "orange-8" },
-  [NotificationType.CustomerStatusChanged]: { label: "Status change", icon: "o_swap_horiz", color: "indigo" },
   [NotificationType.SyncCompleted]: { label: "Sync completed", icon: "o_cloud_done", color: "positive" },
   [NotificationType.SyncFailed]: { label: "Sync failed", icon: "o_error", color: "negative" },
   [NotificationType.System]: { label: "System", icon: "o_notifications", color: "grey-7" }

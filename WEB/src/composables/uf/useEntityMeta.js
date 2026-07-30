@@ -3,11 +3,6 @@ import { EntityType } from "services/api";
 // Display metadata + permalink routing for each Universal Features entity type.
 // Used by cross-entity surfaces (Pinned Records, Mention Inbox, Activity, permalinks).
 const META = {
-  [EntityType.CustomerRequest]: {
-    label: "Customer Request",
-    icon: "o_groups",
-    route: (id) => ({ name: "customer_detail", params: { id } })
-  },
   [EntityType.Tenant]: {
     label: "Tenant",
     icon: "o_apartment",

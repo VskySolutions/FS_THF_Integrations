@@ -31,7 +31,7 @@ internal sealed class SecuritySchemeDocumentTransformer : IOpenApiDocumentTransf
         {
             Title = "EMS Portal API",
             Version = "v1",
-            Description = "Customer management and administration platform API: tenants, customers, users, and auth.",
+            Description = "Administration platform API: tenants, users, and auth.",
         };
 
         document.Components ??= new OpenApiComponents();

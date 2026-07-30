@@ -46,8 +46,7 @@ const sections = [
     key: "administration",
     label: "Administration",
     items: [
-      { label: "Tenants", icon: "o_apartment", to: "/tenants", permissions: [Permissions.TenantsWrite] },
-      { label: "Customers", icon: "o_groups", to: "/customers", permissions: null }
+      { label: "Tenants", icon: "o_apartment", to: "/tenants", permissions: [Permissions.TenantsWrite] }
     ]
   },
   {

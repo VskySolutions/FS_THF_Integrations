@@ -4,13 +4,12 @@
 // Category derivation (by key prefix):
 //   tenants.*    → Tenants
 //   users.* / persons.* → Users
-//   customers.*  → Customers
 //   roles.* / groups.*  → Access
 //   (anything else)     → Other
 
 // Display order for the rendered category sections.
 export const CATEGORY_ORDER = Object.freeze([
-  "Tenants", "Users", "Access", "Customers", "Other"
+  "Tenants", "Users", "Access", "Other"
 ]);
 
 // Super-admin-only / elevated keys that a Tenant Admin cannot typically grant. Used as a
@@ -24,7 +23,6 @@ export function categoryForKey (key) {
     case "tenants": return "Tenants";
     case "users":
     case "persons": return "Users";
-    case "customers": return "Customers";
     case "roles":
     case "groups": return "Access";
     default: return "Other";

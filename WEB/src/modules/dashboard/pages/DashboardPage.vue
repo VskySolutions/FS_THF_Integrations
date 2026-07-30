@@ -88,7 +88,6 @@ import { usePermissions, Permissions } from "composables/usePermissions";
 import { useDashboardLayout } from "composables/useDashboardLayout";
 import { useNotify } from "composables/useNotify";
 import {
-  useCustomerDashboard,
   useUserDashboard,
   usePlatformDashboard
 } from "composables/useDashboardData";
@@ -99,11 +98,9 @@ const notify = useNotify();
 
 // ---- Role resolution (must mirror DashboardController.ResolveDashboardRole) ----
 // Super Admin = platform admin (can manage tenants). Tenant Admin = manages users + reads tenants.
-// Customer-workflow users (data entry / review / approve) land on the customer dashboard.
 const role = computed(() => {
   if (has(Permissions.TenantsWrite)) return "superAdmin";
   if (has(Permissions.UsersRead) && has(Permissions.TenantsRead)) return "tenantAdmin";
-  if (has(Permissions.CustomersDataEntry) || has(Permissions.CustomersReview) || has(Permissions.CustomersApprove)) return "customer";
   return "common";
 }).value;
 
@@ -127,13 +124,10 @@ const layout = useDashboardLayout(role);
 // ---- Data composables (instantiated once per category the role needs) ----
 const isTenantAdmin = role === "tenantAdmin" || role === "superAdmin";
 const isSuperAdmin = role === "superAdmin";
-// Customer widgets are shown to Tenant/Super Admins and to customer-workflow users.
-const showsCustomers = isTenantAdmin || role === "customer";
-const customers = showsCustomers ? useCustomerDashboard(dateRange) : null;
 const users = isTenantAdmin ? useUserDashboard(dateRange) : null;
 const platform = isSuperAdmin ? usePlatformDashboard(dateRange) : null;
 
-const sources = [customers, users, platform].filter(Boolean);
+const sources = [users, platform].filter(Boolean);
 const anyLoading = computed(() => sources.some((s) => s.loading.value));
 
 // ---- Component resolution (lazy, cached per key) ----
@@ -150,27 +144,12 @@ const resolveComponent = (widget) => {
 // by the stubs (extra attrs simply fall through).
 const dataFor = (widget) => {
   switch (widget.category) {
-    case "customers":
-      return customersProps(widget.key);
     case "users":
       return usersProps(widget.key);
     case "platform":
       return platformProps(widget.key);
     default:
       return {};
-  }
-};
-
-const customersProps = (key) => {
-  if (!customers) return {};
-  const base = { loading: customers.loading.value, error: customers.error.value };
-  switch (key) {
-    case "customerKpiCards": return { ...base, kpis: customers.kpis.value };
-    case "customerFunnel": return { ...base, funnel: customers.funnel.value };
-    case "customerAgeing": return { ...base, ageing: customers.ageing.value };
-    case "customerActivityFeed": return { ...base, activityFeed: customers.activityFeed.value };
-    case "customerSubmissionTrend": return { ...base, submissionTrend: customers.submissionTrend.value, topSubmitters: customers.topSubmitters.value };
-    default: return base;
   }
 };
 
@@ -194,17 +173,12 @@ const platformProps = (key) => {
     case "tenantOnboardingPanel": return { ...base, onboarding: platform.onboarding.value };
     case "systemAlertsPanel": return { ...base, systemAlerts: platform.systemAlerts.value };
     case "platformUserAnalytics": return { ...base, userAnalytics: platform.userAnalytics.value };
-    case "crossTenantCustomerKpi": return { ...base, customer: platform.customer.value };
-    case "customerIssuesTable": return { ...base, customer: platform.customer.value };
-    case "crossTenantCustomerChart": return { ...base, customer: platform.customer.value };
-    case "customerConversionFunnel": return { ...base, customer: platform.customer.value };
     default: return base;
   }
 };
 
 const retryFor = (widget) => {
   switch (widget.category) {
-    case "customers": return customers?.refresh();
     case "users": return users?.refresh();
     case "platform": return platform?.refresh(true);
     default: return undefined;
@@ -215,7 +189,6 @@ const retryFor = (widget) => {
 const customiseOpen = ref(false);
 
 const refreshAll = () => {
-  customers?.refresh();
   users?.refresh();
   platform?.refresh(true);
 };
@@ -285,9 +258,9 @@ const exportCsv = () => {
 
   // Tenant health (super)
   if (visibleKeys.has("tenantHealthTable") && platform?.tenantHealth.value?.length) {
-    const head = ["Tenant", "Pending Customers", "Active Users"];
+    const head = ["Tenant", "Active Users"];
     const body = platform.tenantHealth.value.map((t) => [
-      t.tenantName ?? "", t.pendingCustomers ?? 0, t.activeUsers ?? 0]);
+      t.tenantName ?? "", t.activeUsers ?? 0]);
     sections.push([["Tenant Health"], head, ...body]);
   }
 

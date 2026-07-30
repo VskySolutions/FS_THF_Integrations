@@ -17,9 +17,6 @@ export const Permissions = Object.freeze({
   RolesWrite: "roles.write",
   RolesAssign: "roles.assign",
   GroupsManage: "groups.manage",
-  CustomersDataEntry: "customers.dataEntry",
-  CustomersReview: "customers.review",
-  CustomersApprove: "customers.approve",
   EmailManage: "email.manage",
   // Universal Features (Phase 14/15).
   SettingsManage: "settings.manage",

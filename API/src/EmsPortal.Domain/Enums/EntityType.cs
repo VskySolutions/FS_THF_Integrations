@@ -12,7 +12,6 @@ namespace EmsPortal.Domain.Enums;
 /// </summary>
 public enum EntityType
 {
-    CustomerRequest = 1,
     Tenant = 3,
     User = 4,
     UserGroup = 5,

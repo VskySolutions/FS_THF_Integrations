@@ -75,9 +75,6 @@ public static class DependencyInjection
         services.AddScoped<IUserGroupRepository, UserGroupRepository>();
         services.AddScoped<IAddressRepository, AddressRepository>();
         services.AddScoped<IMediaRepository, MediaRepository>();
-        services.AddScoped<ICustomerRequestRepository, CustomerRequestRepository>();
-        services.AddScoped<ICustomerAuditRepository, CustomerAuditRepository>();
-        services.AddScoped<ICustomerDocumentRepository, CustomerDocumentRepository>();
         services.AddScoped<IPermissionGroupRepository, PermissionGroupRepository>();
         services.AddScoped<IDashboardLayoutRepository, DashboardLayoutRepository>();
         services.AddScoped<ISmtpAccountRepository, SmtpAccountRepository>();

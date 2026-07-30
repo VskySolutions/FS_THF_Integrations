@@ -10,9 +10,9 @@
           </div>
 
           <div>
-            <div class="text-h4 text-weight-bold">Customer management, simplified</div>
+            <div class="text-h4 text-weight-bold">Enterprise management, simplified</div>
             <div class="text-subtitle1 q-mt-sm" style="opacity: 0.9; max-width: 420px;">
-              Onboard, review, and approve customers with confidence — all in one secure workspace.
+              Manage your organisation with confidence — all in one secure workspace.
             </div>
             <q-list class="q-mt-lg auth-brand__features">
               <q-item v-for="feature in features" :key="feature" class="q-px-none">
@@ -43,7 +43,7 @@
 <script setup>
 const features = [
   "Secure, multi-tenant access",
-  "Structured customer onboarding workflow",
+  "Role-based access & permission controls",
   "Full activity & audit visibility"
 ];
 </script>

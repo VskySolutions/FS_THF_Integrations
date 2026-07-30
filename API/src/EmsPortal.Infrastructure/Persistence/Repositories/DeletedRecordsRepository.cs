@@ -8,12 +8,12 @@ namespace EmsPortal.Infrastructure.Persistence.Repositories;
 /// <summary>
 /// Generic Deleted Records Management over the soft-deletable tenant entities. Restores and hard-deletes
 /// cascade the Universal Feature rows that share the record's <c>(EntityType, EntityId)</c> key. Currently
-/// implemented for <see cref="EntityType.CustomerRequest"/> and <see cref="EntityType.UserGroup"/>; other
-/// types report unsupported until their identity projection is added.
+/// implemented for <see cref="EntityType.UserGroup"/>; other types report unsupported until their
+/// identity projection is added.
 /// </summary>
 internal sealed class DeletedRecordsRepository : IDeletedRecordsRepository
 {
-    private static readonly EntityType[] Supported = { EntityType.CustomerRequest, EntityType.UserGroup };
+    private static readonly EntityType[] Supported = { EntityType.UserGroup };
 
     private readonly EmsPortalDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
@@ -34,18 +34,6 @@ internal sealed class DeletedRecordsRepository : IDeletedRecordsRepository
         var tenant = Effective(tenantId);
         switch (entityType)
         {
-            case EntityType.CustomerRequest:
-            {
-                var query = _dbContext.CustomerRequests.IgnoreQueryFilters().Where(c => c.Deleted);
-                if (tenant is { } t) query = query.Where(c => c.TenantId == t);
-                var ordered = query.OrderByDescending(c => c.DeletedOnUtc);
-                var total = await ordered.CountAsync(cancellationToken);
-                var items = await ordered.Skip((page - 1) * limit).Take(limit)
-                    .Select(c => new DeletedRecordRow(c.Id, c.CustomerRequestNumber ?? c.CompanyName, c.TenantId, c.UpdatedById, c.DeletedOnUtc))
-                    .ToListAsync(cancellationToken);
-                return (items, total);
-            }
-
             case EntityType.UserGroup:
             {
                 var query = _dbContext.UserGroups.IgnoreQueryFilters().Where(g => g.Deleted);
@@ -68,9 +56,6 @@ internal sealed class DeletedRecordsRepository : IDeletedRecordsRepository
         var tenant = Effective(tenantId);
         return entityType switch
         {
-            EntityType.CustomerRequest => await _dbContext.CustomerRequests.IgnoreQueryFilters()
-                .Where(c => c.Id == entityId && c.Deleted && (tenant == null || c.TenantId == tenant))
-                .Select(c => c.CustomerRequestNumber ?? c.CompanyName).FirstOrDefaultAsync(cancellationToken),
             EntityType.UserGroup => await _dbContext.UserGroups.IgnoreQueryFilters()
                 .Where(g => g.Id == entityId && g.Deleted && (tenant == null || g.TenantId == tenant))
                 .Select(g => g.Name).FirstOrDefaultAsync(cancellationToken),
@@ -83,9 +68,6 @@ internal sealed class DeletedRecordsRepository : IDeletedRecordsRepository
         var tenant = Effective(tenantId);
         var restored = entityType switch
         {
-            EntityType.CustomerRequest => await _dbContext.CustomerRequests.IgnoreQueryFilters()
-                .Where(c => c.Id == entityId && c.Deleted && (tenant == null || c.TenantId == tenant))
-                .ExecuteUpdateAsync(s => s.SetProperty(c => c.Deleted, false).SetProperty(c => c.DeletedOnUtc, (DateTime?)null), cancellationToken),
             EntityType.UserGroup => await _dbContext.UserGroups.IgnoreQueryFilters()
                 .Where(g => g.Id == entityId && g.Deleted && (tenant == null || g.TenantId == tenant))
                 .ExecuteUpdateAsync(s => s.SetProperty(g => g.Deleted, false).SetProperty(g => g.DeletedOnUtc, (DateTime?)null), cancellationToken),
@@ -106,8 +88,6 @@ internal sealed class DeletedRecordsRepository : IDeletedRecordsRepository
         var tenant = Effective(tenantId);
         var deleted = entityType switch
         {
-            EntityType.CustomerRequest => await _dbContext.CustomerRequests.IgnoreQueryFilters()
-                .Where(c => c.Id == entityId && (tenant == null || c.TenantId == tenant)).ExecuteDeleteAsync(cancellationToken),
             EntityType.UserGroup => await _dbContext.UserGroups.IgnoreQueryFilters()
                 .Where(g => g.Id == entityId && (tenant == null || g.TenantId == tenant)).ExecuteDeleteAsync(cancellationToken),
             _ => 0,
@@ -127,10 +107,6 @@ internal sealed class DeletedRecordsRepository : IDeletedRecordsRepository
         var tenant = Effective(tenantId);
         var cutoff = DateTime.UtcNow.AddDays(-retentionDays);
         var result = new Dictionary<EntityType, int>();
-
-        var customerQuery = _dbContext.CustomerRequests.IgnoreQueryFilters().Where(c => c.Deleted && c.DeletedOnUtc <= cutoff);
-        if (tenant is { } t1) customerQuery = customerQuery.Where(c => c.TenantId == t1);
-        result[EntityType.CustomerRequest] = await customerQuery.CountAsync(cancellationToken);
 
         var groupQuery = _dbContext.UserGroups.IgnoreQueryFilters().Where(g => g.Deleted && g.DeletedOnUtc <= cutoff);
         if (tenant is { } t2) groupQuery = groupQuery.Where(g => g.TenantId == t2);

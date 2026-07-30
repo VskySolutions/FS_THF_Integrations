@@ -5,7 +5,7 @@ using EmsPortal.Domain.Enums;
 namespace EmsPortal.Infrastructure.Persistence.ModifiedLog;
 
 /// <summary>One registered tracked field discovered from a <see cref="TrackedFieldAttribute"/>.</summary>
-/// <param name="Key">Stable key <c>"{EntityType}.{PropertyName}"</c> (e.g. <c>CustomerRequest.CreditLimit</c>).</param>
+/// <param name="Key">Stable key of the form <c>"{EntityType}.{PropertyName}"</c>.</param>
 /// <param name="EntityClrType">The declaring entity CLR type.</param>
 /// <param name="PropertyName">The property name (stored as the log's FieldName).</param>
 /// <param name="EntityType">The Universal Features entity type.</param>
@@ -50,7 +50,7 @@ public static class TrackedFieldRegistry
     private static IReadOnlyList<TrackedFieldDescriptor> Build()
     {
         var result = new List<TrackedFieldDescriptor>();
-        foreach (var type in typeof(CustomerRequest).Assembly.GetTypes())
+        foreach (var type in typeof(OptionSet).Assembly.GetTypes())
         {
             foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {

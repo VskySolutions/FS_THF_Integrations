@@ -6,30 +6,17 @@ namespace EmsPortal.Api.Dashboard;
 /// </summary>
 public static class DashboardDefaultLayouts
 {
-    /// <summary>Widgets every authenticated user sees. No generic (non-customer/non-user) widgets remain.</summary>
+    /// <summary>Widgets every authenticated user sees when no role-specific layout applies.</summary>
     public static readonly string[] Common = Array.Empty<string>();
 
-    /// <summary>The customer onboarding charts/reports (shared by the Customer and Tenant Admin tiers).</summary>
-    private static readonly string[] CustomerWidgets =
-    {
-        "customerKpiCards", "customerFunnel", "customerAgeing",
-        "customerActivityFeed", "customerSubmissionTrend",
-    };
-
-    /// <summary>Customer-workflow users (data entry / review / approve) = the customer widgets.</summary>
-    public static readonly string[] Customer = CustomerWidgets.ToArray();
-
-    /// <summary>Tenant Admin = user widgets + customer widgets.</summary>
-    public static readonly string[] TenantAdmin = new[] { "userSummary", "userRoleDistribution" }
-        .Concat(CustomerWidgets)
-        .ToArray();
+    /// <summary>Tenant Admin = user widgets.</summary>
+    public static readonly string[] TenantAdmin = { "userSummary", "userRoleDistribution" };
 
     /// <summary>Super Admin = TenantAdmin + platform/cross-tenant widgets.</summary>
     public static readonly string[] SuperAdmin = TenantAdmin.Concat(new[]
     {
         "tenantKpiCards", "tenantHealthTable", "platformGrowthChart",
-        "tenantOnboardingPanel", "systemAlertsPanel", "platformUserAnalytics", "crossTenantCustomerKpi",
-        "customerIssuesTable", "crossTenantCustomerChart", "customerConversionFunnel",
+        "tenantOnboardingPanel", "systemAlertsPanel", "platformUserAnalytics",
     }).ToArray();
 
     /// <summary>The ordered default widget keys for a resolved dashboard role.</summary>
@@ -37,27 +24,14 @@ public static class DashboardDefaultLayouts
     {
         DashboardRole.SuperAdmin => SuperAdmin,
         DashboardRole.TenantAdmin => TenantAdmin,
-        DashboardRole.Customer => Customer,
         _ => Common,
     };
 
     /// <summary>
-    /// Widgets hidden by default: everything except the customer-related charts/reports. New users land
-    /// on a customer-focused dashboard and can switch the rest on from Customise. Roles without any
-    /// customer widgets (e.g. Common) hide nothing, so their dashboard stays fully populated.
+    /// Widgets hidden by default. No widgets are hidden by default: a user lands on the full set of
+    /// widgets for their role and can hide any of them from Customise.
     /// </summary>
-    public static IReadOnlyList<string> DefaultHiddenFor(DashboardRole role)
-    {
-        var order = For(role);
-        var hasCustomerWidgets = order.Any(IsCustomerWidget);
-        return hasCustomerWidgets
-            ? order.Where(key => !IsCustomerWidget(key)).ToArray()
-            : Array.Empty<string>();
-    }
-
-    /// <summary>True for the customer-related widget keys (the only widgets shown by default).</summary>
-    private static bool IsCustomerWidget(string key)
-        => key.Contains("customer", StringComparison.OrdinalIgnoreCase);
+    public static IReadOnlyList<string> DefaultHiddenFor(DashboardRole role) => Array.Empty<string>();
 }
 
 /// <summary>The dashboard layout tier a caller resolves to (independent of the RBAC role string).</summary>
@@ -66,5 +40,4 @@ public enum DashboardRole
     Common = 0,
     TenantAdmin = 1,
     SuperAdmin = 2,
-    Customer = 3,
 }

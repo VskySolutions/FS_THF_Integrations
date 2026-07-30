@@ -186,49 +186,6 @@ export const mediaApi = {
   absoluteUrl: (publicUrl) => (publicUrl ? `${process.env.API_BASE_URL || ""}${publicUrl}` : null)
 };
 
-// Customer onboarding & approval workflow (WO-65). Super Admins target a tenant via the `tenantId`
-// query param on list and `tenantId` in the create body; everyone else is auto-scoped server-side.
-export const customerApi = {
-  list: (params) => api.get("/api/customers", { params }).then(envelope),
-  get: (id) => api.get(`/api/customers/${id}`).then(unwrap),
-  // payload: step1 fields { tenantId?, legalName, companyName, contactPerson?, emailAddress, ... }
-  create: (payload) => api.post("/api/customers", payload).then(unwrap),
-  update: (id, payload) => api.put(`/api/customers/${id}`, payload).then(unwrap),
-  remove: (id) => api.delete(`/api/customers/${id}`).then(unwrap),
-  // body: { duplicateAcknowledged } → { submitted, customerRequestNumber, status, duplicates[] }
-  submit: (id, duplicateAcknowledged = false) =>
-    api.post(`/api/customers/${id}/submit`, { duplicateAcknowledged }).then(unwrap),
-  // body: enrichment fields → { customerId, status }
-  enrich: (id, payload) => api.post(`/api/customers/${id}/enrich`, payload).then(unwrap),
-  sendForApproval: (id) => api.post(`/api/customers/${id}/send-for-approval`).then(unwrap),
-  // body: step2 fields → { customerId }
-  saveStep2: (id, payload) => api.post(`/api/customers/${id}/step2`, payload).then(unwrap),
-  // body: { step2: {...}, duplicateAcknowledged } → { approved, status, duplicates[] }
-  approve: (id, step2, duplicateAcknowledged = false) =>
-    api.post(`/api/customers/${id}/approve`, { step2, duplicateAcknowledged }).then(unwrap),
-  // Approver rejects an awaiting-approval request with a mandatory reason. body: { reason }
-  reject: (id, reason) => api.post(`/api/customers/${id}/reject`, { reason }).then(unwrap),
-  // Approver sends an awaiting-approval request back to the reviewer. body: { notes? }
-  revertToReviewer: (id, notes = null) => api.post(`/api/customers/${id}/revert-to-reviewer`, { notes }).then(unwrap),
-  // Reviewer returns a request under review to data entry. body: { notes, fields[] } → { customerId, status }
-  returnForCorrections: (id, notes, fields = []) =>
-    api.post(`/api/customers/${id}/return`, { notes, fields }).then(unwrap),
-  reopen: (id) => api.post(`/api/customers/${id}/reopen`).then(unwrap),
-  // ---- Documents ----
-  listDocuments: (id) => api.get(`/api/customers/${id}/documents`).then(unwrap),
-  uploadDocument: (id, file) => {
-    const form = new FormData();
-    form.append("file", file);
-    return api.post(`/api/customers/${id}/documents`, form, {
-      headers: { "Content-Type": "multipart/form-data" }
-    }).then(unwrap);
-  },
-  downloadDocument: (id, documentId) =>
-    api.get(`/api/customers/${id}/documents/${documentId}/download`, { responseType: "blob" }).then((r) => r?.data),
-  removeDocument: (id, documentId) =>
-    api.delete(`/api/customers/${id}/documents/${documentId}`).then(unwrap)
-};
-
 // Per-tenant SMTP email accounts (WO-80/81). Reads require users.read; writes require email.manage.
 // Super Admins target a tenant via the `tenantId` query (list/get/write) or create body; everyone
 // else is auto-scoped to their active tenant. Passwords are write-only and never returned.
@@ -293,11 +250,10 @@ export const optionSetApi = {
 
 // ---------------------------------------------------------------------------
 // Universal Features (Phase 14/15). Attach to any entity via (entityType, entityId).
-// EntityType enum: CustomerRequest=1, Tenant=3, User=4, UserGroup=5.
+// EntityType enum: Tenant=3, User=4, UserGroup=5.
 // ---------------------------------------------------------------------------
 
 export const EntityType = Object.freeze({
-  CustomerRequest: 1,
   Tenant: 3,
   User: 4,
   UserGroup: 5
@@ -440,7 +396,6 @@ export const ufModifiedLogApi = {
 // endpoints auto-scope to the active tenant; Super Admins may target a tenant via `tenantId`.
 // `params` carries `{ dateRange, tenantId? }`. All responses use the standard ApiResponse envelope.
 export const dashboardApi = {
-  customers: (params) => api.get("/api/dashboard/customers", { params }).then(unwrap),
   users: (params) => api.get("/api/dashboard/users", { params }).then(unwrap),
   // Super Admin platform overview. `forceRefresh` bypasses the server cache via a request header.
   platform: (params, forceRefresh = false) =>

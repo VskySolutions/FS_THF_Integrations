@@ -18,19 +18,9 @@ public static class DefaultOptionSets
         OptionItemSortMode ItemSortMode,
         IReadOnlyList<ItemDefinition> Items);
 
-    /// <summary>Standard Payment Terms for Customer records (kept in numeric order via Custom sort).</summary>
-    public static readonly Definition PaymentTerms = new(
-        EntityType.CustomerRequest,
-        "payment_terms",
-        "Payment Terms",
-        OptionItemSortMode.Custom,
-        new[]
-        {
-            new ItemDefinition("net_30", "NET 30", 0, "{\"days\":30}"),
-            new ItemDefinition("net_60", "NET 60", 1, "{\"days\":60}"),
-            new ItemDefinition("net_90", "NET 90", 2, "{\"days\":90}"),
-            new ItemDefinition("net_120", "NET 120", 3, "{\"days\":120}"),
-        });
-
-    public static IReadOnlyList<Definition> All { get; } = new[] { PaymentTerms };
+    /// <summary>
+    /// The platform-standard option lists to seed. No platform-standard lists ship by default; a tenant
+    /// creates its own lists via the Option Sets management UI.
+    /// </summary>
+    public static IReadOnlyList<Definition> All { get; } = Array.Empty<Definition>();
 }

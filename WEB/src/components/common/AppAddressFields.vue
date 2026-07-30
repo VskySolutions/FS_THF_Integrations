@@ -42,7 +42,7 @@
 </template>
 
 <script setup>
-// Single shared address field-set used by every module that captures an address (profile, customer,
+// Single shared address field-set used by every module that captures an address (profile,
 // …). Two sub-sections — Location (country → state → city → postal) and Street address — with the
 // dependent country/state/city cascade and locale-aware postal validation defined once here.
 //

@@ -29,14 +29,6 @@ public static class Permissions
     public const string RolesWrite = "roles.write";
     public const string RolesAssign = "roles.assign";
 
-    // Customer Management workflow
-    /// <summary>Create / enter Customer Requests (Step 1 Basic Information) and save drafts.</summary>
-    public const string CustomersDataEntry = "customers.dataEntry";
-    /// <summary>Enrich submitted Customer Requests and send them for approval (Customer Role User).</summary>
-    public const string CustomersReview = "customers.review";
-    /// <summary>Complete Step 2 fields and approve/reject/return Customer Requests (Customer Approver).</summary>
-    public const string CustomersApprove = "customers.approve";
-
     // Permission Groups (RBAC composition layer)
     /// <summary>Create, edit, and compose Permission Groups (and compose them into roles).</summary>
     public const string GroupsManage = "groups.manage";
@@ -65,7 +57,6 @@ public static class Permissions
         PersonsRead, PersonsWrite, PersonsDelete,
         UsersRead, UsersWrite, UsersResetPassword, UsersGroupManagement,
         RolesRead, RolesWrite, RolesAssign,
-        CustomersDataEntry, CustomersReview, CustomersApprove,
         GroupsManage,
         EmailManage,
         SettingsManage, RecordsAdminDelete,
@@ -83,8 +74,6 @@ public static class Permissions
         PersonsRead, PersonsWrite,
         UsersRead, UsersWrite, UsersResetPassword, UsersGroupManagement,
         RolesRead,
-        // Tenant Admins act as Customer data-entry, Customer Role User and Customer Approver.
-        CustomersDataEntry, CustomersReview, CustomersApprove,
         // Tenant Admins manage Permission Groups within their own tenant.
         GroupsManage,
         // Tenant Admins manage their tenant's SMTP email accounts.

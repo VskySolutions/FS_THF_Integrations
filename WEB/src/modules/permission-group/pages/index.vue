@@ -156,7 +156,7 @@ const STATUS_OPTIONS = [
   { label: "Inactive", value: "false" }
 ];
 const CATEGORY_OPTIONS = [
-  "Tenants", "Users", "Access", "Customers", "Mappings", "Jobs", "Schedules", "System"
+  "Tenants", "Users", "Access", "Mappings", "Jobs", "Schedules", "System"
 ].map((c) => ({ label: c, value: c }));
 
 const columns = computed(() => [

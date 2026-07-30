@@ -8,7 +8,7 @@ namespace EmsPortal.Infrastructure.Persistence;
 
 /// <summary>
 /// EF Core unit of work for the EmsPortal application schema. Owns the
-/// application tables (customers, access management, email, option sets, universal
+/// application tables (access management, email, option sets, universal
 /// features, audit trail). Schema migrations are applied by the Integration API on
 /// startup; the Background Worker and MCP Server are read/write consumers only.
 /// <para>
@@ -52,12 +52,6 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<Address> Addresses => Set<Address>();
 
     public DbSet<Media> Media => Set<Media>();
-
-    public DbSet<CustomerRequest> CustomerRequests => Set<CustomerRequest>();
-
-    public DbSet<CustomerAuditEntry> CustomerAuditEntries => Set<CustomerAuditEntry>();
-
-    public DbSet<CustomerDocument> CustomerDocuments => Set<CustomerDocument>();
 
     public DbSet<PermissionGroup> PermissionGroups => Set<PermissionGroup>();
 
@@ -115,9 +109,6 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
         // filter is bypassed when no tenant is resolved so global background operations
         // still work; soft-deleted rows are always excluded.
         modelBuilder.Entity<AuditTrailEntry>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
-        modelBuilder.Entity<CustomerRequest>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
-        modelBuilder.Entity<CustomerAuditEntry>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
-        modelBuilder.Entity<CustomerDocument>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<PermissionGroup>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         // Persons are CRM master records owned by a tenant; scope them so a non-Super-Admin never
         // sees another tenant's people. Self-profile reads bypass this filter via GetByUserIdAsync.
@@ -244,15 +235,6 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
             {
                 case AuditTrailEntry audit when audit.TenantId == Guid.Empty:
                     audit.TenantId = _tenantContext.TenantId;
-                    break;
-                case CustomerRequest customer when customer.TenantId == Guid.Empty:
-                    customer.TenantId = _tenantContext.TenantId;
-                    break;
-                case CustomerAuditEntry auditEntry when auditEntry.TenantId == Guid.Empty:
-                    auditEntry.TenantId = _tenantContext.TenantId;
-                    break;
-                case CustomerDocument document when document.TenantId == Guid.Empty:
-                    document.TenantId = _tenantContext.TenantId;
                     break;
                 case PermissionGroup permissionGroup when permissionGroup.TenantId == Guid.Empty:
                     permissionGroup.TenantId = _tenantContext.TenantId;

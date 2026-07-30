@@ -17,7 +17,7 @@ public class SavedView : AuditableEntity
     /// <summary>Display name of the view.</summary>
     public string Name { get; set; } = string.Empty;
 
-    /// <summary>The list page key the view applies to (e.g. <c>customers</c>).</summary>
+    /// <summary>The list page key the view applies to (e.g. <c>users</c>).</summary>
     public string ListPage { get; set; } = string.Empty;
 
     /// <summary>Serialised filter state (JSON).</summary>

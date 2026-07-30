@@ -2,7 +2,7 @@
 
 A multi-tenant integration platform that automates the import of financial data from **Concur** into **Maconomy** (expense reports, vendor invoices, vendor payments). It exposes a REST API for triggering and administering integration flows, runs the flows asynchronously on a background worker via Hangfire, and isolates every tenant's data and credentials.
 
-Beyond the core integration flows it also provides Customer onboarding/approval, RBAC permission groups, per-tenant SMTP accounts & email templates, role-aware dashboards, and a platform-wide **Universal Features** collaboration layer — notes (with @mentions), tags, attachments, an activity timeline, reminders, notifications, pins, colour codes, saved views, checklists, sticky notes, deleted-records management, and a field-level modified-log — that attaches to **any** entity via a shared `(EntityType, EntityId)` key without per-entity schema changes.
+Beyond the core integration flows it also provides RBAC permission groups, per-tenant SMTP accounts & email templates, role-aware dashboards, and a platform-wide **Universal Features** collaboration layer — notes (with @mentions), tags, attachments, an activity timeline, reminders, notifications, pins, colour codes, saved views, checklists, sticky notes, deleted-records management, and a field-level modified-log — that attaches to **any** entity via a shared `(EntityType, EntityId)` key without per-entity schema changes.
 
 Built on **.NET 9** following **Clean Architecture**, with a **Quasar 2 / Vue 3** admin SPA (`WEB/`).
 

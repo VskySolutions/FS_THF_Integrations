@@ -118,6 +118,8 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<REMSApprovalRound> RemsApprovalRounds => Set<REMSApprovalRound>();
     public DbSet<REMSApprovalTask> RemsApprovalTasks => Set<REMSApprovalTask>();
     public DbSet<REMSApprovalChecklistItem> RemsApprovalChecklistItems => Set<REMSApprovalChecklistItem>();
+    public DbSet<RemsSettings> RemsSettings => Set<RemsSettings>();
+    public DbSet<RemsDepartmentDirector> RemsDepartmentDirectors => Set<RemsDepartmentDirector>();
 
     /// <summary>Data Protection key ring storage (Multi-Tenancy ADR-002).</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
@@ -186,6 +188,8 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
         modelBuilder.Entity<REMSApprovalRound>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<REMSApprovalTask>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<REMSApprovalChecklistItem>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<RemsSettings>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<RemsDepartmentDirector>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<REMSFormSubmission>().HasQueryFilter(e => !_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId);
         modelBuilder.Entity<REMSFormEmailEvent>().HasQueryFilter(e => !_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId);
 
@@ -420,6 +424,12 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
                     break;
                 case REMSApprovalChecklistItem remsChecklistItem when remsChecklistItem.TenantId == Guid.Empty:
                     remsChecklistItem.TenantId = _tenantContext.TenantId;
+                    break;
+                case RemsSettings remsSettings when remsSettings.TenantId == Guid.Empty:
+                    remsSettings.TenantId = _tenantContext.TenantId;
+                    break;
+                case RemsDepartmentDirector remsDepartmentDirector when remsDepartmentDirector.TenantId == Guid.Empty:
+                    remsDepartmentDirector.TenantId = _tenantContext.TenantId;
                     break;
             }
         }

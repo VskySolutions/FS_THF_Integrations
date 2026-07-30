@@ -19,11 +19,51 @@ internal sealed class RemsEngagementRepository : IRemsEngagementRepository
             .Include(e => e.CommissionSplits)
             .FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
 
+    public Task<REMSEngagement?> GetWithContextAsync(Guid id, CancellationToken cancellationToken = default)
+        => _dbContext.RemsEngagements
+            .Include(e => e.MarketingMethods)
+            .Include(e => e.CommissionSplits)
+            .Include(e => e.Entity).ThenInclude(en => en!.Client).ThenInclude(c => c!.Rems)
+            .Include(e => e.Entity).ThenInclude(en => en!.Client).ThenInclude(c => c!.Entities)
+            .Include(e => e.Entity).ThenInclude(en => en!.Addresses).ThenInclude(a => a.Address)
+            .FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
+
     public Task<REMSEngagement?> GetByEntityIdAsync(Guid remsEntityId, CancellationToken cancellationToken = default)
         => _dbContext.RemsEngagements
             .Include(e => e.MarketingMethods)
             .Include(e => e.CommissionSplits)
             .FirstOrDefaultAsync(e => e.REMSEntityId == remsEntityId, cancellationToken);
+
+    public async Task<IReadOnlyList<REMSEngagement>> ListByEntityIdsAsync(IReadOnlyCollection<Guid> entityIds, CancellationToken cancellationToken = default)
+        => entityIds.Count == 0
+            ? Array.Empty<REMSEngagement>()
+            : await _dbContext.RemsEngagements
+                .Include(e => e.MarketingMethods)
+                .Include(e => e.CommissionSplits)
+                .Where(e => entityIds.Contains(e.REMSEntityId))
+                .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<REMSEngagementAuditDetail>> ListAuditDetailsAsync(IReadOnlyCollection<Guid> engagementIds, CancellationToken cancellationToken = default)
+        => engagementIds.Count == 0
+            ? Array.Empty<REMSEngagementAuditDetail>()
+            : await _dbContext.RemsEngagementAuditDetails
+                .Where(d => engagementIds.Contains(d.REMSEngagementId))
+                .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<REMSEngagementGovernmentDetail>> ListGovernmentDetailsAsync(IReadOnlyCollection<Guid> engagementIds, CancellationToken cancellationToken = default)
+        => engagementIds.Count == 0
+            ? Array.Empty<REMSEngagementGovernmentDetail>()
+            : await _dbContext.RemsEngagementGovernmentDetails
+                .Where(d => engagementIds.Contains(d.REMSEngagementId))
+                .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<REMSEngagementTaxDetail>> ListTaxDetailsAsync(IReadOnlyCollection<Guid> engagementIds, CancellationToken cancellationToken = default)
+        => engagementIds.Count == 0
+            ? Array.Empty<REMSEngagementTaxDetail>()
+            : await _dbContext.RemsEngagementTaxDetails
+                .Include(d => d.TaxForms)
+                .Where(d => engagementIds.Contains(d.REMSEngagementId))
+                .ToListAsync(cancellationToken);
 
     public async Task AddAsync(REMSEngagement engagement, CancellationToken cancellationToken = default)
         => await _dbContext.RemsEngagements.AddAsync(engagement, cancellationToken);
@@ -54,6 +94,8 @@ internal sealed class RemsEngagementRepository : IRemsEngagementRepository
 
     public async Task AddTaxFormAsync(REMSEngagementTaxForm taxForm, CancellationToken cancellationToken = default)
         => await _dbContext.RemsEngagementTaxForms.AddAsync(taxForm, cancellationToken);
+
+    public void RemoveTaxForm(REMSEngagementTaxForm taxForm) => _dbContext.RemsEngagementTaxForms.Remove(taxForm);
 
     public async Task AddMarketingMethodAsync(REMSEngagementMarketingMethod method, CancellationToken cancellationToken = default)
         => await _dbContext.RemsEngagementMarketingMethods.AddAsync(method, cancellationToken);

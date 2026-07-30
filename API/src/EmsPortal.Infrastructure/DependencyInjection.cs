@@ -108,6 +108,7 @@ public static class DependencyInjection
         services.AddScoped<IRemsClientRepository, RemsClientRepository>();
         services.AddScoped<IRemsEngagementRepository, RemsEngagementRepository>();
         services.AddScoped<IRemsApprovalRepository, RemsApprovalRepository>();
+        services.AddScoped<IRemsSettingsRepository, RemsSettingsRepository>();
         services.AddScoped<IRemsNumberGenerator, Persistence.RemsNumberGenerator>();
 
         return services;

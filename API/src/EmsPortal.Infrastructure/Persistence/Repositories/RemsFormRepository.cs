@@ -29,6 +29,40 @@ internal sealed class RemsFormRepository : IRemsFormRepository
             .Include(f => f.EmailEvents)
             .FirstOrDefaultAsync(f => f.REMSId == remsId, cancellationToken);
 
+    public Task<REMSForm?> GetWithSubmissionsByRemsIdAsync(Guid remsId, CancellationToken cancellationToken = default)
+        => _dbContext.RemsForms
+            .Include(f => f.Submissions)
+            .FirstOrDefaultAsync(f => f.REMSId == remsId, cancellationToken);
+
+    public async Task<(IReadOnlyList<RemsClientFormItem> Items, int Total)> ListClientFormsAsync(
+        int page, int limit, CancellationToken cancellationToken = default)
+    {
+        // Every request that has a form. Inner-join REMS (tenant + not-deleted) to its form so both ambient
+        // query filters apply; project the submitted state and the request's assigned Admin/CSE.
+        var query =
+            from r in _dbContext.Rems
+            join f in _dbContext.RemsForms on r.Id equals f.REMSId
+            select new RemsClientFormItem(
+                r.Id,
+                r.REMSNumber,
+                r.RequestedClientName,
+                r.Status,
+                f.Status == RemsFormStatus.Submitted || f.SubmittedOnUtc != null,
+                f.SubmittedOnUtc,
+                r.AdminAssignedToId,
+                r.CSEId);
+
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderByDescending(i => i.SubmittedOnUtc ?? DateTime.MinValue)
+            .ThenBy(i => i.RemsNumber)
+            .Skip((page - 1) * limit)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+
+        return (items, total);
+    }
+
     public Task<REMSForm?> GetByInviteCodeAsync(Guid tenantId, string inviteCode, CancellationToken cancellationToken = default)
         => _dbContext.RemsForms
             .IgnoreQueryFilters()

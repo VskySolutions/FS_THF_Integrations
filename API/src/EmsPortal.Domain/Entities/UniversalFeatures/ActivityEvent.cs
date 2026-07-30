@@ -60,4 +60,12 @@ public static class ActivityEventTypes
 
     // ---- REMS public client form (WO-113) ----
     public const string RemsFormSubmitted = "RemsFormSubmitted";
+
+    // ---- REMS engagement workspace + approval (WO-114) ----
+    public const string RemsEngagementUpdated = "RemsEngagementUpdated";
+    public const string RemsApprovalSent = "RemsApprovalSent";
+    public const string RemsApprovalResubmitted = "RemsApprovalResubmitted";
+    public const string RemsApproved = "RemsApproved";
+    public const string RemsRejected = "RemsRejected";
+    public const string RemsFullyApproved = "RemsFullyApproved";
 }

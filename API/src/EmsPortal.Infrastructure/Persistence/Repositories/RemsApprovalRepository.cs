@@ -41,6 +41,27 @@ internal sealed class RemsApprovalRepository : IRemsApprovalRepository
             .Include(t => t.ChecklistItems)
             .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
 
+    public Task<REMSApprovalTask?> GetTaskWithContextAsync(Guid id, CancellationToken cancellationToken = default)
+        => _dbContext.RemsApprovalTasks
+            .Include(t => t.ChecklistItems)
+            .Include(t => t.Round).ThenInclude(r => r!.Tasks)
+            .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.CommissionSplits)
+            .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.MarketingMethods)
+            .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.Entity)
+                .ThenInclude(en => en!.Client).ThenInclude(c => c!.Rems)
+            .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.Entity)
+                .ThenInclude(en => en!.Client).ThenInclude(c => c!.Entities)
+            .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
+
+    public async Task<IReadOnlyList<REMSApprovalTask>> ListTasksByApproverAsync(Guid approverId, CancellationToken cancellationToken = default)
+        => await _dbContext.RemsApprovalTasks
+            .Include(t => t.ChecklistItems)
+            .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.Entity)
+                .ThenInclude(en => en!.Client).ThenInclude(c => c!.Rems)
+            .Where(t => t.ApproverId == approverId)
+            .OrderByDescending(t => t.Round!.SentOnUtc)
+            .ToListAsync(cancellationToken);
+
     public async Task AddRoundAsync(REMSApprovalRound round, CancellationToken cancellationToken = default)
         => await _dbContext.RemsApprovalRounds.AddAsync(round, cancellationToken);
 

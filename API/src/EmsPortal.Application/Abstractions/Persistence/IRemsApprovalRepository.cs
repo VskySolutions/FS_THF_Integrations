@@ -20,6 +20,17 @@ public interface IRemsApprovalRepository
     /// <summary>The task with its checklist items loaded.</summary>
     Task<REMSApprovalTask?> GetTaskByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// The task with its full decision context (WO-114): its checklist, its round (and all sibling tasks in
+    /// the round), and the round's engagement (with commission splits and marketing methods) resolved through
+    /// its entity → client (→ entities) → owning REMS request. Backs the role-scoped task view and the
+    /// approve/reject lifecycle (sibling-task completion + "everyone involved" notification set).
+    /// </summary>
+    Task<REMSApprovalTask?> GetTaskWithContextAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>The caller's own approval tasks (pending and historical), newest round first, with round + engagement context.</summary>
+    Task<IReadOnlyList<REMSApprovalTask>> ListTasksByApproverAsync(Guid approverId, CancellationToken cancellationToken = default);
+
     Task AddRoundAsync(REMSApprovalRound round, CancellationToken cancellationToken = default);
 
     void UpdateRound(REMSApprovalRound round);

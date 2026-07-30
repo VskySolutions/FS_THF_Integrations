@@ -26,6 +26,13 @@ internal sealed class RemsClientRepository : IRemsClientRepository
 
     public void Remove(REMSClient client) => _dbContext.RemsClients.Remove(client);
 
+    public Task<REMSEntity?> GetEntityAsync(Guid entityId, CancellationToken cancellationToken = default)
+        => _dbContext.RemsEntities
+            .Include(e => e.Client)
+            .Include(e => e.Addresses).ThenInclude(a => a.Address)
+            .Include(e => e.Contacts).ThenInclude(c => c.Person)
+            .FirstOrDefaultAsync(e => e.Id == entityId, cancellationToken);
+
     public async Task AddEntityAsync(REMSEntity entity, CancellationToken cancellationToken = default)
         => await _dbContext.RemsEntities.AddAsync(entity, cancellationToken);
 
@@ -34,11 +41,16 @@ internal sealed class RemsClientRepository : IRemsClientRepository
     public async Task AddEntityAddressAsync(REMSEntityAddress address, CancellationToken cancellationToken = default)
         => await _dbContext.RemsEntityAddresses.AddAsync(address, cancellationToken);
 
+    public void RemoveEntityAddress(REMSEntityAddress address) => _dbContext.RemsEntityAddresses.Remove(address);
+
     public async Task AddEntityContactAsync(REMSEntityContact contact, CancellationToken cancellationToken = default)
         => await _dbContext.RemsEntityContacts.AddAsync(contact, cancellationToken);
 
+    public void RemoveEntityContact(REMSEntityContact contact) => _dbContext.RemsEntityContacts.Remove(contact);
+
     private IQueryable<REMSClient> LoadGraph()
         => _dbContext.RemsClients
-            .Include(c => c.Entities).ThenInclude(e => e.Addresses)
-            .Include(c => c.Entities).ThenInclude(e => e.Contacts);
+            .Include(c => c.BillingAddress)
+            .Include(c => c.Entities).ThenInclude(e => e.Addresses).ThenInclude(a => a.Address)
+            .Include(c => c.Entities).ThenInclude(e => e.Contacts).ThenInclude(ct => ct.Person);
 }

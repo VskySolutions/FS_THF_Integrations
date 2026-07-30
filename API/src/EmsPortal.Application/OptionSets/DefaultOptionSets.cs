@@ -77,6 +77,35 @@ public static class DefaultOptionSets
             new ItemDefinition("tax_event", "Tax Event", 12, MarketingMetadata("Event", autoSuggested: false, editable: false)),
             new ItemDefinition("finrep_conference", "FINREP Conference", 13, MarketingMetadata("Event", autoSuggested: false, editable: false)),
         }),
+        // Engagement department (WO-114). The code drives the conditional engagement detail: an "audit"
+        // engagement carries an audit detail (signed CAF), a "tax" engagement a tax detail (fiscal year
+        // end + calculated due dates + form checklist). Also the key for the department-to-director map.
+        new Definition(EntityType.Rems, "REMS.Department", "REMS Department", OptionItemSortMode.Custom, new[]
+        {
+            new ItemDefinition("cas", "CAS", 1),
+            new ItemDefinition("tax", "Tax", 2),
+            new ItemDefinition("audit", "Audit", 3),
+            new ItemDefinition("gcs", "GCS", 4),
+        }),
+        // Engagement service line (WO-114). An "audit" department with the "government" service line is a
+        // Government Audit and additionally requires a contract number + Florida 1% state-fee flag.
+        new Definition(EntityType.Rems, "REMS.ServiceLine", "REMS Service Line", OptionItemSortMode.Custom, new[]
+        {
+            new ItemDefinition("commercial", "Commercial", 1),
+            new ItemDefinition("non_profit", "Non-Profit", 2),
+            new ItemDefinition("government", "Government", 3),
+            new ItemDefinition("individual", "Individual", 4),
+        }),
+        // Engagement tax forms (WO-114): the checklist values referenced by foreign key from
+        // REMSEngagementTaxForm.TaxFormId on a tax engagement's tax detail.
+        new Definition(EntityType.Rems, "REMS.TaxForm", "REMS Tax Form", OptionItemSortMode.Custom, new[]
+        {
+            new ItemDefinition("1040", "1040 — Individual", 1),
+            new ItemDefinition("1120", "1120 — C Corporation", 2),
+            new ItemDefinition("1120_s", "1120-S — S Corporation", 3),
+            new ItemDefinition("1065", "1065 — Partnership", 4),
+            new ItemDefinition("990", "990 — Tax-Exempt", 5),
+        }),
     };
 
     /// <summary>Builds the <c>MetadataJson</c> for a REMS marketing-method item: its group and behaviour flags.</summary>

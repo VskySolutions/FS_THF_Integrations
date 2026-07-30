@@ -32,16 +32,40 @@ public sealed record RemsInboxItem(
     DateTime? LatestEmailEventOnUtc);
 
 /// <summary>
+/// One client-forms row (WO-114, AC-REMS-013.1): a request that has an EMS form, with its
+/// submitted/not-submitted state, submission date, and the request's assigned Admin/CSE.
+/// </summary>
+public sealed record RemsClientFormItem(
+    Guid RemsId,
+    string RemsNumber,
+    string ClientName,
+    string RequestStatus,
+    bool Submitted,
+    DateTime? SubmittedOnUtc,
+    Guid? AdminAssignedToId,
+    Guid? CSEId);
+
+/// <summary>
 /// Data access for the REMS customer-facing form and its drafts, submissions and email events
 /// (WO-110). Submissions and email events are append-only.
 /// </summary>
 public interface IRemsFormRepository
 {
+    /// <summary>
+    /// The paginated client-forms list (WO-114): every request that has a form, with its submitted state and
+    /// the request's assigned Admin/CSE. Tenant-scoped by the ambient query filter.
+    /// </summary>
+    Task<(IReadOnlyList<RemsClientFormItem> Items, int Total)> ListClientFormsAsync(
+        int page, int limit, CancellationToken cancellationToken = default);
+
     /// <summary>The form with its drafts, submissions and email events loaded.</summary>
     Task<REMSForm?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>The active form (with its email events) for a request, or null when none has been built (WO-112).</summary>
     Task<REMSForm?> GetByRemsIdAsync(Guid remsId, CancellationToken cancellationToken = default);
+
+    /// <summary>The active form for a request WITH its submissions loaded (WO-114 submitted-form view).</summary>
+    Task<REMSForm?> GetWithSubmissionsByRemsIdAsync(Guid remsId, CancellationToken cancellationToken = default);
 
     /// <summary>The active form for a tenant's invite code (public link resolution).</summary>
     Task<REMSForm?> GetByInviteCodeAsync(Guid tenantId, string inviteCode, CancellationToken cancellationToken = default);

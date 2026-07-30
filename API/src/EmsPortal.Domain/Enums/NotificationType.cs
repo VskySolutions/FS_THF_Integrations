@@ -14,4 +14,7 @@ public enum NotificationType
 
     /// <summary>A generic system notification not covered by a more specific type.</summary>
     System = 6,
+
+    /// <summary>A REMS request was assigned to the user (in-app only — no email template, REMS WO-111).</summary>
+    RemsRequestAssigned = 7,
 }

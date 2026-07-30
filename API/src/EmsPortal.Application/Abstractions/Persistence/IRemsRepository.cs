@@ -1,6 +1,64 @@
 using EmsPortal.Domain.Entities;
+using EmsPortal.Domain.Enums;
 
 namespace EmsPortal.Application.Abstractions.Persistence;
+
+/// <summary>The dashboard "view" a request list is filtered to (WO-111).</summary>
+public enum RemsListScope
+{
+    /// <summary>No view filter — every request the caller is allowed to see (record-level predicate only).</summary>
+    All = 0,
+
+    /// <summary>The partner "my requests" view: created or involved by the caller (AC-REMS-002.1).</summary>
+    Partner = 1,
+
+    /// <summary>The Admin Pool view: submitted (non-draft) requests.</summary>
+    Pool = 2,
+}
+
+/// <summary>Additional Admin-Pool narrowing applied when <see cref="RemsListScope.Pool"/> is requested.</summary>
+public enum RemsPoolFilter
+{
+    /// <summary>All pool requests, regardless of assignment.</summary>
+    All = 0,
+
+    /// <summary>Only pool requests with no admin assigned.</summary>
+    Unassigned = 1,
+
+    /// <summary>Only pool requests assigned to the caller.</summary>
+    Mine = 2,
+}
+
+/// <summary>
+/// The resolved query for a REMS request dashboard list (WO-111). Carries the caller identity and the
+/// caller's privilege (Admin role or Super Admin) so the repository can apply the record-level
+/// visibility predicate, plus the server-side filters and the view scope.
+/// </summary>
+public sealed record RemsRequestListOptions(
+    Guid CallerUserId,
+    bool CallerIsPrivileged,
+    string? ClientName,
+    string? Contact,
+    string? Status,
+    DateTime? CreatedFromUtc,
+    DateTime? CreatedToUtc,
+    RemsListScope Scope,
+    RemsPoolFilter PoolFilter,
+    int Page,
+    int Limit);
+
+/// <summary>
+/// The EMS-form and client-submission state for a request, projected from the (at most one active)
+/// <see cref="REMSForm"/> and its submissions. Absent when the form has not been started (WO-111 left-join;
+/// forms/submissions are populated by later WOs).
+/// </summary>
+public sealed record RemsFormStateInfo(
+    Guid RemsId,
+    string? IndustryGroup,
+    RemsFormStatus? FormStatus,
+    DateTime? FormSentOnUtc,
+    DateTime? FormSubmittedOnUtc,
+    bool HasSubmission);
 
 /// <summary>
 /// Data access for the REMS request aggregate root and its file links (WO-110). Tenant isolation is
@@ -9,11 +67,26 @@ namespace EmsPortal.Application.Abstractions.Persistence;
 /// </summary>
 public interface IRemsRepository
 {
-    /// <summary>The request with its file links loaded; tenant-scoped by the ambient filter.</summary>
+    /// <summary>The request with its file links (and media) loaded; tenant-scoped by the ambient filter.</summary>
     Task<REMS?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>Active requests for the current tenant.</summary>
     Task<IReadOnlyList<REMS>> ListAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Paginated dashboard list. Applies the WO-111 record-level visibility predicate (drafts are
+    /// creator-only; privileged callers see all non-draft; partner-only callers see created-or-involved)
+    /// plus the requested filters and view scope, tenant-scoped by the ambient filter.
+    /// </summary>
+    Task<(IReadOnlyList<REMS> Items, int Total)> ListRequestsAsync(
+        RemsRequestListOptions options, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// EMS-form / client-submission state for the given requests (one active form per request), for the
+    /// dashboard rows. Requests with no form are simply absent from the result.
+    /// </summary>
+    Task<IReadOnlyList<RemsFormStateInfo>> GetFormStatesAsync(
+        IReadOnlyCollection<Guid> remsIds, CancellationToken cancellationToken = default);
 
     Task AddAsync(REMS rems, CancellationToken cancellationToken = default);
 

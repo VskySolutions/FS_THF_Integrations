@@ -28,6 +28,12 @@ public interface IUserRepository
         string? name, string? email, string? phone, string? role, string? group,
         int page, int limit, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Active users holding an EXACT RBAC role name within a tenant (e.g. the REMS "Admin" role for the
+    /// assign dropdown, WO-111). Exact match so "Admin" never also returns "TenantAdmin"/"SuperAdmin".
+    /// </summary>
+    Task<IReadOnlyList<User>> ListByTenantRoleAsync(Guid tenantId, string roleName, CancellationToken cancellationToken = default);
+
     Task AddAsync(User user, CancellationToken cancellationToken = default);
 
     void Update(User user);

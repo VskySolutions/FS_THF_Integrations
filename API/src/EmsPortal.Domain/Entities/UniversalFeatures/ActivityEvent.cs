@@ -46,4 +46,11 @@ public static class ActivityEventTypes
     public const string AttachmentDeleted = "AttachmentDeleted";
     public const string ChecklistItemCompleted = "ChecklistItemCompleted";
     public const string Restored = "Restored";
+
+    // ---- REMS request lifecycle (WO-111) ----
+    public const string RemsCreated = "RemsCreated";
+    public const string RemsSubmitted = "RemsSubmitted";
+    public const string RemsAssigned = "RemsAssigned";
+    public const string RemsDuplicated = "RemsDuplicated";
+    public const string RemsDeleted = "RemsDeleted";
 }

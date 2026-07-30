@@ -146,6 +146,18 @@ internal sealed class UserRepository : IUserRepository
         return (items, total);
     }
 
+    public async Task<IReadOnlyList<User>> ListByTenantRoleAsync(Guid tenantId, string roleName, CancellationToken cancellationToken = default)
+        // Ignore query filters (the Person tenant filter would otherwise blank the name) and re-apply
+        // the soft-delete predicate. Exact role-name match within the tenant.
+        => await _dbContext.Users
+            .IgnoreQueryFilters()
+            .Where(u => !u.Deleted && u.IsActive)
+            .Include(u => u.Person)
+            .Where(u => u.TenantRoles.Any(r =>
+                !r.Deleted && r.TenantId == tenantId && r.RoleEntity != null && r.RoleEntity.Name == roleName))
+            .OrderBy(u => u.DisplayName)
+            .ToListAsync(cancellationToken);
+
     public async Task AddAsync(User user, CancellationToken cancellationToken = default)
         => await _dbContext.Users.AddAsync(user, cancellationToken);
 

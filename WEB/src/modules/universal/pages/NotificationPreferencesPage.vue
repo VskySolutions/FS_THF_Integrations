@@ -19,7 +19,6 @@
           <tr>
             <th class="text-left">Notification type</th>
             <th class="text-center">In-app</th>
-            <th class="text-center">Email</th>
           </tr>
         </thead>
         <tbody>
@@ -29,7 +28,6 @@
               {{ metaFor(row.notificationType).label }}
             </td>
             <td class="text-center"><q-toggle v-model="row.inApp" /></td>
-            <td class="text-center"><q-toggle v-model="row.email" /></td>
           </tr>
         </tbody>
       </q-markup-table>
@@ -63,8 +61,7 @@ const save = async () => {
   try {
     await ufNotificationApi.updatePreferences(prefs.value.map((p) => ({
       notificationType: p.notificationType,
-      inApp: p.inApp,
-      email: p.email
+      inApp: p.inApp
     })));
     notify.success("Preferences saved.");
   } catch (err) {

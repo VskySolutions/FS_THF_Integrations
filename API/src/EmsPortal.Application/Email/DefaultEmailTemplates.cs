@@ -104,6 +104,34 @@ public static class DefaultEmailTemplates
             <p><a href="{{LoginUrl}}">Open the record</a></p>
             """,
             new[] { "FullName", "Title", "Body", "TenantName", "LoginUrl" }),
+
+        // ---- REMS external emails (WO-124) ----
+
+        new Definition(
+            EmailTemplateKey.RemsFormLink,
+            "REMS Form Link",
+            "Sent to a client with the secure link to complete an EMS form for a REMS request.",
+            "Action required: complete your form for REMS {{RemsNumber}}",
+            """
+            <p>Hello {{ClientName}},</p>
+            <p>You have been asked to complete a form for REMS request <strong>{{RemsNumber}}</strong>.</p>
+            <p><strong>Request:</strong> {{RequestTitle}}</p>
+            <p><a href="{{FormLink}}">Open and complete the form</a></p>
+            <p>If you were not expecting this, please contact your {{TenantName}} representative.</p>
+            """,
+            new[] { "ClientName", "RemsNumber", "RequestTitle", "FormLink", "TenantName" }),
+
+        new Definition(
+            EmailTemplateKey.RemsFormSubmitted,
+            "REMS Form Submitted",
+            "Sent to the assigned Admin and CSE when a client submits their EMS form for a REMS request.",
+            "Form submitted for REMS {{RemsNumber}}",
+            """
+            <p>{{ClientName}} has submitted their form for REMS request <strong>{{RemsNumber}}</strong>.</p>
+            <p><strong>Submitted on:</strong> {{SubmittedOn}}</p>
+            <p><a href="{{RequestLink}}">Open the request</a></p>
+            """,
+            new[] { "ClientName", "RemsNumber", "SubmittedOn", "RequestLink" }),
     }.ToDictionary(d => d.Key);
 
     /// <summary>All template definitions, in key order.</summary>

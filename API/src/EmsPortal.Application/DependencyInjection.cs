@@ -20,6 +20,9 @@ public static class DependencyInjection
         // Email templates: management + rendering.
         services.AddScoped<Abstractions.Email.IEmailTemplateService, Email.EmailTemplateService>();
 
+        // REMS external emails (WO-124): typed background dispatch for WO-112/113.
+        services.AddScoped<Abstractions.Email.IRemsEmailNotifier, Email.RemsEmailNotifier>();
+
         // Option Sets: tenant-configurable input value lists.
         services.AddScoped<Abstractions.OptionSets.IOptionSetService, OptionSets.OptionSetService>();
 

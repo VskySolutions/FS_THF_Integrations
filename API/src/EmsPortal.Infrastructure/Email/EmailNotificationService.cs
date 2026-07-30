@@ -51,6 +51,14 @@ internal sealed class EmailNotificationService : IEmailNotificationService
         IReadOnlyDictionary<string, string?> model,
         CancellationToken cancellationToken = default)
     {
+        // Central email allowlist (WO-124, AC-ETPL-005.5): only account-security + REMS external templates
+        // may be emailed. Every send funnels through here, so no caller can bypass this gate.
+        if (!EmailSendPolicy.IsEmailAllowed(key))
+        {
+            _logger.LogWarning("Blocked email for template {TemplateKey} (tenant {TenantId}): not on the email allowlist; this type is in-app only.", key, tenantId);
+            return false;
+        }
+
         if (string.IsNullOrWhiteSpace(toEmail))
         {
             return false;

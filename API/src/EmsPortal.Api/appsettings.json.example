@@ -13,7 +13,7 @@
     "IncludeExceptionDetails": false
   },
   "ConnectionStrings": {
-    "SqlServer": "Data Source=VSky-MT\\SQLEXPRESS;Initial Catalog=EMS_Portal;User Id=sa;Password=soft;Trusted_Connection=True;MultipleActiveResultSets=True;TrustServerCertificate=True;"
+    "SqlServer": "Data Source=<server>;Initial Catalog=<database>;User Id=<user>;Password=<password>;MultipleActiveResultSets=True;TrustServerCertificate=True;"
   },
   "Hangfire": {
     "WorkerCount": 10,

@@ -96,16 +96,6 @@
         v-model="attachment" label="Attachment" hint="A single supporting file (optional)."
         class="q-mb-md"
       />
-
-      <template v-if="!requestId">
-        <app-select
-          v-model="form.assignAdminUserId" :options="adminOptions" label="Assign Admin (optional)"
-          :loading="adminsLoading"
-        />
-        <div class="text-caption text-grey-7 q-mb-md">
-          Optionally assign an Admin now; otherwise it lands unassigned in the pool.
-        </div>
-      </template>
     </q-form>
 
     <template #footer-actions>
@@ -160,8 +150,7 @@ const blankForm = () => ({
   clientName: "",
   customerEmail: "",
   customerMobileNumber: "",
-  existingClientReferenceId: null,
-  assignAdminUserId: null
+  existingClientReferenceId: null
 });
 
 const form = reactive(blankForm());
@@ -235,21 +224,6 @@ const onClientMode = (v) => {
   if (v && REMS_EXISTING_CLIENT_TYPES.includes(form.type)) form.type = "brand_new_client";
 };
 
-// ---- Admins (assign dropdown) ----
-const adminOptions = ref([]);
-const adminsLoading = ref(false);
-const loadAdmins = async () => {
-  adminsLoading.value = true;
-  try {
-    const admins = await remsApi.admins();
-    adminOptions.value = (admins || []).map((a) => ({ label: a.name, value: a.id }));
-  } catch {
-    adminOptions.value = [];
-  } finally {
-    adminsLoading.value = false;
-  }
-};
-
 // ---- Reset / prefill ----
 const resetForm = () => {
   Object.assign(form, blankForm());
@@ -284,7 +258,7 @@ const prefillFrom = (detail) => {
 watch(() => props.modelValue, async (isOpen) => {
   if (!isOpen) return;
   resetForm();
-  await Promise.all([loadOptionSets(), loadAdmins()]);
+  await loadOptionSets();
   if (props.requestId) {
     try {
       const detail = await remsApi.get(props.requestId);
@@ -340,8 +314,7 @@ const doSave = async (submit) => {
         customerEmail: form.customerEmail || undefined,
         customerMobileNumber: form.customerMobileNumber || undefined,
         mediaId,
-        submit,
-        assignAdminUserId: form.assignAdminUserId || undefined
+        submit
       };
       const detail = await remsApi.create(payload);
       notify.success(submit ? "Request submitted to the Admin Pool." : "Draft saved.");

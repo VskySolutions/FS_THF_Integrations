@@ -65,6 +65,9 @@ const onItem = async (item) => {
   if (item.action === "logout") {
     await authStore.logout();
     router.replace({ name: "login" });
+  } else if (item.action === "logoutAll") {
+    await authStore.logoutAll();
+    router.replace({ name: "login" });
   }
 };
 
@@ -136,7 +139,13 @@ const sections = [
     icon: "o_account_circle",
     items: [
       { label: "My Account", icon: "o_manage_accounts", to: "/account", permissions: null },
-      { label: "Logout", icon: "o_logout", action: "logout", permissions: null }
+      { label: "Profile", icon: "o_person", to: { name: "profile" }, permissions: null },
+      { label: "Change Password", icon: "o_lock", to: { name: "change_password" }, permissions: null },
+      { label: "My Mentions", icon: "o_alternate_email", to: { name: "uf_mentions" }, permissions: null },
+      { label: "My Pinned", icon: "o_push_pin", to: { name: "uf_pinned" }, permissions: null },
+      { label: "Notification Preferences", icon: "o_tune", to: { name: "uf_notification_preferences" }, permissions: null },
+      { label: "Logout", icon: "o_logout", action: "logout", permissions: null },
+      { label: "Logout all devices", icon: "o_devices", action: "logoutAll", permissions: null }
     ]
   }
 ];

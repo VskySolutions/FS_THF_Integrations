@@ -222,7 +222,14 @@ const visibleAssignments = computed(() => {
   return isPlatformAdmin.value ? all : all.filter((a) => a.tenantId === tenantStore.activeTenantId);
 });
 
-const tenantName = (id) => tenantOptions.value.find((t) => t.value === id)?.label || id;
+const tenantName = (id) => {
+  const opt = tenantOptions.value.find((t) => t.value === id);
+  if (opt) return opt.label;
+  // Fall back to the signed-in user's own tenant list (it carries names) — covers Tenant Admins, who
+  // cannot list all tenants, and any case where the tenant options failed to load.
+  const mine = (tenantStore.assignments || []).find((t) => t.tenantId === id);
+  return mine?.name || mine?.identifier || id;
+};
 
 const loadTenants = async () => {
   if (!isPlatformAdmin.value) return;

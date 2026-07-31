@@ -1,39 +1,65 @@
 <template>
   <q-list class="app-menu q-py-xs">
-    <template v-for="(section, index) in visibleSections" :key="section.key">
-      <q-separator v-if="index > 0" class="q-my-xs" />
-      <q-item-label v-if="section.label" header class="app-menu__header text-primary text-weight-bold">
-        {{ section.label }}
-      </q-item-label>
-      <q-item
-        v-for="item in section.items"
-        :key="item.label"
-        v-ripple
+    <template v-for="section in visibleSections" :key="section.key">
+      <!-- Ungrouped items (no label, e.g. Dashboard) render flat at the top. -->
+      <template v-if="!section.label">
+        <q-item
+          v-for="item in section.items"
+          :key="item.label"
+          v-ripple
+          dense
+          clickable
+          :to="item.to"
+          :exact="item.exact"
+          active-class="text-primary bg-blue-1"
+        >
+          <q-item-section avatar><q-icon :name="item.icon" size="20px" /></q-item-section>
+          <q-item-section>{{ item.label }}</q-item-section>
+        </q-item>
+      </template>
+
+      <!-- Labelled sections are collapsible groups. Open by default; collapse state is remembered
+           while the drawer stays mounted. The group that contains the active route stays open. -->
+      <q-expansion-item
+        v-else
         dense
-        clickable
-        :to="item.to"
-        :exact="item.exact"
-        active-class="text-primary bg-blue-1"
+        :icon="section.icon"
+        :label="section.label"
+        :model-value="isOpen(section)"
+        header-class="app-menu__group text-primary text-weight-bold"
+        @update:model-value="(v) => setOpen(section.key, v)"
       >
-        <q-item-section avatar>
-          <q-icon :name="item.icon" size="20px" />
-        </q-item-section>
-        <q-item-section>{{ item.label }}</q-item-section>
-      </q-item>
+        <q-item
+          v-for="item in section.items"
+          :key="item.label"
+          v-ripple
+          dense
+          clickable
+          :to="item.to"
+          :exact="item.exact"
+          active-class="text-primary bg-blue-1"
+          class="app-menu__nested"
+        >
+          <q-item-section avatar><q-icon :name="item.icon" size="20px" /></q-item-section>
+          <q-item-section>{{ item.label }}</q-item-section>
+        </q-item>
+      </q-expansion-item>
     </template>
   </q-list>
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, reactive } from "vue";
+import { useRoute } from "vue-router";
 import { useAuthStore } from "stores/auth";
 import { Permissions } from "composables/usePermissions";
 
 const authStore = useAuthStore();
+const route = useRoute();
 
 // Ordered by application flow: overview → set up → configure → operate → personal.
 // `permissions: null` → visible to every authenticated user; otherwise visible when the active
-// tenant grants any one of the listed permissions.
+// tenant grants any one of the listed permissions. `icon` labels the collapsible group header.
 const sections = [
   {
     key: "overview",
@@ -45,6 +71,7 @@ const sections = [
   {
     key: "administration",
     label: "Administration",
+    icon: "o_corporate_fare",
     items: [
       { label: "Tenants", icon: "o_apartment", to: "/tenants", permissions: [Permissions.TenantsWrite] }
     ]
@@ -52,6 +79,7 @@ const sections = [
   {
     key: "access-management",
     label: "Access Management",
+    icon: "o_lock",
     items: [
       { label: "Permission Groups", icon: "o_workspaces", to: "/permission-groups", permissions: [Permissions.GroupsManage] },
       { label: "Person", icon: "o_badge", to: "/persons", permissions: [Permissions.PersonsRead] },
@@ -64,6 +92,7 @@ const sections = [
     // Tenant-wide settings and universal features (email, and future cross-cutting settings).
     key: "settings",
     label: "Tenant Settings",
+    icon: "o_settings",
     items: [
       { label: "Email Accounts", icon: "o_mail", to: "/smtp-accounts", permissions: [Permissions.EmailManage] },
       { label: "Email Templates", icon: "o_drafts", to: "/email-templates", permissions: [Permissions.EmailManage] },
@@ -81,6 +110,7 @@ const sections = [
     // therefore sees only "Approvals", never the Partner/Admin items). AC-ADM-019.5 / REQ-REMS-001.7.
     key: "rems",
     label: "REMS",
+    icon: "o_business_center",
     items: [
       { label: "Partner Dashboard", icon: "o_space_dashboard", to: "/rems/partner", permissions: [Permissions.RemsRequestsRead] },
       { label: "Admin Pool", icon: "o_inbox", to: "/rems/admin-pool", permissions: [Permissions.RemsPoolRead] },
@@ -92,6 +122,7 @@ const sections = [
   {
     key: "account",
     label: "Account",
+    icon: "o_account_circle",
     items: [
       { label: "My Account", icon: "o_manage_accounts", to: "/account", permissions: null }
     ]
@@ -104,6 +135,14 @@ const visibleSections = computed(() =>
   sections
     .map((section) => ({ ...section, items: section.items.filter((item) => canSee(item.permissions)) }))
     .filter((section) => section.items.length));
+
+// A group is open unless the user has explicitly collapsed it; the group holding the active route
+// stays open regardless so the current page is always visible.
+const collapsed = reactive({});
+const sectionHasActive = (section) =>
+  section.items.some((item) => item.to && (route.path === item.to || route.path.startsWith(item.to + "/")));
+const isOpen = (section) => sectionHasActive(section) || collapsed[section.key] !== true;
+const setOpen = (key, value) => { collapsed[key] = !value; };
 </script>
 
 <style scoped>
@@ -116,14 +155,20 @@ const visibleSections = computed(() =>
   min-width: 32px;
   padding-right: 8px;
 }
-/* Slim, uppercase section headers in the theme colour — made to stand out. */
-.app-menu__header {
-  min-height: auto;
-  padding: 10px 16px 2px;
+/* Slim, uppercase collapsible group headers in the theme colour. */
+.app-menu :deep(.app-menu__group) {
+  min-height: 38px;
+  padding: 4px 12px;
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  line-height: 1.2;
-  opacity: 1;
+}
+.app-menu :deep(.app-menu__group .q-item__section--avatar) {
+  min-width: 30px;
+  padding-right: 6px;
+}
+/* Indent the items within a group so the hierarchy reads clearly. */
+.app-menu__nested {
+  padding-left: 20px;
 }
 </style>

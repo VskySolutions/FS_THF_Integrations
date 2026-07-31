@@ -391,7 +391,7 @@ public sealed class RemsRequestsController : ControllerBase
         return Ok(ApiResponseFactory.Success(results, "Clients retrieved."));
     }
 
-    /// <summary>Users holding the REMS Admin role in the active tenant (the assign dropdown).</summary>
+    /// <summary>Users who can own a REMS request (the assign dropdown): Admin-role users in the active tenant plus Super Admins.</summary>
     [HttpGet("/api/rems/admins")]
     [RequireAnyPermission(Permissions.RemsRequestsAssign, Permissions.RemsPoolRead)]
     [ProducesResponseType<ApiResponse<IEnumerable<RemsAdminOption>>>(StatusCodes.Status200OK)]
@@ -402,7 +402,7 @@ public sealed class RemsRequestsController : ControllerBase
             return Ok(ApiResponseFactory.Success(Array.Empty<RemsAdminOption>(), "No active tenant."));
         }
 
-        var admins = await _users.ListByTenantRoleAsync(tenantId, Roles.Admin, cancellationToken);
+        var admins = await _users.ListByTenantRoleOrGlobalAsync(tenantId, Roles.Admin, Roles.SuperAdmin, cancellationToken);
         var names = await _users.GetFullNamesAsync(admins.Select(u => u.Id), cancellationToken);
         var options = admins.Select(u => new RemsAdminOption(
             u.Id, names.TryGetValue(u.Id, out var n) ? n : u.DisplayName, u.Email));

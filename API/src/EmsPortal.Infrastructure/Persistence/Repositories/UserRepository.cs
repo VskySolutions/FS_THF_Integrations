@@ -158,6 +158,19 @@ internal sealed class UserRepository : IUserRepository
             .OrderBy(u => u.DisplayName)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<User>> ListByTenantRoleOrGlobalAsync(
+        Guid tenantId, string tenantRoleName, string globalRoleName, CancellationToken cancellationToken = default)
+        // Admin is tenant-scoped; the global role (Super Admin) is matched in ANY tenant since it grants
+        // platform-wide access. DISTINCT users, active only.
+        => await _dbContext.Users
+            .IgnoreQueryFilters()
+            .Where(u => !u.Deleted && u.IsActive)
+            .Include(u => u.Person)
+            .Where(u => u.TenantRoles.Any(r => !r.Deleted && r.RoleEntity != null &&
+                ((r.TenantId == tenantId && r.RoleEntity.Name == tenantRoleName) || r.RoleEntity.Name == globalRoleName)))
+            .OrderBy(u => u.DisplayName)
+            .ToListAsync(cancellationToken);
+
     public async Task AddAsync(User user, CancellationToken cancellationToken = default)
         => await _dbContext.Users.AddAsync(user, cancellationToken);
 

@@ -34,6 +34,13 @@ public interface IUserRepository
     /// </summary>
     Task<IReadOnlyList<User>> ListByTenantRoleAsync(Guid tenantId, string roleName, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Active users who can act on REMS Admin work in a tenant: those holding <paramref name="tenantRoleName"/>
+    /// in that tenant, PLUS users holding <paramref name="globalRoleName"/> in ANY tenant (Super Admins are
+    /// platform-wide, so their assignment may live in a different tenant). Exact role-name match; deduped.
+    /// </summary>
+    Task<IReadOnlyList<User>> ListByTenantRoleOrGlobalAsync(Guid tenantId, string tenantRoleName, string globalRoleName, CancellationToken cancellationToken = default);
+
     Task AddAsync(User user, CancellationToken cancellationToken = default);
 
     void Update(User user);

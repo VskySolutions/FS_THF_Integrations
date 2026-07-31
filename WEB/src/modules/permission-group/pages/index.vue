@@ -45,6 +45,17 @@
       @refresh="load"
       @update:selected="selected = $event"
     >
+      <template #body-cell-members="cell">
+        <q-td :props="cell">
+          <span class="text-weight-medium">{{ cell.row.currentUsage }}</span>
+          <template v-if="cell.row.capacityLimit != null"> / {{ cell.row.capacityLimit }}</template>
+          <span v-else class="text-grey-6"> · unlimited</span>
+          <q-badge v-if="cell.row.isFull" color="negative" class="q-ml-sm" data-test="full-badge">
+            <q-icon name="o_block" size="12px" class="q-mr-xs" />Full
+          </q-badge>
+        </q-td>
+      </template>
+
       <template #body-cell-status="cell">
         <q-td :props="cell">
           <q-badge :color="cell.value ? 'positive' : 'grey'">{{ cell.value ? "Active" : "Inactive" }}</q-badge>
@@ -164,6 +175,7 @@ const columns = computed(() => [
   { name: "description", label: "Description", field: "description", align: "left", default: true, filterable: false },
   { name: "permissionCount", label: "Permission Count", field: "permissionCount", align: "left", sortable: true, default: true, filterable: false },
   { name: "rolesUsingCount", label: "Roles Using", field: "rolesUsingCount", align: "left", sortable: true, default: true, filterable: false },
+  { name: "members", label: "Members", field: "currentUsage", align: "left", sortable: true, default: true, filterable: false },
   { name: "status", label: "Status", field: "isActive", align: "left", sortable: true, default: true, filterOptions: STATUS_OPTIONS },
   { name: "category", label: "Category", field: "category", align: "left", default: false, filterOptions: CATEGORY_OPTIONS },
   ...(canChooseTenant.value ? [{ name: "tenantName", label: "Tenant", field: "tenantName", align: "left", sortable: true, default: true, filterable: false }] : []),

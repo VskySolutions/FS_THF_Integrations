@@ -36,6 +36,7 @@ public sealed class UsersController : ControllerBase
     private readonly IPersonRepository _persons;
     private readonly ITenantRepository _tenants;
     private readonly IUserGroupRepository _groups;
+    private readonly IPermissionGroupRepository _permissionGroups;
     private readonly IEmailNotificationService _emailNotifications;
     private readonly IEmailDispatcher _emailDispatcher;
 
@@ -49,6 +50,7 @@ public sealed class UsersController : ControllerBase
         IPersonRepository persons,
         ITenantRepository tenants,
         IUserGroupRepository groups,
+        IPermissionGroupRepository permissionGroups,
         IEmailNotificationService emailNotifications,
         IEmailDispatcher emailDispatcher)
     {
@@ -61,6 +63,7 @@ public sealed class UsersController : ControllerBase
         _persons = persons;
         _tenants = tenants;
         _groups = groups;
+        _permissionGroups = permissionGroups;
         _emailNotifications = emailNotifications;
         _emailDispatcher = emailDispatcher;
     }
@@ -112,6 +115,20 @@ public sealed class UsersController : ControllerBase
             }
         }
 
+        // Capacity (WO-119): if any target role composes a capped group in the tenant, reject when adding
+        // this new (active) user would push the group past its limit (AC-PG-013.2). Checked before any
+        // persistence so a rejection never leaves a half-created account.
+        var userId = Guid.NewGuid();
+        if (tenantId is { } capacityTenant)
+        {
+            var capacityError = await CheckAssignmentCapacityAsync(
+                userId, userIsActive: true, capacityTenant, targetRoles.Select(r => r.RoleId).ToList(), cancellationToken);
+            if (capacityError is not null)
+            {
+                return capacityError;
+            }
+        }
+
         // A user is created by promoting an existing Person master record (WO-61). Super Admins may
         // promote a person from any tenant; Tenant Admins are restricted to their own by the tenant filter.
         var person = User.IsSuperAdmin()
@@ -143,8 +160,6 @@ public sealed class UsersController : ControllerBase
 
         var temporaryPassword = _passwordHasher.GenerateTemporaryPassword();
         var (hash, salt) = _passwordHasher.Hash(temporaryPassword);
-
-        var userId = Guid.NewGuid();
 
         // Link the person to the new account and refresh its contact details from the request.
         person.UserId = userId;
@@ -503,6 +518,18 @@ public sealed class UsersController : ControllerBase
                 ApiErrorCodes.ValidationFailed, "Validation failed.", "At least one role is required."));
         }
 
+        // Capacity (WO-119): only roles the user does not already hold in the tenant can add them to a new
+        // group's population. Reject if granting one composes a full capped group and this user would be a
+        // new distinct member beyond the limit (AC-PG-013.2).
+        var currentAssignments = await _users.GetAssignmentsAsync(id, request.TenantId, cancellationToken);
+        var currentRoleIds = currentAssignments.Select(a => a.RoleId).ToHashSet();
+        var addedRoleIds = targetRoles.Select(r => r.RoleId).Where(rid => !currentRoleIds.Contains(rid)).ToList();
+        var capacityError = await CheckAssignmentCapacityAsync(user.Id, user.IsActive, request.TenantId, addedRoleIds, cancellationToken);
+        if (capacityError is not null)
+        {
+            return capacityError;
+        }
+
         // Reconcile the tenant's role set to exactly the requested roles: add missing, soft-delete absent
         // (AC-ADM-006.2). The validator guarantees a non-empty set here.
         await ReconcileTenantRolesAsync(id, request.TenantId, targetRoles, cancellationToken);
@@ -674,6 +701,49 @@ public sealed class UsersController : ControllerBase
                 RoleId = role.RoleId,
             }, cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// Enforces Permission Group capacity limits (WO-119) when <paramref name="addedRoleIds"/> are about to
+    /// be granted to a user in <paramref name="tenantId"/>. For each capped group in that tenant composed by
+    /// a newly-granted role, if the user is not already an active member and admitting them would push usage
+    /// past the limit, a limit-reached error is returned (and the rejection audited); otherwise null.
+    /// </summary>
+    private async Task<IActionResult?> CheckAssignmentCapacityAsync(
+        Guid userId, bool userIsActive, Guid tenantId, IReadOnlyList<Guid> addedRoleIds, CancellationToken cancellationToken)
+    {
+        // Inactive users never count toward usage, and no new roles means no growth.
+        if (!userIsActive || addedRoleIds.Count == 0)
+        {
+            return null;
+        }
+
+        var groups = await _permissionGroups.GetGroupsByRolesAsync(addedRoleIds, cancellationToken);
+        foreach (var group in groups.Where(g => g.TenantId == tenantId && g.CapacityLimit.HasValue))
+        {
+            var limit = group.CapacityLimit!.Value;
+
+            // Already a member (via a role they keep) → not a new distinct user → no growth.
+            if (await _permissionGroups.IsUserActiveMemberAsync(group.Id, tenantId, userId, cancellationToken))
+            {
+                continue;
+            }
+
+            var projected = await _permissionGroups.CountActiveMembersAsync(group.Id, tenantId, null, cancellationToken) + 1;
+            if (projected > limit)
+            {
+                await _audit.AddAsync(nameof(PermissionGroup), group.Id.ToString(), "CapacityLimitReached",
+                    details: $"Assigning a role composing '{group.Name}' to user {userId} would raise usage to {projected}, above the limit of {limit}.",
+                    cancellationToken: cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                return BadRequest(ApiResponseFactory.Error(
+                    ApiErrorCodes.CapacityLimitReached,
+                    $"Cannot assign this role: permission group '{group.Name}' is at its capacity limit ({limit}).",
+                    group.Name));
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

@@ -15,6 +15,8 @@ export const ApiErrorCodes = Object.freeze({
   DuplicateIdentifier: "DUPLICATE_IDENTIFIER",
   DuplicateGroupName: "DUPLICATE_GROUP_NAME",
   PermissionCeilingExceeded: "PERMISSION_CEILING_EXCEEDED",
+  CapacityBelowUsage: "CAPACITY_BELOW_USAGE",
+  CapacityLimitReached: "CAPACITY_LIMIT_REACHED",
   TenantInactive: "TENANT_INACTIVE",
   TenantNotFound: "TENANT_NOT_FOUND",
   TenantArchived: "TENANT_ARCHIVED",

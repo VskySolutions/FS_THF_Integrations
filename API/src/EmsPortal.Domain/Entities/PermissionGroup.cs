@@ -23,6 +23,14 @@ public class PermissionGroup : AuditableEntity
     /// <summary>Whether the group is active. An inactive group contributes zero permissions to any role.</summary>
     public bool IsActive { get; set; } = true;
 
+    /// <summary>
+    /// Optional cap on the number of distinct active users who may hold the group (WO-119). A group's
+    /// current usage is the count of distinct active users holding at least one active role that composes
+    /// it within its tenant; <c>null</c> means unlimited (AC-PG-013.3). Enforced on capacity edits
+    /// (a limit below current usage is rejected) and on actions that would grow usage past the limit.
+    /// </summary>
+    public int? CapacityLimit { get; set; }
+
     // ---- Navigations ----
     public Tenant? Tenant { get; set; }
     public ICollection<PermissionGroupPermission> Permissions { get; set; } = new List<PermissionGroupPermission>();

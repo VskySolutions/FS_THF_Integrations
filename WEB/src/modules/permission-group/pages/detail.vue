@@ -11,6 +11,10 @@
         <q-badge v-if="detail" :color="detail.isActive ? 'positive' : 'grey'" class="q-mr-sm">
           {{ detail.isActive ? "Active" : "Inactive" }}
         </q-badge>
+        <q-badge v-if="detail" :color="detail.isFull ? 'negative' : 'grey-7'" class="q-mr-sm" data-test="members-badge">
+          <q-icon v-if="detail.isFull" name="o_block" size="12px" class="q-mr-xs" />
+          {{ detail.currentUsage }}<template v-if="detail.capacityLimit != null"> / {{ detail.capacityLimit }}</template> members
+        </q-badge>
         <q-btn v-if="detail" flat round dense color="primary" icon="o_edit" @click="openEdit">
           <q-tooltip>Edit</q-tooltip>
         </q-btn>

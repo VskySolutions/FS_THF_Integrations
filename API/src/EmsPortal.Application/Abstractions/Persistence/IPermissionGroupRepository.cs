@@ -49,6 +49,27 @@ public interface IPermissionGroupRepository
 
     void RemoveRoleLink(RolePermissionGroup link);
 
+    /// <summary>The non-deleted permission groups composed by ANY of the given roles (may span tenants).</summary>
+    Task<IReadOnlyList<PermissionGroup>> GetGroupsByRolesAsync(IEnumerable<Guid> roleIds, CancellationToken cancellationToken = default);
+
+    // ---- Capacity / usage (WO-119) ----
+
+    /// <summary>
+    /// The group's current usage: the number of DISTINCT active users who hold at least one active role
+    /// composing the group, within <paramref name="tenantId"/> (the group's tenant). Any
+    /// <paramref name="additionalRoleIds"/> are treated as if they already composed the group, to
+    /// project usage before a role is composed in (AC-PG-013.2).
+    /// </summary>
+    Task<int> CountActiveMembersAsync(
+        Guid groupId, Guid tenantId, IEnumerable<Guid>? additionalRoleIds = null, CancellationToken cancellationToken = default);
+
+    /// <summary>Batch current-usage per group (distinct active members), keyed by group id; absent groups have usage 0.</summary>
+    Task<IReadOnlyDictionary<Guid, int>> CountActiveMembersForGroupsAsync(
+        IReadOnlyCollection<Guid> groupIds, CancellationToken cancellationToken = default);
+
+    /// <summary>Whether the user already holds an active role composing the group within the group's tenant.</summary>
+    Task<bool> IsUserActiveMemberAsync(Guid groupId, Guid tenantId, Guid userId, CancellationToken cancellationToken = default);
+
     // ---- Templates ----
     Task<IReadOnlyList<PermissionGroupTemplate>> GetTemplatesAsync(CancellationToken cancellationToken = default);
 

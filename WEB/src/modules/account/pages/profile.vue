@@ -121,6 +121,46 @@
       </q-list>
     </q-card>
 
+    <!-- Effective permissions (read-only source view) -->
+    <q-card flat bordered class="profile-card q-mb-md">
+      <q-card-section class="text-subtitle1 text-weight-medium">
+        Effective permissions
+        <q-badge v-if="effective" color="primary" class="q-ml-sm">{{ effective.effectivePermissions.length }}</q-badge>
+        <div class="text-caption text-grey-6">Your permissions in the active tenant, and where each comes from (Role → Permission Group → key). Read-only.</div>
+      </q-card-section>
+      <q-separator />
+      <q-card-section>
+        <div v-if="!effective || !effective.roles.length" class="text-grey-6">
+          You have no assigned role or effective permissions in the active tenant.
+        </div>
+        <div v-for="role in (effective?.roles || [])" :key="role.roleId || role.roleName" class="q-mb-md">
+          <div class="row items-center q-gutter-xs">
+            <q-icon name="o_admin_panel_settings" color="grey-7" />
+            <span class="text-weight-medium">{{ role.roleName }}</span>
+          </div>
+          <div v-if="role.directPermissions.length" class="q-ml-md q-mt-xs">
+            <div class="section-subhead q-mb-xs">Direct on role</div>
+            <div class="row q-gutter-xs">
+              <q-badge v-for="k in role.directPermissions" :key="k" color="blue-1" text-color="primary" class="pg-key">
+                {{ humanizeKey(k) }}<q-tooltip>{{ k }}</q-tooltip>
+              </q-badge>
+            </div>
+          </div>
+          <div v-for="g in role.permissionGroups" :key="g.groupId" class="q-ml-md q-mt-xs">
+            <div class="section-subhead q-mb-xs">Via permission group · {{ g.groupName }}</div>
+            <div class="row q-gutter-xs">
+              <q-badge v-for="k in g.permissionKeys" :key="k" color="blue-1" text-color="primary" class="pg-key">
+                {{ humanizeKey(k) }}<q-tooltip>{{ k }}</q-tooltip>
+              </q-badge>
+            </div>
+          </div>
+          <div v-if="!role.directPermissions.length && !role.permissionGroups.length" class="q-ml-md text-caption text-grey-6">
+            No permission keys.
+          </div>
+        </div>
+      </q-card-section>
+    </q-card>
+
     <!-- Password change -->
     <q-card flat bordered class="profile-card">
       <q-card-section class="text-subtitle1 text-weight-medium">Change password</q-card-section>
@@ -152,6 +192,7 @@ import { ref, reactive, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { orderedCountries, countryNameOption } from "composables/useCountries";
 import { authApi, profileApi, mediaApi, getApiErrorMessage } from "services/api";
+import { humanizeKey } from "composables/usePermissionCategories";
 import { useAuthStore } from "stores/auth";
 import { useNotify } from "composables/useNotify";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
@@ -263,6 +304,16 @@ const load = async () => {
     notify.error(getApiErrorMessage(err));
   } finally {
     loading.value = false;
+  }
+};
+
+// ---- Effective permissions (read-only source view, WO-120) ----
+const effective = ref(null);
+const loadEffectivePermissions = async () => {
+  try {
+    effective.value = await authApi.effectivePermissions();
+  } catch {
+    /* non-fatal; the card shows an empty state */
   }
 };
 
@@ -388,7 +439,10 @@ const changePassword = async () => {
   }
 };
 
-onMounted(load);
+onMounted(() => {
+  load();
+  loadEffectivePermissions();
+});
 </script>
 
 <style scoped>
@@ -402,5 +456,9 @@ onMounted(load);
   text-transform: uppercase;
   color: var(--q-primary);
   margin-top: 4px;
+}
+.pg-key {
+  font-size: 12px;
+  padding: 4px 8px;
 }
 </style>

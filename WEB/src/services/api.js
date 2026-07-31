@@ -71,7 +71,8 @@ export const authApi = {
   profile: () => api.get("/api/auth/profile").then(unwrap),
   changePassword: (currentPassword, newPassword) =>
     api.put("/api/users/me/change-password", { currentPassword, newPassword }).then(envelope),
-  updateMe: (displayName) => api.put("/api/users/me", { displayName }).then(unwrap)
+  updateMe: (displayName) => api.put("/api/users/me", { displayName }).then(unwrap),
+  effectivePermissions: () => api.get("/api/auth/effective-permissions").then(unwrap)
 };
 
 export const tenantApi = {

@@ -12,6 +12,7 @@
           :to="item.to"
           :exact="item.exact"
           active-class="text-primary bg-blue-1"
+          @click="onItem(item)"
         >
           <q-item-section avatar><q-icon :name="item.icon" size="20px" /></q-item-section>
           <q-item-section>{{ item.label }}</q-item-section>
@@ -39,6 +40,7 @@
           :exact="item.exact"
           active-class="text-primary bg-blue-1"
           class="app-menu__nested"
+          @click="onItem(item)"
         >
           <q-item-section avatar><q-icon :name="item.icon" size="20px" /></q-item-section>
           <q-item-section>{{ item.label }}</q-item-section>
@@ -50,12 +52,21 @@
 
 <script setup>
 import { computed, reactive } from "vue";
-import { useRoute } from "vue-router";
+import { LocalStorage } from "quasar";
+import { useRouter } from "vue-router";
 import { useAuthStore } from "stores/auth";
 import { Permissions } from "composables/usePermissions";
 
 const authStore = useAuthStore();
-const route = useRoute();
+const router = useRouter();
+
+// Menu items with an `action` (e.g. Logout) run a handler instead of navigating.
+const onItem = async (item) => {
+  if (item.action === "logout") {
+    await authStore.logout();
+    router.replace({ name: "login" });
+  }
+};
 
 // Ordered by application flow: overview → set up → configure → operate → personal.
 // `permissions: null` → visible to every authenticated user; otherwise visible when the active
@@ -69,11 +80,18 @@ const sections = [
     ]
   },
   {
-    key: "administration",
-    label: "Administration",
-    icon: "o_corporate_fare",
+    // REMS (Phase 15). Each item is gated by its own permission — never a role name — so a user sees
+    // only the areas their roles grant (e.g. an Approver-only user holds just rems.approvals.act and
+    // therefore sees only "Approvals", never the Partner/Admin items). AC-ADM-019.5 / REQ-REMS-001.7.
+    key: "rems",
+    label: "REMS",
+    icon: "o_business_center",
     items: [
-      { label: "Tenants", icon: "o_apartment", to: "/tenants", permissions: [Permissions.TenantsWrite] }
+      { label: "Partner Dashboard", icon: "o_space_dashboard", to: "/rems/partner", permissions: [Permissions.RemsRequestsRead] },
+      { label: "Admin Pool", icon: "o_inbox", to: "/rems/admin-pool", permissions: [Permissions.RemsPoolRead] },
+      { label: "EMS Inbox", icon: "o_move_to_inbox", to: "/rems/ems-inbox", permissions: [Permissions.RemsFormsManage] },
+      { label: "Client Forms", icon: "o_dynamic_form", to: "/rems/client-forms", permissions: [Permissions.RemsEngagementsManage] },
+      { label: "Approvals", icon: "o_approval", to: "/rems/approvals", permissions: [Permissions.RemsApprovalsAct] }
     ]
   },
   {
@@ -86,6 +104,14 @@ const sections = [
       { label: "Roles", icon: "o_admin_panel_settings", to: "/roles", permissions: [Permissions.RolesWrite] },
       { label: "Users", icon: "o_group", to: "/users", permissions: [Permissions.UsersRead] },
       { label: "User Groups", icon: "o_groups", to: "/user-groups", permissions: [Permissions.UsersGroupManagement] }
+    ]
+  },
+  {
+    key: "administration",
+    label: "Administration",
+    icon: "o_corporate_fare",
+    items: [
+      { label: "Tenants", icon: "o_apartment", to: "/tenants", permissions: [Permissions.TenantsWrite] }
     ]
   },
   {
@@ -105,26 +131,12 @@ const sections = [
     ]
   },
   {
-    // REMS (Phase 15). Each item is gated by its own permission — never a role name — so a user sees
-    // only the areas their roles grant (e.g. an Approver-only user holds just rems.approvals.act and
-    // therefore sees only "Approvals", never the Partner/Admin items). AC-ADM-019.5 / REQ-REMS-001.7.
-    key: "rems",
-    label: "REMS",
-    icon: "o_business_center",
-    items: [
-      { label: "Partner Dashboard", icon: "o_space_dashboard", to: "/rems/partner", permissions: [Permissions.RemsRequestsRead] },
-      { label: "Admin Pool", icon: "o_inbox", to: "/rems/admin-pool", permissions: [Permissions.RemsPoolRead] },
-      { label: "EMS Inbox", icon: "o_move_to_inbox", to: "/rems/ems-inbox", permissions: [Permissions.RemsFormsManage] },
-      { label: "Client Forms", icon: "o_dynamic_form", to: "/rems/client-forms", permissions: [Permissions.RemsEngagementsManage] },
-      { label: "Approvals", icon: "o_approval", to: "/rems/approvals", permissions: [Permissions.RemsApprovalsAct] }
-    ]
-  },
-  {
     key: "account",
     label: "Account",
     icon: "o_account_circle",
     items: [
-      { label: "My Account", icon: "o_manage_accounts", to: "/account", permissions: null }
+      { label: "My Account", icon: "o_manage_accounts", to: "/account", permissions: null },
+      { label: "Logout", icon: "o_logout", action: "logout", permissions: null }
     ]
   }
 ];
@@ -136,13 +148,19 @@ const visibleSections = computed(() =>
     .map((section) => ({ ...section, items: section.items.filter((item) => canSee(item.permissions)) }))
     .filter((section) => section.items.length));
 
-// A group is open unless the user has explicitly collapsed it; the group holding the active route
-// stays open regardless so the current page is always visible.
-const collapsed = reactive({});
-const sectionHasActive = (section) =>
-  section.items.some((item) => item.to && (route.path === item.to || route.path.startsWith(item.to + "/")));
-const isOpen = (section) => sectionHasActive(section) || collapsed[section.key] !== true;
-const setOpen = (key, value) => { collapsed[key] = !value; };
+// Per-group collapse state, persisted to LocalStorage so the user's expand/collapse choices survive a
+// page refresh. The stored object holds only the collapsed groups ({ [sectionKey]: true }).
+const STORAGE_KEY = "appMenuCollapsed";
+const collapsed = reactive(LocalStorage.getItem(STORAGE_KEY) || {});
+const isOpen = (section) => collapsed[section.key] !== true;
+const setOpen = (key, open) => {
+  if (open) {
+    delete collapsed[key];
+  } else {
+    collapsed[key] = true;
+  }
+  LocalStorage.set(STORAGE_KEY, { ...collapsed });
+};
 </script>
 
 <style scoped>

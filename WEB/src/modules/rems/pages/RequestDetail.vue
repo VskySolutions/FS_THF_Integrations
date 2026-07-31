@@ -9,7 +9,7 @@
     >
       <template #actions>
         <q-badge v-if="detail" :color="statusColor(detail.status)" class="q-mr-sm">{{ statusLabel(detail.status) }}</q-badge>
-        <q-btn v-if="detail?.actions?.canEdit" flat round dense color="primary" icon="o_edit" @click="openEdit">
+        <q-btn v-if="detail?.actions?.canEdit && detail?.status === 'draft'" flat round dense color="primary" icon="o_edit" @click="openEdit">
           <q-tooltip>Edit</q-tooltip>
         </q-btn>
         <q-btn
@@ -18,7 +18,7 @@
         >
           <q-tooltip>Build EMS Form</q-tooltip>
         </q-btn>
-        <q-btn v-if="detail?.actions?.canAssign" flat round dense color="primary" icon="o_person_add" @click="openAssign">
+        <q-btn v-if="detail?.actions?.canAssign && has(Permissions.RemsPoolRead)" flat round dense color="primary" icon="o_person_add" @click="openAssign">
           <q-tooltip>{{ detail.assignedAdmin ? "Reassign Admin" : "Assign / Pick Up" }}</q-tooltip>
         </q-btn>
         <q-btn v-if="detail?.actions?.canDuplicate" flat round dense color="primary" icon="o_content_copy" @click="duplicate">

@@ -76,7 +76,7 @@
                   <q-item-section avatar><q-icon name="o_visibility" /></q-item-section>
                   <q-item-section>View</q-item-section>
                 </q-item>
-                <q-item v-if="cell.row.actions?.canEdit" clickable @click="openEdit(cell.row)">
+                <q-item v-if="cell.row.actions?.canEdit && cell.row.status === 'draft'" clickable @click="openEdit(cell.row)">
                   <q-item-section avatar><q-icon name="o_edit" /></q-item-section>
                   <q-item-section>Edit</q-item-section>
                 </q-item>
@@ -84,7 +84,7 @@
                   <q-item-section avatar><q-icon name="o_forum" /></q-item-section>
                   <q-item-section>Conversations</q-item-section>
                 </q-item>
-                <q-item v-if="cell.row.actions?.canAssign" clickable @click="openAssign(cell.row)">
+                <q-item v-if="cell.row.actions?.canAssign && has(Permissions.RemsPoolRead)" clickable @click="openAssign(cell.row)">
                   <q-item-section avatar><q-icon name="o_person_add" /></q-item-section>
                   <q-item-section>Assign Admin</q-item-section>
                 </q-item>

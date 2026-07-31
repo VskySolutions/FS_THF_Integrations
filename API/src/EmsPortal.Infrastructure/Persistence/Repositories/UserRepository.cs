@@ -146,28 +146,15 @@ internal sealed class UserRepository : IUserRepository
         return (items, total);
     }
 
-    public async Task<IReadOnlyList<User>> ListByTenantRoleAsync(Guid tenantId, string roleName, CancellationToken cancellationToken = default)
-        // Ignore query filters (the Person tenant filter would otherwise blank the name) and re-apply
-        // the soft-delete predicate. Exact role-name match within the tenant.
+    public async Task<IReadOnlyList<User>> ListByTenantRolesAsync(
+        Guid tenantId, IReadOnlyCollection<string> roleNames, CancellationToken cancellationToken = default)
+        // Tenant-specific: the role assignment must be IN this tenant. Distinct active users.
         => await _dbContext.Users
             .IgnoreQueryFilters()
             .Where(u => !u.Deleted && u.IsActive)
             .Include(u => u.Person)
             .Where(u => u.TenantRoles.Any(r =>
-                !r.Deleted && r.TenantId == tenantId && r.RoleEntity != null && r.RoleEntity.Name == roleName))
-            .OrderBy(u => u.DisplayName)
-            .ToListAsync(cancellationToken);
-
-    public async Task<IReadOnlyList<User>> ListByTenantRoleOrGlobalAsync(
-        Guid tenantId, string tenantRoleName, string globalRoleName, CancellationToken cancellationToken = default)
-        // Admin is tenant-scoped; the global role (Super Admin) is matched in ANY tenant since it grants
-        // platform-wide access. DISTINCT users, active only.
-        => await _dbContext.Users
-            .IgnoreQueryFilters()
-            .Where(u => !u.Deleted && u.IsActive)
-            .Include(u => u.Person)
-            .Where(u => u.TenantRoles.Any(r => !r.Deleted && r.RoleEntity != null &&
-                ((r.TenantId == tenantId && r.RoleEntity.Name == tenantRoleName) || r.RoleEntity.Name == globalRoleName)))
+                !r.Deleted && r.TenantId == tenantId && r.RoleEntity != null && roleNames.Contains(r.RoleEntity.Name)))
             .OrderBy(u => u.DisplayName)
             .ToListAsync(cancellationToken);
 

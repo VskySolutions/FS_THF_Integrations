@@ -39,25 +39,28 @@ internal sealed class RemsFormRepository : IRemsFormRepository
     {
         // Every request that has a form. Inner-join REMS (tenant + not-deleted) to its form so both ambient
         // query filters apply; project the submitted state and the request's assigned Admin/CSE.
+        // Order on the SOURCE columns before projecting — EF cannot translate an OrderBy over the
+        // projected record. SubmittedOnUtc DESC puts submitted forms first, not-yet-submitted (null) last.
         var query =
             from r in _dbContext.Rems
             join f in _dbContext.RemsForms on r.Id equals f.REMSId
-            select new RemsClientFormItem(
-                r.Id,
-                r.REMSNumber,
-                r.RequestedClientName,
-                r.Status,
-                f.Status == RemsFormStatus.Submitted || f.SubmittedOnUtc != null,
-                f.SubmittedOnUtc,
-                r.AdminAssignedToId,
-                r.CSEId);
+            select new { Rems = r, Form = f };
 
         var total = await query.CountAsync(cancellationToken);
         var items = await query
-            .OrderByDescending(i => i.SubmittedOnUtc ?? DateTime.MinValue)
-            .ThenBy(i => i.RemsNumber)
+            .OrderByDescending(x => x.Form.SubmittedOnUtc)
+            .ThenBy(x => x.Rems.REMSNumber)
             .Skip((page - 1) * limit)
             .Take(limit)
+            .Select(x => new RemsClientFormItem(
+                x.Rems.Id,
+                x.Rems.REMSNumber,
+                x.Rems.RequestedClientName,
+                x.Rems.Status,
+                x.Form.Status == RemsFormStatus.Submitted || x.Form.SubmittedOnUtc != null,
+                x.Form.SubmittedOnUtc,
+                x.Rems.AdminAssignedToId,
+                x.Rems.CSEId))
             .ToListAsync(cancellationToken);
 
         return (items, total);

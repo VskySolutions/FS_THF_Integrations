@@ -115,8 +115,8 @@
           <q-separator />
           <q-card-section>
             <div class="pef-subhead">Physical Address</div>
-            <public-address-fields
-              v-model="payload.physicalAddress" required prefix="physicalAddress" :errors="errors"
+            <app-address-fields
+              v-model="payload.physicalAddress" required :errors="addressErrors(errors, 'physicalAddress')"
             />
 
             <q-toggle
@@ -126,8 +126,8 @@
 
             <template v-if="!mailingSame">
               <div class="pef-subhead q-mt-sm">Mailing Address</div>
-              <public-address-fields
-                v-model="payload.mailingAddress" required prefix="mailingAddress" :errors="errors"
+              <app-address-fields
+                v-model="payload.mailingAddress" required :errors="addressErrors(errors, 'mailingAddress')"
               />
             </template>
           </q-card-section>
@@ -201,7 +201,7 @@
                   </div>
 
                   <div class="pef-subhead q-mt-md">Physical Address</div>
-                  <public-address-fields v-model="entity.physicalAddress" />
+                  <app-address-fields v-model="entity.physicalAddress" />
 
                   <q-toggle
                     v-model="entity._mailingDiffers" label="Add a different mailing address"
@@ -209,7 +209,7 @@
                   />
                   <template v-if="entity._mailingDiffers">
                     <div class="pef-subhead q-mt-sm">Mailing Address</div>
-                    <public-address-fields v-model="entity.mailingAddress" />
+                    <app-address-fields v-model="entity.mailingAddress" />
                   </template>
                 </q-card-section>
               </q-card>
@@ -234,7 +234,7 @@
               />
             </div>
             <div class="pef-subhead q-mt-md">Billing Address</div>
-            <public-address-fields v-model="payload.billingAddress" prefix="billingAddress" :errors="errors" />
+            <app-address-fields v-model="payload.billingAddress" :errors="addressErrors(errors, 'billingAddress')" />
           </q-card-section>
         </q-card>
 
@@ -279,7 +279,7 @@
           </q-card-section>
           <q-separator />
           <q-card-section>
-            <rems-review-summary :payload="payload" :industry-group="industryGroup" :locked-email="payload.email" />
+            <rems-review-summary :payload="reviewPayload" :industry-group="industryGroup" :locked-email="payload.email" />
           </q-card-section>
         </q-card>
 
@@ -310,11 +310,14 @@ import { debounce } from "quasar";
 import { remsPublicApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
+import {
+  blankAddress, toAddress, fromAddress, addressErrors, addressHasAny, addressComplete
+} from "modules/rems/remsAddress";
 
 import AppTextField from "components/common/AppTextField.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
 import AppDateField from "components/common/AppDateField.vue";
-import PublicAddressFields from "modules/rems/components/PublicAddressFields.vue";
+import AppAddressFields from "components/common/AppAddressFields.vue";
 import RoleContactFields from "modules/rems/components/RoleContactFields.vue";
 import RemsReviewSummary from "modules/rems/components/RemsReviewSummary.vue";
 
@@ -352,7 +355,8 @@ const saveState = ref("idle");  // "idle" | "saving" | "saved" | "error"
 const hasRelatedEntities = ref(false);
 
 // ---- The RemsFormPayloadV1 (camelCase wire shape — field names match RemsPublicFormModels.cs exactly) ----
-const blankAddress = () => ({ street: "", city: "", state: "", zip: "" });
+// EXCEPT the addresses: those are held in the canonical AppAddressFields shape and converted to/from the
+// frozen wire names by modules/rems/remsAddress (toAddress on seed, fromAddress on build).
 const blankRole = () => ({ name: "", email: "", phone: "" });
 
 const payload = reactive({
@@ -439,17 +443,16 @@ const saveText = computed(() => ({
 // ---- Client-side validation (mirrors RemsFormPayloadValidator; gates the Review button) ----
 const filled = (v) => !!String(v ?? "").trim();
 const emailOk = (v) => /^\S+@\S+\.\S+$/.test(String(v ?? "").trim());
-const addrComplete = (a) => filled(a.street) && filled(a.city) && filled(a.state) && filled(a.zip);
-const addrAny = (a) => [a.street, a.city, a.state, a.zip].some((x) => filled(x));
 const roleAny = (r) => filled(r.name) || filled(r.email) || filled(r.phone);
 const roleComplete = (r) => filled(r.name) && filled(r.phone) && emailOk(r.email);
 
 const clientIssues = computed(() => {
   const out = [];
   if (!filled(payload.clientName)) out.push("Client name is required.");
-  if (!addrComplete(payload.physicalAddress)) out.push("Physical address needs street, city, state and ZIP.");
-  if (payload.mailingDiffers && !addrComplete(payload.mailingAddress)) {
-    out.push("Mailing address needs street, city, state and ZIP.");
+  const addressIssue = "needs country, state, city, address line 1 and zip code.";
+  if (!addressComplete(payload.physicalAddress)) out.push(`Physical address ${addressIssue}`);
+  if (payload.mailingDiffers && !addressComplete(payload.mailingAddress)) {
+    out.push(`Mailing address ${addressIssue}`);
   }
   if (filled(payload.billingEmail) && !emailOk(payload.billingEmail)) out.push("Billing email is not a valid email address.");
 
@@ -481,10 +484,12 @@ const clientIssues = computed(() => {
 });
 const canReview = computed(() => clientIssues.value.length === 0);
 
+// The review step shows the payload exactly as it will be submitted (wire shape, addresses converted).
+const reviewPayload = computed(() => buildPayload());
+
 // ---- Build the outgoing payload (dates: "" → null so DateOnly binds; mailing dropped when same) ----
 const s = (v) => (v == null ? "" : String(v));
 const dateOrNull = (v) => (filled(v) ? v : null);
-const outAddress = (a) => ({ street: s(a.street), city: s(a.city), state: s(a.state), zip: s(a.zip) });
 const outRole = (r) => ({ name: s(r.name), email: s(r.email), phone: s(r.phone) });
 
 function buildRoles () {
@@ -501,12 +506,12 @@ function buildPayload () {
     email: s(payload.email),
     mobileNumber: s(payload.mobileNumber),
     referralSource: s(payload.referralSource),
-    physicalAddress: outAddress(payload.physicalAddress),
+    physicalAddress: fromAddress(payload.physicalAddress),
     mailingDiffers: payload.mailingDiffers,
-    mailingAddress: payload.mailingDiffers ? outAddress(payload.mailingAddress) : null,
+    mailingAddress: payload.mailingDiffers ? fromAddress(payload.mailingAddress) : null,
     billingContactName: s(payload.billingContactName),
     billingEmail: s(payload.billingEmail),
-    billingAddress: outAddress(payload.billingAddress),
+    billingAddress: fromAddress(payload.billingAddress),
     spouseName: s(payload.spouseName),
     spousePhone: s(payload.spousePhone),
     ein: s(payload.ein),
@@ -522,39 +527,30 @@ function buildPayload () {
       businessName: s(e.businessName),
       ein: s(e.ein),
       contactName: s(e.contactName),
-      physicalAddress: outAddress(e.physicalAddress),
-      mailingAddress: e._mailingDiffers ? outAddress(e.mailingAddress) : null
+      physicalAddress: fromAddress(e.physicalAddress),
+      mailingAddress: e._mailingDiffers ? fromAddress(e.mailingAddress) : null
     }))
   };
 }
 
 // ---- Seeding (prefill + draft) ----
-function fillAddress (target, src) {
-  target.street = src?.street ?? "";
-  target.city = src?.city ?? "";
-  target.state = src?.state ?? "";
-  target.zip = src?.zip ?? "";
-}
 function fillRole (target, src) {
   target.name = src?.name ?? "";
   target.email = src?.email ?? "";
   target.phone = src?.phone ?? "";
 }
 function makeEntity (e, i) {
-  const mailing = e?.mailingAddress;
-  const mailingDiffers = !!(mailing && [mailing.street, mailing.city, mailing.state, mailing.zip].some((x) => filled(x)));
-  const entity = {
+  const mailing = toAddress(e?.mailingAddress);
+  return {
     sourceKey: e?.sourceKey || `related-${Date.now()}-${i}`,
     businessName: e?.businessName ?? "",
     ein: e?.ein ?? "",
     contactName: e?.contactName ?? "",
-    physicalAddress: blankAddress(),
-    _mailingDiffers: mailingDiffers,
-    mailingAddress: blankAddress()
+    physicalAddress: toAddress(e?.physicalAddress),
+    // A stored mailing address only means "differs" when it actually carries lines of its own.
+    _mailingDiffers: addressHasAny(mailing),
+    mailingAddress: mailing
   };
-  fillAddress(entity.physicalAddress, e?.physicalAddress);
-  fillAddress(entity.mailingAddress, mailing);
-  return entity;
 }
 
 function seed (prefill, draft) {
@@ -578,9 +574,9 @@ function seed (prefill, draft) {
   payload.poEndDate = d.poEndDate ?? "";
   payload.mailingDiffers = !!d.mailingDiffers;
 
-  fillAddress(payload.physicalAddress, d.physicalAddress);
-  fillAddress(payload.mailingAddress, d.mailingAddress);
-  fillAddress(payload.billingAddress, d.billingAddress);
+  payload.physicalAddress = toAddress(d.physicalAddress);
+  payload.mailingAddress = toAddress(d.mailingAddress);
+  payload.billingAddress = toAddress(d.billingAddress);
 
   ROLE_KEYS.forEach((k) => fillRole(payload.roles[k], d.roles?.[k]));
 
@@ -733,7 +729,8 @@ async function onCancel () {
 
 // ---- Related businesses ----
 const entityHasData = (e) =>
-  filled(e.businessName) || filled(e.ein) || filled(e.contactName) || addrAny(e.physicalAddress) || addrAny(e.mailingAddress);
+  filled(e.businessName) || filled(e.ein) || filled(e.contactName) ||
+  addressHasAny(e.physicalAddress) || addressHasAny(e.mailingAddress);
 
 function addEntity () {
   payload.relatedEntities.push({

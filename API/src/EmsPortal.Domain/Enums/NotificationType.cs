@@ -38,4 +38,10 @@ public enum NotificationType
 
     /// <summary>A rejected REMS engagement was resubmitted for approval (in-app only — no email template, REMS WO-114).</summary>
     RemsApprovalResubmitted = 14,
+
+    /// <summary>A REMS request was submitted to the pool and is waiting to be picked up — sent to the tenant's admins (in-app only).</summary>
+    RemsRequestSubmitted = 15,
+
+    /// <summary>An admin picked up the requester's REMS request — sent back to whoever raised it (in-app only).</summary>
+    RemsRequestPickedUp = 16,
 }

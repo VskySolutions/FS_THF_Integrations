@@ -45,13 +45,18 @@ public sealed record RemsFormBuildScreen(
 /// <summary>The pre-send preview (WO-112, AC-REMS-008.1): where the form link will be emailed, and the link itself.</summary>
 public sealed record RemsFormPreview(string? DestinationEmail, string FormLink);
 
-/// <summary>A single email-delivery event row in the form email log (WO-112, AC-REMS-008.6), newest first.</summary>
+/// <summary>
+/// A single email-delivery event row in the form email log (WO-112, AC-REMS-008.6), newest first.
+/// <paramref name="Detail"/> explains a Failed event this portal recorded itself (no SMTP account,
+/// rejected credentials, …) and is null for everything else — raw provider payloads are never surfaced.
+/// </summary>
 public sealed record RemsEmailEventRow(
     Guid Id,
     string EventType,
     string RecipientEmail,
     DateTime OccurredOnUtc,
-    string? ProviderMessageId);
+    string? ProviderMessageId,
+    string? Detail);
 
 /// <summary>
 /// One EMS-Inbox row (WO-112, AC-REMS-009): a request with a form, its request context, form state,

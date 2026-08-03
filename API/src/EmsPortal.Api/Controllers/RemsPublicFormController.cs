@@ -570,7 +570,9 @@ public sealed class RemsPublicFormController : ControllerBase
     private async Task DispatchPostSubmitAsync(REMSForm form, RemsFormPayloadV1 payload, CancellationToken cancellationToken)
     {
         var rems = form.Rems!;
-        var recipients = new[] { rems.AdminAssignedToId, rems.CSEId }
+        // Assigned admin, CSE, and the requester — the customer coming back is the milestone the person who
+        // raised the request is waiting on.
+        var recipients = new[] { rems.AdminAssignedToId, rems.CSEId, rems.CreatedById }
             .Where(id => id.HasValue)
             .Select(id => id!.Value)
             .Distinct()
@@ -730,8 +732,12 @@ public sealed class RemsPublicFormController : ControllerBase
         Id = Guid.NewGuid(),
         AddressType = type,
         AddressLine1 = Clean(payload.Street),
+        AddressLine2 = Clean(payload.AddressLine2),
         CityName = Clean(payload.City),
+        StateCode = Clean(payload.StateCode),
         StateName = Clean(payload.State),
+        CountryCode = Clean(payload.CountryCode),
+        CountryName = Clean(payload.CountryName),
         PostalCode = Clean(payload.Zip),
     };
 

@@ -69,31 +69,21 @@
           <q-btn flat round dense color="primary" icon="o_visibility" :to="detailRoute(cell.row)">
             <q-tooltip>View</q-tooltip>
           </q-btn>
-          <q-btn flat round dense icon="o_more_vert">
-            <q-menu auto-close>
-              <q-list style="min-width: 190px;">
-                <q-item clickable :to="detailRoute(cell.row)">
-                  <q-item-section avatar><q-icon name="o_visibility" /></q-item-section>
-                  <q-item-section>View</q-item-section>
-                </q-item>
-                <q-item v-if="cell.row.actions?.canEdit && cell.row.status === 'draft'" clickable @click="openEdit(cell.row)">
-                  <q-item-section avatar><q-icon name="o_edit" /></q-item-section>
-                  <q-item-section>Edit</q-item-section>
-                </q-item>
-                <q-item clickable @click="openConversation(cell.row)">
-                  <q-item-section avatar><q-icon name="o_forum" /></q-item-section>
-                  <q-item-section>Conversations</q-item-section>
-                </q-item>
-                <q-item v-if="cell.row.actions?.canAssign && has(Permissions.RemsPoolRead)" clickable @click="openAssign(cell.row)">
-                  <q-item-section avatar><q-icon name="o_person_add" /></q-item-section>
-                  <q-item-section>Assign Admin</q-item-section>
-                </q-item>
-                <q-item v-if="cell.row.actions?.canDuplicate" clickable @click="duplicate(cell.row)">
-                  <q-item-section avatar><q-icon name="o_content_copy" /></q-item-section>
-                  <q-item-section>Duplicate</q-item-section>
-                </q-item>
-              </q-list>
-            </q-menu>
+          <q-btn
+            v-if="cell.row.actions?.canEdit && cell.row.status === 'draft'"
+            flat round dense color="primary" icon="o_edit" @click="openEdit(cell.row)"
+          >
+            <q-tooltip>Edit</q-tooltip>
+          </q-btn>
+          <q-btn flat round dense color="primary" icon="o_forum" @click="openConversation(cell.row)">
+            <q-tooltip>Conversations</q-tooltip>
+          </q-btn>
+          <!-- Assigning an admin belongs to the Admin Pool, which is where the pool is worked. -->
+          <q-btn
+            v-if="cell.row.actions?.canDuplicate"
+            flat round dense color="primary" icon="o_content_copy" @click="duplicate(cell.row)"
+          >
+            <q-tooltip>Duplicate</q-tooltip>
           </q-btn>
         </q-td>
       </template>
@@ -109,10 +99,6 @@
     </app-data-table>
 
     <new-request-dialog v-model="formOpen" :request-id="editingId" @saved="onSaved" />
-    <assign-admin-dialog
-      v-model="assignOpen" :request-id="assignRequestId" :current-admin-id="assignCurrentAdminId"
-      mode="assign" @assigned="onAssigned"
-    />
     <conversation-dialog v-model="conversationOpen" :request-id="conversationId" :subtitle="conversationSubtitle" />
   </q-page>
 </template>
@@ -134,7 +120,6 @@ import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppDataTable from "components/common/AppDataTable.vue";
 import NewRequestDialog from "modules/rems/components/NewRequestDialog.vue";
-import AssignAdminDialog from "modules/rems/components/AssignAdminDialog.vue";
 import ConversationDialog from "modules/rems/components/ConversationDialog.vue";
 
 const notify = useNotify();
@@ -181,17 +166,6 @@ const editingId = ref(null);
 const openCreate = () => { editingId.value = null; formOpen.value = true; };
 const openEdit = (row) => { editingId.value = row.id; formOpen.value = true; };
 const onSaved = () => { formOpen.value = false; load(); };
-
-// ---- Assign ----
-const assignOpen = ref(false);
-const assignRequestId = ref(null);
-const assignCurrentAdminId = ref(null);
-const openAssign = (row) => {
-  assignRequestId.value = row.id;
-  assignCurrentAdminId.value = row.assignedAdmin?.id || null;
-  assignOpen.value = true;
-};
-const onAssigned = () => { assignOpen.value = false; load(); };
 
 // ---- Conversation ----
 const conversationOpen = ref(false);

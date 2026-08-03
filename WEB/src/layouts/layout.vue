@@ -59,10 +59,24 @@
       </q-toolbar>
     </q-header>
 
-    <q-drawer v-if="isLoggedIn" v-model="leftDrawerOpen" bordered :width="292" :breakpoint="1024" class="bg-white">
+    <!-- Collapsed, the drawer stays put as a 60px icon rail rather than disappearing. It deliberately does
+         NOT use mini-to-overlay: that promotes the drawer to z-index 3000, above the header, which puts it
+         over the very hamburger button used to reopen it. The rail keeps its place in the layout instead,
+         and clicking a group icon expands the menu (see AppMenu's `mini`). -->
+    <q-drawer
+      v-if="isLoggedIn"
+      v-model="leftDrawerOpen"
+      show-if-above
+      :mini="menuCollapsed"
+      :width="292"
+      :mini-width="60"
+      :breakpoint="1024"
+      bordered
+      class="bg-white"
+    >
       <aside-header />
       <q-scroll-area class="fit">
-        <AppMenu />
+        <AppMenu :mini="menuCollapsed" @expand="menuCollapsed = false" />
       </q-scroll-area>
     </q-drawer>
 
@@ -88,7 +102,7 @@
 
 <script setup>
 import { ref, computed, watch } from "vue";
-import { LocalStorage, Dialog } from "quasar";
+import { LocalStorage, Dialog, useQuasar } from "quasar";
 import { storeToRefs } from "pinia";
 import { useTenantStore } from "stores/tenant";
 
@@ -98,14 +112,30 @@ import AppMenu from "src/components/app_menu.vue";
 import NotificationCentre from "components/universal/NotificationCentre.vue";
 import StickyNoteLayer from "components/universal/StickyNoteLayer.vue";
 
+const $q = useQuasar();
 const isLoggedIn = !!LocalStorage.getItem("token");
 
-// Persist the drawer open/closed state across reloads (defaults to open).
+// Persist the drawer open/closed state across reloads (defaults to open). Above the breakpoint the
+// drawer is always mounted (show-if-above) and this only governs the mobile overlay.
 const DRAWER_KEY = "leftDrawerOpen";
 const storedDrawer = LocalStorage.getItem(DRAWER_KEY);
 const leftDrawerOpen = ref(storedDrawer === null ? true : storedDrawer);
 watch(leftDrawerOpen, (value) => LocalStorage.set(DRAWER_KEY, value));
-const toggleLeftDrawer = () => { leftDrawerOpen.value = !leftDrawerOpen.value; };
+
+// …and remember whether the user collapsed it to the icon rail.
+const MINI_KEY = "leftDrawerMini";
+const menuCollapsed = ref(LocalStorage.getItem(MINI_KEY) === true);
+watch(menuCollapsed, (value) => LocalStorage.set(MINI_KEY, value));
+
+const toggleLeftDrawer = () => {
+  // Below the breakpoint the drawer is an overlay and Quasar ignores mini entirely, so there the button
+  // has to keep opening and closing it outright.
+  if ($q.screen.lt.md) {
+    leftDrawerOpen.value = !leftDrawerOpen.value;
+    return;
+  }
+  menuCollapsed.value = !menuCollapsed.value;
+};
 
 const tenantStore = useTenantStore();
 const { assignments, activeTenantId } = storeToRefs(tenantStore);

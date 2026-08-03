@@ -102,7 +102,7 @@ const fmt = useDateFormat();
 const { approverRoleLabel, approverRoleIcon, approvalStatusLabel, approvalStatusColor } = useRemsMeta();
 
 const columns = [
-  { name: "remsNumber", label: "REMS #", field: "remsNumber", align: "left", sortable: true, default: true },
+  { name: "remsNumber", label: "Request ID", field: "remsNumber", align: "left", sortable: true, default: true },
   { name: "client", label: "Client / Entity", field: "clientName", align: "left", sortable: true, default: true },
   { name: "role", label: "Your Role", field: "role", align: "left", sortable: true, default: true },
   { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true },

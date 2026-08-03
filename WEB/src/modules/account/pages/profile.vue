@@ -52,7 +52,7 @@
           <app-select v-model="form.maritalStatus" :options="maritalOptions" label="Marital Status" class="col-12 col-sm-6" />
           <app-select
             v-model="form.nationality" :options="countryNameOptions" label="Nationality"
-            use-input class="col-12 col-sm-6" @filter="filterCountryNames"
+            use-input class="col-12 col-sm-6"
           />
         </q-card-section>
       </q-card>
@@ -91,7 +91,9 @@
         <q-card-section class="text-subtitle1 text-weight-medium">Address</q-card-section>
         <q-separator />
         <q-card-section>
-          <app-address-fields ref="addressRef" v-model="address" />
+          <!-- `extended` keeps the landmark / building / floor / unit details this record has always
+               captured; the address itself stays optional on a profile. -->
+          <app-address-fields ref="addressRef" v-model="address" extended />
         </q-card-section>
       </q-card>
 
@@ -214,11 +216,7 @@ const maritalOptions = ["Single", "Married", "Divorced", "Widowed", "Separated"]
 
 // ---- Country options for the Nationality field (address country/state/city now live in
 // AppAddressFields, which owns its own cascade). ----
-const countryNameOptions = ref(orderedCountries.map(countryNameOption));
-const filterCountryNames = (val, update) => {
-  const needle = (val || "").toLowerCase();
-  update(() => { countryNameOptions.value = orderedCountries.map(countryNameOption).filter((o) => o.label.toLowerCase().includes(needle)); });
-};
+const countryNameOptions = orderedCountries.map(countryNameOption);
 
 const addressRef = ref(null);
 

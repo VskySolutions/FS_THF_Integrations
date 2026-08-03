@@ -81,7 +81,7 @@
               <template v-if="form?.formLink">
                 <div class="rems-label q-mt-sm">Client form link</div>
                 <div class="row items-center no-wrap q-gutter-xs">
-                  <div class="rems-value form-link col">{{ form.formLink }}</div>
+                  <div class="rems-value form-link col">{{ clientFormLink }}</div>
                   <q-btn flat round dense icon="o_content_copy" color="primary" @click="copyLink">
                     <q-tooltip>Copy link</q-tooltip>
                   </q-btn>
@@ -138,7 +138,7 @@
 import { ref, computed, onMounted } from "vue";
 import { useRoute } from "vue-router";
 import { copyToClipboard } from "quasar";
-import { remsApi, getApiErrorMessage } from "services/api";
+import { remsApi, getApiErrorMessage, webUrl } from "services/api";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import { useNotify } from "composables/useNotify";
 import { useDateFormat } from "composables/useDateFormat";
@@ -173,6 +173,9 @@ const emailLogOpen = ref(false);
 const canViewEmailLog = computed(() => has(Permissions.RemsEmailLogRead));
 
 const form = computed(() => screen.value?.form || null);
+// The link the client will actually open — always absolute, so copying it out of the browser works
+// even when the API's App:BaseUrl is unset (it would otherwise be a bare "/rems/form/{code}").
+const clientFormLink = computed(() => webUrl(form.value?.formLink));
 const isLocked = computed(() => !!form.value?.isLocked);
 const alreadySent = computed(() => !!form.value?.sentOnUtc);
 const clientEmail = computed(() => screen.value?.customerEmail || null);
@@ -267,8 +270,8 @@ const save = async () => {
 };
 
 const copyLink = () => {
-  if (!form.value?.formLink) return;
-  copyToClipboard(form.value.formLink)
+  if (!clientFormLink.value) return;
+  copyToClipboard(clientFormLink.value)
     .then(() => notify.success("Link copied."))
     .catch(() => notify.error("Could not copy the link."));
 };

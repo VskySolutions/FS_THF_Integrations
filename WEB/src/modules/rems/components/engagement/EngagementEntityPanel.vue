@@ -1,17 +1,7 @@
 <template>
   <div>
-    <!-- Entity identity header. -->
-    <div class="row items-center q-mb-md">
-      <div class="col">
-        <div class="text-h6">{{ entity.name }}</div>
-        <div class="text-caption text-grey-6">
-          <span v-if="entity.ein">EIN {{ entity.ein }} · </span>
-          {{ entity.isMainEntity ? "Main entity" : "Related entity" }}
-        </div>
-      </div>
-      <q-badge v-if="engagement" :color="statusMeta.color" class="q-pa-sm text-body2">{{ statusMeta.label }}</q-badge>
-    </div>
-
+    <!-- No identity header here: the card title carries the client, and the tab strip above carries the
+         entity, its EIN and the engagement status. -->
     <q-banner v-if="!engagement" dense class="bg-grey-2 text-grey-8 rounded-borders">
       <template #avatar><q-icon name="o_info" color="grey-7" /></template>
       This entity does not have an engagement yet.
@@ -27,11 +17,14 @@
         v-model="innerTab" dense align="left" active-color="primary" indicator-color="primary"
         class="text-grey-7"
       >
-        <q-tab name="setup" icon="o_engineering" label="Setup" no-caps />
-        <q-tab name="marketing" icon="o_campaign" label="Marketing" no-caps />
-        <q-tab name="commission" icon="o_payments" label="Commission" no-caps />
-        <q-tab name="approval" icon="o_approval" label="Approval" no-caps :disable="!marketingSaved">
-          <q-tooltip v-if="!marketingSaved">Save at least one marketing method to unlock approval</q-tooltip>
+        <!-- A locked step still shows its tooltip: q-tab renders the tooltip even when disabled, so the
+             reason is discoverable rather than the tab just being dead. -->
+        <q-tab
+          v-for="tab in TABS" :key="tab.name"
+          :name="tab.name" :icon="tab.icon" :label="tab.label" no-caps
+          :disable="!!lockedReason(tab.name)"
+        >
+          <q-tooltip v-if="lockedReason(tab.name)">{{ lockedReason(tab.name) }}</q-tooltip>
         </q-tab>
       </q-tabs>
       <q-separator />
@@ -73,8 +66,12 @@
             :tax-form-options="taxFormOptions"
             :tax-form-unavailable="taxFormUnavailable"
             :other-entities="otherEntities"
+            :department-directors="departmentDirectors"
+            :executive-options="executiveOptions"
+            :billing-manager-options="billingManagerOptions"
             :editable="editable"
             @saved="onSaved"
+            @advance="goNext"
             @workspace-refresh="$emit('workspace-refresh')"
           />
         </q-tab-panel>
@@ -86,6 +83,7 @@
             :marketing-unavailable="marketingUnavailable"
             :editable="editable"
             @saved="onSaved"
+            @advance="goNext"
           />
         </q-tab-panel>
 
@@ -95,6 +93,7 @@
             :staff="staff"
             :editable="editable"
             @saved="onSaved"
+            @advance="goNext"
           />
         </q-tab-panel>
 
@@ -102,7 +101,7 @@
           <engagement-approval
             :engagement="engagement"
             :can-send="canSendApproval"
-            :marketing-saved="marketingSaved"
+            :marketing-saved="marketingComplete"
             @status-changed="onStatusChanged"
           />
         </q-tab-panel>
@@ -120,6 +119,8 @@ import EngagementSetupForm from "modules/rems/components/engagement/EngagementSe
 import EngagementMarketing from "modules/rems/components/engagement/EngagementMarketing.vue";
 import EngagementCommission from "modules/rems/components/engagement/EngagementCommission.vue";
 import EngagementApproval from "modules/rems/components/engagement/EngagementApproval.vue";
+import { addressText as formatAddress } from "modules/rems/remsAddress";
+import { useRemsMeta, isAuditDepartment } from "modules/rems/useRemsMeta";
 
 const props = defineProps({
   entity: { type: Object, required: true },
@@ -131,16 +132,16 @@ const props = defineProps({
   taxFormOptions: { type: Array, default: () => [] },
   taxFormUnavailable: { type: Boolean, default: false },
   otherEntities: { type: Array, default: () => [] },
+  // Tenant department → director map, used by the setup form to resolve the director on selection.
+  departmentDirectors: { type: Array, default: () => [] },
+  // Group-scoped pickers: members of the "Engagement Executive" / "Billing Manager" user groups.
+  executiveOptions: { type: Array, default: () => [] },
+  billingManagerOptions: { type: Array, default: () => [] },
   canSendApproval: { type: Boolean, default: false }
 });
 defineEmits(["workspace-refresh"]);
 
-const STATUS_META = {
-  Draft: { label: "Draft", color: "grey-6" },
-  PendingApproval: { label: "Pending Approval", color: "orange-8" },
-  Rejected: { label: "Rejected", color: "negative" },
-  Approved: { label: "Approved", color: "positive" }
-};
+const { engagementStatusMeta } = useRemsMeta();
 
 const innerTab = ref("setup");
 
@@ -148,22 +149,74 @@ const innerTab = ref("setup");
 const engagement = ref(props.entity.engagement);
 watch(() => props.entity, (e) => { engagement.value = e.engagement; });
 
-// Editable only while Draft or Rejected (matches the backend lock); marketing-saved unlocks approval.
+// Editable only while Draft or Rejected (matches the backend lock).
 const editable = computed(() => ["Draft", "Rejected"].includes(engagement.value?.status));
-const marketingSaved = computed(() => (engagement.value?.marketingMethodIds?.length || 0) > 0);
-const statusMeta = computed(() => STATUS_META[engagement.value?.status] || { label: engagement.value?.status, color: "grey-6" });
+const statusMeta = computed(() => engagementStatusMeta(engagement.value?.status));
+
+// ---- Wizard steps ----
+// Each step unlocks the next, and the rules mirror what the API actually enforces when the engagement is
+// sent for approval (RemsApprovalController: a marketing method is required, and a signed client-acceptance
+// form on an audit engagement). Nothing is gated on a condition the backend would accept — in particular
+// commission splits are optional, so Commission never blocks Approval.
+const TABS = [
+  { name: "setup", icon: "o_engineering", label: "Setup" },
+  { name: "marketing", icon: "o_campaign", label: "Marketing" },
+  { name: "commission", icon: "o_payments", label: "Commission" },
+  { name: "approval", icon: "o_approval", label: "Approval" }
+];
+const TAB_ORDER = TABS.map((t) => t.name);
+
+const isAudit = computed(() => isAuditDepartment(engagement.value?.department));
+const cafOnFile = computed(() => !!engagement.value?.audit?.clientAcceptanceFormMediaId);
+
+// The mandatory setup fields: placement, the engagement team, and realization — plus the signed CAF on an
+// audit engagement. Mirrors ValidateApprovalPrerequisitesAsync, so the step gate and the send-for-approval
+// guard can never disagree about what "complete" means.
+const setupComplete = computed(() => {
+  const e = engagement.value;
+  return !!e?.department && !!e?.serviceLine &&
+    !!e?.engagementExecutive && !!e?.billingManager &&
+    e?.realizationPercentage != null &&
+    (!isAudit.value || cafOnFile.value);
+});
+const marketingComplete = computed(() => (engagement.value?.marketingMethodIds?.length || 0) > 0);
+
+// Why a tab is locked, or null when it is open. A read-only engagement is being reviewed rather than
+// filled in, so every tab opens — the wizard must never stop someone reading an approved engagement.
+const lockedReason = (tab) => {
+  if (!editable.value || tab === "setup") return null;
+  if (!setupComplete.value) {
+    return isAudit.value && !cafOnFile.value
+      ? "Complete Setup first — the required fields and the signed client-acceptance form"
+      : "Complete Setup first — Department, Service Line, Engagement Executive, Billing Manager and % Realization";
+  }
+  if (tab !== "marketing" && !marketingComplete.value) {
+    return "Save at least one marketing method first";
+  }
+  return null;
+};
 
 const onSaved = (view) => { engagement.value = view; };
 const onStatusChanged = (status) => { engagement.value = { ...engagement.value, status }; };
 
+// "Save & Next" — the child has already emitted `saved`, so the step state below is up to date.
+const goNext = () => {
+  const next = TAB_ORDER[TAB_ORDER.indexOf(innerTab.value) + 1];
+  if (next && !lockedReason(next)) innerTab.value = next;
+};
+
+// Editing backwards can re-lock the tab you are standing on (clearing the marketing methods, say).
+// Fall back to the furthest step still open rather than stranding the user on a disabled panel.
+watch([setupComplete, marketingComplete, editable], () => {
+  if (!lockedReason(innerTab.value)) return;
+  const open = TAB_ORDER.filter((t) => !lockedReason(t));
+  innerTab.value = open[open.length - 1] || "setup";
+});
+
 // ---- Read-only entity detail helpers ----
 const addressText = (type) => {
   const row = (props.entity.addresses || []).find((a) => a.addressType === type);
-  const a = row?.address;
-  if (!a) return "—";
-  const line2 = [a.city, a.state, a.zip].filter((x) => x && String(x).trim()).join(" ");
-  const parts = [a.street, line2].filter((x) => x && String(x).trim());
-  return parts.length ? parts.join(", ") : "—";
+  return formatAddress(row?.address);
 };
 const roleText = (r) => (r || "").replace(/([a-z])([A-Z])/g, "$1 $2");
 </script>

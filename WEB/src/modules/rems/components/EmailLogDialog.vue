@@ -34,6 +34,11 @@
                 {{ fmt.formatDateTime(ev.occurredOnUtc) }}
                 <template v-if="ev.providerMessageId"> · {{ ev.providerMessageId }}</template>
               </q-item-label>
+              <!-- Why a Failed event failed. Only set for failures the portal recorded itself; provider
+                   webhook payloads are never echoed here. -->
+              <q-item-label v-if="ev.detail" caption class="text-negative event-detail">
+                {{ ev.detail }}
+              </q-item-label>
             </q-item-section>
           </q-item>
         </q-list>
@@ -89,3 +94,10 @@ const load = async () => {
 
 watch(() => props.modelValue, (isOpen) => { if (isOpen) load(); });
 </script>
+
+<style scoped>
+.event-detail {
+  white-space: normal;
+  word-break: break-word;
+}
+</style>

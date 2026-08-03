@@ -15,6 +15,9 @@ body {
 .header {
   // background-color: var(--q-dark-page);
   background-color: white;
+  // Quasar's marginal sections ship white-on-primary. The background is overridden to white above, so the
+  // ink has to come with it — otherwise anything dropped in here without its own colour is invisible.
+  color: var(--q-dark);
   border-bottom: 1px solid rgba(202, 202, 202, 0.171);
   box-shadow: 0 2px 4px #0000001a, 0 6px 20px #0000001a;
   .q-toolbar{

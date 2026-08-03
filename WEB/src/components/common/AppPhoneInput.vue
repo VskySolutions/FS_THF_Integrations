@@ -8,7 +8,6 @@
       :clearable="false"
       :dense="dense"
       class="col-12 col-sm-5"
-      @filter="filterDialCodes"
     />
     <div class="col-12 col-sm-7">
       <app-field-label :label="label" />
@@ -59,13 +58,9 @@ const props = defineProps({
 
 const emit = defineEmits(["update:modelValue", "update:country", "blur", "update:valid"]);
 
-// US + India are pinned on top (see useCountries); US is the default selection.
-const dialCodeOptions = ref(orderedCountries.map(dialCodeOption));
-
-const filterDialCodes = (val, update) => {
-  const needle = (val || "").toLowerCase();
-  update(() => { dialCodeOptions.value = orderedCountries.filter((c) => dialCodeOption(c).label.toLowerCase().includes(needle)).map(dialCodeOption); });
-};
+// US + India are pinned on top (see useCountries); US is the default selection. AppSelect narrows the
+// list as the user types, so the full set is handed over as-is.
+const dialCodeOptions = orderedCountries.map(dialCodeOption);
 
 // When no dial code is supplied separately (e.g. the value is a bare E.164 string), infer the
 // country from the number itself so the dropdown + as-you-type pattern match the stored value.

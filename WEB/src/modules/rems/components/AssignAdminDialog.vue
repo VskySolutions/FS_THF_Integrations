@@ -1,12 +1,12 @@
 <template>
   <q-dialog v-model="open">
     <q-card style="min-width: 420px; max-width: 92vw;">
-      <q-card-section class="text-h6">{{ isPickup ? "Pick Up Request" : "Assign Admin" }}</q-card-section>
+      <q-card-section class="text-h6">{{ title }}</q-card-section>
       <q-separator />
       <q-card-section>
         <div class="text-body2 text-grey-7 q-mb-md">
           {{ isPickup
-            ? "Assign this request to yourself and start working it."
+            ? "Take this yourself, or pick another Admin to own it. The new owner is notified."
             : "Choose the Admin to own this request. Reassigning notifies the new owner." }}
         </div>
         <app-select
@@ -31,6 +31,7 @@ import { ref, computed, watch } from "vue";
 import { remsApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useAuthStore } from "stores/auth";
+import AppSelect from "components/common/AppSelect.vue";
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -51,8 +52,14 @@ const open = computed({
 });
 
 const isPickup = computed(() => props.mode === "pickup");
+
+// An unclaimed request opens pre-selected to the caller, but the dropdown is a free choice of any Admin.
+// The title/button follow the CURRENT selection so the dialog stops promising a self-assignment the
+// moment someone else is chosen — the old copy said "assign to yourself" over an editable picker.
+const isSelf = computed(() => !!adminId.value && adminId.value === auth.user?.userId);
+const title = computed(() => (isPickup.value && isSelf.value ? "Pick Up Request" : "Assign Admin"));
 const confirmLabel = computed(() => {
-  if (isPickup.value) return "Pick Up";
+  if (isPickup.value) return isSelf.value ? "Pick Up" : "Assign";
   return props.currentAdminId ? "Reassign" : "Assign";
 });
 
@@ -90,7 +97,7 @@ const confirm = async () => {
   saving.value = true;
   try {
     const detail = await remsApi.assign(props.requestId, adminId.value);
-    notify.success(isPickup.value ? "Request picked up." : "Request assigned.");
+    notify.success(isPickup.value && isSelf.value ? "Request picked up." : "Request assigned.");
     emit("assigned", detail);
     open.value = false;
   } catch (err) {

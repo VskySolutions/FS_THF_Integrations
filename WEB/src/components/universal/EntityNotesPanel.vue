@@ -130,6 +130,7 @@ import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import { useAuthStore } from "stores/auth";
+import { escapeHtml, sanitizeHtml, isHtml, hasRichTextContent as hasContent } from "utils/richText";
 
 const props = defineProps({
   entityType: { type: Number, required: true },
@@ -334,31 +335,11 @@ const remove = async (note) => {
 };
 
 // ---- rendering ----
-const escapeHtml = (s) => (s || "").replace(/[&<>"']/g, (c) => (
-  { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c]
-));
-
-// True when the editor holds visible content (q-editor leaves an empty <br> / whitespace behind).
-const hasContent = (html) => !!(html || "").replace(/<br\s*\/?>/gi, "").replace(/<[^>]+>/g, "").replace(/&nbsp;/gi, " ").trim();
-
-// Allowlist sanitizer for stored HTML notes (no sanitizer dependency available): drops dangerous
-// elements, inline event handlers, and javascript: URLs while keeping basic rich-text markup.
-const sanitizeHtml = (html) => {
-  const doc = new DOMParser().parseFromString(html || "", "text/html");
-  doc.querySelectorAll("script,style,iframe,object,embed,link,meta,form,input").forEach((n) => n.remove());
-  doc.querySelectorAll("*").forEach((el) => {
-    Array.from(el.attributes).forEach((attr) => {
-      const name = attr.name.toLowerCase();
-      if (name.startsWith("on")) el.removeAttribute(attr.name);
-      else if ((name === "href" || name === "src") && /^\s*javascript:/i.test(attr.value)) el.removeAttribute(attr.name);
-    });
-  });
-  return doc.body.innerHTML;
-};
+// Sanitizing/escaping lives in utils/richText so notes and the description editors share one allowlist.
 
 // New notes are q-editor HTML; legacy notes are plain text with @[Name](id) tokens.
 const renderBody = (body) => {
-  if (/<[a-z][\s\S]*>/i.test(body || "")) {
+  if (isHtml(body)) {
     return sanitizeHtml(body);
   }
   return escapeHtml(body).replace(

@@ -136,7 +136,7 @@
         <q-card-section>
           <q-form ref="createForm" greedy>
             <app-text-field v-model="newGroup.name" label="Name *" :rules="[(v) => !!v || 'Name is required']" class="q-mb-md" />
-            <app-text-field v-model="newGroup.description" label="Description" />
+            <app-rich-text-field v-model="newGroup.description" label="Description" />
           </q-form>
         </q-card-section>
         <q-separator />
@@ -182,7 +182,9 @@ import AppListHeader from "components/common/AppListHeader.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppDataTable from "components/common/AppDataTable.vue";
+import { stripHtml } from "utils/richText";
 import AppTextField from "components/common/AppTextField.vue";
+import AppRichTextField from "components/common/AppRichTextField.vue";
 import AppSelect from "components/common/AppSelect.vue";
 
 const notify = useNotify();
@@ -191,7 +193,8 @@ const fmt = useDateFormat();
 
 const columns = [
   { name: "name", label: "Name", field: "name", align: "left", sortable: true, default: true },
-  { name: "description", label: "Description", field: "description", align: "left" },
+  // Descriptions are rich text; the cell shows the text without its markup (see utils/richText).
+  { name: "description", label: "Description", field: (r) => stripHtml(r.description), align: "left" },
   { name: "memberCount", label: "Members", field: "memberCount", align: "left", sortable: true, default: true, filterable: false },
   { name: "createdBy", label: "Created By", field: "createdBy", align: "left", sortable: true },
   { name: "createdOnUtc", label: "Created", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true, default: true, filterable: false },

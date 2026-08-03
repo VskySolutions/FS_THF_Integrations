@@ -21,7 +21,6 @@
 <script setup>
 import { computed } from "vue";
 import { EntityType } from "services/api";
-import EntityNotesPanel from "components/universal/EntityNotesPanel.vue";
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },

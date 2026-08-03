@@ -18,7 +18,10 @@
         >
           <q-tooltip>Build EMS Form</q-tooltip>
         </q-btn>
-        <q-btn v-if="detail?.actions?.canAssign && has(Permissions.RemsPoolRead)" flat round dense color="primary" icon="o_person_add" @click="openAssign">
+        <q-btn
+          v-if="detail?.actions?.canAssign && !customerSubmitted && has(Permissions.RemsPoolRead)"
+          flat round dense color="primary" icon="o_person_add" @click="openAssign"
+        >
           <q-tooltip>{{ detail.assignedAdmin ? "Reassign Admin" : "Assign / Pick Up" }}</q-tooltip>
         </q-btn>
         <q-btn v-if="detail?.actions?.canDuplicate" flat round dense color="primary" icon="o_content_copy" @click="duplicate">
@@ -50,7 +53,10 @@
               <template v-if="detail.description">
                 <q-separator class="q-my-md" />
                 <div class="rems-label">Description</div>
-                <div class="rems-value" style="white-space: pre-wrap;">{{ detail.description }}</div>
+                <!-- Rich text from the request editor. renderRichText sanitizes it and still handles
+                     descriptions written before the field became rich (plain text keeps its breaks). -->
+                <!-- eslint-disable-next-line vue/no-v-html -->
+                <div class="rems-value rems-value--rich" v-html="renderRichText(detail.description)" />
               </template>
             </q-card-section>
           </q-card>
@@ -109,9 +115,9 @@ import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
 import { useRemsMeta } from "modules/rems/useRemsMeta";
+import { renderRichText } from "utils/richText";
 
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
-import EntityNotesPanel from "components/universal/EntityNotesPanel.vue";
 import NewRequestDialog from "modules/rems/components/NewRequestDialog.vue";
 import AssignAdminDialog from "modules/rems/components/AssignAdminDialog.vue";
 
@@ -126,10 +132,14 @@ const {
 } = useRemsMeta();
 
 const requestId = route.params.id;
-// The Build EMS workspace is Admin-only (rems.forms.manage); Partners see the request but not this entry.
-const canBuildEms = computed(() => has(Permissions.RemsFormsManage));
 const loading = ref(true);
 const detail = ref(null);
+
+// Once the customer has submitted their EMS form the request is past the build-and-assign stage — the
+// form is done and the work moves to the engagement workspace — so both actions are withdrawn.
+const customerSubmitted = computed(() => detail.value?.status === "customer_submitted");
+// The Build EMS workspace is Admin-only (rems.forms.manage); Partners see the request but not this entry.
+const canBuildEms = computed(() => has(Permissions.RemsFormsManage) && !customerSubmitted.value);
 
 const infoRows = computed(() => {
   const d = detail.value;
@@ -235,5 +245,17 @@ onMounted(load);
   font-size: 14px;
   color: #2c3540;
   word-break: break-word;
+}
+/* Rich-text description: keep the editor's paragraphs and lists readable inside the detail card. */
+.rems-value--rich :deep(p) {
+  margin: 0 0 0.5em;
+}
+.rems-value--rich :deep(p:last-child) {
+  margin-bottom: 0;
+}
+.rems-value--rich :deep(ul),
+.rems-value--rich :deep(ol) {
+  margin: 0 0 0.5em;
+  padding-left: 1.25rem;
 }
 </style>

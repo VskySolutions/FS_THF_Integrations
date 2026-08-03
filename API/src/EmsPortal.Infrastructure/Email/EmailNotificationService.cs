@@ -12,6 +12,11 @@ namespace EmsPortal.Infrastructure.Email;
 /// Renders a tenant's effective template and dispatches it through the tenant's active SMTP account.
 /// Best-effort: it never throws, logging and returning false when there is no active account or the
 /// send fails, so the calling action (user creation, password reset, …) is never blocked.
+/// <para>
+/// Because nothing upstream sees that false, every failure path also reports to
+/// <see cref="IEmailDeliveryFailureSink"/> when the send carries a Message-ID. That is what turns a
+/// silently-swallowed failure into a visible Failed row on the originating record's delivery log.
+/// </para>
 /// </summary>
 internal sealed class EmailNotificationService : IEmailNotificationService
 {
@@ -20,6 +25,7 @@ internal sealed class EmailNotificationService : IEmailNotificationService
     private readonly ICredentialEncryptionService _encryption;
     private readonly ISmtpEmailSender _sender;
     private readonly ITenantRepository _tenants;
+    private readonly IEmailDeliveryFailureSink _failures;
     private readonly AppOptions _appOptions;
     private readonly ILogger<EmailNotificationService> _logger;
 
@@ -29,6 +35,7 @@ internal sealed class EmailNotificationService : IEmailNotificationService
         ICredentialEncryptionService encryption,
         ISmtpEmailSender sender,
         ITenantRepository tenants,
+        IEmailDeliveryFailureSink failures,
         IOptions<AppOptions> appOptions,
         ILogger<EmailNotificationService> logger)
     {
@@ -37,6 +44,7 @@ internal sealed class EmailNotificationService : IEmailNotificationService
         _encryption = encryption;
         _sender = sender;
         _tenants = tenants;
+        _failures = failures;
         _appOptions = appOptions.Value;
         _logger = logger;
     }
@@ -71,6 +79,8 @@ internal sealed class EmailNotificationService : IEmailNotificationService
             if (account is null)
             {
                 _logger.LogInformation("Skipping {TemplateKey} email for tenant {TenantId}: no active SMTP account.", key, tenantId);
+                await RecordFailureAsync(tenantId, key, toEmail, messageId,
+                    EmailDeliveryFailureReason.NoActiveSmtpAccount, null, cancellationToken);
                 return false;
             }
 
@@ -93,6 +103,9 @@ internal sealed class EmailNotificationService : IEmailNotificationService
             var rendered = await _templates.RenderEffectiveAsync(tenantId, key, merged, cancellationToken);
             if (rendered is null)
             {
+                _logger.LogWarning("No effective {TemplateKey} template for tenant {TenantId}; nothing was sent.", key, tenantId);
+                await RecordFailureAsync(tenantId, key, toEmail, messageId,
+                    EmailDeliveryFailureReason.TemplateUnavailable, null, cancellationToken);
                 return false;
             }
 
@@ -112,6 +125,8 @@ internal sealed class EmailNotificationService : IEmailNotificationService
             {
                 _logger.LogWarning("Failed to send {TemplateKey} email for tenant {TenantId}: {Category} {Error}",
                     key, tenantId, result.ErrorCategory, result.ErrorMessage);
+                await RecordFailureAsync(tenantId, key, toEmail, messageId,
+                    EmailDeliveryFailureReason.SmtpSendFailed, DescribeSmtpError(result), cancellationToken);
             }
             return result.Success;
         }
@@ -119,7 +134,38 @@ internal sealed class EmailNotificationService : IEmailNotificationService
         {
             // Notifications must never break the primary action.
             _logger.LogWarning(ex, "Error sending {TemplateKey} email for tenant {TenantId}.", key, tenantId);
+            await RecordFailureAsync(tenantId, key, toEmail, messageId,
+                EmailDeliveryFailureReason.UnexpectedError, ex.Message, cancellationToken);
             return false;
         }
     }
+
+    /// <summary>
+    /// Reports a swallowed failure to the sink. Only delivery-tracked sends carry a Message-ID, and it is
+    /// what correlates the failure to the record whose log it belongs in — so a send without one has
+    /// nowhere to report and is left to the application log alone.
+    /// </summary>
+    private async Task RecordFailureAsync(
+        Guid tenantId,
+        EmailTemplateKey key,
+        string? toEmail,
+        string? messageId,
+        EmailDeliveryFailureReason reason,
+        string? detail,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(messageId))
+        {
+            return;
+        }
+
+        await _failures.RecordAsync(
+            new EmailDeliveryFailure(tenantId, key, messageId, toEmail?.Trim(), reason, detail), cancellationToken);
+    }
+
+    /// <summary>The SMTP error as a single readable clause; the category alone when the server gave no message.</summary>
+    private static string DescribeSmtpError(SmtpSendResult result)
+        => string.IsNullOrWhiteSpace(result.ErrorMessage)
+            ? $"({result.ErrorCategory})"
+            : $"({result.ErrorCategory}) {result.ErrorMessage.Trim()}";
 }

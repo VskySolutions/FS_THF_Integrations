@@ -115,7 +115,7 @@
               <q-item-section avatar><q-icon name="o_dashboard_customize" color="primary" /></q-item-section>
               <q-item-section>
                 <q-item-label>{{ t.name }}</q-item-label>
-                <q-item-label caption>{{ t.description || "—" }} · {{ (t.permissionKeys || []).length }} keys</q-item-label>
+                <q-item-label caption>{{ stripHtml(t.description) || "—" }} · {{ (t.permissionKeys || []).length }} keys</q-item-label>
               </q-item-section>
             </q-item>
           </q-list>
@@ -148,6 +148,7 @@ import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
 
 import AppDataTable from "components/common/AppDataTable.vue";
+import { stripHtml } from "utils/richText";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
@@ -172,7 +173,8 @@ const CATEGORY_OPTIONS = [
 
 const columns = computed(() => [
   { name: "name", label: "Group Name", field: "name", align: "left", sortable: true, default: true, filterable: false },
-  { name: "description", label: "Description", field: "description", align: "left", default: true, filterable: false },
+  // Descriptions are rich text; the cell shows the text without its markup (see utils/richText).
+  { name: "description", label: "Description", field: (r) => stripHtml(r.description), align: "left", default: true, filterable: false },
   { name: "permissionCount", label: "Permission Count", field: "permissionCount", align: "left", sortable: true, default: true, filterable: false },
   { name: "rolesUsingCount", label: "Roles Using", field: "rolesUsingCount", align: "left", sortable: true, default: true, filterable: false },
   { name: "members", label: "Members", field: "currentUsage", align: "left", sortable: true, default: true, filterable: false },

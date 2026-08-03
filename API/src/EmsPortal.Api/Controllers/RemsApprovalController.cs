@@ -29,6 +29,7 @@ namespace EmsPortal.Api.Controllers;
 [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status500InternalServerError)]
 public sealed class RemsApprovalController : ControllerBase
 {
+    private const string CodeSetupIncomplete = "REMS_SETUP_INCOMPLETE";
     private const string CodeMarketingRequired = "REMS_MARKETING_REQUIRED";
     private const string CodeCafRequired = "REMS_CAF_REQUIRED";
     private const string CodeGovDetailRequired = "REMS_GOV_DETAIL_REQUIRED";
@@ -330,6 +331,12 @@ public sealed class RemsApprovalController : ControllerBase
             {
                 involved.Add(cse);
             }
+            // Final approval is the outcome the requester has been waiting for since they submitted.
+            // (Rejections stay internal — they are a rework loop between staff, not a status for the requester.)
+            if (rems.CreatedById is { } requester)
+            {
+                involved.Add(requester);
+            }
             foreach (var userId in involved)
             {
                 await _notifications.DispatchAsync(new CreateNotificationDto(
@@ -468,6 +475,19 @@ public sealed class RemsApprovalController : ControllerBase
     /// <summary>Validates the pre-approval requirements (marketing tag; audit CAF; government-audit contract + Florida flag).</summary>
     private async Task<IActionResult?> ValidateApprovalPrerequisitesAsync(REMSEngagement engagement, CancellationToken cancellationToken)
     {
+        // The engagement's core placement + team + realization are mandatory. The workspace enforces this
+        // on its Setup step too; this is the backstop for anything reaching the API another way.
+        var missing = new List<string>();
+        if (string.IsNullOrWhiteSpace(engagement.Department)) missing.Add("Department");
+        if (string.IsNullOrWhiteSpace(engagement.ServiceLine)) missing.Add("Service Line");
+        if (engagement.EngagementExecutiveId is null) missing.Add("Engagement Executive");
+        if (engagement.BillingManagerId is null) missing.Add("Billing Manager");
+        if (engagement.RealizationPercentage is null) missing.Add("% Realization");
+        if (missing.Count > 0)
+        {
+            return ConflictResult(CodeSetupIncomplete, $"Complete the engagement setup first — missing: {string.Join(", ", missing)}.");
+        }
+
         if (!engagement.MarketingMethods.Any(m => !m.Deleted))
         {
             return ConflictResult(CodeMarketingRequired, "At least one marketing tag is required before sending for approval.");

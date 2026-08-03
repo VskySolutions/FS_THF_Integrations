@@ -79,7 +79,7 @@
           v-model="form.personId" :options="personOptions" label="Person *" class="q-mb-md"
           :loading="loadingPersons" :clearable="false" :disable="personLocked" use-input
           hint="Persons already linked to a user are disabled."
-          @filter="filterPersons" @update:model-value="onPersonChange"
+          @update:model-value="onPersonChange"
         >
           <template #after>
             <q-btn round dense flat icon="o_add" color="primary" :disable="personLocked" @click="personDialogOpen = true">
@@ -236,15 +236,6 @@ const loadPersons = async () => {
   } finally {
     loadingPersons.value = false;
   }
-};
-
-const filterPersons = (val, update) => {
-  const needle = (val || "").toLowerCase();
-  update(() => {
-    personOptions.value = allPersons.value
-      .filter((p) => personOption(p).label.toLowerCase().includes(needle))
-      .map(personOption);
-  });
 };
 
 // Pre-fill the username from the chosen person (person is the source of truth), and for tenant

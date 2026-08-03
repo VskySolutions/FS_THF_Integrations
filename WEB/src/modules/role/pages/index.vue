@@ -72,10 +72,7 @@
           :readonly="nameLocked" :hint="nameLocked ? 'System role names are fixed; permissions can still be tuned.' : undefined"
           :rules="[(v) => !!v || 'Name is required']"
         />
-        <q-input
-          v-model="form.description" outlined stack-label hide-bottom-space label="Description" class="q-mb-md"
-          type="textarea" autogrow
-        />
+        <app-rich-text-field v-model="form.description" label="Description" class="q-mb-md" />
         <app-select
           v-model="form.permissions" :options="permissionOptions" label="Permissions" multiple
           :loading="loadingPermissions"
@@ -110,11 +107,13 @@ import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
 
 import AppDataTable from "components/common/AppDataTable.vue";
+import { stripHtml } from "utils/richText";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppSelect from "components/common/AppSelect.vue";
+import AppRichTextField from "components/common/AppRichTextField.vue";
 import RolePermissionGroupsPanel from "modules/permission-group/components/RolePermissionGroupsPanel.vue";
 
 const notify = useNotify();
@@ -122,7 +121,8 @@ const { confirm } = useConfirm();
 
 const columns = [
   { name: "name", label: "Name", field: "name", align: "left", sortable: true, default: true },
-  { name: "description", label: "Description", field: "description", align: "left", default: true },
+  // Descriptions are rich text; the cell shows the text without its markup (see utils/richText).
+  { name: "description", label: "Description", field: (r) => stripHtml(r.description), align: "left", default: true },
   {
     name: "isSystem",
     label: "Type",

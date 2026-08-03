@@ -27,6 +27,39 @@
         </q-card-actions>
       </q-card>
 
+      <!-- Department + REMS approval roles. Both are per-tenant: the department head is that department's
+           REMS Director, and the managing shareholder approves every engagement in the tenant. -->
+      <q-card flat bordered class="user-card q-mb-md">
+        <q-card-section class="text-subtitle1 text-weight-medium">Department &amp; approval roles</q-card-section>
+        <q-separator />
+        <q-card-section v-if="!inActiveTenant" class="text-grey-6">
+          Assign this user to the active tenant before setting a department or approval role.
+        </q-card-section>
+        <template v-else>
+          <q-card-section class="row q-col-gutter-md items-start">
+            <app-select
+              v-model="department" :options="departmentOptions" :loading="loadingDepartments" label="Department"
+              class="col-12 col-sm-6" :readonly="!canEdit" @update:model-value="onDepartmentChange"
+            />
+            <div class="col-12 col-sm-6">
+              <q-toggle v-model="isDepartmentHead" :disable="!canEdit || !department" label="Department head" />
+              <div class="text-caption text-grey-7 q-mt-xs">{{ headHint }}</div>
+            </div>
+          </q-card-section>
+          <q-separator inset />
+          <q-card-section>
+            <q-toggle v-model="isManagingShareholder" :disable="!canEdit" label="Managing shareholder" />
+            <div class="text-caption text-grey-7 q-mt-xs">{{ shareholderHint }}</div>
+          </q-card-section>
+        </template>
+        <q-card-actions v-if="canEdit && inActiveTenant" align="right">
+          <q-btn
+            unelevated no-caps color="primary" label="Save" :loading="savingRoles"
+            :disable="!rolesDirty" @click="saveRoles"
+          />
+        </q-card-actions>
+      </q-card>
+
       <!-- Status + reset -->
       <q-card flat bordered class="user-card q-mb-md">
         <q-card-section class="row items-center">
@@ -261,6 +294,9 @@ const load = async () => {
     lastName.value = user.value.lastName || "";
     phoneNumber.value = user.value.phoneNumber || "";
     email.value = user.value.email;
+    department.value = user.value.department || null;
+    isDepartmentHead.value = !!user.value.isDepartmentHead;
+    isManagingShareholder.value = !!user.value.isManagingShareholder;
   } catch (err) {
     notify.error(getApiErrorMessage(err));
   } finally {
@@ -278,6 +314,123 @@ const save = async () => {
     notify.error(getApiErrorMessage(err));
   } finally {
     saving.value = false;
+  }
+};
+
+// ---- Department & approval roles ----
+// Both are scoped to the active tenant and both are singletons. A department has exactly one head, and
+// that head IS its REMS Department Director — saving the flag repoints the tenant's department-director
+// mapping, which is what prefills an engagement's Department Director. The managing shareholder is the
+// firm-wide equivalent: one per tenant, a required approver on every engagement. Taking either role from
+// someone is confirmed by name first.
+const department = ref(null);
+const isDepartmentHead = ref(false);
+const isManagingShareholder = ref(false);
+const departmentOptions = ref([]);
+const departmentHeads = ref([]);
+const managingShareholder = ref(null);
+const loadingDepartments = ref(false);
+const savingRoles = ref(false);
+
+const sameId = (a, b) => String(a || "").toLowerCase() === String(b || "").toLowerCase();
+
+// These roles only mean something inside a tenant, so the section needs an assignment in the active one.
+const inActiveTenant = computed(() =>
+  (user.value?.assignments || []).some((a) => a.tenantId === tenantStore.activeTenantId));
+
+const departmentLabel = (code) => departmentOptions.value.find((o) => o.value === code)?.label || code;
+
+// Who holds the selected department today (possibly this same user).
+const currentHead = computed(() => departmentHeads.value.find((h) => h.department === department.value) || null);
+
+const headHint = computed(() => {
+  if (!department.value) return "Pick a department to set a head.";
+  if (!currentHead.value) return `${departmentLabel(department.value)} has no head yet.`;
+  if (sameId(currentHead.value.userId, userId)) return "Heads this department, and is its REMS Department Director.";
+  return `${currentHead.value.fullName} currently heads ${departmentLabel(department.value)}.`;
+});
+
+const shareholderHint = computed(() => {
+  if (!managingShareholder.value) return "No managing shareholder set — engagement approvals will stall without one.";
+  if (sameId(managingShareholder.value.userId, userId)) return "Approves every engagement in this tenant.";
+  return `${managingShareholder.value.fullName} is currently the managing shareholder.`;
+});
+
+const departmentDirty = computed(() =>
+  (department.value || null) !== (user.value?.department || null) ||
+  isDepartmentHead.value !== !!user.value?.isDepartmentHead);
+
+const shareholderDirty = computed(() => isManagingShareholder.value !== !!user.value?.isManagingShareholder);
+
+const rolesDirty = computed(() => departmentDirty.value || shareholderDirty.value);
+
+// Moving to a different department never carries headship across — it has to be granted deliberately.
+const onDepartmentChange = (value) => {
+  department.value = value;
+  isDepartmentHead.value = value && value === user.value?.department ? !!user.value.isDepartmentHead : false;
+};
+
+const loadDepartments = async () => {
+  loadingDepartments.value = true;
+  try {
+    const result = await userApi.departments();
+    departmentOptions.value = result?.departments || [];
+    departmentHeads.value = result?.heads || [];
+    managingShareholder.value = result?.managingShareholder || null;
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    loadingDepartments.value = false;
+  }
+};
+
+// Saves whichever of the two roles changed. Both are one-holder roles, so each takeover is confirmed by
+// naming the person who loses it before anything is written.
+const saveRoles = async () => {
+  if (departmentDirty.value && isDepartmentHead.value && currentHead.value && !sameId(currentHead.value.userId, userId)) {
+    const ok = await confirm({
+      title: "Change department head",
+      message: `${currentHead.value.fullName} currently heads ${departmentLabel(department.value)}. Make ` +
+        `${user.value.displayName} the head instead? ${currentHead.value.fullName} will no longer be the ` +
+        "Department Director on new engagements.",
+      confirmLabel: "Make head"
+    });
+    if (!ok) return;
+  }
+  if (shareholderDirty.value && isManagingShareholder.value && managingShareholder.value &&
+    !sameId(managingShareholder.value.userId, userId)) {
+    const ok = await confirm({
+      title: "Change managing shareholder",
+      message: `${managingShareholder.value.fullName} is currently the managing shareholder. Make ` +
+        `${user.value.displayName} the managing shareholder instead? ${managingShareholder.value.fullName} ` +
+        "will no longer approve new engagements.",
+      confirmLabel: "Make managing shareholder"
+    });
+    if (!ok) return;
+  }
+
+  savingRoles.value = true;
+  try {
+    const notes = [];
+    if (departmentDirty.value) {
+      const result = await userApi.setDepartment(userId, {
+        department: department.value,
+        isHead: isDepartmentHead.value
+      });
+      if (result?.demotedHeadName) notes.push(`${result.demotedHeadName} is no longer the department head.`);
+    }
+    if (shareholderDirty.value) {
+      const result = await userApi.setManagingShareholder(userId, isManagingShareholder.value);
+      if (result?.displacedName) notes.push(`${result.displacedName} is no longer the managing shareholder.`);
+    }
+    notify.success(["Approval roles updated.", ...notes].join(" "));
+    await Promise.all([loadDepartments(), load()]);
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+    // A partial save (one role written, the next rejected) still has to show what actually landed.
+    await Promise.all([loadDepartments(), load()]);
+  } finally {
+    savingRoles.value = false;
   }
 };
 
@@ -483,7 +636,7 @@ const saveGroups = async () => {
 };
 
 onMounted(async () => {
-  await loadTenants();
+  await Promise.all([loadTenants(), loadDepartments()]);
   await load();
 });
 </script>

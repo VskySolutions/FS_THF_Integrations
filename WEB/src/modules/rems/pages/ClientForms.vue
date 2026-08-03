@@ -60,30 +60,14 @@
           >
             <q-tooltip>{{ cell.row.submitted ? "View submitted form" : "The client has not submitted this form yet" }}</q-tooltip>
           </q-btn>
-          <q-btn flat round dense icon="o_more_vert">
-            <q-menu auto-close>
-              <q-list style="min-width: 210px;">
-                <q-item clickable :disable="!cell.row.submitted" @click="cell.row.submitted && openView(cell.row)">
-                  <q-item-section avatar><q-icon name="o_visibility" /></q-item-section>
-                  <q-item-section>
-                    View submitted form
-                    <q-tooltip v-if="!cell.row.submitted">Available once the client submits their form</q-tooltip>
-                  </q-item-section>
-                </q-item>
-                <q-separator />
-                <!-- Distinct editable engagement action, kept apart from the read-only review. -->
-                <q-item
-                  clickable :disable="!cell.row.submitted"
-                  @click="cell.row.submitted && openEngagement(cell.row)"
-                >
-                  <q-item-section avatar><q-icon name="o_engineering" /></q-item-section>
-                  <q-item-section>
-                    Engagement Setup
-                    <q-tooltip v-if="!cell.row.submitted">Available once the client submits their form</q-tooltip>
-                  </q-item-section>
-                </q-item>
-              </q-list>
-            </q-menu>
+          <!-- Distinct editable engagement action, kept apart from the read-only review above. -->
+          <q-btn
+            flat round dense color="primary" icon="o_work"
+            :disable="!cell.row.submitted" @click="openEngagement(cell.row)"
+          >
+            <q-tooltip>
+              {{ cell.row.submitted ? "Engagement Setup" : "Available once the client submits their form" }}
+            </q-tooltip>
           </q-btn>
         </q-td>
       </template>

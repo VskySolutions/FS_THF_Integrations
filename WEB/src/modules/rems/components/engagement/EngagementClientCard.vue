@@ -1,8 +1,8 @@
 <template>
   <q-card flat bordered class="rems-card q-mb-md">
-    <q-card-section class="row items-center q-py-sm">
+    <q-card-section class="rems-card__title row items-center q-py-sm">
       <div class="text-subtitle1 text-primary">
-        <q-icon name="o_badge" size="20px" class="q-mr-xs" />Client
+        <q-icon name="o_badge" size="20px" class="q-mr-xs" />Client Submitted (Editable)
       </div>
       <q-space />
       <q-btn
@@ -41,7 +41,9 @@
           />
         </div>
         <div class="q-mt-sm">
-          <public-address-fields v-model="form.billingAddress" />
+          <!-- Billing address stays optional here: this edits an existing client, and the address may
+               simply not have been collected yet. -->
+          <app-address-fields ref="addressRef" v-model="form.billingAddress" />
         </div>
       </q-form>
     </q-card-section>
@@ -51,11 +53,12 @@
 <script setup>
 // The editable client record at the top of the engagement workspace (AC-REMS-014.2/3). Name, mobile and
 // the billing contact/email/address are editable; the email is the locked authoritative customer email.
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, nextTick } from "vue";
 import { remsApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 import AppTextField from "components/common/AppTextField.vue";
-import PublicAddressFields from "modules/rems/components/PublicAddressFields.vue";
+import AppAddressFields from "components/common/AppAddressFields.vue";
+import { toAddress, fromAddress } from "modules/rems/remsAddress";
 
 const props = defineProps({
   client: { type: Object, required: true },
@@ -65,29 +68,40 @@ const emit = defineEmits(["updated"]);
 
 const notify = useNotify();
 const formRef = ref(null);
+// The address block's own checks (postal format) are not q-form rules, so they are run explicitly.
+const addressRef = ref(null);
 const saving = ref(false);
 
-const blankAddress = (a) => ({ street: a?.street || "", city: a?.city || "", state: a?.state || "", zip: a?.zip || "" });
 const buildForm = (c) => ({
   name: c.name || "",
   mobileNumber: c.mobileNumber || "",
   billingContactName: c.billingContactName || "",
   billingEmail: c.billingEmail || "",
-  billingAddress: blankAddress(c.billingAddress)
+  billingAddress: toAddress(c.billingAddress)
 });
 
 const form = ref(buildForm(props.client));
-watch(() => props.client, (c) => { form.value = buildForm(c); });
+
+// The dirty baseline is snapshotted AFTER the address field-set has settled: on mount it fills in the
+// values it derives from the ISO codes (country name, a recovered state code), and comparing against a
+// freshly-built form would read those as unsaved edits and light up Save on load.
+const baseline = ref("");
+watch(
+  () => props.client,
+  (c) => { form.value = buildForm(c); nextTick(() => { baseline.value = JSON.stringify(form.value); }); },
+  { immediate: true }
+);
 
 const emailRules = [
   (v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) || "Enter a valid email address"
 ];
 
 // Enable the Save button only when something actually changed (avoids no-op writes).
-const dirty = computed(() => JSON.stringify(form.value) !== JSON.stringify(buildForm(props.client)));
+const dirty = computed(() => !!baseline.value && JSON.stringify(form.value) !== baseline.value);
 
 const save = async () => {
-  if (!(await formRef.value?.validate())) return;
+  const addressOk = addressRef.value?.validate() !== false;
+  if (!(await formRef.value?.validate()) || !addressOk) return;
   saving.value = true;
   try {
     const view = await remsApi.updateClient(props.remsId, {
@@ -95,7 +109,7 @@ const save = async () => {
       mobileNumber: form.value.mobileNumber,
       billingContactName: form.value.billingContactName,
       billingEmail: form.value.billingEmail,
-      billingAddress: form.value.billingAddress
+      billingAddress: fromAddress(form.value.billingAddress)
     });
     notify.success("Client details saved.");
     emit("updated", view);
@@ -109,12 +123,4 @@ const save = async () => {
 
 <style scoped>
 .rems-card { border-radius: 12px; }
-.section-subhead {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--q-primary);
-  margin: 16px 0 8px;
-}
 </style>

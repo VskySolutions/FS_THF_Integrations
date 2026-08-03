@@ -16,8 +16,24 @@
         >
           <q-item-section avatar><q-icon :name="item.icon" size="20px" /></q-item-section>
           <q-item-section>{{ item.label }}</q-item-section>
+          <q-tooltip v-if="mini" anchor="center right" self="center left">{{ item.label }}</q-tooltip>
         </q-item>
       </template>
+
+      <!-- Collapsed, a group is a single icon: Quasar hides expansion content in a mini drawer, so
+           opening one in place would be a dead click. It reopens the menu instead. -->
+      <q-item
+        v-else-if="mini"
+        :key="`${section.key}-mini`"
+        v-ripple
+        dense
+        clickable
+        @click="emit('expand')"
+      >
+        <q-item-section avatar><q-icon :name="section.icon" size="20px" /></q-item-section>
+        <q-item-section>{{ section.label }}</q-item-section>
+        <q-tooltip anchor="center right" self="center left">{{ section.label }}</q-tooltip>
+      </q-item>
 
       <!-- Labelled sections are collapsible groups. Open by default; collapse state is remembered
            while the drawer stays mounted. The group that contains the active route stays open. -->
@@ -57,6 +73,13 @@ import { useRouter } from "vue-router";
 import { useAuthStore } from "stores/auth";
 import { Permissions } from "composables/usePermissions";
 
+defineProps({
+  // The drawer is collapsed to its icon rail: labels are hidden by Quasar, and groups cannot open in
+  // place, so they ask the layout to expand the menu instead.
+  mini: { type: Boolean, default: false }
+});
+const emit = defineEmits(["expand"]);
+
 const authStore = useAuthStore();
 const router = useRouter();
 
@@ -92,8 +115,8 @@ const sections = [
     items: [
       { label: "Partner Dashboard", icon: "o_space_dashboard", to: "/rems/partner", permissions: [Permissions.RemsRequestsRead] },
       { label: "Admin Pool", icon: "o_inbox", to: "/rems/admin-pool", permissions: [Permissions.RemsPoolRead] },
-      { label: "EMS Inbox", icon: "o_move_to_inbox", to: "/rems/ems-inbox", permissions: [Permissions.RemsFormsManage] },
       { label: "Client Forms", icon: "o_dynamic_form", to: "/rems/client-forms", permissions: [Permissions.RemsEngagementsManage] },
+      { label: "EMS Inbox", icon: "o_move_to_inbox", to: "/rems/ems-inbox", permissions: [Permissions.RemsFormsManage] },
       { label: "Approvals", icon: "o_approval", to: "/rems/approvals", permissions: [Permissions.RemsApprovalsAct] }
     ]
   },

@@ -12,7 +12,11 @@ internal static class RemsWorkspaceMapper
         => id is { } uid ? new RemsUserRef(uid, names.TryGetValue(uid, out var n) ? n : string.Empty) : null;
 
     public static RemsAddressView? Address(Address? address)
-        => address is null ? null : new RemsAddressView(address.Id, address.AddressLine1, address.CityName, address.StateName, address.PostalCode);
+        => address is null
+            ? null
+            : new RemsAddressView(
+                address.Id, address.AddressLine1, address.AddressLine2, address.CityName, address.StateName,
+                address.StateCode, address.PostalCode, address.CountryCode, address.CountryName);
 
     public static RemsEngagementView Engagement(
         REMSEngagement engagement,
@@ -64,7 +68,8 @@ internal static class RemsWorkspaceMapper
         IReadOnlyDictionary<Guid, REMSEngagementAuditDetail> auditByEngagement,
         IReadOnlyDictionary<Guid, REMSEngagementGovernmentDetail> governmentByEngagement,
         IReadOnlyDictionary<Guid, REMSEngagementTaxDetail> taxByEngagement,
-        IReadOnlyDictionary<Guid, string> names)
+        IReadOnlyDictionary<Guid, string> names,
+        IReadOnlyList<RemsDepartmentDirectorView> departmentDirectors)
     {
         var clientView = new RemsClientView(
             client.Id, client.Name, client.Email, client.MobileNumber, client.ReferralSource,
@@ -102,6 +107,7 @@ internal static class RemsWorkspaceMapper
             })
             .ToList();
 
-        return new RemsEngagementWorkspace(rems.Id, rems.REMSNumber, rems.Status, clientView, entities);
+        return new RemsEngagementWorkspace(
+            rems.Id, rems.REMSNumber, rems.Status, clientView, entities, departmentDirectors);
     }
 }

@@ -44,6 +44,12 @@
       @request="onRequest"
       @refresh="load"
     >
+      <template #body-cell-remsNumber="cell">
+        <q-td :props="cell">
+          <div class="text-weight-medium">{{ cell.row.remsNumber || "—" }}</div>
+        </q-td>
+      </template>
+
       <template #body-cell-client="cell">
         <q-td :props="cell">
           <div class="text-weight-medium">{{ cell.row.clientName || "—" }}</div>
@@ -59,7 +65,7 @@
 
       <template #body-cell-status="cell">
         <q-td :props="cell">
-          <q-badge :color="statusColor(cell.row.status)">{{ statusLabel(cell.row.status) }}</q-badge>
+          <q-badge :color="poolStatusColor(cell.row)">{{ poolStatusLabel(cell.row) }}</q-badge>
         </q-td>
       </template>
 
@@ -80,54 +86,42 @@
           <q-btn flat round dense color="primary" icon="o_visibility" :to="detailRoute(cell.row)">
             <q-tooltip>View</q-tooltip>
           </q-btn>
-          <q-btn flat round dense icon="o_more_vert">
-            <q-menu auto-close>
-              <q-list style="min-width: 210px;">
-                <q-item clickable :to="detailRoute(cell.row)">
-                  <q-item-section avatar><q-icon name="o_visibility" /></q-item-section>
-                  <q-item-section>View</q-item-section>
-                </q-item>
-                <q-item v-if="cell.row.actions?.canEdit && cell.row.status === 'draft'" clickable @click="openEdit(cell.row)">
-                  <q-item-section avatar><q-icon name="o_edit" /></q-item-section>
-                  <q-item-section>Edit</q-item-section>
-                </q-item>
-                <q-item clickable @click="openConversation(cell.row)">
-                  <q-item-section avatar><q-icon name="o_forum" /></q-item-section>
-                  <q-item-section>Send message</q-item-section>
-                </q-item>
-                <q-item v-if="cell.row.actions?.canAssign && has(Permissions.RemsPoolRead)" clickable @click="openAssign(cell.row)">
-                  <q-item-section avatar><q-icon :name="cell.row.assignedAdmin ? 'o_swap_horiz' : 'o_pan_tool'" /></q-item-section>
-                  <q-item-section>{{ cell.row.assignedAdmin ? "Assign Admin" : "Pick Up" }}</q-item-section>
-                </q-item>
-
-                <template v-if="showEmailLog(cell.row) || showEngagement(cell.row)">
-                  <q-separator />
-                  <q-item v-if="showEmailLog(cell.row)" clickable :to="'/rems/ems-inbox'">
-                    <q-item-section avatar><q-icon name="o_mark_email_read" /></q-item-section>
-                    <q-item-section>Email Log</q-item-section>
-                  </q-item>
-                  <q-item
-                    v-if="showEngagement(cell.row)" clickable
-                    :disable="!emsDetailAvailable(cell.row)"
-                    :to="emsDetailAvailable(cell.row) ? `/rems/engagements/${cell.row.id}` : undefined"
-                  >
-                    <q-item-section avatar><q-icon name="o_engineering" /></q-item-section>
-                    <q-item-section>
-                      Engagement Setup
-                      <q-tooltip v-if="!emsDetailAvailable(cell.row)">Available once the customer submits their form</q-tooltip>
-                    </q-item-section>
-                  </q-item>
-                </template>
-
-                <template v-if="cell.row.actions?.canDelete">
-                  <q-separator />
-                  <q-item clickable @click="removeRequest(cell.row)">
-                    <q-item-section avatar><q-icon name="o_delete" color="negative" /></q-item-section>
-                    <q-item-section class="text-negative">Delete</q-item-section>
-                  </q-item>
-                </template>
-              </q-list>
-            </q-menu>
+          <q-btn
+            v-if="cell.row.actions?.canEdit && cell.row.status === 'draft'"
+            flat round dense color="primary" icon="o_edit" @click="openEdit(cell.row)"
+          >
+            <q-tooltip>Edit</q-tooltip>
+          </q-btn>
+          <q-btn flat round dense color="primary" icon="o_forum" @click="openConversation(cell.row)">
+            <q-tooltip>Send message</q-tooltip>
+          </q-btn>
+          <q-btn
+            v-if="cell.row.actions?.canAssign && has(Permissions.RemsPoolRead)"
+            flat round dense color="primary"
+            :icon="cell.row.assignedAdmin ? 'o_swap_horiz' : 'o_pan_tool'" @click="openAssign(cell.row)"
+          >
+            <q-tooltip>{{ cell.row.assignedAdmin ? "Assign Admin" : "Pick up or assign" }}</q-tooltip>
+          </q-btn>
+          <q-btn
+            v-if="showEmailLog(cell.row)" flat round dense color="primary" icon="o_mark_email_read"
+            :to="'/rems/ems-inbox'"
+          >
+            <q-tooltip>Email Log</q-tooltip>
+          </q-btn>
+          <q-btn
+            v-if="showEngagement(cell.row)" flat round dense color="primary" icon="o_work"
+            :disable="!emsDetailAvailable(cell.row)"
+            :to="emsDetailAvailable(cell.row) ? `/rems/engagements/${cell.row.id}` : undefined"
+          >
+            <q-tooltip>
+              {{ emsDetailAvailable(cell.row) ? "Engagement Setup" : "Available once the customer submits their form" }}
+            </q-tooltip>
+          </q-btn>
+          <q-btn
+            v-if="cell.row.actions?.canDelete" flat round dense color="negative" icon="o_delete"
+            @click="removeRequest(cell.row)"
+          >
+            <q-tooltip>Delete</q-tooltip>
           </q-btn>
         </q-td>
       </template>
@@ -180,16 +174,34 @@ const {
   emsStateLabel, submissionStateLabel, emsDetailAvailable, emsFormActivity
 } = useRemsMeta();
 
-const poolScope = ref("all");
+// The pool exists to get unclaimed requests picked up, so it opens on those; the other scopes are a click away.
+const poolScope = ref("unassigned");
+
+// "Submitted" is the status of everything sitting in the pool, which tells an operator nothing about the
+// only thing that matters here: has someone taken it? The backend already draws that line (a request is
+// pickable when it is Submitted with no assigned admin), so the pool spells it out. Every other status
+// reads as it does elsewhere.
+const awaitingPickUp = (row) => row?.status === "submitted" && !row?.assignedAdmin;
+const poolStatusLabel = (row) => {
+  if (row?.status !== "submitted") return statusLabel(row?.status);
+  return awaitingPickUp(row) ? "Waiting For Pickup" : "Picked Up";
+};
+const poolStatusColor = (row) => (awaitingPickUp(row) ? "amber-8" : statusColor(row?.status));
+
+// The filter carries the pool's wording too. It still filters on the `submitted` status, which is why the
+// label names both of the states that status shows up as here rather than just the waiting one.
+const POOL_STATUS_OPTIONS = REMS_STATUS_OPTIONS.map((option) =>
+  (option.value === "submitted" ? { ...option, label: "Submitted/Waiting For Pickup" } : option));
 
 const columns = computed(() => [
+  { name: "remsNumber", label: "Request ID", field: "remsNumber", align: "left", sortable: true, default: true, filterable: false },
   { name: "client", label: "Client / Contact", field: "clientName", align: "left", sortable: true, default: true, filterable: false },
   { name: "priority", label: "Priority", field: "priority", align: "left", sortable: true, default: true, filterable: false },
   { name: "assignedAdmin", label: "Assigned Admin", field: (r) => r.assignedAdmin?.name || "—", align: "left", default: true, filterable: false },
   { name: "cse", label: "CSE", field: (r) => r.cse?.name || "—", align: "left", default: true, filterable: false },
   { name: "industryGroup", label: "Industry Group", field: (r) => r.industryGroup || "—", align: "left", default: true, filterable: false },
   { name: "customerEmail", label: "Client Email", field: (r) => r.customerEmail || "—", align: "left", default: false, filterable: false },
-  { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true, filterOptions: REMS_STATUS_OPTIONS },
+  { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true, filterOptions: POOL_STATUS_OPTIONS },
   { name: "emsFormState", label: "Form Status", field: "emsFormState", align: "left", default: true, filterable: false },
   { name: "clientSubmissionState", label: "Client Submission", field: "clientSubmissionState", align: "left", default: true, filterable: false },
   { name: "createdOnUtc", label: "Created", field: "createdOnUtc", align: "left", sortable: true, default: false, filterable: false },

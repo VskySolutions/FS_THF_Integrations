@@ -63,7 +63,8 @@ export default defineConfig((ctx) => {
         validators: path.join(__dirname, "./src/validators"),
         modules: path.join(__dirname, "./src/modules"),
         dialogs: path.join(__dirname, "./src/dialogs"),
-        composables: path.join(__dirname, "./src/composables")
+        composables: path.join(__dirname, "./src/composables"),
+        utils: path.join(__dirname, "./src/utils")
       },
 
       vitePlugins: [

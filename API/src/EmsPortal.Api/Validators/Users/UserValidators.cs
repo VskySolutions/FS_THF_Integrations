@@ -37,6 +37,16 @@ public sealed class UpdateProfileRequestValidator : AbstractValidator<UpdateProf
     }
 }
 
+public sealed class SetUserDepartmentRequestValidator : AbstractValidator<SetUserDepartmentRequest>
+{
+    public SetUserDepartmentRequestValidator()
+    {
+        // A null/empty department clears the placement; anything supplied must fit the stored code column
+        // (and is checked against the tenant's REMS.Department list by the controller).
+        RuleFor(x => x.Department).MaximumLength(64).When(x => !string.IsNullOrWhiteSpace(x.Department));
+    }
+}
+
 public sealed class AssignTenantRoleRequestValidator : AbstractValidator<AssignTenantRoleRequest>
 {
     public AssignTenantRoleRequestValidator()

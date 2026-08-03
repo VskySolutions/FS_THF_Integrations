@@ -13,9 +13,7 @@
         :rules="[(v) => !!(v && v.trim()) || 'Title is required']"
       />
 
-      <app-text-field
-        v-model="form.description" label="Description" type="textarea" autogrow class="q-mb-md"
-      />
+      <app-rich-text-field v-model="form.description" label="Description" class="q-mb-md" />
 
       <div class="row q-col-gutter-md q-mb-md">
         <app-select
@@ -126,6 +124,7 @@ import AppSelect from "components/common/AppSelect.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
 import AppSingleFileUpload from "components/common/AppSingleFileUpload.vue";
 import AppFieldLabel from "components/common/AppFieldLabel.vue";
+import AppRichTextField from "components/common/AppRichTextField.vue";
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },

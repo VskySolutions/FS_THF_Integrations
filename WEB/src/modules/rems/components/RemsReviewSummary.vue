@@ -45,6 +45,7 @@
 
 <script setup>
 import { computed } from "vue";
+import { hasAddress, addressText } from "modules/rems/remsAddress";
 
 const props = defineProps({
   payload: { type: Object, required: true },
@@ -64,14 +65,6 @@ const dateOnly = (v) => {
   if (!v) return "—";
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));
   return m ? `${m[2]}-${m[3]}-${m[1]}` : String(v);
-};
-
-const hasAddress = (a) => !!a && [a?.street, a?.city, a?.state, a?.zip].some((x) => x && String(x).trim());
-const addressText = (a) => {
-  if (!a) return "—";
-  const line2 = [a.city, a.state, a.zip].filter((x) => x && String(x).trim()).join(" ");
-  const parts = [a.street, line2].filter((x) => x && String(x).trim());
-  return parts.length ? parts.join(", ") : "—";
 };
 
 const ROLE_LABELS = {

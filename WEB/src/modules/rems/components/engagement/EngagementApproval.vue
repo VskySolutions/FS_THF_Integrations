@@ -75,6 +75,7 @@ import { ref, computed, watch, onMounted } from "vue";
 import { remsApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
+import { useRemsMeta } from "modules/rems/useRemsMeta";
 
 const props = defineProps({
   engagement: { type: Object, required: true },
@@ -87,13 +88,8 @@ const emit = defineEmits(["status-changed"]);
 
 const notify = useNotify();
 const { confirm } = useConfirm();
+const { engagementStatusMeta } = useRemsMeta();
 
-const STATUS_META = {
-  Draft: { label: "Draft", color: "grey-6" },
-  PendingApproval: { label: "Pending approval", color: "orange-8" },
-  Rejected: { label: "Rejected", color: "negative" },
-  Approved: { label: "Approved", color: "positive" }
-};
 const ROLE_LABELS = {
   CSE: "CSE",
   DepartmentDirector: "Department Director",
@@ -110,7 +106,7 @@ const roleLabel = (r) => ROLE_LABELS[r] || r;
 const roleIcon = (r) => ROLE_ICONS[r] || "o_person";
 
 const status = computed(() => props.engagement.status);
-const statusMeta = computed(() => STATUS_META[status.value] || { label: status.value, color: "grey-6" });
+const statusMeta = computed(() => engagementStatusMeta(status.value));
 // The rejection reason is shown to staff/CSE when the engagement carries it (AC-REMS-020.2).
 const rejectionReason = computed(() => props.engagement.rejectionReason);
 

@@ -22,7 +22,7 @@
         v-model="form.name" label="Name *" class="q-mb-md"
         :rules="[(v) => !!v || 'Name is required']"
       />
-      <app-text-field v-model="form.description" label="Description" type="textarea" autogrow class="q-mb-md" />
+      <app-rich-text-field v-model="form.description" label="Description" class="q-mb-md" />
 
       <!-- Capacity limit (WO-119): optional cap on distinct active members; blank = unlimited. -->
       <app-text-field
@@ -96,6 +96,7 @@ import {
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import AppTextField from "components/common/AppTextField.vue";
+import AppRichTextField from "components/common/AppRichTextField.vue";
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },

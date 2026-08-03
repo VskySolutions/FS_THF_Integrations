@@ -46,14 +46,16 @@
       </div>
       <div v-if="!filteredGroups.length" class="text-grey-6 q-pa-sm">No matching marketing methods.</div>
 
-      <div v-if="editable" class="row justify-end q-mt-md">
+      <!-- Into the card's title row, alongside every other tab's primary save. `defer` because the
+           target is rendered by the same tree (see EngagementSetupForm). -->
+      <teleport v-if="isVisibleTab && editable" defer to="#engagement-header-actions">
         <q-btn
-          unelevated no-caps color="primary" icon="o_save" label="Save marketing"
+          unelevated no-caps color="primary" icon-right="o_arrow_forward" label="Save & Next"
           :loading="saving" :disable="selected.length === 0" @click="save"
         >
           <q-tooltip v-if="selected.length === 0">Select at least one marketing method</q-tooltip>
         </q-btn>
-      </div>
+      </teleport>
     </template>
   </div>
 </template>
@@ -65,6 +67,7 @@
 import { ref, computed, watch } from "vue";
 import { remsApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
+import { useVisibleTab } from "composables/useVisibleTab";
 import AppTextField from "components/common/AppTextField.vue";
 
 const props = defineProps({
@@ -74,9 +77,10 @@ const props = defineProps({
   marketingUnavailable: { type: Boolean, default: false },
   editable: { type: Boolean, default: true }
 });
-const emit = defineEmits(["saved"]);
+const emit = defineEmits(["saved", "advance"]);
 
 const notify = useNotify();
+const { isVisibleTab } = useVisibleTab();
 const selected = ref([...(props.engagement.marketingMethodIds || [])]);
 watch(() => props.engagement, (e) => { selected.value = [...(e.marketingMethodIds || [])]; });
 
@@ -111,6 +115,7 @@ const save = async () => {
     const view = await remsApi.updateMarketing(props.engagement.id, selected.value);
     emit("saved", view);
     notify.success("Marketing methods saved.");
+    emit("advance");
   } catch (err) {
     notify.error(getApiErrorMessage(err));
   } finally {

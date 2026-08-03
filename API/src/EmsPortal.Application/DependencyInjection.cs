@@ -23,6 +23,9 @@ public static class DependencyInjection
         // REMS external emails (WO-124): typed background dispatch for WO-112/113.
         services.AddScoped<Abstractions.Email.IRemsEmailNotifier, Email.RemsEmailNotifier>();
 
+        // Swallowed delivery failures surface as a Failed event on the REMS form's email log.
+        services.AddScoped<Abstractions.Email.IEmailDeliveryFailureSink, Email.RemsEmailDeliveryFailureSink>();
+
         // Option Sets: tenant-configurable input value lists.
         services.AddScoped<Abstractions.OptionSets.IOptionSetService, OptionSets.OptionSetService>();
 

@@ -160,8 +160,23 @@ public sealed class RemsEngagementController : ControllerBase
         var tax = (await _engagements.ListTaxDetailsAsync(engagementIds, cancellationToken)).ToDictionary(d => d.REMSEngagementId);
         var engagementsByEntity = engagements.ToDictionary(e => e.REMSEntityId);
 
-        var names = await _users.GetFullNamesAsync(CollectUserIds(engagements), cancellationToken);
-        var workspace = RemsWorkspaceMapper.Workspace(rems, client, engagementsByEntity, audit, government, tax, names);
+        // The department → director map travels with the workspace so the setup form can name the director
+        // a department maps to as soon as it is picked, instead of waiting for the save to come back.
+        var settings = await _settings.GetAsync(cancellationToken);
+        var directorRows = settings?.DepartmentDirectors.Where(d => !d.Deleted).ToList() ?? new();
+
+        var names = await _users.GetFullNamesAsync(
+            CollectUserIds(engagements).Concat(directorRows.Select(d => d.DirectorUserId)), cancellationToken);
+
+        var departmentDirectors = directorRows
+            .OrderBy(d => d.Department)
+            .Select(d => new RemsDepartmentDirectorView(
+                d.Department,
+                new RemsUserRef(d.DirectorUserId, names.TryGetValue(d.DirectorUserId, out var n) ? n : string.Empty)))
+            .ToList();
+
+        var workspace = RemsWorkspaceMapper.Workspace(
+            rems, client, engagementsByEntity, audit, government, tax, names, departmentDirectors);
         return Ok(ApiResponseFactory.Success(workspace, "REMS engagement workspace retrieved."));
     }
 
@@ -315,7 +330,9 @@ public sealed class RemsEngagementController : ControllerBase
             }
         }
 
-        var departmentChanged = request.Department is not null && !string.Equals(request.Department, engagement.Department, StringComparison.Ordinal);
+        // Compare like with like: the stored department is normalized, the incoming one is not yet.
+        var departmentChanged = request.Department is not null
+            && !string.Equals(Normalize(request.Department), engagement.Department, StringComparison.Ordinal);
         if (request.Department is not null) engagement.Department = Normalize(request.Department);
         if (request.ServiceLine is not null) engagement.ServiceLine = Normalize(request.ServiceLine);
 
@@ -324,9 +341,12 @@ public sealed class RemsEngagementController : ControllerBase
         {
             engagement.DepartmentDirectorId = request.DepartmentDirectorId;
         }
-        else if (departmentChanged)
+        else if (departmentChanged || engagement.DepartmentDirectorId is null)
         {
-            // Prefill from the tenant department-director map (may be null = unassigned placeholder).
+            // Prefill from the tenant department-director map (may be null = unassigned placeholder). Also
+            // fills an engagement that is still unassigned — the department may have gained a director
+            // (a department head) only after this engagement was set up, and re-picking the same
+            // department would otherwise never pick it up.
             engagement.DepartmentDirectorId = mappedDirector;
         }
 
@@ -737,10 +757,7 @@ public sealed class RemsEngagementController : ControllerBase
 
         if (existingId is { } id && await _addresses.GetByIdAsync(id, cancellationToken) is { } address)
         {
-            address.AddressLine1 = Normalize(input.Street);
-            address.CityName = Normalize(input.City);
-            address.StateName = Normalize(input.State);
-            address.PostalCode = Normalize(input.Zip);
+            ApplyAddress(address, input);
             _addresses.Update(address);
             return address.Id;
         }
@@ -770,10 +787,7 @@ public sealed class RemsEngagementController : ControllerBase
 
         if (existing?.Address is { } address)
         {
-            address.AddressLine1 = Normalize(input.Street);
-            address.CityName = Normalize(input.City);
-            address.StateName = Normalize(input.State);
-            address.PostalCode = Normalize(input.Zip);
+            ApplyAddress(address, input);
             _addresses.Update(address);
         }
         else
@@ -824,15 +838,25 @@ public sealed class RemsEngagementController : ControllerBase
         }
     }
 
-    private static Address NewAddress(RemsAddressInput input, AddressType type) => new()
+    private static Address NewAddress(RemsAddressInput input, AddressType type)
     {
-        Id = Guid.NewGuid(),
-        AddressType = type,
-        AddressLine1 = Normalize(input.Street),
-        CityName = Normalize(input.City),
-        StateName = Normalize(input.State),
-        PostalCode = Normalize(input.Zip),
-    };
+        var address = new Address { Id = Guid.NewGuid(), AddressType = type };
+        ApplyAddress(address, input);
+        return address;
+    }
+
+    /// <summary>Copies the standard address block onto a shared <see cref="Address"/> (create and update alike).</summary>
+    private static void ApplyAddress(Address address, RemsAddressInput input)
+    {
+        address.AddressLine1 = Normalize(input.Street);
+        address.AddressLine2 = Normalize(input.AddressLine2);
+        address.CityName = Normalize(input.City);
+        address.StateCode = Normalize(input.StateCode);
+        address.StateName = Normalize(input.State);
+        address.CountryCode = Normalize(input.CountryCode);
+        address.CountryName = Normalize(input.CountryName);
+        address.PostalCode = Normalize(input.Zip);
+    }
 
     private static AddressType AddressTypeFor(RemsAddressType type)
         => type == RemsAddressType.Physical ? AddressType.Office : AddressType.Other;

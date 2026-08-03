@@ -13,7 +13,9 @@ export const NotificationType = Object.freeze({
   RemsApprovalRequested: 11,
   RemsEngagementApproved: 12,
   RemsEngagementRejected: 13,
-  RemsApprovalResubmitted: 14
+  RemsApprovalResubmitted: 14,
+  RemsRequestSubmitted: 15,
+  RemsRequestPickedUp: 16
 });
 
 const META = {
@@ -29,7 +31,9 @@ const META = {
   [NotificationType.RemsApprovalRequested]: { label: "Approval requested", icon: "o_approval", color: "orange-8" },
   [NotificationType.RemsEngagementApproved]: { label: "Engagement approved", icon: "o_verified", color: "positive" },
   [NotificationType.RemsEngagementRejected]: { label: "Engagement rejected", icon: "o_cancel", color: "negative" },
-  [NotificationType.RemsApprovalResubmitted]: { label: "Approval resubmitted", icon: "o_restart_alt", color: "primary" }
+  [NotificationType.RemsApprovalResubmitted]: { label: "Approval resubmitted", icon: "o_restart_alt", color: "primary" },
+  [NotificationType.RemsRequestSubmitted]: { label: "Waiting for pickup", icon: "o_pan_tool", color: "amber-8" },
+  [NotificationType.RemsRequestPickedUp]: { label: "Request picked up", icon: "o_how_to_reg", color: "teal-7" }
 };
 
 const FALLBACK = { label: "Notification", icon: "o_notifications", color: "grey-7" };

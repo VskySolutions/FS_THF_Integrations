@@ -84,6 +84,55 @@ public sealed class AssignUserGroupsRequest
     public List<Guid> GroupIds { get; set; } = new();
 }
 
+// ---- Departments ----
+
+/// <summary>
+/// Sets (or clears) the user's department within the caller's active tenant. Marking the user as head
+/// demotes the department's previous head and repoints the REMS department-director mapping.
+/// </summary>
+public sealed class SetUserDepartmentRequest
+{
+    /// <summary>Department code (option-set <c>REMS.Department</c>), or null/empty to unassign the user.</summary>
+    public string? Department { get; set; }
+
+    /// <summary>True to make this user the department's head. Ignored when no department is supplied.</summary>
+    public bool IsHead { get; set; }
+}
+
+/// <summary>Makes (or clears) this user the tenant's REMS managing shareholder — a firm-wide singleton.</summary>
+public sealed class SetManagingShareholderRequest
+{
+    /// <summary>True to hand this user the role (displacing the incumbent); false to clear it.</summary>
+    public bool IsManagingShareholder { get; set; }
+}
+
+/// <summary>One selectable department for the picker.</summary>
+public sealed record DepartmentOptionDto(string Value, string Label);
+
+/// <summary>The current head of a department in the active tenant.</summary>
+public sealed record DepartmentHeadDto(string Department, Guid UserId, string FullName);
+
+/// <summary>A minimal user reference (who currently holds a role).</summary>
+public sealed record UserRefDto(Guid UserId, string FullName);
+
+/// <summary>
+/// Picker data for the user's approval-role section: the tenant's departments, the head of each, and the
+/// tenant's managing shareholder — everything needed to name an incumbent before a role is taken over.
+/// </summary>
+public sealed record DepartmentOptionsResponse(
+    IReadOnlyList<DepartmentOptionDto> Departments,
+    IReadOnlyList<DepartmentHeadDto> Heads,
+    UserRefDto? ManagingShareholder);
+
+/// <summary>The saved role, plus the name of the user it displaced (null when nobody held it).</summary>
+public sealed record SetManagingShareholderResponse(bool IsManagingShareholder, string? DisplacedName);
+
+/// <summary>
+/// The saved placement, plus the name of the head this change displaced (null when nobody was demoted)
+/// so the caller can report the handover.
+/// </summary>
+public sealed record SetUserDepartmentResponse(string? Department, bool IsHead, string? DemotedHeadName);
+
 /// <summary>A member (user) of a group, with who added them and when — for the group's members list.</summary>
 public sealed record UserGroupMemberResponse(
     Guid UserId, string FullName, string? Email, bool IsActive, string? AddedBy, DateTime AddedOnUtc);
@@ -126,4 +175,9 @@ public sealed record UserDetail(
     bool IsActive,
     bool MustChangePassword,
     IReadOnlyList<TenantAssignmentDto> Assignments,
-    IReadOnlyList<UserGroupDto> Groups);
+    IReadOnlyList<UserGroupDto> Groups,
+    // The department held in the active tenant (null when unassigned), and whether the user heads it —
+    // a head is also the department's REMS director. IsManagingShareholder is the tenant-wide REMS role.
+    string? Department,
+    bool IsDepartmentHead,
+    bool IsManagingShareholder);

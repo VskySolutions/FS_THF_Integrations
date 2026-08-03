@@ -99,19 +99,26 @@ public sealed class RemsFormPayloadValidator
         return new ValidationResult(failures);
     }
 
-    /// <summary>A required address must carry street, city, state and zip.</summary>
+    /// <summary>
+    /// A required address must carry the whole standard block except line 2: country, state, city,
+    /// address line 1 and zip code. The property names are the payload's own (street = address line 1).
+    /// </summary>
     private static void RequireAddress(List<ValidationFailure> failures, string prefix, RemsAddressPayload? address)
     {
         if (address is null)
         {
-            failures.Add(new ValidationFailure(prefix, "A complete address is required (street, city, state, zip)."));
+            failures.Add(new ValidationFailure(
+                prefix, "A complete address is required (country, state, city, address line 1, zip code)."));
             return;
         }
 
-        RequireField(failures, $"{prefix}.street", address.Street, "Street is required.");
+        // Country is keyed on the ISO code, not the display name — that is what the client's cascade binds
+        // and what the state / city lists below it are resolved from.
+        RequireField(failures, $"{prefix}.countryCode", address.CountryCode, "Country is required.");
+        RequireField(failures, $"{prefix}.state", address.State, "State / Province is required.");
         RequireField(failures, $"{prefix}.city", address.City, "City is required.");
-        RequireField(failures, $"{prefix}.state", address.State, "State is required.");
-        RequireField(failures, $"{prefix}.zip", address.Zip, "Zip is required.");
+        RequireField(failures, $"{prefix}.street", address.Street, "Address Line 1 is required.");
+        RequireField(failures, $"{prefix}.zip", address.Zip, "Zip Code is required.");
     }
 
     /// <summary>A required role must carry a name, a valid email and a phone.</summary>

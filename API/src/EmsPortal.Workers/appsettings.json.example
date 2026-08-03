@@ -5,6 +5,9 @@
       "Microsoft.Hosting.Lifetime": "Information"
     }
   },
+  "App": {
+    "BaseUrl": ""
+  },
   "ConnectionStrings": {
     "SqlServer": "Data Source=<server>;Initial Catalog=<database>;User Id=<user>;Password=<password>;MultipleActiveResultSets=True;TrustServerCertificate=True;"
   },

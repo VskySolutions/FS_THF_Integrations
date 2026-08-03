@@ -26,9 +26,12 @@ namespace EmsPortal.Api.Controllers;
 [ProducesResponseType(StatusCodes.Status401Unauthorized)]
 [ProducesResponseType(StatusCodes.Status403Forbidden)]
 [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
+[ProducesResponseType<ApiErrorResponse>(StatusCodes.Status409Conflict)]
 [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status500InternalServerError)]
 public sealed class RemsRequestsController : ControllerBase
 {
+    private const string CodeNotDeletable = "REMS_REQUEST_NOT_DELETABLE";
+
     private readonly IRemsRepository _rems;
     private readonly IRemsNumberGenerator _numberGenerator;
     private readonly IUserRepository _users;
@@ -36,6 +39,7 @@ public sealed class RemsRequestsController : ControllerBase
     private readonly IUnitOfWork _unitOfWork;
     private readonly IActivityEventWriter _activity;
     private readonly INotificationDispatcher _notifications;
+    private readonly IUserGroupRepository _groups;
 
     public RemsRequestsController(
         IRemsRepository rems,
@@ -44,7 +48,8 @@ public sealed class RemsRequestsController : ControllerBase
         IPersonRepository persons,
         IUnitOfWork unitOfWork,
         IActivityEventWriter activity,
-        INotificationDispatcher notifications)
+        INotificationDispatcher notifications,
+        IUserGroupRepository groups)
     {
         _rems = rems;
         _numberGenerator = numberGenerator;
@@ -53,6 +58,7 @@ public sealed class RemsRequestsController : ControllerBase
         _unitOfWork = unitOfWork;
         _activity = activity;
         _notifications = notifications;
+        _groups = groups;
     }
 
     // -------------------- Dashboard list --------------------
@@ -169,6 +175,7 @@ public sealed class RemsRequestsController : ControllerBase
             if (submit)
             {
                 await _activity.WriteAsync(new CreateActivityEventDto(EntityType.Rems, rems.Id, ActivityEventTypes.RemsSubmitted), ct);
+                await NotifyPoolOfSubmissionAsync(rems, me, ct);
             }
             if (request.AssignAdminUserId is { } adminId)
             {
@@ -229,6 +236,7 @@ public sealed class RemsRequestsController : ControllerBase
         if (submittingNow)
         {
             await _activity.WriteAsync(new CreateActivityEventDto(EntityType.Rems, rems.Id, ActivityEventTypes.RemsSubmitted), cancellationToken);
+            await NotifyPoolOfSubmissionAsync(rems, me, cancellationToken);
         }
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -274,6 +282,7 @@ public sealed class RemsRequestsController : ControllerBase
             await _activity.WriteAsync(new CreateActivityEventDto(
                 EntityType.Rems, rems.Id, ActivityEventTypes.RemsAssigned, old?.ToString(), request.AdminUserId.ToString()), cancellationToken);
             await _notifications.DispatchAsync(AssignmentNotification(request.AdminUserId, rems), cancellationToken);
+            await NotifyRequesterOfPickUpAsync(rems, request.AdminUserId, me, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
         }
 
@@ -358,6 +367,15 @@ public sealed class RemsRequestsController : ControllerBase
                 ApiResponseFactory.Forbidden("Not permitted to delete this request."));
         }
 
+        // Hiding the action in the UI is not enough — the same window applies to a direct call.
+        if (!IsDeletable(rems))
+        {
+            return StatusCode(StatusCodes.Status409Conflict, ApiResponseFactory.Error(
+                CodeNotDeletable,
+                "This request can no longer be deleted.",
+                "A request can only be deleted while it is a draft, or submitted and not yet assigned to an admin."));
+        }
+
         // The DbContext converts the delete into a soft-delete (Deleted flag).
         _rems.Remove(rems);
         await _activity.WriteAsync(new CreateActivityEventDto(EntityType.Rems, rems.Id, ActivityEventTypes.RemsDeleted), cancellationToken);
@@ -391,21 +409,50 @@ public sealed class RemsRequestsController : ControllerBase
         return Ok(ApiResponseFactory.Success(results, "Clients retrieved."));
     }
 
-    /// <summary>Users who can own a REMS request (the assign dropdown): Admin and Super Admin users assigned to the active tenant.</summary>
+    /// <summary>
+    /// Users who can own a REMS request (the assign dropdown): Admin and Super Admin users assigned to the
+    /// active tenant. With <paramref name="group"/> the list is instead the members of that user group —
+    /// how the engagement's Engagement Executive / Billing Manager pickers are scoped. An unknown or empty
+    /// group returns an empty list rather than falling back, so the caller can say the group needs members
+    /// instead of silently offering people who are not in it.
+    /// </summary>
     [HttpGet("/api/rems/admins")]
     [RequireAnyPermission(Permissions.RemsRequestsAssign, Permissions.RemsPoolRead)]
     [ProducesResponseType<ApiResponse<IEnumerable<RemsAdminOption>>>(StatusCodes.Status200OK)]
-    public async Task<IActionResult> Admins(CancellationToken cancellationToken)
+    public async Task<IActionResult> Admins([FromQuery] string? group, CancellationToken cancellationToken)
     {
         if (User.GetActiveTenantId() is not { } tenantId)
         {
             return Ok(ApiResponseFactory.Success(Array.Empty<RemsAdminOption>(), "No active tenant."));
         }
 
-        var admins = await _users.ListByTenantRolesAsync(tenantId, new[] { Roles.Admin, Roles.SuperAdmin }, cancellationToken);
-        var names = await _users.GetFullNamesAsync(admins.Select(u => u.Id), cancellationToken);
-        var options = admins.Select(u => new RemsAdminOption(
-            u.Id, names.TryGetValue(u.Id, out var n) ? n : u.DisplayName, u.Email));
+        IReadOnlyList<User> candidates;
+        if (!string.IsNullOrWhiteSpace(group))
+        {
+            var userGroup = await _groups.GetByNameAsync(group.Trim(), cancellationToken);
+            if (userGroup is null)
+            {
+                return Ok(ApiResponseFactory.Success(Array.Empty<RemsAdminOption>(), "Group not found."));
+            }
+
+            var members = await _groups.GetMembersWithUsersByGroupAsync(userGroup.Id, cancellationToken);
+            candidates = members
+                .Select(m => m.User)
+                .Where(u => u is { IsActive: true })
+                .Select(u => u!)
+                .DistinctBy(u => u.Id)
+                .ToList();
+        }
+        else
+        {
+            candidates = await _users.ListByTenantRolesAsync(tenantId, new[] { Roles.Admin, Roles.SuperAdmin }, cancellationToken);
+        }
+
+        var names = await _users.GetFullNamesAsync(candidates.Select(u => u.Id), cancellationToken);
+        var options = candidates
+            .Select(u => new RemsAdminOption(u.Id, names.TryGetValue(u.Id, out var n) ? n : u.DisplayName, u.Email))
+            .OrderBy(o => o.Name)
+            .ToList();
         return Ok(ApiResponseFactory.Success(options, "Admins retrieved."));
     }
 
@@ -425,6 +472,18 @@ public sealed class RemsRequestsController : ControllerBase
     private static bool CanAct(REMS r, Guid me, bool privileged)
         => privileged || r.CreatedById == me;
 
+    /// <summary>A Partner-role caller. Duplicating a request is their workflow, not the pool's.</summary>
+    private bool IsPartner()
+        => User.GetRoles().Any(r => string.Equals(r, Roles.Partner, StringComparison.Ordinal));
+
+    /// <summary>
+    /// A request may still be withdrawn while it is a draft, or submitted but not yet picked up. Once an
+    /// admin is assigned — or the customer has submitted their form — it stays on the record.
+    /// </summary>
+    private static bool IsDeletable(REMS r)
+        => r.Status == RemsRequestStatuses.Draft
+            || (r.Status == RemsRequestStatuses.Submitted && r.AdminAssignedToId is null);
+
     private RemsRowActions ActionsFor(REMS r, Guid me, bool privileged)
     {
         var canAct = CanAct(r, me, privileged);
@@ -432,8 +491,8 @@ public sealed class RemsRequestsController : ControllerBase
             CanView: true,
             CanEdit: canAct && User.HasPermission(Permissions.RemsRequestsUpdate),
             CanAssign: canAct && User.HasPermission(Permissions.RemsRequestsAssign),
-            CanDuplicate: User.HasPermission(Permissions.RemsRequestsCreate),
-            CanDelete: canAct && User.HasPermission(Permissions.RemsRequestsDelete));
+            CanDuplicate: IsPartner() && User.HasPermission(Permissions.RemsRequestsCreate),
+            CanDelete: canAct && User.HasPermission(Permissions.RemsRequestsDelete) && IsDeletable(r));
     }
 
     private RemsRequestRow ToRow(
@@ -496,6 +555,53 @@ public sealed class RemsRequestsController : ControllerBase
             $"{rems.REMSNumber} — {rems.Title}",
             EntityType.Rems,
             rems.Id);
+
+    /// <summary>
+    /// Tells the tenant's admins a request has landed in the pool unclaimed. Without this the pool is a
+    /// screen someone has to remember to open — the whole point of submitting is that it gets picked up.
+    /// The submitter is skipped (they just did it) and so is an already-assigned request.
+    /// </summary>
+    private async Task NotifyPoolOfSubmissionAsync(REMS rems, Guid actorId, CancellationToken cancellationToken)
+    {
+        if (rems.AdminAssignedToId is not null || User.GetActiveTenantId() is not { } tenantId)
+        {
+            return;
+        }
+
+        var admins = await _users.ListByTenantRolesAsync(tenantId, new[] { Roles.Admin, Roles.SuperAdmin }, cancellationToken);
+        foreach (var admin in admins.Where(u => u.Id != actorId))
+        {
+            await _notifications.DispatchAsync(new CreateNotificationDto(
+                admin.Id,
+                NotificationType.RemsRequestSubmitted,
+                "New REMS request waiting for pickup",
+                $"{rems.REMSNumber} — {rems.Title}",
+                EntityType.Rems,
+                rems.Id), cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Tells whoever raised the request that an admin now owns it. The requester (typically the Partner)
+    /// otherwise gets no signal at all once they submit. Skipped when the requester is the one acting.
+    /// </summary>
+    private async Task NotifyRequesterOfPickUpAsync(REMS rems, Guid adminUserId, Guid actorId, CancellationToken cancellationToken)
+    {
+        if (rems.CreatedById is not { } requesterId || requesterId == actorId)
+        {
+            return;
+        }
+
+        var names = await _users.GetFullNamesAsync(new[] { adminUserId }, cancellationToken);
+        var adminName = NameOf(names, adminUserId) ?? "An admin";
+        await _notifications.DispatchAsync(new CreateNotificationDto(
+            requesterId,
+            NotificationType.RemsRequestPickedUp,
+            "Your REMS request was picked up",
+            $"{rems.REMSNumber} — {adminName} is now handling it.",
+            EntityType.Rems,
+            rems.Id), cancellationToken);
+    }
 
     private static RemsUserRef? UserRefOf(Guid? id, IReadOnlyDictionary<Guid, string> names)
         => id is { } uid ? new RemsUserRef(uid, names.TryGetValue(uid, out var name) ? name : string.Empty) : null;

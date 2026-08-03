@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 using EmsPortal.Api.Models.Rems;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.Email;
@@ -274,10 +275,12 @@ public sealed class RemsFormController : ControllerBase
         }, cancellationToken);
 
         await _activity.WriteAsync(new CreateActivityEventDto(EntityType.Rems, remsId, ActivityEventTypes.RemsFormSent), cancellationToken);
-        await _notifications.DispatchAsync(FormSentNotification(me, rems), cancellationToken);
-        if (rems.CSEId is { } cseId && cseId != me)
+        // Sender, CSE, and whoever raised the request — the requester is tracking their client's onboarding
+        // and this is the step that puts the ball in the customer's court.
+        foreach (var recipient in new[] { me, rems.CSEId, rems.CreatedById }
+            .Where(id => id.HasValue).Select(id => id!.Value).Distinct())
         {
-            await _notifications.DispatchAsync(FormSentNotification(cseId, rems), cancellationToken);
+            await _notifications.DispatchAsync(FormSentNotification(recipient, rems), cancellationToken);
         }
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -313,7 +316,7 @@ public sealed class RemsFormController : ControllerBase
 
         var events = await _forms.ListEmailEventsAsync(form.Id, cancellationToken);
         var rows = events.Select(e => new RemsEmailEventRow(
-            e.Id, e.EventType.ToString(), e.RecipientEmail, e.OccurredOnUtc, e.ProviderMessageId));
+            e.Id, e.EventType.ToString(), e.RecipientEmail, e.OccurredOnUtc, e.ProviderMessageId, DescribeFailure(e)));
         return Ok(ApiResponseFactory.Success(rows, "REMS form email log retrieved."));
     }
 
@@ -446,6 +449,40 @@ public sealed class RemsFormController : ControllerBase
 
     private IActionResult FormConflict(string code, string message)
         => StatusCode(StatusCodes.Status409Conflict, ApiResponseFactory.Error(code, message, message));
+
+    /// <summary>
+    /// The human-readable reason for a Failed event, for the Email Log. Only events this portal recorded
+    /// itself carry one — <c>RemsEmailDeliveryFailureSink</c> tags its payload <c>"source":"portal"</c> and
+    /// puts the reason in <c>message</c>. A provider webhook payload is third-party JSON of unknown shape,
+    /// so it is deliberately never echoed to the UI.
+    /// </summary>
+    private static string? DescribeFailure(REMSFormEmailEvent emailEvent)
+    {
+        if (emailEvent.EventType != RemsFormEmailEventType.Failed
+            || string.IsNullOrWhiteSpace(emailEvent.ProviderPayload))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var payload = JsonDocument.Parse(emailEvent.ProviderPayload);
+            if (payload.RootElement.ValueKind is not JsonValueKind.Object
+                || !payload.RootElement.TryGetProperty("source", out var source)
+                || source.GetString() != "portal")
+            {
+                return null;
+            }
+
+            return payload.RootElement.TryGetProperty("message", out var message)
+                ? Normalize(message.GetString())
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     private static string? Normalize(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

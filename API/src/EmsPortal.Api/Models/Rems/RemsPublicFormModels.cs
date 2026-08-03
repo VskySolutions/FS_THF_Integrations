@@ -60,18 +60,44 @@ public sealed class RemsFormPayloadV1
     public List<RemsRelatedEntityPayload> RelatedEntities { get; set; } = new();
 }
 
-/// <summary>A postal address node in <see cref="RemsFormPayloadV1"/>.</summary>
+/// <summary>
+/// A postal address node in <see cref="RemsFormPayloadV1"/>. The client picks country → state → city from
+/// a dependent cascade, so each level carries both the display name (persisted onto <c>Address</c> and
+/// shown on review) and, where the source data has one, its ISO code. Every field stays nullable: drafts
+/// saved before the cascade existed carry only the four postal lines and must still round-trip.
+/// </summary>
 public sealed class RemsAddressPayload
 {
+    /// <summary>Address line 1. Named "street" because the stored payloads are keyed on it.</summary>
     public string? Street { get; set; }
+
+    /// <summary>Address line 2 (optional — the only line of the standard block that never is required).</summary>
+    public string? AddressLine2 { get; set; }
+
     public string? City { get; set; }
+
+    /// <summary>State / province display NAME (e.g. "California"); <see cref="StateCode"/> holds the ISO code.</summary>
     public string? State { get; set; }
     public string? Zip { get; set; }
 
-    /// <summary>True when at least one line carries content (an all-blank node is treated as absent).</summary>
+    /// <summary>ISO-3166-1 alpha-2 country code (e.g. "US").</summary>
+    public string? CountryCode { get; set; }
+
+    /// <summary>Country display name resolved from <see cref="CountryCode"/> (e.g. "United States").</summary>
+    public string? CountryName { get; set; }
+
+    /// <summary>ISO-3166-2 subdivision code for <see cref="State"/>; null when the country has no state list.</summary>
+    public string? StateCode { get; set; }
+
+    /// <summary>
+    /// True when at least one postal line carries content (an all-blank node is treated as absent). The
+    /// country is deliberately NOT counted: it is pre-selected on every blank address, so on its own it
+    /// does not make an address present.
+    /// </summary>
     public bool HasAny =>
-        !string.IsNullOrWhiteSpace(Street) || !string.IsNullOrWhiteSpace(City)
-        || !string.IsNullOrWhiteSpace(State) || !string.IsNullOrWhiteSpace(Zip);
+        !string.IsNullOrWhiteSpace(Street) || !string.IsNullOrWhiteSpace(AddressLine2)
+        || !string.IsNullOrWhiteSpace(City) || !string.IsNullOrWhiteSpace(State)
+        || !string.IsNullOrWhiteSpace(Zip);
 }
 
 /// <summary>A single role contact (name / email / phone). All three are required when the role is required.</summary>

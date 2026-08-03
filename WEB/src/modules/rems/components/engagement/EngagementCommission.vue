@@ -5,22 +5,13 @@
       approvers when the engagement is routed for approval.
     </div>
 
-    <!-- Add recipient (searchable staff picker; excludes those already added). AppSelect does not forward
-         use-input to its inner q-select, so a native q-select is used here to keep it searchable. -->
-    <div v-if="editable" class="row items-end q-col-gutter-sm q-mb-md">
-      <div class="app-field col-12 col-sm">
-        <app-field-label label="Add recipient" />
-        <q-select
-          v-model="pick" :options="filteredStaff" outlined dense hide-bottom-space
-          emit-value map-options option-value="value" option-label="label"
-          use-input input-debounce="200" clearable :disable="splits.length >= 10"
-          @filter="filterStaff" @update:model-value="addRecipient"
-        >
-          <template #no-option>
-            <q-item><q-item-section class="text-grey-6">No matching staff</q-item-section></q-item>
-          </template>
-        </q-select>
-      </div>
+    <!-- Add recipient (searchable staff picker; excludes those already added). -->
+    <div v-if="editable" class="row items-end q-col-gutter-md q-mb-md">
+      <app-select
+        v-model="pick" :options="availableStaff" label="Add recipient" class="col-12 col-sm"
+        use-input :disable="splits.length >= 10"
+        @update:model-value="addRecipient"
+      />
       <div class="col-auto text-caption text-grey-6 q-pb-sm">{{ splits.length }} / 10</div>
     </div>
 
@@ -50,12 +41,16 @@
       <div class="text-caption" :class="totalOver ? 'text-negative' : 'text-grey-7'">
         Total allocated: {{ totalPercent }}%
       </div>
-      <q-space />
+    </div>
+
+    <!-- Into the card's title row, alongside every other tab's primary save. `defer` because the
+         target is rendered by the same tree (see EngagementSetupForm). -->
+    <teleport v-if="isVisibleTab && editable" defer to="#engagement-header-actions">
       <q-btn
-        v-if="editable" unelevated no-caps color="primary" icon="o_save" label="Save commission"
+        unelevated no-caps color="primary" icon-right="o_arrow_forward" label="Save & Next"
         :loading="saving" @click="save"
       />
-    </div>
+    </teleport>
   </div>
 </template>
 
@@ -65,7 +60,8 @@
 import { ref, computed, watch } from "vue";
 import { remsApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
-import AppFieldLabel from "components/common/AppFieldLabel.vue";
+import { useVisibleTab } from "composables/useVisibleTab";
+import AppSelect from "components/common/AppSelect.vue";
 import AppTextField from "components/common/AppTextField.vue";
 
 const props = defineProps({
@@ -74,9 +70,10 @@ const props = defineProps({
   staff: { type: Array, default: () => [] },
   editable: { type: Boolean, default: true }
 });
-const emit = defineEmits(["saved"]);
+const emit = defineEmits(["saved", "advance"]);
 
 const notify = useNotify();
+const { isVisibleTab } = useVisibleTab();
 
 const buildSplits = (e) => (e.commissionSplits || []).map((s) => ({
   employeeId: s.employee.id,
@@ -89,14 +86,6 @@ watch(() => props.engagement, (e) => { splits.value = buildSplits(e); });
 const pick = ref(null);
 const availableStaff = computed(() =>
   props.staff.filter((s) => !splits.value.some((x) => x.employeeId === s.value)));
-
-// Searchable staff filter for the native q-select picker.
-const staffFilter = ref("");
-const filteredStaff = computed(() => {
-  const needle = staffFilter.value.toLowerCase();
-  return availableStaff.value.filter((s) => !needle || s.label.toLowerCase().includes(needle));
-});
-const filterStaff = (val, update) => { update(() => { staffFilter.value = val || ""; }); };
 
 const addRecipient = (value) => {
   if (!value || splits.value.length >= 10) { pick.value = null; return; }
@@ -136,6 +125,7 @@ const save = async () => {
     );
     emit("saved", view);
     notify.success("Commission splits saved.");
+    emit("advance");
   } catch (err) {
     notify.error(getApiErrorMessage(err));
   } finally {

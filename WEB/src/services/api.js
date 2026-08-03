@@ -54,6 +54,21 @@ export function getApiErrorCode (error) {
   return error?.response?.data?.error?.code || null;
 }
 
+/**
+ * Completes a link that points at this web app, using WEB_BASE_URL from config/env.<mode>.cjs.
+ *
+ * The API mints shareable links (the REMS client form link) from its own `App:BaseUrl`, which is a
+ * separate setting and is empty in a fresh environment — leaving a relative "/rems/form/abc123" that is
+ * useless once copied out of the browser. The SPA always knows its own origin, so it fills the gap.
+ * An already-absolute URL is returned untouched, so a correctly configured API still wins.
+ */
+export function webUrl (pathOrUrl) {
+  if (!pathOrUrl) return "";
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(pathOrUrl)) return pathOrUrl;
+  const base = (process.env.WEB_BASE_URL || "").replace(/\/+$/, "");
+  return `${base}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
+}
+
 // Unwrap the standard ApiResponse envelope to its `data` (and attach `meta` for lists).
 const unwrap = (response) => response?.data?.data;
 const envelope = (response) => response?.data;
@@ -111,7 +126,19 @@ export const userApi = {
   removeTenantRole: (id, tenantId) =>
     api.delete(`/api/admin/users/${id}/tenant-assignments/${tenantId}`).then(envelope),
   // Replace the user's group memberships with the given set of group ids.
-  setGroups: (id, groupIds) => api.put(`/api/admin/users/${id}/groups`, { groupIds }).then(unwrap)
+  setGroups: (id, groupIds) => api.put(`/api/admin/users/${id}/groups`, { groupIds }).then(unwrap),
+  // Picker data for the approval-roles section: the tenant's REMS.Department list, the current head of
+  // each, and the tenant's managing shareholder → { departments: [{ value, label }],
+  // heads: [{ department, userId, fullName }], managingShareholder: { userId, fullName } | null }.
+  departments: () => api.get("/api/admin/users/departments").then(unwrap),
+  // payload: { department: code|null, isHead } — a null department unassigns the user. Marking a head
+  // demotes the incumbent and repoints the REMS department-director mapping (WO-114), so the response
+  // carries { department, isHead, demotedHeadName } for reporting the handover.
+  setDepartment: (id, payload) => api.put(`/api/admin/users/${id}/department`, payload).then(unwrap),
+  // payload: { isManagingShareholder } — the tenant-wide REMS approver (one holder). Granting it displaces
+  // the incumbent; clearing only revokes this user's own role. → { isManagingShareholder, displacedName }
+  setManagingShareholder: (id, isManagingShareholder) =>
+    api.put(`/api/admin/users/${id}/managing-shareholder`, { isManagingShareholder }).then(unwrap)
 };
 
 // Tenant-scoped user groups (segmentation/tagging, independent of RBAC roles).
@@ -439,7 +466,10 @@ export const remsApi = {
   clientLookup: (q) => api.get("/api/rems/clients/lookup", { params: { q } }).then(unwrap),
   // Users holding the REMS Admin role in the active tenant: [{ id, name, email }]. Reused as the CSE
   // picker source (WO-116) — there is no dedicated CSE endpoint, so the staff/Admin list stands in.
-  admins: () => api.get("/api/rems/admins").then(unwrap),
+  // Without `group`: Admin + Super Admin users in the tenant (the assign/CSE pickers). With `group`: the
+  // members of that user group — how the Engagement Executive / Billing Manager pickers are scoped. An
+  // unknown or empty group returns [] rather than falling back to every admin.
+  admins: (group) => api.get("/api/rems/admins", { params: group ? { group } : undefined }).then(unwrap),
 
   // ---- EMS form build / send / email-log (WO-112, WO-116) ----
   // Build screen: { remsId, remsNumber, requestTitle, clientName, requestStatus, customerEmail,
@@ -467,18 +497,22 @@ export const remsApi = {
   submission: (remsId) => api.get(`/api/rems/requests/${remsId}/submission`).then(unwrap),
 
   // ---- Engagement workspace (WO-117 / WO-114) ----
+  // Addresses travel in the REMS wire shape — { street, addressLine2, city, state, stateCode, zip,
+  // countryCode, countryName } (street is address line 1) — mapped to/from the AppAddressFields model by
+  // modules/rems/remsAddress. Send the WHOLE shape: an update writes every line it is given.
+  //
   // The editable engagement workspace graph: { remsId, remsNumber, requestStatus, client, entities[] }.
   // client: { id, name, email(locked), mobileNumber, referralSource, billingContactName, billingEmail,
-  //   billingAddress:{ id, street, city, state, zip }|null }. entities[]: { id, name, ein, isMainEntity,
+  //   billingAddress:{ id, ...address }|null }. entities[]: { id, name, ein, isMainEntity,
   //   addresses:[{ id, addressType, address }], contacts:[{ id, role, isRequired, name, email, phone }],
   //   engagement:{ id, department, serviceLine, departmentDirector, engagementExecutive, billingManager,
   //     firstYearFeeEstimate, realizationPercentage, status, marketingMethodIds[], commissionSplits[],
   //     audit, government, tax }|null }.
   engagement: (remsId) => api.get(`/api/rems/requests/${remsId}/engagement`).then(unwrap),
   // payload: { name?, mobileNumber?, referralSource?, billingContactName?, billingEmail?,
-  //   billingAddress?:{ street, city, state, zip } } — the client email is LOCKED (never sent/changed).
+  //   billingAddress? } — the client email is LOCKED (never sent/changed).
   updateClient: (remsId, payload) => api.put(`/api/rems/requests/${remsId}/client`, payload).then(unwrap),
-  // payload: { physicalAddress?, mailingAddress? } — each { street, city, state, zip }; null/all-blank removes.
+  // payload: { physicalAddress?, mailingAddress? } — null/all-blank removes the address.
   updateEntityAddresses: (entityId, payload) => api.put(`/api/rems/entities/${entityId}/addresses`, payload).then(unwrap),
   // payload: { contacts: [{ role, name?, email?, phone?, isRequired }] } — upserted by role.
   updateEntityContacts: (entityId, payload) => api.put(`/api/rems/entities/${entityId}/contacts`, payload).then(unwrap),

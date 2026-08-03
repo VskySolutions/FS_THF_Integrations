@@ -88,6 +88,15 @@ const APPROVER_ROLE_ICONS = {
 const APPROVAL_STATUS_LABELS = { Pending: "Pending", Approved: "Approved", Rejected: "Rejected" };
 const APPROVAL_STATUS_COLORS = { Pending: "orange-8", Approved: "positive", Rejected: "negative" };
 
+// Engagement lifecycle status (REMSEngagement.Status) — label + badge colour in one lookup, shared by
+// every surface that shows it (workspace tab strip, entity panel, approval panel).
+const ENGAGEMENT_STATUS_META = {
+  Draft: { label: "Draft", color: "grey-6" },
+  PendingApproval: { label: "Pending Approval", color: "orange-8" },
+  Rejected: { label: "Rejected", color: "negative" },
+  Approved: { label: "Approved", color: "positive" }
+};
+
 // Provider email-delivery events (RemsFormEmailEventType). These are the ONLY events rendered — the UI
 // never synthesises delivery/open state; it shows exactly what the server's email log returns.
 const EMAIL_EVENT_LABELS = { Sent: "Sent", Delivered: "Delivered", Opened: "Opened", Failed: "Failed" };
@@ -114,6 +123,7 @@ export function useRemsMeta () {
   const approverRoleIcon = (v) => APPROVER_ROLE_ICONS[v] || "o_person";
   const approvalStatusLabel = (v) => APPROVAL_STATUS_LABELS[v] || v || "—";
   const approvalStatusColor = (v) => APPROVAL_STATUS_COLORS[v] || "grey-6";
+  const engagementStatusMeta = (v) => ENGAGEMENT_STATUS_META[v] || { label: v || "—", color: "grey-6" };
 
   // The EMS engagement/detail action becomes available only once the customer has submitted their
   // form (AC-REMS-002.5 / 005.6); until then it stays disabled.
@@ -139,6 +149,7 @@ export function useRemsMeta () {
     approverRoleIcon,
     approvalStatusLabel,
     approvalStatusColor,
+    engagementStatusMeta,
     emsDetailAvailable,
     emsFormActivity
   };

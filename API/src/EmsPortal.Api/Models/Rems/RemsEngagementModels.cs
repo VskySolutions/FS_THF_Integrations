@@ -45,7 +45,10 @@ public sealed record RemsEngagementWorkspace(
     string RemsNumber,
     string RequestStatus,
     RemsClientView Client,
-    IReadOnlyList<RemsEntityView> Entities);
+    IReadOnlyList<RemsEntityView> Entities,
+    // The tenant's department → director map, so the setup form can show the director a department will
+    // get the moment it is picked rather than only after the save round-trip.
+    IReadOnlyList<RemsDepartmentDirectorView> DepartmentDirectors);
 
 /// <summary>The editable client record. <see cref="Email"/> is locked (never editable).</summary>
 public sealed record RemsClientView(
@@ -58,8 +61,17 @@ public sealed record RemsClientView(
     string? BillingEmail,
     RemsAddressView? BillingAddress);
 
-/// <summary>A shared postal address projected for the workspace.</summary>
-public sealed record RemsAddressView(Guid Id, string? Street, string? City, string? State, string? Zip);
+/// <summary>A shared postal address projected for the workspace (mirrors <see cref="RemsAddressInput"/>).</summary>
+public sealed record RemsAddressView(
+    Guid Id,
+    string? Street,
+    string? AddressLine2,
+    string? City,
+    string? State,
+    string? StateCode,
+    string? Zip,
+    string? CountryCode,
+    string? CountryName);
 
 /// <summary>An entity within the workspace, with its addresses, contacts and (one) engagement.</summary>
 public sealed record RemsEntityView(
@@ -121,17 +133,28 @@ public sealed record RemsTaxDetailView(
 
 // -------------------- Editing requests --------------------
 
-/// <summary>A postal address input node (all lines optional; null/all-blank clears where allowed).</summary>
+/// <summary>
+/// A postal address input node (all lines optional; null/all-blank clears where allowed). Same shape as
+/// the public form's <see cref="RemsAddressPayload"/> so one field-set drives both screens: line 1 is
+/// <see cref="Street"/>, the state carries both its display name and ISO code, and the country comes from
+/// the client's country → state → city cascade.
+/// </summary>
 public sealed class RemsAddressInput
 {
     public string? Street { get; set; }
+    public string? AddressLine2 { get; set; }
     public string? City { get; set; }
     public string? State { get; set; }
+    public string? StateCode { get; set; }
     public string? Zip { get; set; }
+    public string? CountryCode { get; set; }
+    public string? CountryName { get; set; }
 
+    /// <summary>Content in any postal line. The country is excluded — it is pre-selected on a blank address.</summary>
     public bool HasAny =>
-        !string.IsNullOrWhiteSpace(Street) || !string.IsNullOrWhiteSpace(City)
-        || !string.IsNullOrWhiteSpace(State) || !string.IsNullOrWhiteSpace(Zip);
+        !string.IsNullOrWhiteSpace(Street) || !string.IsNullOrWhiteSpace(AddressLine2)
+        || !string.IsNullOrWhiteSpace(City) || !string.IsNullOrWhiteSpace(State)
+        || !string.IsNullOrWhiteSpace(Zip);
 }
 
 /// <summary>Update the client record (AC-REMS-014). The client email is locked and can never be changed.</summary>

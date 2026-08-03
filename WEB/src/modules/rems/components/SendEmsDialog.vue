@@ -33,7 +33,7 @@
 
         <div class="send-label">Form link</div>
         <div class="row items-center no-wrap q-gutter-xs">
-          <div class="send-value send-link col">{{ preview.formLink }}</div>
+          <div class="send-value send-link col">{{ formLink }}</div>
           <q-btn flat round dense icon="o_content_copy" color="primary" @click="copyLink">
             <q-tooltip>Copy link</q-tooltip>
           </q-btn>
@@ -88,7 +88,7 @@
 <script setup>
 import { ref, computed, watch } from "vue";
 import { copyToClipboard } from "quasar";
-import { remsApi, getApiErrorMessage } from "services/api";
+import { remsApi, getApiErrorMessage, webUrl } from "services/api";
 import { useNotify } from "composables/useNotify";
 
 const props = defineProps({
@@ -115,6 +115,9 @@ const sentEmail = ref("");
 
 // Confirm is active only once the preview resolved with a real destination email (AC-REMS-008.2).
 const canConfirm = computed(() => phase.value === "preview" && !!preview.value.destinationEmail);
+
+// Show the link exactly as it should be opened — absolute, even if the API's App:BaseUrl is unset.
+const formLink = computed(() => webUrl(preview.value.formLink));
 
 const loadPreview = async () => {
   phase.value = "loading";
@@ -145,8 +148,8 @@ const confirmSend = async () => {
 };
 
 const copyLink = () => {
-  if (!preview.value.formLink) return;
-  copyToClipboard(preview.value.formLink)
+  if (!formLink.value) return;
+  copyToClipboard(formLink.value)
     .then(() => notify.success("Link copied."))
     .catch(() => notify.error("Could not copy the link."));
 };

@@ -67,6 +67,8 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
 
     public DbSet<UserGroupMember> UserGroupMembers => Set<UserGroupMember>();
 
+    public DbSet<UserDepartment> UserDepartments => Set<UserDepartment>();
+
     public DbSet<SmtpAccount> SmtpAccounts => Set<SmtpAccount>();
 
     public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();
@@ -140,6 +142,7 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
         // User groups + memberships are tenant-scoped so a tenant only ever sees its own groups.
         modelBuilder.Entity<UserGroup>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<UserGroupMember>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<UserDepartment>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         // SMTP accounts are tenant-scoped; a tenant only ever sees its own mail accounts.
         modelBuilder.Entity<SmtpAccount>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
 
@@ -297,6 +300,9 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
                     break;
                 case UserGroupMember member when member.TenantId == Guid.Empty:
                     member.TenantId = _tenantContext.TenantId;
+                    break;
+                case UserDepartment userDepartment when userDepartment.TenantId == Guid.Empty:
+                    userDepartment.TenantId = _tenantContext.TenantId;
                     break;
                 case SmtpAccount smtpAccount when smtpAccount.TenantId == Guid.Empty:
                     smtpAccount.TenantId = _tenantContext.TenantId;

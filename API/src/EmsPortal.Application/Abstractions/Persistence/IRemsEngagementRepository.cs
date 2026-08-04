@@ -66,4 +66,11 @@ public interface IRemsEngagementRepository
 
     /// <summary>Active commission-split count for an engagement (backs the max-10-recipients rule).</summary>
     Task<int> CountActiveCommissionSplitsAsync(Guid engagementId, CancellationToken cancellationToken = default);
+
+    /// <summary>The approvers picked for an engagement, or an empty list when none has been saved yet.</summary>
+    Task<IReadOnlyList<REMSEngagementApprover>> ListApproversAsync(Guid engagementId, CancellationToken cancellationToken = default);
+
+    Task AddApproverAsync(REMSEngagementApprover approver, CancellationToken cancellationToken = default);
+
+    void RemoveApprover(REMSEngagementApprover approver);
 }

@@ -67,10 +67,12 @@
               <app-select
                 v-model="cseId" :options="cseOptions" label="CSE" required
                 :loading="csesLoading" :clearable="false" class="q-mb-md"
+                info="Lists users holding the Admin or Super Admin role in this tenant. The CSE becomes an approver on every engagement for this request."
               />
               <app-select
                 v-model="industryGroup" :options="industryGroupOptions" label="Industry Group" required
                 :clearable="false" :readonly="isLocked" class="q-mb-sm"
+                info="From the REMS Industry Group option list (Administration → Option Sets). It decides which questions the client's EMS form asks."
               />
               <div v-if="isLocked" class="text-caption text-grey-7 q-mb-md">
                 <q-icon name="o_lock" size="14px" /> The industry group and link are locked once the form has been sent.

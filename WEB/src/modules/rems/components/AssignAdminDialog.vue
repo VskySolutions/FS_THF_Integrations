@@ -12,6 +12,7 @@
         <app-select
           v-model="adminId" :options="adminOptions" label="Admin" required
           :loading="loading" :clearable="false"
+          info="Lists users holding the Admin or Super Admin role in this tenant. You are always listed, so a request can be picked up by yourself."
         />
       </q-card-section>
       <q-separator />

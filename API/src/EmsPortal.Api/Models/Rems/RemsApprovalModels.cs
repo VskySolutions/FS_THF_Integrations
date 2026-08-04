@@ -10,8 +10,32 @@ namespace EmsPortal.Api.Models.Rems;
 /// <summary>One suggested approver on the live list (AC-REMS-018): the user and the role they would act in.</summary>
 public sealed record RemsApproverSuggestion(RemsUserRef User, string Role);
 
-/// <summary>The live suggested approver list for an engagement (updates until the round is sent).</summary>
-public sealed record RemsApproverList(Guid EngagementId, string EngagementStatus, IReadOnlyList<RemsApproverSuggestion> Approvers);
+/// <summary>
+/// The full approver list an engagement will route to (updates until the round is sent): the automatic
+/// approvers — the CSE and every commission recipient — plus anyone added on the Approval tab.
+/// <see cref="SelectedApproverIds"/> is just the added ones, so the picker shows only what a user chose
+/// rather than the people who are approvers regardless.
+/// </summary>
+public sealed record RemsApproverList(
+    Guid EngagementId,
+    string EngagementStatus,
+    IReadOnlyList<RemsApproverSuggestion> Approvers,
+    IReadOnlyList<Guid> SelectedApproverIds);
+
+/// <summary>
+/// A user selectable as an extra approver: someone holding the Approver role in the active tenant. The
+/// job title travels with them so the picker can read "Full Name — Job Title".
+/// </summary>
+public sealed record RemsApproverOption(Guid UserId, string Name, string? JobTitle, string? Email);
+
+/// <summary>
+/// Replaces the engagement's ADDED approvers with exactly these users (AC-REMS-018). An empty list removes
+/// the additions; the automatic approvers are unaffected either way.
+/// </summary>
+public sealed class SetRemsApproversRequest
+{
+    public List<Guid> UserIds { get; set; } = new();
+}
 
 /// <summary>A row in the caller's own approval-task list (pending + historical).</summary>
 public sealed record RemsApprovalTaskRow(
@@ -124,6 +148,14 @@ public static class RemsApprovalChecklistCatalog
         "Commission allocation accepted",
     };
 
+    // A hand-picked approver with no other standing on the engagement: a general review, since nothing
+    // narrower can be assumed about why they were added.
+    private static readonly IReadOnlyList<string> Approver = new[]
+    {
+        "Engagement details reviewed",
+        "Engagement accepted",
+    };
+
     /// <summary>The ordered checklist labels for an approver role.</summary>
     public static IReadOnlyList<string> For(RemsApproverRole role) => role switch
     {
@@ -131,6 +163,7 @@ public static class RemsApprovalChecklistCatalog
         RemsApproverRole.DepartmentDirector => DepartmentDirector,
         RemsApproverRole.ManagingShareholder => ManagingShareholder,
         RemsApproverRole.CommissionRecipient => CommissionRecipient,
+        RemsApproverRole.Approver => Approver,
         _ => Array.Empty<string>(),
     };
 }

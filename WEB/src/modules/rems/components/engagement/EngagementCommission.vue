@@ -5,11 +5,12 @@
       approvers when the engagement is routed for approval.
     </div>
 
-    <!-- Add recipient (searchable staff picker; excludes those already added). -->
+    <!-- Add recipient (searchable CSE-group picker; excludes those already added). -->
     <div v-if="editable" class="row items-end q-col-gutter-md q-mb-md">
       <app-select
-        v-model="pick" :options="availableStaff" label="Add recipient" class="col-12 col-sm"
-        use-input :disable="splits.length >= 10"
+        v-model="pick" :options="availableRecipients" label="Add recipient" class="col-12 col-sm"
+        use-input :disable="splits.length >= 10" :hint="recipientHint"
+        info="Lists members of the &quot;CSE&quot; user group, maintained in Administration → User Groups. Recipients already added are excluded."
         @update:model-value="addRecipient"
       />
       <div class="col-auto text-caption text-grey-6 q-pb-sm">{{ splits.length }} / 10</div>
@@ -40,6 +41,7 @@
     <div class="row items-center q-mt-md">
       <div class="text-caption" :class="totalOver ? 'text-negative' : 'text-grey-7'">
         Total allocated: {{ totalPercent }}%
+        <template v-if="totalOver"> — {{ overBy }}% over the 100% maximum</template>
       </div>
     </div>
 
@@ -55,8 +57,8 @@
 </template>
 
 <script setup>
-// The engagement commission splits (AC-REMS-016): up to ten recipients from the staff list, each with an
-// editable percentage (> 0 and ≤ 100), individually removable.
+// The engagement commission splits (AC-REMS-016): up to ten recipients from the CSE user group, each with
+// an editable percentage (> 0 and ≤ 100), individually removable.
 import { ref, computed, watch } from "vue";
 import { remsApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
@@ -66,8 +68,8 @@ import AppTextField from "components/common/AppTextField.vue";
 
 const props = defineProps({
   engagement: { type: Object, required: true },
-  // The staff list: [{ label, value }].
-  staff: { type: Array, default: () => [] },
+  // Selectable recipients — the "CSE" user group's members, as [{ label, value }].
+  recipientOptions: { type: Array, default: () => [] },
   editable: { type: Boolean, default: true }
 });
 const emit = defineEmits(["saved", "advance"]);
@@ -84,14 +86,20 @@ const splits = ref(buildSplits(props.engagement));
 watch(() => props.engagement, (e) => { splits.value = buildSplits(e); });
 
 const pick = ref(null);
-const availableStaff = computed(() =>
-  props.staff.filter((s) => !splits.value.some((x) => x.employeeId === s.value)));
+const availableRecipients = computed(() =>
+  props.recipientOptions.filter((s) => !splits.value.some((x) => x.employeeId === s.value)));
+
+// An empty picker means the group has no members; name it so the fix is obvious rather than the dropdown
+// just being blank (mirrors the setup form's executive / billing-manager hints).
+const recipientHint = computed(() => (props.recipientOptions.length
+  ? ""
+  : "No members in the \"CSE\" group — add them in Administration → User Groups."));
 
 const addRecipient = (value) => {
   if (!value || splits.value.length >= 10) { pick.value = null; return; }
-  const staffOpt = props.staff.find((s) => s.value === value);
-  if (staffOpt && !splits.value.some((x) => x.employeeId === value)) {
-    splits.value.push({ employeeId: value, name: staffOpt.label, percentage: "" });
+  const option = props.recipientOptions.find((s) => s.value === value);
+  if (option && !splits.value.some((x) => x.employeeId === value)) {
+    splits.value.push({ employeeId: value, name: option.label, percentage: "" });
   }
   pick.value = null;
 };
@@ -102,9 +110,22 @@ const percentRules = [
   (v) => (v !== "" && v !== null && Number(v) > 0 && Number(v) <= 100) || "Enter 0–100"
 ];
 
+// Rounded to 2dp before comparing: three 33.33/33.34 splits sum to 100.00000000000001 in binary floating
+// point, which would otherwise report a perfectly valid 100% allocation as over the limit.
+const round2 = (n) => Math.round(n * 100) / 100;
 const totalPercent = computed(() =>
-  splits.value.reduce((sum, s) => sum + (Number(s.percentage) || 0), 0));
+  round2(splits.value.reduce((sum, s) => sum + (Number(s.percentage) || 0), 0)));
 const totalOver = computed(() => totalPercent.value > 100);
+const overBy = computed(() => round2(totalPercent.value - 100));
+
+// Warn the moment the running total crosses 100, on the transition only — watching the flag rather than
+// the total keeps this to one toast instead of one per keystroke. Save is blocked separately, since a
+// toast is easy to miss.
+watch(totalOver, (over) => {
+  if (over) {
+    notify.warning(`Commission totals ${totalPercent.value}% — the total across all recipients cannot exceed 100%.`);
+  }
+});
 
 const saving = ref(false);
 const save = async () => {
@@ -115,6 +136,13 @@ const save = async () => {
   });
   if (invalid) {
     notify.warning("Every recipient needs a percentage between 0 and 100.");
+    return;
+  }
+  // The splits divide one commission, so they can never add up to more than the whole of it. The API
+  // enforces the same ceiling — this is the readable version of that rejection.
+  if (totalOver.value) {
+    notify.warning(
+      `Commission totals ${totalPercent.value}% — that is ${overBy.value}% over. Reduce the splits to 100% or less.`);
     return;
   }
   saving.value = true;

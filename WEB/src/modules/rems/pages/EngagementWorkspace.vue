@@ -75,7 +75,7 @@
                 <q-tab-panel v-for="e in workspace.entities" :key="e.id" :name="e.id">
                   <engagement-entity-panel
                     :entity="e"
-                    :staff="staff"
+                    :recipient-options="recipientOptions"
                     :dept-options="departmentOptions"
                     :service-line-options="serviceLineOptions"
                     :marketing-groups="marketingGroups"
@@ -130,9 +130,10 @@ const {
 } = useRemsEngagementOptionSets();
 
 const workspace = ref(null);
-const staff = ref([]);
 const executiveOptions = ref([]);
 const billingManagerOptions = ref([]);
+// Commission recipients — the CSE group, not every admin.
+const recipientOptions = ref([]);
 const loading = ref(true);
 const errorMsg = ref("");
 const submittedOpen = ref(false);
@@ -188,23 +189,24 @@ const load = async () => {
   }
 };
 
-// The Engagement Executive / Billing Manager pickers are scoped to a user group of the same name, kept in
-// Administration → User Groups. An absent or empty group yields an empty list on purpose (the setup form
+// Every people picker in this workspace is scoped to a user group of the same name, kept in
+// Administration → User Groups. An absent or empty group yields an empty list on purpose (each picker
 // then says which group needs members) rather than quietly offering every admin.
 const EXECUTIVE_GROUP = "Engagement Executive";
 const BILLING_MANAGER_GROUP = "Billing Manager";
+const CSE_GROUP = "CSE";
 
 const toOptions = (rows) => (rows || []).map((a) => ({ label: a.name, value: a.id }));
 
-const loadStaff = async () => {
-  const [admins, executives, billingManagers] = await Promise.all([
-    remsApi.admins().catch(() => []),
+const loadPickers = async () => {
+  const [executives, billingManagers, cse] = await Promise.all([
     remsApi.admins(EXECUTIVE_GROUP).catch(() => []),
-    remsApi.admins(BILLING_MANAGER_GROUP).catch(() => [])
+    remsApi.admins(BILLING_MANAGER_GROUP).catch(() => []),
+    remsApi.admins(CSE_GROUP).catch(() => [])
   ]);
-  staff.value = toOptions(admins);
   executiveOptions.value = toOptions(executives);
   billingManagerOptions.value = toOptions(billingManagers);
+  recipientOptions.value = toOptions(cse);
 };
 
 const onClientUpdated = (client) => {
@@ -213,7 +215,7 @@ const onClientUpdated = (client) => {
 
 onMounted(() => {
   loadOptionSets();
-  loadStaff();
+  loadPickers();
   load();
 });
 </script>

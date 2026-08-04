@@ -94,7 +94,7 @@ public sealed class SetRemsMarketingRequestValidator : AbstractValidator<SetRems
 
 /// <summary>
 /// Validates setting commission splits (WO-114, AC-REMS-016.1/2): up to ten distinct recipients, each with
-/// a percentage greater than 0 and at most 100.
+/// a percentage greater than 0 and at most 100, and no more than 100% allocated in total.
 /// </summary>
 public sealed class SetRemsCommissionRequestValidator : AbstractValidator<SetRemsCommissionRequest>
 {
@@ -105,6 +105,12 @@ public sealed class SetRemsCommissionRequestValidator : AbstractValidator<SetRem
         RuleFor(x => x.Splits)
             .Must(s => s.Select(i => i.EmployeeId).Distinct().Count() == s.Count)
             .WithMessage("A recipient may appear only once.")
+            .When(x => x.Splits.Count > 0);
+        // The splits divide a single commission, so the whole set can never exceed it. Rounded to 2dp so
+        // three 33.33/33.34 shares are accepted as exactly 100% rather than rejected on decimal noise.
+        RuleFor(x => x.Splits)
+            .Must(s => Math.Round(s.Sum(i => i.Percentage), 2) <= 100m)
+            .WithMessage("The commission splits cannot add up to more than 100% in total.")
             .When(x => x.Splits.Count > 0);
         RuleForEach(x => x.Splits).ChildRules(s =>
         {

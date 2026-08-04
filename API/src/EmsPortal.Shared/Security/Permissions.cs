@@ -99,11 +99,13 @@ public static class Permissions
     public static IReadOnlyList<string> ForTenantAdmin() => new[]
     {
         TenantsRead,
-        // Deleting persons and changing role assignments are Super-Admin-only (PersonsDelete /
-        // RolesAssign intentionally excluded here).
+        // Deleting persons stays Super-Admin-only (PersonsDelete intentionally excluded here).
         PersonsRead, PersonsWrite,
         UsersRead, UsersWrite, UsersResetPassword, UsersGroupManagement,
-        RolesRead,
+        // Tenant Admins manage the roles of users in their OWN tenant. The permission alone is not the
+        // whole boundary: UsersController confines them to their active tenant, refuses to grant the
+        // Super Admin role, and refuses a Super Admin target.
+        RolesRead, RolesAssign,
         // Tenant Admins manage Permission Groups within their own tenant.
         GroupsManage,
         // Tenant Admins manage their tenant's SMTP email accounts.

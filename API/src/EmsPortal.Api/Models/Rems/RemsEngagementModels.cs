@@ -244,7 +244,10 @@ public sealed class SetRemsMarketingRequest
     public List<Guid> MarketingMethodIds { get; set; } = new();
 }
 
-/// <summary>Set the engagement commission splits (AC-REMS-016): up to ten recipients, each &gt; 0 and &lt;= 100.</summary>
+/// <summary>
+/// Set the engagement commission splits (AC-REMS-016): up to ten recipients, each &gt; 0 and &lt;= 100,
+/// allocating no more than 100% in total.
+/// </summary>
 public sealed class SetRemsCommissionRequest
 {
     public List<RemsCommissionInput> Splits { get; set; } = new();

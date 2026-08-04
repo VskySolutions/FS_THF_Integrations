@@ -50,5 +50,6 @@ public class REMSEngagement : AuditableEntity
     public REMSEntity? Entity { get; set; }
     public ICollection<REMSEngagementMarketingMethod> MarketingMethods { get; set; } = new List<REMSEngagementMarketingMethod>();
     public ICollection<REMSEngagementCommissionSplit> CommissionSplits { get; set; } = new List<REMSEngagementCommissionSplit>();
+    public ICollection<REMSEngagementApprover> Approvers { get; set; } = new List<REMSEngagementApprover>();
     public ICollection<REMSApprovalRound> ApprovalRounds { get; set; } = new List<REMSApprovalRound>();
 }

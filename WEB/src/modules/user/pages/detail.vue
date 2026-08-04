@@ -21,6 +21,12 @@
           <q-input v-model="lastName" outlined dense stack-label label="Last Name" class="col-12 col-sm-6" :readonly="!canEdit" />
           <q-input v-model="email" outlined dense stack-label label="Email" class="col-12 col-sm-6" :readonly="!canEdit" />
           <q-input v-model="phoneNumber" outlined dense stack-label label="Phone Number" class="col-12 col-sm-6" :readonly="!canEdit" />
+          <!-- Mandatory, from the User.JobTitle option list. The chosen label is what gets stored. -->
+          <app-select
+            v-model="jobTitle" :options="jobTitleOptions" label="Job Title *" class="col-12 col-sm-6"
+            :loading="loadingJobTitles" :readonly="!canEdit" :clearable="false" use-input
+            info="From the Job Title option list (Administration → Option Sets), where the values can be added, renamed and re-ordered."
+          />
         </q-card-section>
         <q-card-actions v-if="canEdit" align="right">
           <q-btn unelevated no-caps color="primary" label="Save" :loading="saving" @click="save" />
@@ -39,7 +45,9 @@
           <q-card-section class="row q-col-gutter-md items-start">
             <app-select
               v-model="department" :options="departmentOptions" :loading="loadingDepartments" label="Department"
-              class="col-12 col-sm-6" :readonly="!canEdit" @update:model-value="onDepartmentChange"
+              class="col-12 col-sm-6" :readonly="!canEdit"
+              info="From the REMS Department option list (Administration → Option Sets). A department has one head, and that head is its REMS Department Director."
+              @update:model-value="onDepartmentChange"
             />
             <div class="col-12 col-sm-6">
               <q-toggle v-model="isDepartmentHead" :disable="!canEdit || !department" label="Department head" />
@@ -75,12 +83,15 @@
         </q-card-section>
       </q-card>
 
-      <!-- Tenant assignments (requires roles.assign) -->
+      <!-- Tenant assignments (requires roles.assign — Super Admins tenant-wide, Tenant Admins within their
+           own tenant only, and never on a Super Admin target; the API enforces the same boundary). -->
       <q-card v-if="canManageAssignments" flat bordered class="user-card">
         <q-card-section class="row items-center">
           <div class="text-subtitle1 text-weight-medium">Tenant assignments</div>
           <q-space />
-          <q-btn unelevated no-caps color="primary" icon="o_add" label="Add" @click="openAssign" />
+          <q-btn unelevated no-caps color="primary" icon="o_add" label="Add" :disable="!canManageTarget" @click="openAssign">
+            <q-tooltip v-if="!canManageTarget">Only a Super Admin can manage this user.</q-tooltip>
+          </q-btn>
         </q-card-section>
         <q-separator />
         <q-banner v-if="visibleAssignments.length === 1" dense class="bg-orange-1 text-orange-9">
@@ -107,9 +118,17 @@
             </q-item-section>
             <q-item-section side>
               <div class="row items-center no-wrap">
-                <q-btn flat no-caps dense color="primary" icon="o_manage_accounts" label="Manage Roles" class="q-px-sm" @click="openChangeRole(a)" />
-                <q-btn flat round dense color="negative" icon="o_delete" class="q-ml-xs" @click="removeAssignment(a)">
-                  <q-tooltip>Remove</q-tooltip>
+                <q-btn
+                  flat no-caps dense color="primary" icon="o_manage_accounts" label="Manage Roles" class="q-px-sm"
+                  :disable="!canManageTarget" @click="openChangeRole(a)"
+                >
+                  <q-tooltip v-if="!canManageTarget">Only a Super Admin can manage this user.</q-tooltip>
+                </q-btn>
+                <q-btn
+                  flat round dense color="negative" icon="o_delete" class="q-ml-xs"
+                  :disable="!canManageTarget" @click="removeAssignment(a)"
+                >
+                  <q-tooltip>{{ canManageTarget ? "Remove" : "Only a Super Admin can manage this user." }}</q-tooltip>
                 </q-btn>
               </div>
             </q-item-section>
@@ -194,6 +213,7 @@
         <app-select
           v-model="assign.roleIds" :options="roleOptions" :loading="loadingRoles" label="Roles *" multiple
           hint="Grouped by category. The assignment is reconciled to exactly these roles."
+          info="The roles assignable in the selected tenant, grouped System / Operational / Custom. Super Admin is only listed for a Super Admin."
         />
       </q-form>
     </app-form-drawer>
@@ -238,6 +258,9 @@ const firstName = ref("");
 const lastName = ref("");
 const email = ref("");
 const phoneNumber = ref("");
+const jobTitle = ref(null);
+const jobTitleOptions = ref([]);
+const loadingJobTitles = ref(false);
 const saving = ref(false);
 const tenantOptions = ref([]);
 const loadingTenants = ref(false);
@@ -294,6 +317,7 @@ const load = async () => {
     lastName.value = user.value.lastName || "";
     phoneNumber.value = user.value.phoneNumber || "";
     email.value = user.value.email;
+    jobTitle.value = user.value.jobTitle || null;
     department.value = user.value.department || null;
     isDepartmentHead.value = !!user.value.isDepartmentHead;
     isManagingShareholder.value = !!user.value.isManagingShareholder;
@@ -304,10 +328,32 @@ const load = async () => {
   }
 };
 
+const loadJobTitles = async () => {
+  loadingJobTitles.value = true;
+  try {
+    jobTitleOptions.value = (await userApi.jobTitles()) || [];
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    loadingJobTitles.value = false;
+  }
+};
+
 const save = async () => {
+  // Job title is mandatory, so this blocks on users created before the field existed until one is picked.
+  if (!jobTitle.value) {
+    notify.error("Select a job title.");
+    return;
+  }
   saving.value = true;
   try {
-    await userApi.update(userId, { firstName: firstName.value, lastName: lastName.value, phoneNumber: phoneNumber.value, email: email.value });
+    await userApi.update(userId, {
+      firstName: firstName.value,
+      lastName: lastName.value,
+      phoneNumber: phoneNumber.value,
+      email: email.value,
+      jobTitle: jobTitle.value
+    });
     notify.success("User updated.");
     load();
   } catch (err) {
@@ -636,7 +682,7 @@ const saveGroups = async () => {
 };
 
 onMounted(async () => {
-  await Promise.all([loadTenants(), loadDepartments()]);
+  await Promise.all([loadTenants(), loadDepartments(), loadJobTitles()]);
   await load();
 });
 </script>

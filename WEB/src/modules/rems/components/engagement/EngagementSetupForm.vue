@@ -8,6 +8,7 @@
         <app-select
           v-model="copySource" :options="otherEntities" label="Copy setup from another entity"
           class="col-12 col-sm"
+          info="Lists this client's other entities that already have an engagement. Copying overwrites the address, department, service line, executive and billing manager — never fee, realization, marketing or approval."
         />
         <div class="col-auto">
           <q-btn
@@ -24,12 +25,14 @@
         <app-select
           v-model="core.department" :options="deptOptions" label="Department" required class="col-12 col-md-6"
           :readonly="!editable" :clearable="false" :rules="[requiredRule('a Department')]"
+          info="From the REMS Department option list (Administration → Option Sets). The choice drives the conditional detail below: Audit needs a signed CAF, Tax a fiscal year end."
         />
         <!-- Government is a Service Line, not a Department (AC-REMS-014.5/6). -->
         <app-select
           v-model="core.serviceLine" :options="serviceLineOptions" label="Service Line" required
           class="col-12 col-md-6" :readonly="!editable" :clearable="false"
           :rules="[requiredRule('a Service Line')]"
+          info="From the REMS Service Line option list (Administration → Option Sets). Audit + Government makes this a Government Audit, which asks for a contract number."
         />
 
         <!-- Read-only Department Director: the selected department's head, resolved as soon as the
@@ -45,11 +48,13 @@
           v-model="core.engagementExecutiveId" :options="executiveOptions" label="Engagement Executive"
           required class="col-12 col-md-6" :readonly="!editable"
           :rules="[requiredRule('an Engagement Executive')]" :hint="executiveHint"
+          info="Lists members of the &quot;Engagement Executive&quot; user group, maintained in Administration → User Groups."
         />
         <app-select
           v-model="core.billingManagerId" :options="billingManagerOptions" label="Billing Manager"
           required class="col-12 col-md-6" :readonly="!editable"
           :rules="[requiredRule('a Billing Manager')]" :hint="billingManagerHint"
+          info="Lists members of the &quot;Billing Manager&quot; user group, maintained in Administration → User Groups."
         />
 
         <app-text-field
@@ -68,7 +73,8 @@
 
       <!-- Rendered into the card's title row (see EngagementWorkspace), and only while Setup is the tab
            on screen — the panels are keep-alive, so an inactive tab would otherwise leave its button up
-           there. The sub-card saves below stay put: they write different records.
+           there. It is the ONLY save on this step: the conditional cards below are part of the same form
+           and are written by this same button, never by one of their own.
            `defer` is required: the target is rendered by the same tree, so without it the selector runs
            before that DOM exists and the button silently never appears. -->
       <teleport v-if="isVisibleTab && editable" defer to="#engagement-header-actions">
@@ -77,107 +83,95 @@
           :loading="savingCore" @click="saveCore"
         />
       </teleport>
-    </q-form>
 
-    <!-- Conditional: Audit → required signed CAF PDF upload (AC-REMS-014.11/12). -->
-    <q-card v-if="showAudit" flat bordered class="rems-inner q-mt-md">
-      <q-card-section class="q-py-sm text-subtitle2 text-primary">
-        <q-icon name="o_fact_check" size="18px" class="q-mr-xs" />Audit — Client Acceptance Form
-      </q-card-section>
-      <q-separator />
-      <q-card-section>
-        <q-banner v-if="hasCaf" dense class="bg-green-1 text-green-9 rounded-borders q-mb-sm">
-          <template #avatar><q-icon name="o_verified" color="green-9" /></template>
-          A signed client-acceptance form is on file.
-        </q-banner>
-        <q-banner v-else dense class="bg-orange-1 text-orange-9 rounded-borders q-mb-sm">
-          <template #avatar><q-icon name="o_warning" color="orange-9" /></template>
-          A signed client-acceptance form (PDF) is required before this audit engagement can be sent for approval.
-        </q-banner>
-        <app-single-file-upload
-          v-if="editable"
-          v-model="cafFile" accept=".pdf" :max-size-mb="25" :loading="cafUploading"
-          :label="hasCaf ? 'Replace signed CAF (PDF)' : 'Upload signed CAF (PDF)'"
-          hint="PDF up to 25 MB"
-        />
-      </q-card-section>
-    </q-card>
-
-    <!-- Conditional: Government Audit (Department=audit + ServiceLine=government) → contract number +
-         Florida 1% state-fee flag (AC-REMS-014.13). -->
-    <q-card v-if="showGovernment" flat bordered class="rems-inner q-mt-md">
-      <q-card-section class="q-py-sm text-subtitle2 text-primary">
-        <q-icon name="o_gavel" size="18px" class="q-mr-xs" />Government Audit — Contract
-      </q-card-section>
-      <q-separator />
-      <q-card-section>
-        <!-- Same `row q-col-gutter-md` as every other field row; the checkbox centres itself inside its
-             own cell so it lines up with the input beside it rather than with that input's label. -->
-        <div class="row q-col-gutter-md">
-          <app-text-field
-            v-model="gov.contractNumber" label="Contract Number" required class="col-12 col-md-6"
-            :readonly="!editable"
+      <!-- Conditional: Audit → required signed CAF PDF upload (AC-REMS-014.11/12). The upload writes on
+           selection (it links a media id, not a form field), so it has no button of its own either. -->
+      <q-card v-if="showAudit" flat bordered class="rems-inner q-mt-md">
+        <q-card-section class="q-py-sm text-subtitle2 text-primary">
+          <q-icon name="o_fact_check" size="18px" class="q-mr-xs" />Audit — Client Acceptance Form
+        </q-card-section>
+        <q-separator />
+        <q-card-section>
+          <q-banner v-if="hasCaf" dense class="bg-green-1 text-green-9 rounded-borders q-mb-sm">
+            <template #avatar><q-icon name="o_verified" color="green-9" /></template>
+            A signed client-acceptance form is on file.
+          </q-banner>
+          <q-banner v-else dense class="bg-orange-1 text-orange-9 rounded-borders q-mb-sm">
+            <template #avatar><q-icon name="o_warning" color="orange-9" /></template>
+            A signed client-acceptance form (PDF) is required before this audit engagement can be sent for approval.
+          </q-banner>
+          <app-single-file-upload
+            v-if="editable"
+            v-model="cafFile" accept=".pdf" :max-size-mb="25" :loading="cafUploading"
+            :label="hasCaf ? 'Replace signed CAF (PDF)' : 'Upload signed CAF (PDF)'"
+            hint="PDF up to 25 MB"
           />
-          <div class="col-12 col-md-6 column justify-center">
+        </q-card-section>
+      </q-card>
+
+      <!-- Conditional: Government Audit (Department=audit + ServiceLine=government) → contract number +
+           Florida 1% state-fee flag (AC-REMS-014.13). Saved by Save & Next along with everything else. -->
+      <q-card v-if="showGovernment" flat bordered class="rems-inner q-mt-md">
+        <q-card-section class="q-py-sm text-subtitle2 text-primary">
+          <q-icon name="o_gavel" size="18px" class="q-mr-xs" />Government Audit — Contract
+        </q-card-section>
+        <q-separator />
+        <q-card-section>
+          <!-- Same `row q-col-gutter-md` as every other field row; the checkbox centres itself inside its
+               own cell so it lines up with the input beside it rather than with that input's label. -->
+          <div class="row q-col-gutter-md">
+            <app-text-field
+              v-model="gov.contractNumber" label="Contract Number" required class="col-12 col-md-6"
+              :readonly="!editable"
+            />
+            <div class="col-12 col-md-6 column justify-center">
+              <q-checkbox
+                v-model="gov.floridaOnePercentStateFeeApplies" :disable="!editable"
+                label="Florida 1% state fee applies"
+              />
+            </div>
+          </div>
+
+          <!-- Contract / PO dates copied from the submission — shown read-only for context. -->
+          <div v-if="hasContractDates" class="rems-copied q-mt-md">
+            <div class="rems-copied__item"><span>Contract Start</span>{{ dateOnly(gov.contractStartDate) }}</div>
+            <div class="rems-copied__item"><span>Contract End</span>{{ dateOnly(gov.contractEndDate) }}</div>
+            <div class="rems-copied__item"><span>PO Start</span>{{ dateOnly(gov.purchaseOrderStartDate) }}</div>
+            <div class="rems-copied__item"><span>PO End</span>{{ dateOnly(gov.purchaseOrderEndDate) }}</div>
+          </div>
+        </q-card-section>
+      </q-card>
+
+      <!-- Conditional: Tax → fiscal year end + calculated due dates + tax-form checklist (AC-REMS-014.14).
+           Saved by Save & Next along with everything else. -->
+      <q-card v-if="showTax" flat bordered class="rems-inner q-mt-md">
+        <q-card-section class="q-py-sm text-subtitle2 text-primary">
+          <q-icon name="o_receipt_long" size="18px" class="q-mr-xs" />Tax — Fiscal Year &amp; Forms
+        </q-card-section>
+        <q-separator />
+        <q-card-section>
+          <div class="row q-col-gutter-md">
+            <app-date-field
+              v-model="tax.fiscalYearEnd" label="Fiscal Year End" class="col-12 col-md-6" :readonly="!editable"
+            />
+            <app-readonly-field v-if="dueDates" label="Calculated Due Dates" class="col-12 col-md-6">
+              Original: {{ dateOnly(dueDates.originalDueDate) }} · Extended: {{ dateOnly(dueDates.extendedDueDate) }}
+            </app-readonly-field>
+          </div>
+
+          <div class="section-subhead">Tax Forms</div>
+          <div v-if="taxFormUnavailable" class="text-caption text-grey-6">
+            The tax-form list could not be loaded for your account.
+          </div>
+          <div v-else class="row q-col-gutter-x-md">
             <q-checkbox
-              v-model="gov.floridaOnePercentStateFeeApplies" :disable="!editable"
-              label="Florida 1% state fee applies"
+              v-for="opt in taxFormOptions" :key="opt.value" v-model="tax.taxFormIds" :val="opt.value"
+              :label="opt.label" :disable="!editable" class="col-12 col-sm-6"
             />
           </div>
-        </div>
-
-        <!-- Contract / PO dates copied from the submission — shown read-only for context. -->
-        <div v-if="hasContractDates" class="rems-copied q-mt-md">
-          <div class="rems-copied__item"><span>Contract Start</span>{{ dateOnly(gov.contractStartDate) }}</div>
-          <div class="rems-copied__item"><span>Contract End</span>{{ dateOnly(gov.contractEndDate) }}</div>
-          <div class="rems-copied__item"><span>PO Start</span>{{ dateOnly(gov.purchaseOrderStartDate) }}</div>
-          <div class="rems-copied__item"><span>PO End</span>{{ dateOnly(gov.purchaseOrderEndDate) }}</div>
-        </div>
-
-        <div v-if="editable" class="row justify-end q-mt-md">
-          <q-btn
-            unelevated no-caps color="primary" icon="o_save" label="Save contract"
-            :loading="savingGov" @click="saveGovernment"
-          />
-        </div>
-      </q-card-section>
-    </q-card>
-
-    <!-- Conditional: Tax → fiscal year end + calculated due dates + tax-form checklist (AC-REMS-014.14). -->
-    <q-card v-if="showTax" flat bordered class="rems-inner q-mt-md">
-      <q-card-section class="q-py-sm text-subtitle2 text-primary">
-        <q-icon name="o_receipt_long" size="18px" class="q-mr-xs" />Tax — Fiscal Year &amp; Forms
-      </q-card-section>
-      <q-separator />
-      <q-card-section>
-        <div class="row q-col-gutter-md">
-          <app-date-field
-            v-model="tax.fiscalYearEnd" label="Fiscal Year End" class="col-12 col-md-6" :readonly="!editable"
-          />
-          <app-readonly-field v-if="dueDates" label="Calculated Due Dates" class="col-12 col-md-6">
-            Original: {{ dateOnly(dueDates.originalDueDate) }} · Extended: {{ dateOnly(dueDates.extendedDueDate) }}
-          </app-readonly-field>
-        </div>
-
-        <div class="section-subhead">Tax Forms</div>
-        <div v-if="taxFormUnavailable" class="text-caption text-grey-6">
-          The tax-form list could not be loaded for your account.
-        </div>
-        <div v-else class="row q-col-gutter-x-md">
-          <q-checkbox
-            v-for="opt in taxFormOptions" :key="opt.value" v-model="tax.taxFormIds" :val="opt.value"
-            :label="opt.label" :disable="!editable" class="col-12 col-sm-6"
-          />
-        </div>
-
-        <div v-if="editable" class="row justify-end q-mt-md">
-          <q-btn
-            unelevated no-caps color="primary" icon="o_save" label="Save tax details"
-            :loading="savingTax" @click="saveTax"
-          />
-        </div>
-      </q-card-section>
-    </q-card>
+        </q-card-section>
+      </q-card>
+    </q-form>
   </div>
 </template>
 
@@ -200,7 +194,6 @@ import AppSingleFileUpload from "components/common/AppSingleFileUpload.vue";
 
 const props = defineProps({
   engagement: { type: Object, required: true },
-  staff: { type: Array, default: () => [] },
   deptOptions: { type: Array, default: () => [] },
   serviceLineOptions: { type: Array, default: () => [] },
   taxFormOptions: { type: Array, default: () => [] },
@@ -216,8 +209,8 @@ const props = defineProps({
   billingManagerOptions: { type: Array, default: () => [] },
   editable: { type: Boolean, default: true }
 });
-// `advance` drives the wizard's Save & Next. Only the CORE save emits it — the conditional contract/tax
-// sub-forms below write different records and are not steps of their own.
+// `advance` drives the wizard's Save & Next — the one save action for this whole step, conditional
+// contract/tax cards included (see saveCore). Only a fully successful save emits it.
 const emit = defineEmits(["saved", "advance", "workspace-refresh"]);
 
 const notify = useNotify();
@@ -341,30 +334,50 @@ const billingManagerHint = computed(() => groupHint(props.billingManagerOptions,
 
 const toNum = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
 
-// ---- Save: core engagement ----
+// ---- Save & Next: the whole step in one action ----
+// The conditional Government / Tax cards write their own records, but they are not steps of their own and
+// they never had a second decision behind them — a separate button per card only made the user guess which
+// one commits their work. So this is the single save for the step: the core first (it is what decides the
+// conditional cards apply at all), then each card that is on screen, adopting the last view returned.
 const savingCore = ref(false);
 const saveCore = async () => {
   if (!(await formRef.value?.validate())) return;
   savingCore.value = true;
+  // Tracked outside the try so a partial failure (core written, tax rejected) still hands the panel what
+  // did get saved, rather than leaving it holding the pre-save engagement as the truth.
+  let view = null;
+  let complete = false;
   try {
-    const result = await remsApi.updateEngagement(props.engagement.id, {
+    view = (await remsApi.updateEngagement(props.engagement.id, {
       department: core.value.department,
       serviceLine: core.value.serviceLine,
       engagementExecutiveId: core.value.engagementExecutiveId,
       billingManagerId: core.value.billingManagerId,
       firstYearFeeEstimate: toNum(core.value.firstYearFeeEstimate),
       realizationPercentage: toNum(core.value.realizationPercentage)
-    });
-    emit("saved", result.engagement);
-    notify.success("Engagement saved.");
-    // After `saved` so the panel re-evaluates the step rules against the refreshed engagement; it stays
-    // put when this save did not actually complete the step (an audit engagement still missing its CAF).
-    emit("advance");
+    })).engagement;
+    if (showGovernment.value) {
+      view = await remsApi.updateGovernment(props.engagement.id, { ...gov.value });
+    }
+    if (showTax.value) {
+      // The fiscal year end recomputes the due-date schedule server-side.
+      view = await remsApi.updateTax(props.engagement.id, {
+        fiscalYearEnd: tax.value.fiscalYearEnd || null,
+        taxFormIds: tax.value.taxFormIds
+      });
+    }
+    complete = true;
   } catch (err) {
     notify.error(getApiErrorMessage(err));
   } finally {
     savingCore.value = false;
   }
+  if (view) emit("saved", view);
+  if (!complete) return;
+  notify.success("Engagement saved.");
+  // After `saved` so the panel re-evaluates the step rules against the refreshed engagement; it stays
+  // put when this save did not actually complete the step (an audit engagement still missing its CAF).
+  emit("advance");
 };
 
 // ---- Save: audit client-acceptance form (upload media → link the media id) ----
@@ -385,39 +398,6 @@ watch(cafFile, async (file) => {
     cafUploading.value = false;
   }
 });
-
-// ---- Save: government-audit contract detail (passing through the copied dates to preserve them) ----
-const savingGov = ref(false);
-const saveGovernment = async () => {
-  savingGov.value = true;
-  try {
-    const view = await remsApi.updateGovernment(props.engagement.id, { ...gov.value });
-    emit("saved", view);
-    notify.success("Contract details saved.");
-  } catch (err) {
-    notify.error(getApiErrorMessage(err));
-  } finally {
-    savingGov.value = false;
-  }
-};
-
-// ---- Save: tax detail (fiscal year end recomputes the due dates server-side) ----
-const savingTax = ref(false);
-const saveTax = async () => {
-  savingTax.value = true;
-  try {
-    const view = await remsApi.updateTax(props.engagement.id, {
-      fiscalYearEnd: tax.value.fiscalYearEnd || null,
-      taxFormIds: tax.value.taxFormIds
-    });
-    emit("saved", view);
-    notify.success("Tax details saved.");
-  } catch (err) {
-    notify.error(getApiErrorMessage(err));
-  } finally {
-    savingTax.value = false;
-  }
-};
 
 // ---- Copy From: one-time overwrite of address / department / service line / executive / billing manager ----
 const copySource = ref(null);

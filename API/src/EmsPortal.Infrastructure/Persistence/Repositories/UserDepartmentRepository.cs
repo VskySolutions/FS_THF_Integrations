@@ -26,6 +26,20 @@ internal sealed class UserDepartmentRepository : IUserDepartmentRepository
             .OrderBy(d => d.Department)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<UserDepartment>> ListForUsersAsync(
+        IEnumerable<Guid> userIds, CancellationToken cancellationToken = default)
+    {
+        var ids = userIds.Distinct().ToList();
+        if (ids.Count == 0)
+        {
+            return Array.Empty<UserDepartment>();
+        }
+
+        return await _dbContext.UserDepartments
+            .Where(d => ids.Contains(d.UserId))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task AddAsync(UserDepartment department, CancellationToken cancellationToken = default)
         => await _dbContext.UserDepartments.AddAsync(department, cancellationToken);
 

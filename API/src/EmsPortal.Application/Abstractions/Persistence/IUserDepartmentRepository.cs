@@ -18,6 +18,13 @@ public interface IUserDepartmentRepository
     /// <summary>Every department head in this tenant (one row per headed department).</summary>
     Task<IReadOnlyList<UserDepartment>> ListHeadsAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// The placements of the given users in this tenant, for showing a page of users at once. Unplaced
+    /// users simply have no row.
+    /// </summary>
+    Task<IReadOnlyList<UserDepartment>> ListForUsersAsync(
+        IEnumerable<Guid> userIds, CancellationToken cancellationToken = default);
+
     Task AddAsync(UserDepartment department, CancellationToken cancellationToken = default);
 
     void Update(UserDepartment department);

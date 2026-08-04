@@ -1,6 +1,7 @@
 <template>
-  <!-- A single contact role (name / email / phone) bound to a RemsRolePayload node. Required roles must be
-       complete (all three) before review/submit; optional roles are only validated once started. -->
+  <!-- A single contact role (name / email / phone) bound to a RemsRolePayload node. A required role needs a
+       name and a valid email before review/submit — the phone is always optional. An optional role is only
+       validated once the client starts filling it in. -->
   <div class="role-block" :class="{ 'role-block--required': required }">
     <div class="role-block__head">
       <div class="role-block__title">{{ label }}</div>
@@ -20,6 +21,7 @@
         :error="!!err('email')" :error-message="err('email')"
       />
       <div class="col-12">
+        <!-- Optional even on a required contact: roleComplete() asks only for a name and a valid email. -->
         <app-phone-input v-model="role.phone" label="Phone" />
         <div v-if="err('phone')" class="text-negative text-caption q-mt-xs">{{ err('phone') }}</div>
       </div>

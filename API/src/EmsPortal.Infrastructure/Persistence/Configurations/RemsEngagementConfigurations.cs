@@ -150,3 +150,21 @@ internal sealed class RemsEngagementCommissionSplitConfiguration : IEntityTypeCo
         builder.HasIndex(s => new { s.TenantId, s.REMSEngagementId, s.EmployeeId }).IsUnique().HasFilter("[Deleted] = 0");
     }
 }
+
+internal sealed class RemsEngagementApproverConfiguration : IEntityTypeConfiguration<REMSEngagementApprover>
+{
+    public void Configure(EntityTypeBuilder<REMSEngagementApprover> builder)
+    {
+        builder.ToTable("REMSEngagementApprover");
+        builder.HasKey(a => a.Id);
+
+        builder.HasOne<Tenant>().WithMany().HasForeignKey(a => a.TenantId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(a => a.TenantId);
+
+        builder.HasOne(a => a.Engagement).WithMany(e => e.Approvers).HasForeignKey(a => a.REMSEngagementId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(a => a.User).WithMany().HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.Restrict);
+
+        // One row per (engagement, user) — the same person is picked at most once.
+        builder.HasIndex(a => new { a.TenantId, a.REMSEngagementId, a.UserId }).IsUnique().HasFilter("[Deleted] = 0");
+    }
+}

@@ -54,7 +54,9 @@
       </template>
       <template #body-cell-origin="cell">
         <q-td :props="cell">
-          <q-badge :color="cell.row.isEditable ? 'primary' : 'grey-6'" :label="cell.row.isEditable ? 'Custom' : 'Standard'" />
+          <!-- Origin comes from isSystem, NOT isEditable: standard lists are editable now, so isEditable no
+               longer distinguishes them. -->
+          <q-badge :color="cell.row.isSystem ? 'grey-6' : 'primary'" :label="cell.row.isSystem ? 'Standard' : 'Custom'" />
         </q-td>
       </template>
       <template #body-cell-isActive="cell">
@@ -70,7 +72,9 @@
           <q-btn v-if="cell.row.isEditable && canManage" flat round dense color="primary" icon="o_edit" @click="openEdit(cell.row)">
             <q-tooltip>Edit</q-tooltip>
           </q-btn>
-          <q-btn v-if="cell.row.isEditable && canManage" flat round dense color="negative" icon="o_delete" @click="remove(cell.row)">
+          <!-- A standard list's VALUES are editable, but the list itself cannot be deleted: feature code
+               references its key, and the seeder would recreate it on the next restart anyway. -->
+          <q-btn v-if="!cell.row.isSystem && canManage" flat round dense color="negative" icon="o_delete" @click="remove(cell.row)">
             <q-tooltip>Delete</q-tooltip>
           </q-btn>
         </q-td>
@@ -122,7 +126,7 @@ const columns = [
   { name: "entityType", label: "Entity", field: "entityType", align: "left", sortable: true, default: true },
   { name: "itemCount", label: "Values", field: "itemCount", align: "left", sortable: true, default: true },
   { name: "itemSortMode", label: "Order", field: "itemSortMode", align: "left", default: true },
-  { name: "origin", label: "Type", field: "isEditable", align: "left", default: true },
+  { name: "origin", label: "Type", field: "isSystem", align: "left", default: true },
   { name: "isActive", label: "Status", field: "isActive", align: "left", default: true },
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];

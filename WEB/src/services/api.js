@@ -131,6 +131,9 @@ export const userApi = {
   // each, and the tenant's managing shareholder → { departments: [{ value, label }],
   // heads: [{ department, userId, fullName }], managingShareholder: { userId, fullName } | null }.
   departments: () => api.get("/api/admin/users/departments").then(unwrap),
+  // The selectable job titles (the User.JobTitle option list) → ["Partner", "Tax Manager", …]. The chosen
+  // title is stored verbatim, so these strings are both the option and the value.
+  jobTitles: () => api.get("/api/admin/users/job-titles").then(unwrap),
   // payload: { department: code|null, isHead } — a null department unassigns the user. Marking a head
   // demotes the incumbent and repoints the REMS department-director mapping (WO-114), so the response
   // carries { department, isHead, demotedHeadName } for reporting the handover.
@@ -533,8 +536,14 @@ export const remsApi = {
   updateMarketing: (id, marketingMethodIds) => api.put(`/api/rems/engagements/${id}/marketing`, { marketingMethodIds }).then(unwrap),
   // Set the commission splits (≤10 recipients, each > 0 and ≤ 100). splits: [{ employeeId, percentage }].
   updateCommission: (id, splits) => api.put(`/api/rems/engagements/${id}/commission`, { splits }).then(unwrap),
-  // The live suggested approver list: { engagementId, engagementStatus, approvers:[{ user:{id,name}, role }] }.
+  // The full approver list: { engagementId, engagementStatus, approvers:[{ user:{id,name}, role }],
+  // selectedApproverIds }. approvers = the automatic ones (CSE + commission recipients) plus the added
+  // ones; selectedApproverIds = only the added ones, which is what the picker binds to.
   approvers: (id) => api.get(`/api/rems/engagements/${id}/approvers`).then(unwrap),
+  // Users selectable as EXTRA approvers — the tenant's Approver-role users → [{ userId, name, jobTitle, email }].
+  approverOptions: (id) => api.get(`/api/rems/engagements/${id}/approver-options`).then(unwrap),
+  // Replace the ADDED approvers. An empty array removes the additions; the automatic ones always route.
+  setApprovers: (id, userIds) => api.put(`/api/rems/engagements/${id}/approvers`, { userIds }).then(unwrap),
   // Route the engagement for approval; returns the (now locked) approver list with engagementStatus updated.
   sendApproval: (id) => api.post(`/api/rems/engagements/${id}/approval/send`).then(unwrap),
   // Resubmit a rejected engagement for a fresh approval round (staff, rems.approvals.send). Returns the

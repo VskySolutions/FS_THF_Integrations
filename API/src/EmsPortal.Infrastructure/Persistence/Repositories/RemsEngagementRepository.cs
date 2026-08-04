@@ -109,4 +109,14 @@ internal sealed class RemsEngagementRepository : IRemsEngagementRepository
 
     public Task<int> CountActiveCommissionSplitsAsync(Guid engagementId, CancellationToken cancellationToken = default)
         => _dbContext.RemsEngagementCommissionSplits.CountAsync(s => s.REMSEngagementId == engagementId, cancellationToken);
+
+    public async Task<IReadOnlyList<REMSEngagementApprover>> ListApproversAsync(Guid engagementId, CancellationToken cancellationToken = default)
+        => await _dbContext.RemsEngagementApprovers
+            .Where(a => a.REMSEngagementId == engagementId)
+            .ToListAsync(cancellationToken);
+
+    public async Task AddApproverAsync(REMSEngagementApprover approver, CancellationToken cancellationToken = default)
+        => await _dbContext.RemsEngagementApprovers.AddAsync(approver, cancellationToken);
+
+    public void RemoveApprover(REMSEngagementApprover approver) => _dbContext.RemsEngagementApprovers.Remove(approver);
 }

@@ -60,7 +60,6 @@
 
           <engagement-setup-form
             :engagement="engagement"
-            :staff="staff"
             :dept-options="deptOptions"
             :service-line-options="serviceLineOptions"
             :tax-form-options="taxFormOptions"
@@ -90,7 +89,7 @@
         <q-tab-panel name="commission" class="q-px-none">
           <engagement-commission
             :engagement="engagement"
-            :staff="staff"
+            :recipient-options="recipientOptions"
             :editable="editable"
             @saved="onSaved"
             @advance="goNext"
@@ -124,7 +123,8 @@ import { useRemsMeta, isAuditDepartment } from "modules/rems/useRemsMeta";
 
 const props = defineProps({
   entity: { type: Object, required: true },
-  staff: { type: Array, default: () => [] },
+  // Commission-recipient picker source: the members of the "CSE" user group.
+  recipientOptions: { type: Array, default: () => [] },
   deptOptions: { type: Array, default: () => [] },
   serviceLineOptions: { type: Array, default: () => [] },
   marketingGroups: { type: Array, default: () => [] },

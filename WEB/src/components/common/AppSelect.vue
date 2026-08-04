@@ -1,6 +1,6 @@
 <template>
   <div class="app-field">
-    <app-field-label :label="label" :required="required" />
+    <app-field-label :label="label" :required="required" :info="info" />
     <q-select
       v-model="model"
       :options="visibleOptions"
@@ -17,7 +17,7 @@
       :disable="disable"
       :autocomplete="autocomplete"
       :aria-label="ariaLabel"
-      :use-input="useInput"
+      :use-input="searchable"
       :input-debounce="inputDebounce"
       :fill-input="typeahead"
       :hide-selected="typeahead"
@@ -73,6 +73,9 @@ const props = defineProps({
   label: { type: String, default: "" },
   // Force the required marker; a trailing "*" in the label also marks it required.
   required: { type: Boolean, default: false },
+  // Explains what this list is scoped to (a user group, a role, an option list). Use it whenever the
+  // options are a filtered set — otherwise an empty or short dropdown just looks broken.
+  info: { type: String, default: "" },
   loading: { type: Boolean, default: false },
   clearable: { type: Boolean, default: true },
   multiple: { type: Boolean, default: false },
@@ -95,9 +98,10 @@ const props = defineProps({
   disable: { type: Boolean, default: false },
   // Disable the browser's autofill on the filter input by default (opt back in with "on").
   autocomplete: { type: String, default: "off" },
-  // Type-to-search: opens an input inside the control and emits `filter` so the parent can narrow the
-  // options (needed once a list is too long to scroll — countries, states, cities…).
-  useInput: { type: Boolean, default: false },
+  // Type-to-search: opens an input inside the control that narrows the options. Left unset it turns
+  // ITSELF on once the list passes SEARCH_THRESHOLD, so a long dropdown is searchable without every call
+  // site having to remember. Pass it explicitly to force search on (a short list that will grow) or off.
+  useInput: { type: Boolean, default: undefined },
   // 0 because the lists filtered this way are in-memory (Quasar's own default is 500ms).
   inputDebounce: { type: [Number, String], default: 0 }
 });
@@ -112,9 +116,14 @@ const model = computed({
 // Multi-select shows selections as badges by default; single-select stays inline text.
 const chips = computed(() => (props.useChips === undefined ? props.multiple : props.useChips));
 
+// Past this many options a list is quicker to type than to scroll, so search switches on by itself.
+const SEARCH_THRESHOLD = 10;
+const searchable = computed(() =>
+  (props.useInput === undefined ? props.options.length > SEARCH_THRESHOLD : props.useInput));
+
 // A searchable single-select reads as an autocomplete: the selection sits in the search input itself
 // instead of beside it. Multi-select keeps its chips and a separate input.
-const typeahead = computed(() => props.useInput && !props.multiple);
+const typeahead = computed(() => searchable.value && !props.multiple);
 
 // Search is handled HERE rather than through QSelect's `filter` event on purpose. That event hands the
 // parent a done-callback and refuses to open the menu until it is called — within a 10ms window, while
@@ -125,7 +134,7 @@ const optionText = (opt) =>
   String((opt !== null && typeof opt === "object" ? opt[props.optionLabel] : opt) ?? "");
 
 const visibleOptions = computed(() => {
-  const needle = props.useInput ? search.value.trim().toLowerCase() : "";
+  const needle = searchable.value ? search.value.trim().toLowerCase() : "";
   if (needle === "") return props.options;
   return props.options.filter((opt) => optionText(opt).toLowerCase().includes(needle));
 });

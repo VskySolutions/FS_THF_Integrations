@@ -39,6 +39,7 @@ public sealed class RemsApprovalController : ControllerBase
     private const string CodeTaskDecided = "REMS_TASK_ALREADY_DECIDED";
     private const string CodeRoundClosed = "REMS_ROUND_CLOSED";
     private const string CodeChecklistIncomplete = "REMS_CHECKLIST_INCOMPLETE";
+    private const string CodeApproversLocked = "REMS_APPROVERS_LOCKED";
 
     private readonly IRemsEngagementRepository _engagements;
     private readonly IRemsApprovalRepository _approvals;
@@ -69,9 +70,8 @@ public sealed class RemsApprovalController : ControllerBase
     // -------------------- Suggested approvers (live) --------------------
 
     /// <summary>
-    /// The live suggested approver list (AC-REMS-018): CSE, the mapped department director (unless
-    /// unassigned), the managing shareholder, and every commission recipient — deduped by (user, role). The
-    /// list updates until the round is sent.
+    /// The engagement's approver list (AC-REMS-018): the automatic approvers — the CSE and every commission
+    /// recipient — plus anyone added on the Approval tab. Updates until the round is sent.
     /// </summary>
     [HttpGet("engagements/{id:guid}/approvers")]
     [RequirePermission(Permissions.RemsEngagementsManage)]
@@ -86,7 +86,91 @@ public sealed class RemsApprovalController : ControllerBase
 
         var approvers = await BuildApproverListAsync(engagement, cancellationToken);
         var list = await ToApproverListAsync(engagement, approvers, cancellationToken);
-        return Ok(ApiResponseFactory.Success(list, "REMS suggested approvers retrieved."));
+        return Ok(ApiResponseFactory.Success(list, "REMS approvers retrieved."));
+    }
+
+    /// <summary>
+    /// The users selectable as extra approvers: everyone holding the <c>Approver</c> role in the active
+    /// tenant, with their job title for the picker label.
+    /// </summary>
+    [HttpGet("engagements/{id:guid}/approver-options")]
+    [RequirePermission(Permissions.RemsEngagementsManage)]
+    [ProducesResponseType<ApiResponse<IEnumerable<RemsApproverOption>>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> ApproverOptions(Guid id, CancellationToken cancellationToken)
+    {
+        if (await _engagements.GetWithContextAsync(id, cancellationToken) is null)
+        {
+            return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
+        }
+        if (User.GetActiveTenantId() is not { } tenantId)
+        {
+            return Ok(ApiResponseFactory.Success(Array.Empty<RemsApproverOption>(), "No active tenant."));
+        }
+
+        var options = await ApproverOptionsAsync(tenantId, cancellationToken);
+        return Ok(ApiResponseFactory.Success(options, "REMS approver options retrieved."));
+    }
+
+    /// <summary>
+    /// Replaces the engagement's ADDED approvers (AC-REMS-018). Editable only while the approver list is
+    /// unlocked — once a round is sent the list is fixed. An empty set removes the additions; the automatic
+    /// approvers route either way.
+    /// </summary>
+    [HttpPut("engagements/{id:guid}/approvers")]
+    [RequirePermission(Permissions.RemsEngagementsManage)]
+    [ProducesResponseType<ApiResponse<RemsApproverList>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> SetApprovers(Guid id, [FromBody] SetRemsApproversRequest request, CancellationToken cancellationToken)
+    {
+        var engagement = await _engagements.GetWithContextAsync(id, cancellationToken);
+        if (engagement is null)
+        {
+            return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
+        }
+        if (engagement.Status is not (RemsEngagementStatus.Draft or RemsEngagementStatus.Rejected))
+        {
+            return ConflictResult(CodeApproversLocked, "The approver list is locked once the engagement has been sent for approval.");
+        }
+
+        var requested = (request.UserIds ?? new List<Guid>()).Distinct().ToList();
+
+        // Every pick must be one the picker actually offered. Validating against the option set rather than
+        // "is a real user" keeps the choice inside this tenant: an arbitrary id must never become a task.
+        if (requested.Count > 0)
+        {
+            if (User.GetActiveTenantId() is not { } tenantId)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden("No active tenant context."));
+            }
+
+            var allowed = (await ApproverOptionsAsync(tenantId, cancellationToken)).Select(o => o.UserId).ToHashSet();
+            if (requested.Any(uid => !allowed.Contains(uid)))
+            {
+                return BadRequest(ApiResponseFactory.Error(
+                    ApiErrorCodes.ValidationFailed, "Validation failed.", "One or more selected approvers do not hold the Approver role."));
+            }
+        }
+
+        // Reconcile to exactly the requested set.
+        var existing = await _engagements.ListApproversAsync(id, cancellationToken);
+        foreach (var row in existing.Where(r => !requested.Contains(r.UserId)))
+        {
+            _engagements.RemoveApprover(row);
+        }
+        foreach (var userId in requested.Where(uid => existing.All(r => r.UserId != uid)))
+        {
+            await _engagements.AddApproverAsync(new REMSEngagementApprover
+            {
+                Id = Guid.NewGuid(),
+                REMSEngagementId = id,
+                UserId = userId,
+            }, cancellationToken);
+        }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        var approvers = await BuildApproverListAsync(engagement, cancellationToken);
+        var list = await ToApproverListAsync(engagement, approvers, cancellationToken);
+        return Ok(ApiResponseFactory.Success(list, "REMS approvers updated."));
     }
 
     // -------------------- Send / resubmit --------------------
@@ -427,49 +511,101 @@ public sealed class RemsApprovalController : ControllerBase
     // -------------------- Approver-list generation --------------------
 
     /// <summary>
-    /// Builds the suggested approver set (AC-REMS-018): CSE (from the request), the effective department
-    /// director (engagement value, prefilled from the tenant map; skipped when unassigned), the managing
-    /// shareholder (from settings), and each commission recipient. Deduped by (user, role) — the same user
-    /// may hold several DISTINCT role tasks.
+    /// The approver set to route to (AC-REMS-018). A selection saved on the Approval tab wins; with none
+    /// saved this falls back to the default — the CSE and every commission recipient. Either way each
+    /// user's role comes from <see cref="RoleFor"/> rather than from storage.
     /// </summary>
     private async Task<IReadOnlyList<(Guid UserId, RemsApproverRole Role)>> BuildApproverListAsync(
         REMSEngagement engagement, CancellationToken cancellationToken)
     {
-        var result = new List<(Guid UserId, RemsApproverRole Role)>();
+        var picked = await _engagements.ListApproversAsync(engagement.Id, cancellationToken);
 
-        if (engagement.Entity?.Client?.Rems?.CSEId is { } cse)
-        {
-            result.Add((cse, RemsApproverRole.CSE));
-        }
-        if (engagement.DepartmentDirectorId is { } director)
-        {
-            result.Add((director, RemsApproverRole.DepartmentDirector));
-        }
+        // Added approvers come ON TOP of the automatic ones — picking someone never removes the CSE or a
+        // commission recipient, who approve by virtue of their standing on the engagement.
+        var userIds = AutomaticApproverIds(engagement).Concat(picked.Select(a => a.UserId));
 
         var settings = await _settings.GetAsync(cancellationToken);
-        if (settings?.ManagingShareholderUserId is { } managingShareholder)
-        {
-            result.Add((managingShareholder, RemsApproverRole.ManagingShareholder));
-        }
+        return userIds
+            .Distinct()
+            .Select(userId => (UserId: userId, Role: RoleFor(engagement, settings?.ManagingShareholderUserId, userId)))
+            .ToList();
+    }
 
-        foreach (var split in engagement.CommissionSplits.Where(s => !s.Deleted))
-        {
-            result.Add((split.EmployeeId, RemsApproverRole.CommissionRecipient));
-        }
+    /// <summary>
+    /// The users the Approval tab offers as EXTRA approvers: those holding the <c>Approver</c> role in the
+    /// tenant. The automatic approvers are deliberately absent — they are already routed to, so listing
+    /// them would invite picking someone who is on the list either way.
+    /// </summary>
+    private async Task<IReadOnlyList<RemsApproverOption>> ApproverOptionsAsync(Guid tenantId, CancellationToken cancellationToken)
+    {
+        var candidates = await _users.ListByTenantRolesAsync(tenantId, new[] { Roles.Approver }, cancellationToken);
+        var names = await _users.GetFullNamesAsync(candidates.Select(u => u.Id), cancellationToken);
 
-        // Dedup by (user, role): value tuples give structural equality.
-        return result.Distinct().ToList();
+        return candidates
+            .Select(u => new RemsApproverOption(
+                u.Id, names.TryGetValue(u.Id, out var n) ? n : u.DisplayName, u.Person?.JobTitle, u.Email))
+            .OrderBy(o => o.Name)
+            .ToList();
+    }
+
+    /// <summary>
+    /// The approvers every engagement routes to regardless of what is picked: the CSE and each commission
+    /// recipient. The department director and the managing shareholder are not automatic — they are added
+    /// on the Approval tab like anyone else.
+    /// </summary>
+    private static List<Guid> AutomaticApproverIds(REMSEngagement engagement)
+    {
+        var ids = new List<Guid>();
+        if (engagement.Entity?.Client?.Rems?.CSEId is { } cse)
+        {
+            ids.Add(cse);
+        }
+        ids.AddRange(engagement.CommissionSplits.Where(s => !s.Deleted).Select(s => s.EmployeeId));
+        return ids;
+    }
+
+    /// <summary>
+    /// The role a user acts under on this engagement, most specific first. Someone with no standing of their
+    /// own — a hand-picked approver — reviews as a plain <see cref="RemsApproverRole.Approver"/>. Derived
+    /// rather than stored so a saved list keeps up when the CSE or the commission recipients change.
+    /// </summary>
+    private static RemsApproverRole RoleFor(REMSEngagement engagement, Guid? managingShareholderId, Guid userId)
+    {
+        if (engagement.Entity?.Client?.Rems?.CSEId == userId)
+        {
+            return RemsApproverRole.CSE;
+        }
+        if (engagement.DepartmentDirectorId == userId)
+        {
+            return RemsApproverRole.DepartmentDirector;
+        }
+        if (managingShareholderId == userId)
+        {
+            return RemsApproverRole.ManagingShareholder;
+        }
+        if (engagement.CommissionSplits.Any(s => !s.Deleted && s.EmployeeId == userId))
+        {
+            return RemsApproverRole.CommissionRecipient;
+        }
+        return RemsApproverRole.Approver;
     }
 
     private async Task<RemsApproverList> ToApproverListAsync(
-        REMSEngagement engagement, IReadOnlyList<(Guid UserId, RemsApproverRole Role)> approvers, CancellationToken cancellationToken)
+        REMSEngagement engagement, IReadOnlyList<(Guid UserId, RemsApproverRole Role)> approvers,
+        CancellationToken cancellationToken)
     {
         var names = await _users.GetFullNamesAsync(approvers.Select(a => a.UserId), cancellationToken);
         var suggestions = approvers
             .Select(a => new RemsApproverSuggestion(
                 new RemsUserRef(a.UserId, names.TryGetValue(a.UserId, out var n) ? n : string.Empty), a.Role.ToString()))
             .ToList();
-        return new RemsApproverList(engagement.Id, engagement.Status.ToString(), suggestions);
+
+        // Only the ADDED approvers — the picker must not show back the people who are on the list anyway.
+        var selected = (await _engagements.ListApproversAsync(engagement.Id, cancellationToken))
+            .Select(a => a.UserId)
+            .ToList();
+
+        return new RemsApproverList(engagement.Id, engagement.Status.ToString(), suggestions, selected);
     }
 
     /// <summary>Validates the pre-approval requirements (marketing tag; audit CAF; government-audit contract + Florida flag).</summary>
@@ -640,6 +776,16 @@ public sealed class RemsApprovalController : ControllerBase
                     .Where(s => !s.Deleted)
                     .Select(s => new RemsCommissionSplitView(s.Id, RemsWorkspaceMapper.UserRef(s.EmployeeId, names)!, s.CommissionPercentage))
                     .ToList();
+                break;
+
+            case RemsApproverRole.Approver:
+                // Hand-picked approver: the same review data as the CSE, minus the fee estimate and
+                // realization, which stay reserved to the director and managing shareholder (AC-REMS-019.10).
+                clientView = FullClient(client);
+                director = RemsWorkspaceMapper.UserRef(engagement.DepartmentDirectorId, names);
+                executive = RemsWorkspaceMapper.UserRef(engagement.EngagementExecutiveId, names);
+                billingManager = RemsWorkspaceMapper.UserRef(engagement.BillingManagerId, names);
+                marketing = engagement.MarketingMethods.Where(m => !m.Deleted).Select(m => m.MarketingMethodId).ToList();
                 break;
         }
 

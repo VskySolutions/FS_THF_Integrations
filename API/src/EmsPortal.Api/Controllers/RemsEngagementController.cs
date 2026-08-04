@@ -623,9 +623,9 @@ public sealed class RemsEngagementController : ControllerBase
     }
 
     /// <summary>
-    /// Set the engagement commission splits (AC-REMS-016): up to ten recipients, each &gt; 0 and &lt;= 100.
-    /// Recipients become required approvers. Removal is allowed only before approval is sent (enforced by the
-    /// editable guard).
+    /// Set the engagement commission splits (AC-REMS-016): up to ten recipients, each &gt; 0 and &lt;= 100,
+    /// allocating no more than 100% in total. Recipients become required approvers. Removal is allowed only
+    /// before approval is sent (enforced by the editable guard).
     /// </summary>
     [HttpPut("engagements/{id:guid}/commission")]
     [ProducesResponseType<ApiResponse<RemsEngagementView>>(StatusCodes.Status200OK)]

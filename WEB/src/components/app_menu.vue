@@ -148,7 +148,9 @@ const sections = [
     items: [
       { label: "Email Accounts", icon: "o_mail", to: "/smtp-accounts", permissions: [Permissions.EmailManage] },
       { label: "Email Templates", icon: "o_drafts", to: "/email-templates", permissions: [Permissions.EmailManage] },
-      { label: "Option Sets", icon: "o_list_alt", to: "/option-sets", permissions: [Permissions.OptionSetsRead] },
+      // Gated on MANAGE, not read: Partner and REMS Admin hold optionSets.read so their dropdowns resolve,
+      // but the lists are configuration and only Super Admin / Tenant Admin maintain them.
+      { label: "Option Sets", icon: "o_list_alt", to: "/option-sets", permissions: [Permissions.OptionSetsManage] },
       { label: "Tag Management", icon: "o_label", to: "/settings/tags", permissions: [Permissions.SettingsManage] },
       { label: "Saved Views", icon: "o_view_list", to: "/settings/saved-views", permissions: [Permissions.SettingsManage] },
       { label: "Sticky Notes", icon: "o_sticky_note_2", to: "/settings/sticky-notes", permissions: [Permissions.SettingsManage] },

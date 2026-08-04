@@ -121,12 +121,12 @@ public sealed class RemsFormPayloadValidator
         RequireField(failures, $"{prefix}.zip", address.Zip, "Zip Code is required.");
     }
 
-    /// <summary>A required role must carry a name, a valid email and a phone.</summary>
+    /// <summary>A required role must carry a name and a valid email; the phone is optional.</summary>
     private static void RequireRole(List<ValidationFailure> failures, string prefix, RemsRolePayload? role)
     {
         if (role is null || !role.HasAny)
         {
-            failures.Add(new ValidationFailure(prefix, "This contact is required (name, email, phone)."));
+            failures.Add(new ValidationFailure(prefix, "This contact is required (name and email)."));
             return;
         }
 
@@ -142,10 +142,13 @@ public sealed class RemsFormPayloadValidator
         }
     }
 
+    /// <summary>
+    /// A contact is a name and a valid email. The phone is optional — captured when known, never a reason
+    /// to block the form.
+    /// </summary>
     private static void ValidateRoleFields(List<ValidationFailure> failures, string prefix, RemsRolePayload role)
     {
         RequireField(failures, $"{prefix}.name", role.Name, "Name is required.");
-        RequireField(failures, $"{prefix}.phone", role.Phone, "Phone is required.");
 
         if (string.IsNullOrWhiteSpace(role.Email))
         {

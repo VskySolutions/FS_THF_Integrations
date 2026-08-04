@@ -3,9 +3,11 @@ using EmsPortal.Domain.Enums;
 namespace EmsPortal.Application.OptionSets;
 
 /// <summary>
-/// Platform-standard option lists seeded on startup (TenantId = null, IsSystem = true). They are
-/// visible to every tenant and read-only in the app; a tenant adds its own lists/values rather than
-/// editing these. Mirrors the <c>DefaultEmailTemplates</c> definition pattern.
+/// Platform-standard option lists seeded on startup (TenantId = null, IsSystem = true), visible to every
+/// tenant. They are the STARTING values, not fixed ones — their items can be managed in the app, and a
+/// tenant created via <see cref="TenantOptionSetSeeder"/> gets its own copy. Because the seeded rows are
+/// shared, editing one there changes it for every tenant that has no copy of its own.
+/// Mirrors the <c>DefaultEmailTemplates</c> definition pattern.
 /// </summary>
 public static class DefaultOptionSets
 {
@@ -105,6 +107,42 @@ public static class DefaultOptionSets
             new ItemDefinition("1120_s", "1120-S — S Corporation", 3),
             new ItemDefinition("1065", "1065 — Partnership", 4),
             new ItemDefinition("990", "990 — Tax-Exempt", 5),
+        }),
+        // A user's job title, ordered by seniority then function. Unlike the REMS lists above, the LABEL is
+        // what gets stored (on Person.JobTitle, an existing free-text field already shown verbatim in the
+        // People list and the profile), so a title reads correctly everywhere without a lookup — and the
+        // free-text values already in the database stay valid.
+        new Definition(EntityType.User, "User.JobTitle", "Job Title", OptionItemSortMode.Custom, new[]
+        {
+            new ItemDefinition("managing_shareholder", "Managing Shareholder", 1),
+            new ItemDefinition("shareholder", "Shareholder", 2),
+            new ItemDefinition("partner", "Partner", 3),
+            new ItemDefinition("principal", "Principal", 4),
+            new ItemDefinition("director", "Director", 5),
+            new ItemDefinition("senior_manager", "Senior Manager", 6),
+            new ItemDefinition("manager", "Manager", 7),
+            new ItemDefinition("supervisor", "Supervisor", 8),
+            new ItemDefinition("audit_manager", "Audit Manager", 9),
+            new ItemDefinition("audit_senior", "Audit Senior", 10),
+            new ItemDefinition("tax_manager", "Tax Manager", 11),
+            new ItemDefinition("tax_senior", "Tax Senior", 12),
+            new ItemDefinition("senior_accountant", "Senior Accountant", 13),
+            new ItemDefinition("staff_accountant", "Staff Accountant", 14),
+            new ItemDefinition("senior_associate", "Senior Associate", 15),
+            new ItemDefinition("associate", "Associate", 16),
+            new ItemDefinition("paraprofessional", "Paraprofessional", 17),
+            new ItemDefinition("bookkeeper", "Bookkeeper", 18),
+            new ItemDefinition("payroll_specialist", "Payroll Specialist", 19),
+            new ItemDefinition("controller", "Controller", 20),
+            new ItemDefinition("client_service_executive", "Client Service Executive", 21),
+            new ItemDefinition("billing_manager", "Billing Manager", 22),
+            new ItemDefinition("business_development_manager", "Business Development Manager", 23),
+            new ItemDefinition("marketing_coordinator", "Marketing Coordinator", 24),
+            new ItemDefinition("human_resources_manager", "Human Resources Manager", 25),
+            new ItemDefinition("office_manager", "Office Manager", 26),
+            new ItemDefinition("it_administrator", "IT Administrator", 27),
+            new ItemDefinition("administrative_assistant", "Administrative Assistant", 28),
+            new ItemDefinition("intern", "Intern", 29),
         }),
     };
 

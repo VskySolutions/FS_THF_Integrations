@@ -2,8 +2,8 @@
   <div>
     <div class="row items-center q-mb-md">
       <div class="text-body2 text-grey-8 col">
-        The live suggested approver list (AC-REMS-018): the CSE, the mapped Department Director, the Managing
-        Shareholder and every commission recipient. Sending for approval locks this list.
+        Who this engagement routes to (AC-REMS-018): the CSE and every commission recipient, plus any
+        approvers you add below. Sending for approval locks the list.
       </div>
       <q-badge :color="statusMeta.color" class="q-pa-sm text-body2">{{ statusMeta.label }}</q-badge>
     </div>
@@ -32,6 +32,18 @@
     </q-banner>
 
     <template v-else>
+      <!-- Extra approvers only: the CSE and the commission recipients already route and are shown in the
+           list below, so offering them here would just invite picking someone who is on it either way.
+           Selecting saves immediately and the person appears in the list — then Send. -->
+      <div v-if="canPick" class="q-mb-md">
+        <app-select
+          v-model="picked" :options="approverOptions" label="Add approvers" multiple use-input
+          :loading="loadingOptions || savingPicks"
+          info="Lists users holding the Approver role in this tenant, shown as Full Name — Job Title. They are ADDED to the CSE and commission recipients below, who approve regardless."
+          @update:model-value="savePicks"
+        />
+      </div>
+
       <q-list v-if="approvers.length" bordered separator class="rounded-borders">
         <q-item v-for="(a, i) in approvers" :key="i">
           <q-item-section avatar>
@@ -44,8 +56,7 @@
         </q-item>
       </q-list>
       <div v-else class="text-grey-6 q-pa-sm">
-        No approvers yet. Assign a CSE, a department director (via the department mapping), a managing shareholder,
-        or add commission recipients.
+        No approvers yet. Pick them above, or assign a CSE / add commission recipients to populate the default list.
       </div>
 
       <div v-if="canShowSend" class="row justify-end q-mt-md">
@@ -76,6 +87,7 @@ import { remsApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useRemsMeta } from "modules/rems/useRemsMeta";
+import AppSelect from "components/common/AppSelect.vue";
 
 const props = defineProps({
   engagement: { type: Object, required: true },
@@ -94,13 +106,15 @@ const ROLE_LABELS = {
   CSE: "CSE",
   DepartmentDirector: "Department Director",
   ManagingShareholder: "Managing Shareholder",
-  CommissionRecipient: "Commission Recipient"
+  CommissionRecipient: "Commission Recipient",
+  Approver: "Approver"
 };
 const ROLE_ICONS = {
   CSE: "o_support_agent",
   DepartmentDirector: "o_account_tree",
   ManagingShareholder: "o_workspace_premium",
-  CommissionRecipient: "o_payments"
+  CommissionRecipient: "o_payments",
+  Approver: "o_how_to_reg"
 };
 const roleLabel = (r) => ROLE_LABELS[r] || r;
 const roleIcon = (r) => ROLE_ICONS[r] || "o_person";
@@ -119,12 +133,26 @@ const approvers = ref([]);
 const loading = ref(false);
 const errorMsg = ref("");
 
+// ---- Add approvers ----
+// Editable while the engagement is unsent; once routed, the API locks the list too.
+const canPick = computed(() => ["Draft", "Rejected"].includes(status.value));
+const approverOptions = ref([]);
+const loadingOptions = ref(false);
+// ONLY the added approvers. The automatic ones (CSE, commission recipients) are never in here — they are
+// on the list below regardless, and putting them in the picker would imply they could be removed.
+const picked = ref([]);
+
+// Adopt a returned approver list as both the display list and the picker's current state.
+const adopt = (list) => {
+  approvers.value = list?.approvers || [];
+  picked.value = [...(list?.selectedApproverIds || [])];
+};
+
 const load = async () => {
   loading.value = true;
   errorMsg.value = "";
   try {
-    const list = await remsApi.approvers(props.engagement.id);
-    approvers.value = list?.approvers || [];
+    adopt(await remsApi.approvers(props.engagement.id));
   } catch (err) {
     errorMsg.value = getApiErrorMessage(err);
   } finally {
@@ -132,10 +160,45 @@ const load = async () => {
   }
 };
 
-onMounted(load);
-// Reload the suggested list whenever the engagement changes (e.g. commission recipients edited).
-watch(() => props.engagement.id, load);
-watch(() => props.engagement.commissionSplits, load, { deep: true });
+const loadOptions = async () => {
+  if (!canPick.value) return;
+  loadingOptions.value = true;
+  try {
+    const rows = await remsApi.approverOptions(props.engagement.id);
+    // "Full Name — Job Title", falling back to the name alone when the person has no title on file.
+    approverOptions.value = (rows || []).map((r) => ({
+      label: r.jobTitle ? `${r.name} — ${r.jobTitle}` : r.name,
+      value: r.userId
+    }));
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    loadingOptions.value = false;
+  }
+};
+
+// Saved on selection rather than behind a Save button, so the picked person drops straight into the list
+// below and the only action left is Send for Approval.
+const savingPicks = ref(false);
+const savePicks = async () => {
+  savingPicks.value = true;
+  try {
+    adopt(await remsApi.setApprovers(props.engagement.id, picked.value));
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+    await load(); // put the picker back to what actually persisted
+  } finally {
+    savingPicks.value = false;
+  }
+};
+
+const reload = async () => { await Promise.all([load(), loadOptions()]); };
+
+onMounted(reload);
+watch(() => props.engagement.id, reload);
+// Commission recipients are automatic approvers, so editing them changes the list — re-read it. Picks are
+// saved on selection, so there is never unsaved state to clobber here.
+watch(() => props.engagement.commissionSplits, reload, { deep: true });
 
 const sending = ref(false);
 const send = async () => {
@@ -148,7 +211,7 @@ const send = async () => {
   sending.value = true;
   try {
     const list = await remsApi.sendApproval(props.engagement.id);
-    approvers.value = list?.approvers || approvers.value;
+    adopt(list);
     emit("status-changed", list?.engagementStatus || "PendingApproval");
     notify.success("Engagement sent for approval.");
   } catch (err) {
@@ -169,7 +232,7 @@ const resubmit = async () => {
   resubmitting.value = true;
   try {
     const list = await remsApi.resubmitApproval(props.engagement.id);
-    approvers.value = list?.approvers || approvers.value;
+    adopt(list);
     emit("status-changed", list?.engagementStatus || "PendingApproval");
     notify.success("Engagement resubmitted for approval.");
   } catch (err) {

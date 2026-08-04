@@ -10,7 +10,7 @@
       class="col-12 col-sm-5"
     />
     <div class="col-12 col-sm-7">
-      <app-field-label :label="label" />
+      <app-field-label :label="label" :required="required" />
       <q-input
         :model-value="display"
         :placeholder="exampleNational"
@@ -48,6 +48,9 @@ const props = defineProps({
   // Dial code for the number, e.g. "+91" (matches Person.CountryCode storage). May be null.
   country: { type: String, default: null },
   label: { type: String, default: "Phone Number" },
+  // Shows the mandatory marker, exactly as AppTextField does. Without it a phone the surrounding form
+  // treats as required looks optional next to starred fields, and the form blocks with nothing to point at.
+  required: { type: Boolean, default: false },
   countryLabel: { type: String, default: "Country" },
   dense: { type: Boolean, default: true },
   disable: { type: Boolean, default: false },

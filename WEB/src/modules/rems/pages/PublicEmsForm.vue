@@ -154,7 +154,7 @@
           <q-card-section class="pef-card__head">
             Contacts
             <div class="text-caption text-grey-7 text-weight-regular">
-              Required contacts must include a name, email and phone.
+              Required contacts must include a name and an email. Phone is optional.
             </div>
           </q-card-section>
           <q-separator />
@@ -234,7 +234,21 @@
               />
             </div>
             <div class="pef-subhead q-mt-md">Billing Address</div>
-            <app-address-fields v-model="payload.billingAddress" :errors="addressErrors(errors, 'billingAddress')" />
+            <!-- Same idiom as the mailing toggle above: choose a source and the fields disappear, choose a
+                 different address and you fill it in. The Mailing option only appears when there IS a
+                 separate mailing address to follow. -->
+            <div class="row items-center q-gutter-md q-mb-sm">
+              <q-radio v-model="billingSource" val="physical" label="Same as physical address" color="primary" dense />
+              <q-radio
+                v-if="payload.mailingDiffers" v-model="billingSource" val="mailing"
+                label="Same as mailing address" color="primary" dense
+              />
+              <q-radio v-model="billingSource" val="custom" label="Use a different address" color="primary" dense />
+            </div>
+            <app-address-fields
+              v-if="billingSource === 'custom'"
+              v-model="payload.billingAddress" :errors="addressErrors(errors, 'billingAddress')"
+            />
           </q-card-section>
         </q-card>
 
@@ -406,6 +420,31 @@ const mailingSame = computed({
   set: (v) => { payload.mailingDiffers = !v; }
 });
 
+// Where the billing address comes from: "physical", "mailing", or "custom" (typed in below).
+// Defaults to custom so loading a saved draft always shows the billing address exactly as it was stored,
+// rather than silently overwriting it from another address on the way in.
+const billingSource = ref("custom");
+
+// While billing FOLLOWS another address it has to keep following it — editing the physical address after
+// choosing "same as physical" must not leave billing on the stale copy. Assigned field by field into the
+// existing object so the bound model instance survives (AppAddressFields resolves its country → state →
+// city cascade from that instance).
+watch(
+  [billingSource, () => payload.physicalAddress, () => payload.mailingAddress],
+  () => {
+    if (billingSource.value === "custom") return;
+    const from = billingSource.value === "mailing" ? payload.mailingAddress : payload.physicalAddress;
+    Object.assign(payload.billingAddress, { ...from });
+  },
+  { deep: true }
+);
+
+// Turning off "mailing differs" removes the address billing was following — fall back to the physical one
+// rather than leaving it pinned to a mailing address that no longer exists.
+watch(() => payload.mailingDiffers, (differs) => {
+  if (!differs && billingSource.value === "mailing") billingSource.value = "physical";
+});
+
 const roleDefs = computed(() => {
   if (isIndividual.value) {
     return [{ key: "self", label: "Self", required: true }, { key: "spouse", label: "Spouse", required: false }];
@@ -444,7 +483,9 @@ const saveText = computed(() => ({
 const filled = (v) => !!String(v ?? "").trim();
 const emailOk = (v) => /^\S+@\S+\.\S+$/.test(String(v ?? "").trim());
 const roleAny = (r) => filled(r.name) || filled(r.email) || filled(r.phone);
-const roleComplete = (r) => filled(r.name) && filled(r.phone) && emailOk(r.email);
+// Phone is captured when known but never required — a contact is a name and a valid email.
+// Mirrors RemsFormPayloadValidator.ValidateRoleFields.
+const roleComplete = (r) => filled(r.name) && emailOk(r.email);
 
 const clientIssues = computed(() => {
   const out = [];
@@ -457,10 +498,10 @@ const clientIssues = computed(() => {
   if (filled(payload.billingEmail) && !emailOk(payload.billingEmail)) out.push("Billing email is not a valid email address.");
 
   const roles = payload.roles;
-  const req = (key, label) => { if (!roleComplete(roles[key])) out.push(`${label} contact needs a name, a valid email and a phone.`); };
+  const req = (key, label) => { if (!roleComplete(roles[key])) out.push(`${label} contact needs a name and a valid email.`); };
   const opt = (key, label) => {
     if (roleAny(roles[key]) && !roleComplete(roles[key])) {
-      out.push(`${label} contact is partly filled — complete name, email and phone, or clear it.`);
+      out.push(`${label} contact is partly filled — add a name and a valid email, or clear it.`);
     }
   };
 

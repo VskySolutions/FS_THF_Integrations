@@ -45,6 +45,19 @@
         </q-td>
       </template>
 
+      <!-- Department, badged when this user heads it — a head is that department's REMS Director. -->
+      <template #body-cell-department="cell">
+        <q-td :props="cell">
+          <template v-if="cell.value">
+            <span>{{ cell.value }}</span>
+            <q-icon v-if="cell.row.isDepartmentHead" name="o_workspace_premium" color="primary" size="18px" class="q-ml-xs">
+              <q-tooltip>Heads {{ cell.value }} — its REMS Department Director</q-tooltip>
+            </q-icon>
+          </template>
+          <span v-else class="text-grey-6">—</span>
+        </q-td>
+      </template>
+
       <template #body-cell-actions="cell">
         <q-td :props="cell" class="text-right">
           <q-btn flat round dense color="primary" icon="o_visibility" :to="{ name: 'user_detail', params: { id: cell.row.userId } }">
@@ -79,6 +92,7 @@
           v-model="form.personId" :options="personOptions" label="Person *" class="q-mb-md"
           :loading="loadingPersons" :clearable="false" :disable="personLocked" use-input
           hint="Persons already linked to a user are disabled."
+          info="A user is created by promoting an existing Person record. Anyone already linked to a user account is listed but not selectable — use the + to add a new person."
           @update:model-value="onPersonChange"
         >
           <template #after>
@@ -93,6 +107,12 @@
           :error="!!emailError" :error-message="emailError"
           :rules="[(v) => !!v || 'Username is required', (v) => /.+@.+\..+/.test(v) || 'Enter a valid email']"
         />
+        <!-- Mandatory, from the User.JobTitle option list. The chosen label is what gets stored. -->
+        <app-select
+          v-model="form.jobTitle" :options="jobTitleOptions" label="Job Title *" class="q-mb-md"
+          :loading="loadingJobTitles" :clearable="false" use-input
+          info="From the Job Title option list (Administration → Option Sets), where the values can be added, renamed and re-ordered."
+        />
         <app-select
           v-if="canChooseTenant" v-model="form.tenantId" :options="tenantOptions" label="Tenant *"
           :loading="loadingTenants" class="q-mb-md" :clearable="false" @update:model-value="onTenantChange"
@@ -100,7 +120,29 @@
         <app-select
           v-model="form.roleIds" :options="roleOptions" label="Roles *" multiple class="q-mb-md"
           :loading="loadingRoles" hint="Grouped by category. Assign one or more roles."
+          info="The roles assignable in the chosen tenant, grouped System / Operational / Custom. Super Admin is only listed for a Super Admin."
         />
+
+        <!-- Department + groups, the same placements the user's detail page manages. Both are tenant-scoped
+             and their endpoints reject a user who holds no assignment in the caller's active tenant, so the
+             section only appears when the account is being created there. -->
+        <template v-if="inActiveTenant">
+          <app-select
+            v-model="form.department" :options="departmentOptions" :loading="loadingDepartments"
+            label="Department" class="q-mb-md"
+            info="From the REMS Department option list. The department's head is its REMS Department Director, which is what prefills that field on an engagement."
+            @update:model-value="onDepartmentChange"
+          />
+          <q-toggle v-model="form.isDepartmentHead" :disable="!form.department" label="Department head" />
+          <div class="text-caption text-grey-7 q-mb-md">{{ headHint }}</div>
+
+          <app-select
+            v-if="canManageGroups" v-model="form.groupIds" :options="groupOptions" label="Groups" multiple
+            class="q-mb-md" :loading="loadingGroups"
+            hint="Tenant user groups (segmentation, independent of roles)."
+            info="Groups in your active tenant, maintained in Administration → User Groups. Membership is what scopes pickers such as Engagement Executive, Billing Manager and CSE."
+          />
+        </template>
 
         <q-toggle
           v-model="form.sendInvitation" color="primary"
@@ -123,7 +165,7 @@
 import { ref, reactive, computed, watch, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { debounce } from "quasar";
-import { userApi, personApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
+import { userApi, personApi, userGroupApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import { useTenantOptions } from "composables/useTenantOptions";
 import { useRoleOptions } from "composables/useRoleOptions";
@@ -151,6 +193,7 @@ const { has } = usePermissions();
 // Only platform/super admins (tenants.write) choose a target tenant; others create within their own.
 const { canChooseTenant, activeTenantId, tenantOptions, loadingTenants, loadTenants } = useTenantOptions();
 const canCreate = computed(() => has(Permissions.UsersWrite));
+const canManageGroups = computed(() => has(Permissions.UsersGroupManagement));
 const fmt = useDateFormat();
 
 // Tenant dropdown filter for platform/super admins (option value is the tenant id, sent to the API).
@@ -171,8 +214,14 @@ const columns = computed(() => [
   { name: "fullName", label: "Name", field: "fullName", align: "left", sortable: true, default: true },
   { name: "email", label: "Email", field: "email", align: "left", sortable: true, default: true },
   { name: "phoneNumber", label: "Phone", field: "phoneNumber", align: "left", sortable: true },
+  // Set on the user's detail page (and at creation) from the User.JobTitle option list; read-only here,
+  // so no server-side filter sits behind it.
+  { name: "jobTitle", label: "Job Title", field: "jobTitle", align: "left", sortable: true, default: true, filterable: false },
   { name: "roles", label: "Role", field: (r) => (r.roles || []).join(", "), align: "left", sortable: false, default: true },
   { name: "groups", label: "Groups", field: (r) => (r.groups || []).map((g) => g.name).join(", "), align: "left", sortable: false, default: true },
+  // Department placement in the active tenant. Read-only here (it is set on the user's detail page), so
+  // there is no server-side filter behind it — the search box and the detail page cover that.
+  { name: "department", label: "Department", field: "department", align: "left", sortable: true, default: true, filterable: false },
   { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true, default: true, filterOptions: [{ label: "Active", value: true }, { label: "Inactive", value: false }] },
   { name: "createdBy", label: "Created By", field: "createdBy", align: "left", sortable: true, filterable: false },
   { name: "updatedBy", label: "Updated By", field: "updatedBy", align: "left", sortable: true, filterable: false },
@@ -208,7 +257,18 @@ const formOpen = ref(false);
 const saving = ref(false);
 const emailError = ref("");
 const formRef = ref(null);
-const form = reactive({ personId: null, email: "", roleIds: [], tenantId: null, sendInvitation: false });
+const form = reactive({
+  personId: null,
+  email: "",
+  jobTitle: null,
+  roleIds: [],
+  tenantId: null,
+  sendInvitation: false,
+  // Tenant-scoped placements, applied through their own endpoints once the account exists.
+  department: null,
+  isDepartmentHead: false,
+  groupIds: []
+});
 const personDialogOpen = ref(false);
 // Grouped, category-labelled multi-role options (SuperAdmin excluded for non-Super-Admin callers).
 const { roleOptions, loading: loadingRoles, loadForTenant } = useRoleOptions();
@@ -272,6 +332,94 @@ const onPersonCreated = (detail) => {
 // The tenant the user is being created in: chosen by platform admins, else the caller's own.
 const targetTenantId = computed(() => (canChooseTenant.value ? form.tenantId : activeTenantId.value));
 
+// ---- Department & groups (as on the user's detail page) ----
+// Both live in the caller's ACTIVE tenant: the pickers are loaded from it and the endpoints require the
+// user to hold an assignment there. A platform admin creating an account in some other tenant therefore
+// sets neither here — they do it after switching into that tenant.
+const inActiveTenant = computed(() => !!activeTenantId.value && targetTenantId.value === activeTenantId.value);
+
+const departmentOptions = ref([]);
+const departmentHeads = ref([]);
+const loadingDepartments = ref(false);
+// Job title is NOT tenant-scoped like the two below — it applies to every user, so it loads unconditionally.
+const jobTitleOptions = ref([]);
+const loadingJobTitles = ref(false);
+const groupOptions = ref([]);
+const loadingGroups = ref(false);
+
+const departmentLabel = (code) => departmentOptions.value.find((o) => o.value === code)?.label || code;
+const currentHead = computed(() => departmentHeads.value.find((h) => h.department === form.department) || null);
+
+const headHint = computed(() => {
+  if (!form.department) return "Pick a department to set a head.";
+  if (!currentHead.value) return `${departmentLabel(form.department)} has no head yet.`;
+  return `${currentHead.value.fullName} currently heads ${departmentLabel(form.department)}.`;
+});
+
+// Headship is meaningless without a department, and is never carried across a change of one.
+const onDepartmentChange = (value) => {
+  form.department = value;
+  form.isDepartmentHead = false;
+};
+
+const loadDepartments = async () => {
+  loadingDepartments.value = true;
+  try {
+    const result = await userApi.departments();
+    departmentOptions.value = result?.departments || [];
+    departmentHeads.value = result?.heads || [];
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    loadingDepartments.value = false;
+  }
+};
+
+const loadJobTitles = async () => {
+  loadingJobTitles.value = true;
+  try {
+    jobTitleOptions.value = (await userApi.jobTitles()) || [];
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    loadingJobTitles.value = false;
+  }
+};
+
+const loadGroups = async () => {
+  loadingGroups.value = true;
+  try {
+    const groups = (await userGroupApi.list()) || [];
+    groupOptions.value = groups.map((g) => ({ label: g.name, value: g.id }));
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    loadingGroups.value = false;
+  }
+};
+
+// Applied once the account exists, through the same endpoints the detail page uses. Reported but never
+// fatal: the user has already been created, and the temporary password below is shown only once.
+const applyPlacements = async (newUserId) => {
+  if (!newUserId || !inActiveTenant.value) return "";
+  const notes = [];
+  try {
+    if (canManageGroups.value && form.groupIds.length) {
+      await userApi.setGroups(newUserId, form.groupIds);
+    }
+    if (form.department) {
+      const result = await userApi.setDepartment(newUserId, {
+        department: form.department,
+        isHead: form.isDepartmentHead
+      });
+      if (result?.demotedHeadName) notes.push(`${result.demotedHeadName} is no longer the department head.`);
+    }
+  } catch (err) {
+    notify.warning(`User created, but the department/groups could not be applied: ${getApiErrorMessage(err)}`);
+  }
+  return notes.join(" ");
+};
+
 // Role options come from the tenant's assignable roles (system + custom), grouped by category.
 const loadRoles = async () => {
   form.roleIds = [];
@@ -293,6 +441,10 @@ const resetForm = () => {
   form.roleIds = [];
   form.tenantId = null;
   form.sendInvitation = false;
+  form.jobTitle = null;
+  form.department = null;
+  form.isDepartmentHead = false;
+  form.groupIds = [];
   emailError.value = "";
   personLocked.value = false;
 };
@@ -301,7 +453,12 @@ const openCreate = async (presetPersonId = null) => {
   resetForm();
   await Promise.all([
     loadPersons(),
-    canChooseTenant.value ? loadTenants() : loadRoles()
+    loadJobTitles(),
+    canChooseTenant.value ? loadTenants() : loadRoles(),
+    // Both pickers come from the caller's active tenant, so they are pointless without one (a Super Admin
+    // who has not switched in) — that is also exactly when the section stays hidden.
+    activeTenantId.value ? loadDepartments() : Promise.resolve(),
+    activeTenantId.value && canManageGroups.value ? loadGroups() : Promise.resolve()
   ]);
   if (presetPersonId) {
     form.personId = presetPersonId;
@@ -333,6 +490,10 @@ const submitForm = async ({ clearDraft } = {}) => {
     return;
   }
   if (!(await formRef.value?.validate())) return;
+  if (!form.jobTitle) {
+    notify.error("Select a job title.");
+    return;
+  }
   if (!form.roleIds.length) {
     notify.error("Select at least one role.");
     return;
@@ -342,11 +503,23 @@ const submitForm = async ({ clearDraft } = {}) => {
     notify.error("Select a tenant.");
     return;
   }
+  // A department has one head, so taking it demotes the incumbent — name them before anything is created.
+  if (inActiveTenant.value && form.isDepartmentHead && currentHead.value) {
+    const ok = await confirm({
+      title: "Change department head",
+      message: `${currentHead.value.fullName} currently heads ${departmentLabel(form.department)}. Make the ` +
+        `new user the head instead? ${currentHead.value.fullName} will no longer be the Department Director ` +
+        "on new engagements.",
+      confirmLabel: "Make head"
+    });
+    if (!ok) return;
+  }
   saving.value = true;
   try {
     const payload = {
       personId: form.personId,
       email: form.email,
+      jobTitle: form.jobTitle,
       roleIds: form.roleIds,
       tenantId,
       sendInvitation: form.sendInvitation
@@ -354,11 +527,14 @@ const submitForm = async ({ clearDraft } = {}) => {
     const recipientEmail = form.email;
     const wantedInvite = form.sendInvitation;
     const result = await userApi.create(payload);
+    // Before resetForm() clears the picks it reads.
+    const placementNote = await applyPlacements(result?.userId);
     clearDraft?.();
     formOpen.value = false;
     resetForm();
     tempPassword.value = result?.temporaryPassword || "";
     tempPwOpen.value = true;
+    if (placementNote) notify.info(placementNote);
     if (wantedInvite) {
       if (result?.invitationEmailSent) {
         notify.success(`Invitation email sent to ${recipientEmail}.`);

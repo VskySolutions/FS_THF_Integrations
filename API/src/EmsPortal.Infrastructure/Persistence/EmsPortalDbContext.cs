@@ -117,6 +117,7 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<REMSEngagementTaxForm> RemsEngagementTaxForms => Set<REMSEngagementTaxForm>();
     public DbSet<REMSEngagementMarketingMethod> RemsEngagementMarketingMethods => Set<REMSEngagementMarketingMethod>();
     public DbSet<REMSEngagementCommissionSplit> RemsEngagementCommissionSplits => Set<REMSEngagementCommissionSplit>();
+    public DbSet<REMSEngagementApprover> RemsEngagementApprovers => Set<REMSEngagementApprover>();
     public DbSet<REMSApprovalRound> RemsApprovalRounds => Set<REMSApprovalRound>();
     public DbSet<REMSApprovalTask> RemsApprovalTasks => Set<REMSApprovalTask>();
     public DbSet<REMSApprovalChecklistItem> RemsApprovalChecklistItems => Set<REMSApprovalChecklistItem>();
@@ -188,6 +189,7 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
         modelBuilder.Entity<REMSEngagementTaxForm>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<REMSEngagementMarketingMethod>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<REMSEngagementCommissionSplit>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<REMSEngagementApprover>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<REMSApprovalRound>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<REMSApprovalTask>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<REMSApprovalChecklistItem>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
@@ -421,6 +423,9 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
                     break;
                 case REMSEngagementCommissionSplit remsCommissionSplit when remsCommissionSplit.TenantId == Guid.Empty:
                     remsCommissionSplit.TenantId = _tenantContext.TenantId;
+                    break;
+                case REMSEngagementApprover remsEngagementApprover when remsEngagementApprover.TenantId == Guid.Empty:
+                    remsEngagementApprover.TenantId = _tenantContext.TenantId;
                     break;
                 case REMSApprovalRound remsApprovalRound when remsApprovalRound.TenantId == Guid.Empty:
                     remsApprovalRound.TenantId = _tenantContext.TenantId;

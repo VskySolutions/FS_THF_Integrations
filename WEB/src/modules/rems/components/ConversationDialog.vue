@@ -21,6 +21,10 @@
 <script setup>
 import { computed } from "vue";
 import { EntityType } from "services/api";
+// Must be imported explicitly: <script setup> resolves components from this scope, and only ZwDate /
+// ZwCurrency / ZwNumeric are registered globally (boot/components.js). Without this the tag silently
+// resolves to nothing and the dialog opens with an empty body.
+import EntityNotesPanel from "components/universal/EntityNotesPanel.vue";
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },

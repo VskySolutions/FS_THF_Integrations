@@ -118,6 +118,9 @@ import { useRemsMeta } from "modules/rems/useRemsMeta";
 import { renderRichText } from "utils/richText";
 
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
+// Not globally registered (boot/components.js registers only the Zw* inputs), so the tag renders as
+// nothing without this import — which is what left the Conversation section blank.
+import EntityNotesPanel from "components/universal/EntityNotesPanel.vue";
 import NewRequestDialog from "modules/rems/components/NewRequestDialog.vue";
 import AssignAdminDialog from "modules/rems/components/AssignAdminDialog.vue";
 

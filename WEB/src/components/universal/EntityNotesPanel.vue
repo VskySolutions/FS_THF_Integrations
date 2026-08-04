@@ -131,6 +131,9 @@ import { useDateFormat } from "composables/useDateFormat";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import { useAuthStore } from "stores/auth";
 import { escapeHtml, sanitizeHtml, isHtml, hasRichTextContent as hasContent } from "utils/richText";
+// Token markup and id extraction are shared with AppRichTextField's CKEditor mentions — one definition,
+// so a mention typed in either editor resolves in both.
+import { mentionTokenHtml, extractMentionIds, fetchMentionCandidates } from "composables/useMentions";
 
 const props = defineProps({
   entityType: { type: Number, required: true },
@@ -247,7 +250,7 @@ const onEditorKeyup = () => {
 
 const fetchCandidates = async (term) => {
   try {
-    candidates.value = (await ufNotesApi.mentionCandidates(term)) || [];
+    candidates.value = await fetchMentionCandidates(term);
     mentionOpen.value = true;
   } catch {
     candidates.value = [];
@@ -262,19 +265,10 @@ const pickMention = (c) => {
     sel.removeAllRanges();
     sel.addRange(mentionRange);
   }
-  const html = `<span class="uf-mention" data-user-id="${c.userId}" contenteditable="false">@${escapeHtml(c.name)}</span>&nbsp;`;
+  const html = `${mentionTokenHtml(c)}&nbsp;`;
   editorRef.value?.runCmd?.("insertHTML", html);
   mentionRange = null;
   mentionOpen.value = false;
-};
-
-// User ids are derived from the mention tokens present in the saved HTML — robust to manual edits.
-const extractMentionIds = (html) => {
-  const doc = new DOMParser().parseFromString(html || "", "text/html");
-  const ids = Array.from(doc.querySelectorAll("[data-user-id]"))
-    .map((el) => el.getAttribute("data-user-id"))
-    .filter(Boolean);
-  return [...new Set(ids)];
 };
 
 // ---- post / edit / delete ----

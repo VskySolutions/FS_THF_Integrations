@@ -4,6 +4,7 @@ using EmsPortal.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace EmsPortal.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(EmsPortalDbContext))]
-    partial class EmsPortalDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260804120000_RemoveUnmappedEmailTemplateKeys")]
+    partial class RemoveUnmappedEmailTemplateKeys
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1196,53 +1199,6 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasFilter("[Deleted] = 0");
 
                     b.ToTable("OptionSetItems", (string)null);
-                });
-
-            modelBuilder.Entity("EmsPortal.Domain.Entities.PasswordResetToken", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("CreatedById")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedOnUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<bool>("Deleted")
-                        .HasColumnType("bit");
-
-                    b.Property<DateTime?>("DeletedOnUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime>("ExpiresAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("TokenHash")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<Guid?>("UpdatedById")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("UpdatedOnUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("UsedOnUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TokenHash");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("PasswordResetTokens", (string)null);
                 });
 
             modelBuilder.Entity("EmsPortal.Domain.Entities.PermissionGroup", b =>
@@ -4004,17 +3960,6 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("OptionSet");
-                });
-
-            modelBuilder.Entity("EmsPortal.Domain.Entities.PasswordResetToken", b =>
-                {
-                    b.HasOne("EmsPortal.Domain.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("EmsPortal.Domain.Entities.PermissionGroup", b =>

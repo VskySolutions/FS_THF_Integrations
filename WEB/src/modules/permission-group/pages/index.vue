@@ -17,10 +17,6 @@
     >
       <template #actions>
         <q-btn outline no-caps color="primary" icon="o_dashboard_customize" label="Use Template" @click="openTemplatePicker" />
-        <app-select
-          v-if="canChooseTenant" v-model="selectedTenantId" :options="tenantOptions" label="Tenant"
-          :loading="loadingTenants" :clearable="true" style="min-width: 220px;"
-        />
       </template>
     </app-list-header>
 
@@ -140,8 +136,8 @@
 import { ref, computed, watch } from "vue";
 import { debounce } from "quasar";
 import { permissionGroupApi, getApiErrorMessage } from "services/api";
-import { useTenantStore } from "stores/tenant";
 import { useTenantOptions } from "composables/useTenantOptions";
+import { useTenantScope } from "composables/useTenantScope";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
@@ -152,16 +148,16 @@ import { stripHtml } from "utils/richText";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
-import AppSelect from "components/common/AppSelect.vue";
 import PermissionGroupFormDrawer from "modules/permission-group/components/PermissionGroupFormDrawer.vue";
 
 const notify = useNotify();
 const { confirm } = useConfirm();
-const tenantStore = useTenantStore();
-const { canChooseTenant, tenantOptions, loadingTenants, loadTenants } = useTenantOptions();
+const { canChooseTenant } = useTenantOptions();
 
-// Super admins scope the list to a chosen tenant; others are auto-scoped server-side.
-const selectedTenantId = ref(null);
+// The tenant in view comes from the toolbar's global scope control rather than a dropdown of its own —
+// one selection drives every tenant-scoped screen. Passed explicitly because this API takes ?tenantId=,
+// and the form drawer needs it for the group it creates.
+const { selectedTenantId } = useTenantScope();
 
 const STATUS_OPTIONS = [
   { label: "Active", value: "true" },
@@ -203,12 +199,8 @@ const { filters, filterableColumns, filterChips, removeFilter, clearFilters } = 
 const onClearFilters = () => { clearFilters(); filters.usedByRoles = false; };
 const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);
 watch([search, filters], reload, { deep: true });
-watch(selectedTenantId, () => { pagination.value.page = 1; load(); });
-
-if (canChooseTenant.value) {
-  loadTenants();
-  selectedTenantId.value = tenantStore.activeTenantId;
-}
+// No watcher on the tenant: changing the global scope fires `tenant-switched`, which useListTable already
+// reloads on.
 
 // ---- Create / Edit ----
 const formOpen = ref(false);

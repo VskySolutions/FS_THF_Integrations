@@ -196,21 +196,10 @@ const canCreate = computed(() => has(Permissions.UsersWrite));
 const canManageGroups = computed(() => has(Permissions.UsersGroupManagement));
 const fmt = useDateFormat();
 
-// Tenant dropdown filter for platform/super admins (option value is the tenant id, sent to the API).
-const tenantFilterOptions = computed(() =>
-  (canChooseTenant.value && tenantOptions.value.length ? tenantOptions.value : null));
-
 // Filterable columns are server-side; text/computed/audit/date columns are covered by the search box.
 const columns = computed(() => [
-  {
-    name: "tenantName",
-    label: "Tenant",
-    field: "tenantName",
-    align: "left",
-    sortable: true,
-    default: true,
-    ...(tenantFilterOptions.value ? { filterOptions: tenantFilterOptions.value } : { filterable: false })
-  },
+  // No Tenant column: the list is scoped to the active tenant, so every row would repeat the same name.
+  // A Super Admin changes which tenant they are looking at with the toolbar's tenant scope.
   { name: "fullName", label: "Name", field: "fullName", align: "left", sortable: true, default: true },
   { name: "email", label: "Email", field: "email", align: "left", sortable: true, default: true },
   { name: "phoneNumber", label: "Phone", field: "phoneNumber", align: "left", sortable: true },
@@ -236,7 +225,6 @@ const { rows, loading, totalRecords, selected, search, filterOpen, pagination, l
       page,
       limit,
       search: search.value || undefined,
-      tenantId: filters.tenantName || undefined,
       isActive: typeof filters.isActive === "boolean" ? filters.isActive : undefined,
       name: filters.fullName || undefined,
       email: filters.email || undefined,

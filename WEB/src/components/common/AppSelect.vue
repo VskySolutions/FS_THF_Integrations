@@ -38,7 +38,7 @@
           :removable="!readonly && !disable"
           dense
           :tabindex="scope.tabindex"
-          color="blue-1"
+          color="teal-1"
           text-color="primary"
           class="app-select__chip"
           @remove="scope.removeAtIndex(scope.index)"

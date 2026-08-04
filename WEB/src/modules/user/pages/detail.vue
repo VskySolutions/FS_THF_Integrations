@@ -19,7 +19,11 @@
         <q-card-section class="row q-col-gutter-md">
           <q-input v-model="firstName" outlined dense stack-label label="First Name" class="col-12 col-sm-6" :readonly="!canEdit" />
           <q-input v-model="lastName" outlined dense stack-label label="Last Name" class="col-12 col-sm-6" :readonly="!canEdit" />
-          <q-input v-model="email" outlined dense stack-label label="Email" class="col-12 col-sm-6" :readonly="!canEdit" />
+          <!-- This IS the sign-in credential, not a contact address — labelled so whoever edits it knows. -->
+          <q-input
+            v-model="email" outlined dense stack-label label="Username (Email)" class="col-12 col-sm-6"
+            :readonly="!canEdit" hint="Used to sign in. Changing it signs the user out of their sessions."
+          />
           <q-input v-model="phoneNumber" outlined dense stack-label label="Phone Number" class="col-12 col-sm-6" :readonly="!canEdit" />
           <!-- Mandatory, from the User.JobTitle option list. The chosen label is what gets stored. -->
           <app-select
@@ -149,7 +153,7 @@
         <q-separator />
         <q-card-section>
           <div v-if="(user.groups || []).length" class="row q-gutter-sm">
-            <q-chip v-for="g in user.groups" :key="g.id" color="blue-1" text-color="primary" icon="o_groups">{{ g.name }}</q-chip>
+            <q-chip v-for="g in user.groups" :key="g.id" color="teal-1" text-color="primary" icon="o_groups">{{ g.name }}</q-chip>
           </div>
           <div v-else class="text-grey-6">Not a member of any group.</div>
         </q-card-section>
@@ -345,13 +349,35 @@ const save = async () => {
     notify.error("Select a job title.");
     return;
   }
+
+  // The username is the sign-in credential: the API only rejects duplicates, so the format is checked here
+  // rather than letting an unusable address be saved.
+  const nextEmail = (email.value || "").trim();
+  if (!/^\S+@\S+\.\S+$/.test(nextEmail)) {
+    notify.error("Enter a valid username (email address).");
+    return;
+  }
+
+  // Changing it bumps TokenVersion server-side, ending every session the user has — confirm by name first
+  // rather than signing someone out as a side effect of editing their profile.
+  const currentEmail = user.value?.email || "";
+  if (nextEmail.toLowerCase() !== currentEmail.toLowerCase()) {
+    const ok = await confirm({
+      title: "Change username",
+      message: `Change the sign-in username for ${user.value?.displayName} from "${currentEmail}" to ` +
+        `"${nextEmail}"? They will be signed out and must sign in with the new username.`,
+      confirmLabel: "Change username"
+    });
+    if (!ok) return;
+  }
+
   saving.value = true;
   try {
     await userApi.update(userId, {
       firstName: firstName.value,
       lastName: lastName.value,
       phoneNumber: phoneNumber.value,
-      email: email.value,
+      email: nextEmail,
       jobTitle: jobTitle.value
     });
     notify.success("User updated.");

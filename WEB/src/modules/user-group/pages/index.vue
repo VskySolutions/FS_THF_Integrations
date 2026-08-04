@@ -38,7 +38,7 @@
           @refresh="load"
         >
           <template #body-cell-memberCount="cell">
-            <q-td :props="cell"><q-badge color="blue-1" text-color="primary">{{ cell.value }}</q-badge></q-td>
+            <q-td :props="cell"><q-badge color="teal-1" text-color="primary">{{ cell.value }}</q-badge></q-td>
           </template>
 
           <template #body-cell-createdOnUtc="cell">

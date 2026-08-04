@@ -41,4 +41,7 @@ public enum EmailTemplateKey
     /// (REMS, WO-124). On the email allowlist. Rendered/dispatched via <c>IRemsEmailNotifier</c>.
     /// </summary>
     RemsFormSubmitted = 14,
+
+    /// <summary>Self-service "forgot password": carries the one-time reset link, never a password.</summary>
+    PasswordResetLink = 15,
 }

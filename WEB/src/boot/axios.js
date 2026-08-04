@@ -49,9 +49,12 @@ export default boot(({ app }) => {
       // Correlation id for request tracing
       config.headers["X-Correlation-Id"] = generateCorrelationId();
 
-      // Tenant Header
-      if (user?.siteId) {
-        config.headers["X-Site-Id"] = user.siteId;
+      // Tenant Header. "Site" and "tenant" are the same thing under two names, so a Super Admin's
+      // tenant-scope selection simply takes precedence over the user's own site id here — one header, one
+      // meaning (TenantResolutionMiddleware honours it for a Super Admin and ignores it for anyone else).
+      const siteId = LocalStorage.getItem("adminTenantOverride") || user?.siteId;
+      if (siteId) {
+        config.headers["X-Site-Id"] = siteId;
       }
 
       // Tenant Name

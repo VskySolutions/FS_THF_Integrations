@@ -14,16 +14,20 @@
 
 @import url("https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap");
 
-$primary: #1b75ab;
-$secondary: #757575;
-$accent: #9c27b0;
+// Brand colours mapped onto the design tokens in css/tokens.scss — the two must stay in step, since
+// `color="primary"` and `var(--teal-700)` are used side by side across the app.
+$primary: #1f6478;   // --teal-700, the action colour
+$secondary: #647a82; // --ink-500
+$accent: #b9862f;    // --gold-600
 
-$dark: #383838;
-$dark-page: #121212;
+$dark: #16262c;      // --ink-900
+$dark-page: #123645; // --teal-900
 
+// Semantic states keep their conventional meaning; only warning moves onto the palette's gold so it
+// reads as part of the scheme rather than a stock amber.
 $positive: #21ba45;
 $negative: #c10015;
-$info: #31ccec;
-$warning: #f2c037;
+$info: #2b7f96;      // --teal-600
+$warning: #b9862f;   // --gold-600
 
 $typography-font-family: "Poppins", "sans-serif" !default;

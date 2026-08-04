@@ -113,7 +113,13 @@ public static class Permissions
         // Tenant Admins manage tenant-wide UF settings and the deleted-records lifecycle.
         SettingsManage, RecordsAdminDelete,
         // Tenant Admins manage their tenant's option lists.
-        OptionSetsRead, OptionSetsManage
+        OptionSetsRead, OptionSetsManage,
+        // Full REMS access within their tenant — the same set a REMS Admin holds, plus the approver's own
+        // act permission. Tenant isolation still applies: this widens WHAT they can do in their tenant,
+        // never WHICH tenant. RemsApprovalsAct stays record-scoped to tasks assigned to them.
+        RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsDelete, RemsRequestsAssign,
+        RemsPoolRead, RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
+        RemsApprovalsSend, RemsApprovalsAct, RemsEmailLogRead
     };
 
     /// <summary>REMS Partner: works their own requests (read/create/update) and assigns them.</summary>

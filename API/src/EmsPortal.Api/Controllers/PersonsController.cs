@@ -65,9 +65,11 @@ public sealed class PersonsController : ControllerBase
         {
             Id = Guid.NewGuid(),
             PersonCode = await GeneratePersonCodeAsync(cancellationToken),
-            // A non-Super-Admin can only create within their own tenant; a client-supplied
-            // TenantId is honoured only for Super Admins. (Falls back to active-tenant stamping.)
-            TenantId = User.IsSuperAdmin() ? request.TenantId : User.GetActiveTenantId(),
+            // A non-Super-Admin can only create within their own tenant; a client-supplied TenantId is
+            // honoured only for Super Admins, and when they supply none the person lands in the tenant
+            // they are currently viewing (the claim follows the Super-Admin tenant scope) rather than
+            // nowhere. (Falls back to active-tenant stamping.)
+            TenantId = (User.IsSuperAdmin() ? request.TenantId : null) ?? User.GetActiveTenantId(),
             FirstName = request.FirstName,
             MiddleName = request.MiddleName,
             LastName = request.LastName,

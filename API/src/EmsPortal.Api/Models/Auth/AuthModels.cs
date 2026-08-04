@@ -27,6 +27,19 @@ public sealed class ChangePasswordRequest
     public string NewPassword { get; set; } = string.Empty;
 }
 
+/// <summary>Starts the self-service reset. The response never reveals whether the address is known.</summary>
+public sealed class ForgotPasswordRequest
+{
+    public string Email { get; set; } = string.Empty;
+}
+
+/// <summary>Redeems an emailed reset token and sets the new password.</summary>
+public sealed class ResetPasswordWithTokenRequest
+{
+    public string Token { get; set; } = string.Empty;
+    public string NewPassword { get; set; } = string.Empty;
+}
+
 public sealed record LoginTokenResponse(string AccessToken, int ExpiresIn, string RefreshToken, bool MustChangePassword);
 
 public sealed record RefreshTokenResponse(string AccessToken, int ExpiresIn, string RefreshToken);

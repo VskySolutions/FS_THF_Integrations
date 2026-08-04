@@ -20,7 +20,7 @@
             :key="n.id"
             v-close-popup
             clickable
-            :class="{ 'bg-blue-1': !n.isRead }"
+            :class="{ 'bg-teal-1': !n.isRead }"
             @click="openNotification(n)"
           >
             <q-item-section avatar>

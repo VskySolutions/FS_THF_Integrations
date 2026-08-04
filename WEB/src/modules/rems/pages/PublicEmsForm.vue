@@ -48,7 +48,7 @@
       <div class="pef-head">
         <div class="row items-center q-gutter-sm">
           <div class="text-h5 text-weight-bold col">EMS Onboarding Form</div>
-          <q-chip square dense color="blue-1" text-color="primary" class="q-ma-none">
+          <q-chip square dense color="teal-1" text-color="primary" class="q-ma-none">
             {{ industryLabel }}
           </q-chip>
         </div>

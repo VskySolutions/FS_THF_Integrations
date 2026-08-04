@@ -131,9 +131,14 @@ public sealed class DashboardController : ControllerBase
 
     // ---- Helpers ----
 
-    /// <summary>Super Admins may target any tenant (or pass null for the cross-tenant view); others are pinned to their active tenant.</summary>
+    /// <summary>
+    /// Super Admins may target any tenant explicitly; with none requested they get the tenant they are
+    /// currently viewing (the claim follows the Super-Admin tenant scope), so the dashboard agrees with
+    /// every other screen instead of silently showing a cross-tenant roll-up. Others are pinned to their
+    /// active tenant.
+    /// </summary>
     private Guid? ResolveScope(Guid? requestedTenantId)
-        => User.IsSuperAdmin() ? requestedTenantId : User.GetActiveTenantId();
+        => (User.IsSuperAdmin() ? requestedTenantId : null) ?? User.GetActiveTenantId();
 
     /// <summary>
     /// Resolves the layout tier: Super Admin, else Tenant Admin (users.read + tenants.read), else Common.

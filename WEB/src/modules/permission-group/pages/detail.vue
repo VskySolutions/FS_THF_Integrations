@@ -47,7 +47,7 @@
           <div v-for="group in keyGroups" :key="group.category" class="q-mb-md">
             <div class="section-subhead q-mb-xs">{{ group.category }}</div>
             <div class="row q-gutter-xs">
-              <q-badge v-for="key in group.keys" :key="key" color="blue-1" text-color="primary" class="pg-key">
+              <q-badge v-for="key in group.keys" :key="key" color="teal-1" text-color="primary" class="pg-key">
                 {{ humanizeKey(key) }}
                 <q-tooltip>{{ key }}</q-tooltip>
               </q-badge>

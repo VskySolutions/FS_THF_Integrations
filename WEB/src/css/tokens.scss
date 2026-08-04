@@ -1,0 +1,35 @@
+// Design tokens — the application's colour scheme, taken from the approved UI reference.
+//
+// Quasar's brand colours (quasar.variables.scss) are mapped onto this same palette, so `color="primary"`
+// and `var(--teal-700)` resolve to the same ink. Use the Quasar colour props for anything Quasar styles
+// (buttons, chips, badges) and these variables for bespoke surfaces, borders and shadows.
+:root {
+  // Teal — the primary ramp. 900/800 are the dark chrome, 700 is the action colour, 100/050 are tints
+  // used for selected rows, chips and page backgrounds.
+  --teal-900: #123645;
+  --teal-800: #184a5c;
+  --teal-700: #1f6478;
+  --teal-600: #2b7f96;
+  --teal-500: #3d97ad;
+  --teal-300: #8fc7d6;
+  --teal-100: #e7f3f6;
+  --teal-050: #f3f9fa;
+
+  // Gold — the accent, used sparingly: highlights, "new customer" type chips, warnings.
+  --gold-600: #b9862f;
+  --gold-100: #f7ecd8;
+  --cream: #f4f2e6;
+
+  // Ink — text and neutral UI, warm-grey rather than pure grey so it sits with the teal.
+  --ink-900: #16262c;
+  --ink-700: #3a4d54;
+  --ink-500: #647a82;
+  --ink-300: #a6b8bd;
+
+  --line: #dde6e8;
+  --white: #ffffff;
+
+  --radius: 10px;
+  --shadow: 0 2px 10px rgba(18, 54, 69, 0.07);
+  --shadow-lg: 0 12px 32px rgba(18, 54, 69, 0.16);
+}

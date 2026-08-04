@@ -11,7 +11,7 @@
           clickable
           :to="item.to"
           :exact="item.exact"
-          active-class="text-primary bg-blue-1"
+          active-class="text-primary bg-teal-1"
           @click="onItem(item)"
         >
           <q-item-section avatar><q-icon :name="item.icon" size="20px" /></q-item-section>
@@ -54,7 +54,7 @@
           clickable
           :to="item.to"
           :exact="item.exact"
-          active-class="text-primary bg-blue-1"
+          active-class="text-primary bg-teal-1"
           class="app-menu__nested"
           @click="onItem(item)"
         >

@@ -263,7 +263,6 @@ public sealed class UsersController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int limit = 20,
         [FromQuery] string? search = null,
-        [FromQuery] Guid? tenantId = null,
         [FromQuery] bool? isActive = null,
         [FromQuery] string? name = null,
         [FromQuery] string? email = null,
@@ -275,8 +274,11 @@ public sealed class UsersController : ControllerBase
         page = Math.Max(1, page);
         limit = Math.Clamp(limit, 1, 100);
 
-        // Super Admins may filter by any tenant; everyone else is scoped to their active tenant.
-        Guid? tenantFilter = User.IsSuperAdmin() ? tenantId : User.GetActiveTenantId();
+        // Everyone sees only the ACTIVE tenant's users — a Super Admin included. Listing every tenant at
+        // once made the page a mix of accounts the caller cannot act on in their current context, and
+        // duplicated what switching tenant (or the Super-Admin tenant scope) already does. The middleware
+        // rewrites this claim when a Super Admin is scoped elsewhere, so it follows that selection.
+        Guid? tenantFilter = User.GetActiveTenantId();
         var (items, total) = await _users.ListAsync(tenantFilter, search, isActive, name, email, phone, role, group, page, limit, cancellationToken);
 
         var names = await ResolveActorNamesAsync(items.SelectMany(u => new[] { u.CreatedById, u.UpdatedById }), cancellationToken);

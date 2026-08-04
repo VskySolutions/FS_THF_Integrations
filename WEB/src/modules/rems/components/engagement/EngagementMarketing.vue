@@ -15,7 +15,7 @@
       <div class="rems-selected q-mb-sm">
         <template v-if="selected.length">
           <q-chip
-            v-for="id in selected" :key="id" removable dense color="blue-1" text-color="primary"
+            v-for="id in selected" :key="id" removable dense color="teal-1" text-color="primary"
             :disable="!editable" @remove="toggle(id)"
           >
             {{ labelOf(id) }}

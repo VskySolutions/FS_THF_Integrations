@@ -9,7 +9,7 @@
       :back-to="{ name: 'account' }"
     >
       <template #actions>
-        <q-chip v-if="profile" dense color="blue-1" text-color="primary" class="text-weight-medium">
+        <q-chip v-if="profile" dense color="teal-1" text-color="primary" class="text-weight-medium">
           {{ profile.profileCompletionPercentage }}% complete
         </q-chip>
       </template>
@@ -143,7 +143,7 @@
           <div v-if="role.directPermissions.length" class="q-ml-md q-mt-xs">
             <div class="section-subhead q-mb-xs">Direct on role</div>
             <div class="row q-gutter-xs">
-              <q-badge v-for="k in role.directPermissions" :key="k" color="blue-1" text-color="primary" class="pg-key">
+              <q-badge v-for="k in role.directPermissions" :key="k" color="teal-1" text-color="primary" class="pg-key">
                 {{ humanizeKey(k) }}<q-tooltip>{{ k }}</q-tooltip>
               </q-badge>
             </div>
@@ -151,7 +151,7 @@
           <div v-for="g in role.permissionGroups" :key="g.groupId" class="q-ml-md q-mt-xs">
             <div class="section-subhead q-mb-xs">Via permission group · {{ g.groupName }}</div>
             <div class="row q-gutter-xs">
-              <q-badge v-for="k in g.permissionKeys" :key="k" color="blue-1" text-color="primary" class="pg-key">
+              <q-badge v-for="k in g.permissionKeys" :key="k" color="teal-1" text-color="primary" class="pg-key">
                 {{ humanizeKey(k) }}<q-tooltip>{{ k }}</q-tooltip>
               </q-badge>
             </div>
@@ -163,27 +163,12 @@
       </q-card-section>
     </q-card>
 
-    <!-- Password change -->
+    <!-- Password change. Shares ChangePasswordForm with /account/change-password so the requirements,
+         show/hide toggles and post-change sign-out behave identically in both places. -->
     <q-card flat bordered class="profile-card">
       <q-card-section class="text-subtitle1 text-weight-medium">Change password</q-card-section>
       <q-separator />
-      <q-form ref="pwForm" greedy @submit.prevent.stop="changePassword">
-        <q-card-section class="row q-col-gutter-md">
-          <app-text-field
-            v-model="pw.current" label="Current Password *" type="password" class="col-12"
-            :rules="[(v) => !!v || 'Current password is required']"
-          />
-          <app-text-field v-model="pw.next" label="New Password *" type="password" class="col-12" :rules="passwordRules" />
-          <app-text-field
-            v-model="pw.confirm" label="Confirm Password *" type="password" class="col-12"
-            :rules="[(v) => !!v || 'Please confirm', (v) => v === pw.next || 'Passwords do not match']"
-          />
-        </q-card-section>
-        <q-separator />
-        <q-card-actions align="right">
-          <q-btn unelevated no-caps color="primary" label="Update password" type="submit" :loading="savingPw" />
-        </q-card-actions>
-      </q-form>
+      <change-password-form submit-label="Update password" />
     </q-card>
 
   </q-page>
@@ -191,7 +176,6 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from "vue";
-import { useRouter } from "vue-router";
 import { orderedCountries, countryNameOption } from "composables/useCountries";
 import { authApi, profileApi, mediaApi, getApiErrorMessage } from "services/api";
 import { humanizeKey } from "composables/usePermissionCategories";
@@ -204,8 +188,8 @@ import AppDateField from "components/common/AppDateField.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
 import AppAddressFields from "components/common/AppAddressFields.vue";
 import AppImageUpload from "components/common/AppImageUpload.vue";
+import ChangePasswordForm from "components/account/ChangePasswordForm.vue";
 
-const router = useRouter();
 const authStore = useAuthStore();
 const notify = useNotify();
 
@@ -408,32 +392,6 @@ const save = async () => {
     notify.error(getApiErrorMessage(err));
   } finally {
     saving.value = false;
-  }
-};
-
-// ---- Password change ----
-const pwForm = ref(null);
-const savingPw = ref(false);
-const pw = reactive({ current: "", next: "", confirm: "" });
-const passwordRules = [
-  (v) => !!v || "New password is required",
-  (v) => (v || "").length >= 8 || "At least 8 characters",
-  (v) => /[A-Z]/.test(v) || "Must contain an uppercase letter",
-  (v) => /[0-9]/.test(v) || "Must contain a digit"
-];
-
-const changePassword = async () => {
-  if (!(await pwForm.value?.validate())) return;
-  savingPw.value = true;
-  try {
-    await authApi.changePassword(pw.current, pw.next);
-    notify.success("Password updated. Please sign in again.");
-    authStore.clearSession();
-    router.replace({ name: "login" });
-  } catch (err) {
-    notify.error(getApiErrorMessage(err));
-  } finally {
-    savingPw.value = false;
   }
 };
 

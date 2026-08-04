@@ -56,6 +56,20 @@ public static class DefaultEmailTemplates
             new[] { "FullName", "TemporaryPassword", "LoginUrl", "TenantName" }),
 
         new Definition(
+            EmailTemplateKey.PasswordResetLink,
+            "Password Reset Link",
+            "Sent when a user requests a password reset from the sign-in page. Carries a one-time link, never a password.",
+            "Reset your {{TenantName}} password",
+            """
+            <p>Hello {{FullName}},</p>
+            <p>We received a request to reset your password for <strong>{{TenantName}}</strong>.</p>
+            <p><a href="{{ResetUrl}}">Choose a new password</a></p>
+            <p>This link can be used once and expires in {{ExpiryMinutes}} minutes.</p>
+            <p>If you did not request this, you can ignore this email — your password has not changed.</p>
+            """,
+            new[] { "FullName", "ResetUrl", "ExpiryMinutes", "TenantName" }),
+
+        new Definition(
             EmailTemplateKey.PasswordChanged,
             "Password Changed",
             "Confirmation sent after a user changes their own password.",

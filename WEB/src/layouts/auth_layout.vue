@@ -1,38 +1,20 @@
 <template>
   <q-layout view="hHh lpR fFf">
     <q-page-container>
-      <q-page class="auth-wrap">
-        <!-- Brand panel (hidden on small screens) -->
-        <div class="auth-brand gt-sm column justify-between text-white">
-          <div class="row items-center">
-            <img src="~assets/logo.png" alt="logo" class="auth-brand__logo">
-            <span class="text-h5 text-weight-bold q-ml-sm">EMS Portal</span>
+      <q-page class="auth-wrap column flex-center">
+        <div class="auth-panel column items-center">
+          <!-- Brand sits above the form now that the side panel is gone — without it the screen carries no
+               identity at all. -->
+          <div class="row items-center justify-center q-mb-lg">
+            <img src="~assets/logo.png" alt="EMS Portal" class="auth-brand__logo">
+            <span class="text-h5 text-weight-bold q-ml-sm text-grey-9">EMS Portal</span>
           </div>
 
-          <div>
-            <div class="text-h4 text-weight-bold">Enterprise management, simplified</div>
-            <div class="text-subtitle1 q-mt-sm" style="opacity: 0.9; max-width: 420px;">
-              Manage your organisation with confidence — all in one secure workspace.
-            </div>
-            <q-list class="q-mt-lg auth-brand__features">
-              <q-item v-for="feature in features" :key="feature" class="q-px-none">
-                <q-item-section avatar style="min-width: 36px;">
-                  <q-icon name="o_check_circle" color="white" size="22px" />
-                </q-item-section>
-                <q-item-section class="text-body1">{{ feature }}</q-item-section>
-              </q-item>
-            </q-list>
-          </div>
+          <router-view />
 
-          <div class="text-caption" style="opacity: 0.8;">
-            &copy; 2025 VSky Solutions. All rights reserved.
-          </div>
-        </div>
-
-        <!-- Form panel -->
-        <div class="auth-form column flex-center">
-          <div class="auth-form__inner">
-            <router-view />
+          <!-- Kept from the removed panel: it was the only copyright notice on the sign-in screen. -->
+          <div class="text-caption text-grey-6 q-mt-lg text-center">
+            &copy; {{ year }} VSky Solutions. All rights reserved.
           </div>
         </div>
       </q-page>
@@ -41,23 +23,22 @@
 </template>
 
 <script setup>
-const features = [
-  "Secure, multi-tenant access",
-  "Role-based access & permission controls",
-  "Full activity & audit visibility"
-];
+import { computed } from "vue";
+
+// Derived rather than hard-coded — the old panel still read 2025.
+const year = computed(() => new Date().getFullYear());
 </script>
 
 <style scoped>
 .auth-wrap {
-  display: flex;
   min-height: 100vh;
+  padding: 24px;
+  background: #f4f6fb;
 }
 
-.auth-brand {
-  flex: 1 1 45%;
-  padding: 56px 48px;
-  background: linear-gradient(150deg, var(--q-primary) 0%, #4f7df0 60%, #5b8def 100%);
+.auth-panel {
+  width: 100%;
+  max-width: 420px;
 }
 
 .auth-brand__logo {
@@ -65,24 +46,8 @@ const features = [
   height: 44px;
 }
 
-.auth-brand__features :deep(.q-item) {
-  min-height: 40px;
-}
-
-.auth-form {
-  flex: 1 1 55%;
-  padding: 24px;
-  background: #f4f6fb;
-}
-
-.auth-form__inner {
+/* The routed page owns its own card; this just makes every one of them fill the centred column. */
+.auth-panel :deep(> *) {
   width: 100%;
-  max-width: 420px;
-}
-
-@media (max-width: 1023px) {
-  .auth-form {
-    flex: 1 1 100%;
-  }
 }
 </style>

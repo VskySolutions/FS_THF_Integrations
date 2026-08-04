@@ -34,7 +34,7 @@
         <template #avatar><q-icon name="o_lock" color="grey-7" /></template>
         This approval round has closed. No further action is required on your task.
       </q-banner>
-      <q-banner v-else dense class="bg-blue-1 text-blue-9 rounded-borders q-mb-md">
+      <q-banner v-else dense class="bg-teal-1 text-blue-9 rounded-borders q-mb-md">
         <template #avatar><q-icon name="o_fact_check" color="blue-9" /></template>
         Review the details below, complete every checklist item, then approve — or reject with a reason.
       </q-banner>

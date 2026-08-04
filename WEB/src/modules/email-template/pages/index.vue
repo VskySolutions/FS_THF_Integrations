@@ -24,7 +24,7 @@
       <app-column-filters v-model="filters" :columns="filterableColumns" />
     </app-filter-drawer>
 
-    <q-banner dense rounded class="bg-blue-1 text-primary q-mb-md">
+    <q-banner dense rounded class="bg-teal-1 text-primary q-mb-md">
       <template #avatar><q-icon name="o_info" color="primary" /></template>
       <span v-if="isGlobalScope">Editing the <strong>platform default</strong> templates — used by every tenant that hasn't customised its own.</span>
       <span v-else>Editing this tenant's templates. Unchanged templates fall back to the platform default.</span>

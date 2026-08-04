@@ -8,7 +8,7 @@
     </q-banner>
 
     <template v-else>
-      <q-banner v-if="!editable" dense class="bg-blue-1 text-blue-9 rounded-borders q-mb-md">
+      <q-banner v-if="!editable" dense class="bg-teal-1 text-blue-9 rounded-borders q-mb-md">
         <template #avatar><q-icon name="o_lock" color="blue-9" /></template>
         This engagement is {{ statusMeta.label.toLowerCase() }} and is read-only.
       </q-banner>

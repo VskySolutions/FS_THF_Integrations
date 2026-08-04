@@ -19,7 +19,7 @@
     <div v-if="loading" class="row flex-center q-pa-xl"><q-spinner color="primary" size="40px" /></div>
 
     <div v-else>
-      <q-banner v-if="!isUser && canCreateUser" dense class="bg-blue-1 text-blue-9 q-mb-md" rounded>
+      <q-banner v-if="!isUser && canCreateUser" dense class="bg-teal-1 text-blue-9 q-mb-md" rounded>
         <template #avatar><q-icon name="o_person_add" color="primary" /></template>
         This person has no login account yet.
         <template #action>

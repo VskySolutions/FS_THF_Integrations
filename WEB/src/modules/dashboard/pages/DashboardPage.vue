@@ -36,7 +36,7 @@
     </app-list-header>
 
     <!-- Reorder hint while customising. -->
-    <q-banner v-if="customiseOpen" dense rounded class="bg-blue-1 text-primary q-mb-md no-print">
+    <q-banner v-if="customiseOpen" dense rounded class="bg-teal-1 text-primary q-mb-md no-print">
       <template #avatar><q-icon name="o_drag_indicator" color="primary" /></template>
       Drag widgets by the handle to reorder them. Toggle visibility in the panel on the right.
     </q-banner>

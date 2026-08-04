@@ -2,7 +2,7 @@
   <q-page padding>
     <app-detail-header :items="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'My Account' }]">
       <template #actions>
-        <q-chip v-if="profile" dense color="blue-1" text-color="primary" class="text-weight-medium">
+        <q-chip v-if="profile" dense color="teal-1" text-color="primary" class="text-weight-medium">
           {{ completion }}% complete
         </q-chip>
       </template>
@@ -43,7 +43,7 @@
       <q-separator />
       <q-card-section class="q-py-sm row items-center q-gutter-md">
         <div class="text-caption text-grey-7">Profile completion</div>
-        <q-linear-progress :value="completion / 100" rounded color="primary" track-color="blue-1" class="col" style="height: 8px;" />
+        <q-linear-progress :value="completion / 100" rounded color="primary" track-color="teal-1" class="col" style="height: 8px;" />
         <div class="text-caption text-weight-medium">{{ completion }}%</div>
       </q-card-section>
     </q-card>
@@ -76,13 +76,13 @@
             <q-icon name="o_apartment" color="primary" size="sm" />
             <div class="text-subtitle1 text-weight-medium">Tenants &amp; roles</div>
             <q-space />
-            <q-badge color="blue-1" text-color="primary">{{ assignments.length }}</q-badge>
+            <q-badge color="teal-1" text-color="primary">{{ assignments.length }}</q-badge>
           </q-card-section>
           <q-separator />
           <q-list separator>
             <q-item v-for="t in assignments" :key="t.tenantId">
               <q-item-section avatar>
-                <q-avatar size="34px" color="blue-1" text-color="primary">
+                <q-avatar size="34px" color="teal-1" text-color="primary">
                   <q-icon name="o_business" size="18px" />
                 </q-avatar>
               </q-item-section>

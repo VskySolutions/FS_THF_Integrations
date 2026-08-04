@@ -42,6 +42,7 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<UserTenantRole> UserTenantRoles => Set<UserTenantRole>();
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
 
     public DbSet<Role> Roles => Set<Role>();
 
@@ -203,6 +204,9 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
         modelBuilder.Entity<User>().HasQueryFilter(e => !e.Deleted);
         modelBuilder.Entity<UserTenantRole>().HasQueryFilter(e => !e.Deleted);
         modelBuilder.Entity<RefreshToken>().HasQueryFilter(e => !e.Deleted);
+        // Soft-delete only, no tenant filter: password reset is an anonymous flow, so there is no resolved
+        // tenant to filter by when the token is redeemed.
+        modelBuilder.Entity<PasswordResetToken>().HasQueryFilter(e => !e.Deleted);
         // Email templates carry a nullable TenantId (null = platform default); a tenant filter would
         // hide the defaults, so they use the soft-delete filter only and are scoped explicitly in the repo.
         modelBuilder.Entity<EmailTemplate>().HasQueryFilter(e => !e.Deleted);

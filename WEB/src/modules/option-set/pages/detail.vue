@@ -12,7 +12,7 @@
     <q-inner-loading :showing="loading && !set" />
 
     <template v-if="set">
-      <q-banner v-if="!set.isEditable" dense rounded class="bg-blue-1 text-primary q-mb-md">
+      <q-banner v-if="!set.isEditable" dense rounded class="bg-teal-1 text-primary q-mb-md">
         <template #avatar><q-icon name="o_lock" color="primary" /></template>
         This is a standard platform list and is read-only. Create your own list to customise values.
       </q-banner>

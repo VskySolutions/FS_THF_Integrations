@@ -87,7 +87,12 @@ export const authApi = {
   changePassword: (currentPassword, newPassword) =>
     api.put("/api/users/me/change-password", { currentPassword, newPassword }).then(envelope),
   updateMe: (displayName) => api.put("/api/users/me", { displayName }).then(unwrap),
-  effectivePermissions: () => api.get("/api/auth/effective-permissions").then(unwrap)
+  effectivePermissions: () => api.get("/api/auth/effective-permissions").then(unwrap),
+  // Self-service reset. `forgotPassword` always resolves the same way whether or not the address exists —
+  // never branch the UI on its response, that would leak which accounts are real.
+  forgotPassword: (email) => anonApi.post("/api/auth/forgot-password", { email }).then(envelope),
+  resetPassword: (token, newPassword) =>
+    anonApi.post("/api/auth/reset-password", { token, newPassword }).then(envelope)
 };
 
 export const tenantApi = {

@@ -45,12 +45,16 @@
                screens where they are still reachable from the user menu. -->
           <div v-if="isLoggedIn && activeRoles.length" class="gt-xs row items-center q-gutter-xs">
             <q-chip
-              v-for="r in activeRoles" :key="r" dense square color="blue-1" text-color="primary"
+              v-for="r in activeRoles" :key="r" dense square color="teal-1" text-color="primary"
               class="text-capitalize q-my-none"
             >
               {{ r }}
             </q-chip>
           </div>
+
+          <!-- Super-Admin tenant scope. One control for the whole app, so it lives in the toolbar rather
+               than being repeated per page; the pages that support it simply follow the selection. -->
+          <app-tenant-scope-select v-if="isLoggedIn" class="gt-xs" />
 
           <notification-centre v-if="isLoggedIn" />
           <user-info v-if="isLoggedIn" />
@@ -81,6 +85,21 @@
     </q-drawer>
 
     <q-page-container>
+      <!-- The tenant scope is global and sticky (it survives reloads), so it is stated on every screen.
+           Without this a Super Admin can return later and edit the wrong tenant believing it is their own. -->
+      <!-- inline-actions keeps the message and the button on ONE row; without it q-banner drops actions
+           onto a second line and the banner takes twice the height on every page. -->
+      <q-banner
+        v-if="isLoggedIn && tenantScopeActive" dense inline-actions
+        class="bg-orange-2 text-orange-10 q-px-md"
+      >
+        <template #avatar><q-icon name="o_visibility" color="orange-10" /></template>
+        Viewing <span class="text-weight-bold">{{ scopedTenantName || "another tenant" }}</span> — changes apply to that tenant.
+        <template #action>
+          <q-btn flat dense no-caps color="orange-10" label="Back to my tenant" @click="clearScope" />
+        </template>
+      </q-banner>
+
       <router-view />
     </q-page-container>
 
@@ -111,6 +130,8 @@ import AsideHeader from "shared/aside_header.vue";
 import AppMenu from "src/components/app_menu.vue";
 import NotificationCentre from "components/universal/NotificationCentre.vue";
 import StickyNoteLayer from "components/universal/StickyNoteLayer.vue";
+import AppTenantScopeSelect from "components/common/AppTenantScopeSelect.vue";
+import { useTenantScope } from "composables/useTenantScope";
 
 const $q = useQuasar();
 const isLoggedIn = !!LocalStorage.getItem("token");
@@ -136,6 +157,12 @@ const toggleLeftDrawer = () => {
   }
   menuCollapsed.value = !menuCollapsed.value;
 };
+
+// Super-Admin tenant scope: shown as a banner because the selection is global and survives a reload.
+const {
+  isScoped: tenantScopeActive, scopedTenantName, loadTenants: loadScopeTenants, clearScope
+} = useTenantScope();
+if (isLoggedIn) loadScopeTenants();
 
 const tenantStore = useTenantStore();
 const { assignments, activeTenantId } = storeToRefs(tenantStore);

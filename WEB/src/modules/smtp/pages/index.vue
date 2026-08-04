@@ -18,14 +18,7 @@
       @filters="filterOpen = true"
       @add="openCreate"
       @back="$router.back()"
-    >
-      <template #actions>
-        <app-select
-          v-if="canChooseTenant" v-model="selectedTenantId" :options="tenantOptions" label="Tenant"
-          :loading="loadingTenants" :clearable="false" style="min-width: 220px;"
-        />
-      </template>
-    </app-list-header>
+    />
 
     <!-- Warning when the tenant has accounts but none is active (AC-SMTP-009.3). -->
     <q-banner v-if="showNoActiveWarning" dense rounded class="bg-red-1 text-negative q-mb-md">
@@ -121,8 +114,8 @@
 import { ref, computed, watch } from "vue";
 import { debounce } from "quasar";
 import { smtpAccountApi, getApiErrorMessage } from "services/api";
-import { useTenantStore } from "stores/tenant";
 import { useTenantOptions } from "composables/useTenantOptions";
+import { useTenantScope } from "composables/useTenantScope";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
@@ -134,19 +127,19 @@ import AppDataTable from "components/common/AppDataTable.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
-import AppSelect from "components/common/AppSelect.vue";
 import SmtpAccountFormDrawer from "modules/smtp/components/SmtpAccountFormDrawer.vue";
 import TestEmailDialog from "modules/smtp/components/TestEmailDialog.vue";
 
 const notify = useNotify();
 const { confirm } = useConfirm();
-const tenantStore = useTenantStore();
 const fmt = useDateFormat();
 const { encryptionLabel } = useSmtpOptions();
-const { canChooseTenant, tenantOptions, loadingTenants, loadTenants } = useTenantOptions();
+const { canChooseTenant } = useTenantOptions();
 
-// Super admins scope the list to a chosen tenant; others are auto-scoped server-side.
-const selectedTenantId = ref(null);
+// The tenant in view comes from the toolbar's global scope control rather than a dropdown of its own —
+// one selection drives every tenant-scoped screen. Still passed explicitly because this API predates the
+// ambient override and takes ?tenantId=; the child drawer/dialog need it for their own calls too.
+const { selectedTenantId } = useTenantScope();
 const scopeTenantId = () => (canChooseTenant.value && selectedTenantId.value ? selectedTenantId.value : undefined);
 
 const STATUS_OPTIONS = [
@@ -180,12 +173,8 @@ const { rows, loading, totalRecords, selected, search, filterOpen, pagination, l
 const { filters, filterableColumns, filterChips, removeFilter, clearFilters } = useColumnFilters(columns, rows, { server: true });
 const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);
 watch([search, filters], reload, { deep: true });
-watch(selectedTenantId, () => { pagination.value.page = 1; load(); });
-
-if (canChooseTenant.value) {
-  loadTenants();
-  selectedTenantId.value = tenantStore.activeTenantId;
-}
+// No watcher on the tenant: changing the global scope fires `tenant-switched`, which useListTable already
+// reloads on.
 
 // Warn only when not filtering by status, the tenant has accounts, and none is active.
 const showNoActiveWarning = computed(() =>

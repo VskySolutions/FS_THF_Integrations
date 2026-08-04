@@ -25,7 +25,7 @@
         <div class="text-caption text-grey-7 q-mb-xs">Available placeholders (click to insert):</div>
         <q-chip
           v-for="p in placeholders" :key="p"
-          clickable dense color="blue-1" text-color="primary" class="q-mr-xs q-mb-xs"
+          clickable dense color="teal-1" text-color="primary" class="q-mr-xs q-mb-xs"
           @click="insertPlaceholder(p)"
         >
           {{ token(p) }}

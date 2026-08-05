@@ -1,3 +1,4 @@
+using System.Text.Json;
 using EmsPortal.Api.Models.Rems;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.Persistence;
@@ -41,26 +42,41 @@ public sealed class RemsApprovalController : ControllerBase
     private const string CodeChecklistIncomplete = "REMS_CHECKLIST_INCOMPLETE";
     private const string CodeApproversLocked = "REMS_APPROVERS_LOCKED";
 
+    private const string MarketingSetKey = "REMSMarketing_MarketingMethods.MarketingMethodId";
+    private const string TaxFormSetKey = "REMS.TaxForm";
+
+    private readonly IRemsRepository _rems;
     private readonly IRemsEngagementRepository _engagements;
     private readonly IRemsApprovalRepository _approvals;
+    private readonly IRemsClientRepository _clients;
     private readonly IRemsSettingsRepository _settings;
+    private readonly IMediaRepository _media;
+    private readonly IOptionSetRepository _optionSets;
     private readonly IUserRepository _users;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IActivityEventWriter _activity;
     private readonly INotificationDispatcher _notifications;
 
     public RemsApprovalController(
+        IRemsRepository rems,
         IRemsEngagementRepository engagements,
         IRemsApprovalRepository approvals,
+        IRemsClientRepository clients,
         IRemsSettingsRepository settings,
+        IMediaRepository media,
+        IOptionSetRepository optionSets,
         IUserRepository users,
         IUnitOfWork unitOfWork,
         IActivityEventWriter activity,
         INotificationDispatcher notifications)
     {
+        _rems = rems;
         _engagements = engagements;
         _approvals = approvals;
+        _clients = clients;
         _settings = settings;
+        _media = media;
+        _optionSets = optionSets;
         _users = users;
         _unitOfWork = unitOfWork;
         _activity = activity;
@@ -262,7 +278,11 @@ public sealed class RemsApprovalController : ControllerBase
 
     // -------------------- Approver's own tasks --------------------
 
-    /// <summary>The caller's own approval tasks (pending and historical), newest round first (AC-REMS-019).</summary>
+    /// <summary>
+    /// The caller's own approval tasks (pending and historical), newest round first (AC-REMS-019). Each row
+    /// carries the round's approved/rejected/total counts so the inbox can show its progress — the row is
+    /// still the caller's own task, and no other approver's identity is exposed here.
+    /// </summary>
     [HttpGet("approval-tasks")]
     [RequirePermission(Permissions.RemsApprovalsAct)]
     [ProducesResponseType<ApiResponse<IEnumerable<RemsApprovalTaskRow>>>(StatusCodes.Status200OK)]
@@ -283,16 +303,21 @@ public sealed class RemsApprovalController : ControllerBase
             return new RemsApprovalTaskRow(
                 t.Id, round.Id, round.RoundNumber, t.ApproverRole.ToString(), t.Status.ToString(),
                 round.SentOnUtc, t.DecidedOnUtc, round.Status.ToString(),
-                engagement.Id, rems.Id, rems.REMSNumber, client.Name, engagement.Entity!.Name);
+                engagement.Id, rems.Id, rems.REMSNumber, client.Name, engagement.Entity!.Name,
+                round.Tasks.Count(x => x.Status == RemsApprovalTaskStatus.Approved),
+                round.Tasks.Count(x => x.Status == RemsApprovalTaskStatus.Rejected),
+                round.Tasks.Count);
         });
         return Ok(ApiResponseFactory.Success(rows, "REMS approval tasks retrieved."));
     }
 
     /// <summary>
-    /// The role-scoped view of the caller's own task (AC-REMS-019.9/10): CSE sees the full client +
-    /// engagement; DepartmentDirector / ManagingShareholder additionally see the fee estimate and
-    /// realization; CommissionRecipient sees the commission splits. Includes the checklist. Not the caller's
-    /// own task =&gt; 404.
+    /// The caller's own task with the full review packet (AC-REMS-019.9): the originating request, the
+    /// client, the entity under review, the complete engagement setup with its audit/government/tax detail,
+    /// the marketing tags, the commission splits, the round's other decisions, and the caller's checklist —
+    /// the same case staff assembled in the engagement workspace, since that is what is being approved.
+    /// The fee estimate and realization remain reserved to the Department Director and Managing Shareholder
+    /// (AC-REMS-019.10). Not the caller's own task =&gt; 404.
     /// </summary>
     [HttpGet("approval-tasks/{taskId:guid}")]
     [RequirePermission(Permissions.RemsApprovalsAct)]
@@ -409,6 +434,7 @@ public sealed class RemsApprovalController : ControllerBase
 
             engagement.Status = RemsEngagementStatus.Approved;
             _engagements.Update(engagement);
+            await SyncRequestStatusAsync(rems, engagement, cancellationToken);
 
             var involved = new HashSet<Guid>(round.Tasks.Select(t => t.ApproverId)) { round.SentByUserId };
             if (rems.CSEId is { } cse)
@@ -486,6 +512,7 @@ public sealed class RemsApprovalController : ControllerBase
 
         engagement.Status = RemsEngagementStatus.Rejected;
         _engagements.Update(engagement);
+        await SyncRequestStatusAsync(rems, engagement, cancellationToken);
 
         // Notify the sender and CSE (the reason is retained on the round/task, visible to CSE + Admin).
         var recipients = new HashSet<Guid> { round.SentByUserId };
@@ -506,6 +533,36 @@ public sealed class RemsApprovalController : ControllerBase
 
         var view = await BuildTaskViewAsync(task, cancellationToken);
         return Ok(ApiResponseFactory.Success(view, "Task rejected."));
+    }
+
+    // -------------------- Request-status roll-up --------------------
+
+    /// <summary>
+    /// Re-derives the REQUEST status from the engagements underneath it, so the request row reports the stage
+    /// the work is actually at instead of staying on "Engagement Setup" for the whole approval cycle — which
+    /// is what left a requester with no way to tell that their request was sitting with the approvers.
+    /// <para>
+    /// A request carries one engagement per entity, so the status is a roll-up. Rework outranks in-flight
+    /// approval: with one engagement rejected and another still pending, "Changes Requested" is the state
+    /// that someone has to act on. <paramref name="current"/> is the engagement whose status this request
+    /// just changed — it is not committed yet, so its in-memory status is substituted for the stored one.
+    /// </para>
+    /// The REMS row is loaded tracked (via the task/engagement context include), so mutating its status is
+    /// picked up by change tracking and committed with the rest of the operation.
+    /// </summary>
+    private async Task SyncRequestStatusAsync(REMS rems, REMSEngagement current, CancellationToken cancellationToken)
+    {
+        var rows = await _engagements.ListStatusesByRemsIdAsync(rems.Id, cancellationToken);
+        var statuses = rows.Select(r => r.Id == current.Id ? current.Status : r.Status).ToList();
+        if (statuses.Count == 0)
+        {
+            return; // No engagements yet — the request has not reached the setup stage at all.
+        }
+
+        rems.Status = statuses.All(s => s == RemsEngagementStatus.Approved) ? RemsRequestStatuses.Approved
+            : statuses.Any(s => s == RemsEngagementStatus.Rejected) ? RemsRequestStatuses.ChangesRequested
+            : statuses.Any(s => s == RemsEngagementStatus.PendingApproval) ? RemsRequestStatuses.PendingApproval
+            : RemsRequestStatuses.EngagementSetup;
     }
 
     // -------------------- Approver-list generation --------------------
@@ -705,6 +762,7 @@ public sealed class RemsApprovalController : ControllerBase
 
         engagement.Status = RemsEngagementStatus.PendingApproval;
         _engagements.Update(engagement);
+        await SyncRequestStatusAsync(rems, engagement, cancellationToken);
 
         // Notify every approver (once per user, even if they hold multiple role tasks).
         foreach (var userId in approvers.Select(a => a.UserId).Distinct())
@@ -725,73 +783,75 @@ public sealed class RemsApprovalController : ControllerBase
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
-    // -------------------- Role-scoped task view --------------------
+    // -------------------- Task review packet --------------------
 
+    /// <summary>
+    /// Builds the approver's review packet: the request that started it, the client, the entity under review
+    /// with its addresses and contacts, the full engagement setup (audit/government/tax detail included), the
+    /// marketing tags and commission splits, and the round's other decisions — the same material staff filled
+    /// in across the workspace's four tabs, because that is what the approver is signing off on.
+    /// <para>
+    /// Option-set references (marketing methods, tax forms) are resolved to LABELS here: the approver roles
+    /// do not carry <c>optionSets.read</c>, so ids would be unreadable on that screen. The one thing still
+    /// scoped by role is fee/realization (AC-REMS-019.10) — see <see cref="MaySeeFinancials"/>.
+    /// </para>
+    /// </summary>
     private async Task<RemsApprovalTaskView> BuildTaskViewAsync(REMSApprovalTask task, CancellationToken cancellationToken)
     {
         var round = task.Round!;
         var engagement = round.Engagement!;
-        var entity = engagement.Entity!;
-        var client = entity.Client!;
-        var rems = client.Rems!;
+        var client = engagement.Entity!.Client!;
 
-        var names = await _users.GetFullNamesAsync(EngagementUserIds(engagement), cancellationToken);
+        // The task-context graph stops at the entity: its addresses/contacts, the conditional engagement
+        // detail and the request's files each need their own load.
+        var entity = await _clients.GetEntityAsync(engagement.REMSEntityId, cancellationToken) ?? engagement.Entity!;
+        var rems = await _rems.GetByIdAsync(client.REMSId, cancellationToken) ?? client.Rems!;
+        var audit = await _engagements.GetAuditDetailAsync(engagement.Id, cancellationToken);
+        var government = await _engagements.GetGovernmentDetailAsync(engagement.Id, cancellationToken);
+        var tax = await _engagements.GetTaxDetailAsync(engagement.Id, cancellationToken);
+        var formState = (await _rems.GetFormStatesAsync(new[] { rems.Id }, cancellationToken)).FirstOrDefault();
 
-        RemsApprovalClientView? clientView = null;
-        decimal? fee = null;
-        decimal? realization = null;
-        RemsUserRef? director = null;
-        RemsUserRef? executive = null;
-        RemsUserRef? billingManager = null;
-        IReadOnlyList<RemsCommissionSplitView>? commission = null;
-        IReadOnlyList<Guid>? marketing = null;
+        var names = await _users.GetFullNamesAsync(
+            EngagementUserIds(engagement)
+                .Concat(round.Tasks.Select(t => t.ApproverId))
+                .Append(round.SentByUserId)
+                .Concat(new[] { rems.AdminAssignedToId, rems.CSEId, rems.CreatedById }
+                    .Where(id => id.HasValue).Select(id => id!.Value)),
+            cancellationToken);
 
-        switch (task.ApproverRole)
-        {
-            case RemsApproverRole.CSE:
-                // Full client + engagement placement (fee/realization are reserved to director/managing shareholder).
-                clientView = FullClient(client);
-                director = RemsWorkspaceMapper.UserRef(engagement.DepartmentDirectorId, names);
-                executive = RemsWorkspaceMapper.UserRef(engagement.EngagementExecutiveId, names);
-                billingManager = RemsWorkspaceMapper.UserRef(engagement.BillingManagerId, names);
-                marketing = engagement.MarketingMethods.Where(m => !m.Deleted).Select(m => m.MarketingMethodId).ToList();
-                break;
+        var (emsFormState, clientSubmissionState) = RemsWorkspaceMapper.FormState(formState);
+        var requestView = new RemsApprovalRequestView(
+            rems.Id, rems.REMSNumber, rems.Title, rems.Description, rems.RequestedClientName,
+            rems.Type, rems.Priority, rems.Status, rems.CustomerEmail, rems.CustomerMobileNumber,
+            formState?.IndustryGroup, emsFormState, clientSubmissionState,
+            RemsWorkspaceMapper.UserRef(rems.AdminAssignedToId, names),
+            RemsWorkspaceMapper.UserRef(rems.CSEId, names),
+            rems.CreatedById is { } creator && names.TryGetValue(creator, out var creatorName) ? creatorName : null,
+            rems.CreatedOnUtc,
+            rems.Files.Where(f => !f.Deleted)
+                .Select(f => new RemsFileRef(
+                    f.Id, f.MediaId, f.Media?.OriginalFileName, f.Media?.MimeType, f.Media?.FileSize, f.Media?.PublicUrl))
+                .ToList());
 
-            case RemsApproverRole.DepartmentDirector:
-            case RemsApproverRole.ManagingShareholder:
-                // Review data including the fee estimate and realization (AC-REMS-019.10).
-                clientView = FullClient(client);
-                fee = engagement.FirstYearFeeEstimate;
-                realization = engagement.RealizationPercentage;
-                director = RemsWorkspaceMapper.UserRef(engagement.DepartmentDirectorId, names);
-                executive = RemsWorkspaceMapper.UserRef(engagement.EngagementExecutiveId, names);
-                billingManager = RemsWorkspaceMapper.UserRef(engagement.BillingManagerId, names);
-                marketing = engagement.MarketingMethods.Where(m => !m.Deleted).Select(m => m.MarketingMethodId).ToList();
-                break;
+        var engagementView = await BuildApprovalEngagementViewAsync(
+            task, engagement, client, entity, audit, government, tax, names, cancellationToken);
 
-            case RemsApproverRole.CommissionRecipient:
-                // Commission-decision data: the client basics + the commission splits.
-                clientView = BasicClient(client);
-                commission = engagement.CommissionSplits
-                    .Where(s => !s.Deleted)
-                    .Select(s => new RemsCommissionSplitView(s.Id, RemsWorkspaceMapper.UserRef(s.EmployeeId, names)!, s.CommissionPercentage))
-                    .ToList();
-                break;
+        // Decided first, oldest decision at the top, so the list reads as the round's history: who signed
+        // off first, then next, with whoever has yet to decide gathered at the bottom. Role only breaks
+        // ties among the undecided, who share a null timestamp.
+        var decisions = round.Tasks
+            .OrderBy(t => t.DecidedOnUtc.HasValue ? 0 : 1)
+            .ThenBy(t => t.DecidedOnUtc)
+            .ThenBy(t => t.ApproverRole)
+            .Select(t => new RemsApprovalDecisionView(
+                t.Id, RemsWorkspaceMapper.UserRef(t.ApproverId, names)!, t.ApproverRole.ToString(),
+                t.Status.ToString(), t.DecidedOnUtc, t.RejectionReason, t.Id == task.Id))
+            .ToList();
 
-            case RemsApproverRole.Approver:
-                // Hand-picked approver: the same review data as the CSE, minus the fee estimate and
-                // realization, which stay reserved to the director and managing shareholder (AC-REMS-019.10).
-                clientView = FullClient(client);
-                director = RemsWorkspaceMapper.UserRef(engagement.DepartmentDirectorId, names);
-                executive = RemsWorkspaceMapper.UserRef(engagement.EngagementExecutiveId, names);
-                billingManager = RemsWorkspaceMapper.UserRef(engagement.BillingManagerId, names);
-                marketing = engagement.MarketingMethods.Where(m => !m.Deleted).Select(m => m.MarketingMethodId).ToList();
-                break;
-        }
-
-        var engagementView = new RemsApprovalEngagementView(
-            engagement.Id, rems.Id, rems.REMSNumber, entity.Name, engagement.Department, engagement.ServiceLine,
-            clientView, fee, realization, director, executive, billingManager, commission, marketing);
+        var roundView = new RemsApprovalRoundView(
+            round.Id, round.RoundNumber, round.Status.ToString(), round.SentOnUtc,
+            RemsWorkspaceMapper.UserRef(round.SentByUserId, names), round.CompletedOnUtc, round.RejectionReason,
+            decisions);
 
         var checklist = task.ChecklistItems
             .Where(i => !i.Deleted)
@@ -803,22 +863,145 @@ public sealed class RemsApprovalController : ControllerBase
 
         return new RemsApprovalTaskView(
             task.Id, round.Id, round.RoundNumber, task.ApproverRole.ToString(), task.Status.ToString(),
-            task.DecidedOnUtc, task.RejectionReason, canDecide, checklist, engagementView);
+            task.DecidedOnUtc, task.RejectionReason, canDecide, checklist, requestView, engagementView, roundView);
     }
 
-    private static RemsApprovalClientView FullClient(REMSClient client)
+    private async Task<RemsApprovalEngagementView> BuildApprovalEngagementViewAsync(
+        REMSApprovalTask task,
+        REMSEngagement engagement,
+        REMSClient client,
+        REMSEntity entity,
+        REMSEngagementAuditDetail? audit,
+        REMSEngagementGovernmentDetail? government,
+        REMSEngagementTaxDetail? tax,
+        IReadOnlyDictionary<Guid, string> names,
+        CancellationToken cancellationToken)
     {
-        var entities = client.Entities
-            .Where(e => !e.Deleted)
-            .OrderByDescending(e => e.IsMainEntity)
-            .ThenBy(e => e.Name)
-            .Select(e => new RemsApprovalEntitySummary(e.Id, e.Name, e.EIN, e.IsMainEntity))
-            .ToList();
-        return new RemsApprovalClientView(client.Id, client.Name, client.Email, client.MobileNumber, client.ReferralSource, entities);
+        var maySeeFinancials = MaySeeFinancials(task.ApproverRole);
+
+        var marketingIds = engagement.MarketingMethods.Where(m => !m.Deleted).Select(m => m.MarketingMethodId).ToList();
+        var marketing = await ResolveOptionRefsAsync(MarketingSetKey, marketingIds, cancellationToken);
+
+        RemsApprovalAuditDetailView? auditView = null;
+        if (audit is not null)
+        {
+            // Resolve the signed CAF to something the approver can actually open — "a media id is on file"
+            // is not a document anyone can review.
+            var media = audit.ClientAcceptanceFormMediaId is { } mediaId
+                ? await _media.GetByIdAsync(mediaId, cancellationToken)
+                : null;
+            auditView = new RemsApprovalAuditDetailView(
+                audit.Id, audit.ClientAcceptanceFormMediaId, media?.OriginalFileName, media?.PublicUrl);
+        }
+
+        RemsApprovalTaxDetailView? taxView = null;
+        if (tax is not null)
+        {
+            var taxFormIds = tax.TaxForms.Where(f => !f.Deleted).Select(f => f.TaxFormId).ToList();
+            taxView = new RemsApprovalTaxDetailView(
+                tax.Id, tax.FiscalYearEnd, RemsTaxDueDates.TryDeserialize(tax.CalculatedDueDates),
+                await ResolveOptionRefsAsync(TaxFormSetKey, taxFormIds, cancellationToken));
+        }
+
+        var clientView = new RemsApprovalClientView(
+            client.Id, client.Name, client.Email, client.MobileNumber, client.ReferralSource,
+            client.BillingContactName, client.BillingEmail, RemsWorkspaceMapper.Address(client.BillingAddress),
+            client.Entities
+                .Where(e => !e.Deleted)
+                .OrderByDescending(e => e.IsMainEntity)
+                .ThenBy(e => e.Name)
+                .Select(e => new RemsApprovalEntitySummary(e.Id, e.Name, e.EIN, e.IsMainEntity))
+                .ToList());
+
+        var entityView = new RemsApprovalEntityView(
+            entity.Id, entity.Name, entity.EIN, entity.IsMainEntity,
+            entity.Addresses.Where(a => !a.Deleted)
+                .Select(a => new RemsEntityAddressView(a.Id, a.AddressType.ToString(), RemsWorkspaceMapper.Address(a.Address)!))
+                .ToList(),
+            entity.Contacts.Where(c => !c.Deleted)
+                .Select(c => new RemsEntityContactView(
+                    c.Id, c.ContactRole, c.IsRequired, c.Person?.DisplayName, c.Person?.PrimaryEmail, c.Person?.MobileNumber))
+                .ToList());
+
+        return new RemsApprovalEngagementView(
+            engagement.Id,
+            engagement.Status.ToString(),
+            engagement.Department,
+            engagement.ServiceLine,
+            clientView,
+            entityView,
+            RemsWorkspaceMapper.UserRef(engagement.DepartmentDirectorId, names),
+            RemsWorkspaceMapper.UserRef(engagement.EngagementExecutiveId, names),
+            RemsWorkspaceMapper.UserRef(engagement.BillingManagerId, names),
+            maySeeFinancials ? engagement.FirstYearFeeEstimate : null,
+            maySeeFinancials ? engagement.RealizationPercentage : null,
+            FinancialsRestricted: !maySeeFinancials,
+            auditView,
+            government is null
+                ? null
+                : new RemsGovernmentDetailView(
+                    government.Id, government.ContractNumber, government.FloridaOnePercentStateFeeApplies,
+                    government.ContractStartDate, government.ContractEndDate, government.OriginalTerm,
+                    government.RenewalTerms, government.PurchaseOrderStartDate, government.PurchaseOrderEndDate),
+            taxView,
+            marketing,
+            engagement.CommissionSplits
+                .Where(s => !s.Deleted)
+                .Select(s => new RemsCommissionSplitView(s.Id, RemsWorkspaceMapper.UserRef(s.EmployeeId, names)!, s.CommissionPercentage))
+                .ToList());
     }
 
-    private static RemsApprovalClientView BasicClient(REMSClient client)
-        => new(client.Id, client.Name, client.Email, client.MobileNumber, client.ReferralSource, Array.Empty<RemsApprovalEntitySummary>());
+    /// <summary>
+    /// Whether a role sees the first-year fee estimate and % realization. Reserved to the Department Director
+    /// and the Managing Shareholder (AC-REMS-019.10) — the ONE thing an approver's role still scopes now that
+    /// the rest of the engagement setup is shown to everyone on the round. Open it up by returning true.
+    /// </summary>
+    private static bool MaySeeFinancials(RemsApproverRole role)
+        => role is RemsApproverRole.DepartmentDirector or RemsApproverRole.ManagingShareholder;
+
+    /// <summary>
+    /// Resolves option-set item ids to their labels (and, for marketing, the group tag from MetadataJson),
+    /// preserving the set's sort order. Unknown ids are dropped rather than rendered as a bare guid.
+    /// </summary>
+    private async Task<IReadOnlyList<RemsApprovalOptionRef>> ResolveOptionRefsAsync(
+        string setKey, IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken)
+    {
+        if (ids.Count == 0)
+        {
+            return Array.Empty<RemsApprovalOptionRef>();
+        }
+
+        var set = await _optionSets.GetEffectiveSetAsync(User.GetActiveTenantId(), EntityType.Rems, setKey, cancellationToken);
+        if (set is null)
+        {
+            return Array.Empty<RemsApprovalOptionRef>();
+        }
+
+        return set.Items
+            .Where(i => !i.Deleted && ids.Contains(i.Id))
+            .OrderBy(i => i.SortOrder)
+            .Select(i => new RemsApprovalOptionRef(i.Id, i.Label, GroupOf(i.MetadataJson)))
+            .ToList();
+    }
+
+    /// <summary>The <c>group</c> tag a marketing option carries in its metadata (null for sets without one).</summary>
+    private static string? GroupOf(string? metadataJson)
+    {
+        if (string.IsNullOrWhiteSpace(metadataJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(metadataJson);
+            return doc.RootElement.TryGetProperty("group", out var group) ? group.GetString() : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     private static IReadOnlyCollection<Guid> EngagementUserIds(REMSEngagement engagement)
     {

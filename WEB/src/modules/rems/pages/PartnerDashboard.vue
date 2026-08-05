@@ -52,7 +52,7 @@
 
       <template #body-cell-status="cell">
         <q-td :props="cell">
-          <q-badge :color="statusColor(cell.row.status)">{{ statusLabel(cell.row.status) }}</q-badge>
+          <q-badge :color="requestStatusColor(cell.row)">{{ requestStatusLabel(cell.row) }}</q-badge>
         </q-td>
       </template>
 
@@ -113,7 +113,7 @@ import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
 import { useDateFormat } from "composables/useDateFormat";
-import { useRemsMeta, REMS_STATUS_OPTIONS } from "modules/rems/useRemsMeta";
+import { useRemsMeta, REMS_STATUS_FILTER_OPTIONS } from "modules/rems/useRemsMeta";
 
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
@@ -126,7 +126,7 @@ const notify = useNotify();
 const { confirm } = useConfirm();
 const { has } = usePermissions();
 const fmt = useDateFormat();
-const { typeLabel, priorityLabel, statusLabel, priorityColor, statusColor, emsStateLabel } = useRemsMeta();
+const { typeLabel, priorityLabel, priorityColor, requestStatusLabel, requestStatusColor, emsStateLabel } = useRemsMeta();
 
 const canCreate = computed(() => has(Permissions.RemsRequestsCreate));
 
@@ -136,7 +136,7 @@ const columns = computed(() => [
   { name: "type", label: "Type", field: "type", align: "left", default: true, filterable: false },
   { name: "priority", label: "Priority", field: "priority", align: "left", sortable: true, default: true, filterable: false },
   { name: "createdOnUtc", label: "Created", field: "createdOnUtc", align: "left", sortable: true, default: true, filterable: false },
-  { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true, filterOptions: REMS_STATUS_OPTIONS },
+  { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true, filterOptions: REMS_STATUS_FILTER_OPTIONS },
   { name: "assignedAdmin", label: "Assigned Admin", field: (r) => r.assignedAdmin?.name || "—", align: "left", default: true, filterable: false },
   { name: "emsFormState", label: "EMS State", field: "emsFormState", align: "left", default: true, filterable: false },
   { name: "actions", label: "Actions", field: "actions", align: "right" }

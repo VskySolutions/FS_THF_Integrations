@@ -558,16 +558,35 @@ export const remsApi = {
   // ---- Approval inbox (WO-117 Part B / WO-114) — the caller's OWN approval tasks only ----
   // The caller's own approval tasks (pending + historical), newest round first. Rows:
   //   { taskId, roundId, roundNumber, role, status, sentOnUtc, decidedOnUtc, roundStatus,
-  //     engagementId, remsId, remsNumber, clientName, entityName }.
+  //     engagementId, remsId, remsNumber, clientName, entityName,
+  //     approvedCount, rejectedCount, approverCount }.
+  // The three counts describe the whole ROUND (how many approvers, how many have decided), not the
+  // caller's own task — they drive the inbox's "1/4" progress column. Still awaiting =
+  // approverCount - approvedCount - rejectedCount; a rejection ends the round, so the rest never decide.
   myApprovalTasks: () => api.get("/api/rems/approval-tasks").then(unwrap),
-  // The role-scoped view of the caller's own task (404 for anyone else's task). Shape:
+  // The caller's own approval task with the full review packet (404 for anyone else's task) — the same
+  // material as the staff engagement workspace, since that is what is being signed off. Shape:
   //   { taskId, roundId, roundNumber, role, status, decidedOnUtc, rejectionReason, canDecide,
   //     checklist:[{ id, displayOrder, label, isCompleted, completedOnUtc }],
-  //     engagement:{ engagementId, remsId, remsNumber, entityName, department, serviceLine,
-  //       client:{ id, name, email, mobileNumber, referralSource, entities:[{ id, name, ein, isMainEntity }] }|null,
-  //       firstYearFeeEstimate, realizationPercentage, departmentDirector, engagementExecutive, billingManager,
-  //       commissionSplits:[{ id, employee:{ id, name }, percentage }]|null, marketingMethodIds:[guid]|null } }.
-  // Sections not relevant to the approver's role are null (the server omits them).
+  //     request:{ remsId, remsNumber, title, description, requestedClientName, type, priority, status,
+  //       customerEmail, customerMobileNumber, industryGroup, emsFormState, clientSubmissionState,
+  //       assignedAdmin, cse, requestedBy, createdOnUtc, files:[{ id, mediaId, fileName, mimeType, fileSize, url }] },
+  //     engagement:{ engagementId, status, department, serviceLine,
+  //       client:{ id, name, email, mobileNumber, referralSource, billingContactName, billingEmail,
+  //         billingAddress, entities:[{ id, name, ein, isMainEntity }] },
+  //       entity:{ id, name, ein, isMainEntity, addresses:[{ id, addressType, address }],
+  //         contacts:[{ id, role, isRequired, name, email, phone }] },
+  //       departmentDirector, engagementExecutive, billingManager,
+  //       firstYearFeeEstimate, realizationPercentage, financialsRestricted,
+  //       audit:{ id, clientAcceptanceFormMediaId, fileName, url }|null,
+  //       government:{ ... }|null,
+  //       tax:{ id, fiscalYearEnd, dueDates:{ originalDueDate, extendedDueDate }|null, taxForms:[{ id, label, group }] }|null,
+  //       marketingMethods:[{ id, label, group }], commissionSplits:[{ id, employee:{ id, name }, percentage }] },
+  //     round:{ id, roundNumber, status, sentOnUtc, sentBy, completedOnUtc, rejectionReason,
+  //       decisions:[{ taskId, approver, role, status, decidedOnUtc, rejectionReason, isYou }] } }.
+  // Option-set references arrive resolved to labels — the approver roles do not carry optionSets.read.
+  // `firstYearFeeEstimate`/`realizationPercentage` are null with `financialsRestricted` true for roles
+  // other than Department Director / Managing Shareholder (AC-REMS-019.10).
   approvalTask: (taskId) => api.get(`/api/rems/approval-tasks/${taskId}`).then(unwrap),
   // Check / uncheck one checklist item on the caller's own task. Returns the updated item view.
   setChecklistItem: (taskId, itemId, isCompleted) =>

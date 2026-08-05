@@ -128,12 +128,25 @@ public static class Permissions
         RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsAssign, OptionSetsRead
     };
 
-    /// <summary>REMS Admin: full request lifecycle plus pool, forms, engagements, approvals routing and the email log.</summary>
+    /// <summary>
+    /// REMS Admin: full request lifecycle plus pool, forms, engagements, approvals routing and the email log
+    /// — and acting on approval tasks of their own.
+    /// <para>
+    /// <see cref="RemsApprovalsAct"/> is not optional here: an Admin is routinely made an APPROVER by the
+    /// normal flow. The CSE is picked from the tenant's Admins on the Build-EMS screen and is an automatic
+    /// approver on every engagement of that request, and commission recipients (also automatic approvers)
+    /// come from the CSE user group. Without this key such a user gets a pending task they can neither see
+    /// nor decide, and since a round completes only when EVERY task is approved, the engagement would sit in
+    /// PendingApproval indefinitely. As on <see cref="ForTenantAdmin"/>, the key stays record-scoped: every
+    /// approval endpoint additionally requires <c>ApproverId == caller</c> and 404s otherwise, so this grants
+    /// no visibility of anyone else's tasks.
+    /// </para>
+    /// </summary>
     public static IReadOnlyList<string> ForAdmin() => new[]
     {
         RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsDelete, RemsRequestsAssign,
         RemsPoolRead, RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
-        RemsApprovalsSend, RemsEmailLogRead, OptionSetsRead
+        RemsApprovalsSend, RemsApprovalsAct, RemsEmailLogRead, OptionSetsRead
     };
 
     /// <summary>

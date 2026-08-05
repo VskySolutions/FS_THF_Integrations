@@ -21,15 +21,25 @@ export const REMS_PRIORITY_OPTIONS = [
   { label: "Low", value: "low" }
 ];
 
+// The request lifecycle, in stage order. Each value names the stage the request is AT — who it is waiting
+// on — rather than the event that last happened to it, so the badge answers "what is happening to this
+// request right now". Mirrors the backend RemsRequestStatuses; `customer_submitted` keeps its code (it is
+// what existing rows hold) but reads as "Engagement Setup", the stage the client's form moves it into.
 export const REMS_STATUS_OPTIONS = [
   { label: "Draft", value: "draft" },
   { label: "Submitted", value: "submitted" },
-  { label: "Sent", value: "sent" },
   { label: "Awaiting Customer", value: "awaiting_customer" },
-  { label: "Customer Submitted", value: "customer_submitted" },
-  { label: "Approved", value: "approved" },
-  { label: "Rejected", value: "rejected" }
+  { label: "Engagement Setup", value: "customer_submitted" },
+  { label: "Pending Approval", value: "pending_approval" },
+  { label: "Changes Requested", value: "changes_requested" },
+  { label: "Approved", value: "approved" }
 ];
+
+// The same wording carried into the status FILTER. Filtering is still on the `submitted` code, which is
+// why the label names both of the states that one code shows up as in a row rather than just the waiting
+// one. Use this for filter dropdowns and REMS_STATUS_OPTIONS for everything else.
+export const REMS_STATUS_FILTER_OPTIONS = REMS_STATUS_OPTIONS.map((option) =>
+  (option.value === "submitted" ? { ...option, label: "Submitted/Waiting For Pickup" } : option));
 
 // Type codes that mean "an existing client is referenced" (drives the client-lookup type marking).
 export const REMS_EXISTING_CLIENT_TYPES = ["existing_client", "subsidiary_child_of_existing_client"];
@@ -53,14 +63,17 @@ export const REMS_FORM_STATE_OPTIONS = [
 ];
 
 const PRIORITY_COLORS = { urgent: "red-8", high: "deep-orange-7", medium: "amber-8", low: "blue-grey-5" };
+// Awaiting Customer borrows the EMS "Sent" teal — it is the same moment seen from the request — and the
+// approval stages borrow ENGAGEMENT_STATUS_META's colours, so a request badge and the engagement badge
+// underneath it never disagree about what pending/approved looks like.
 const STATUS_COLORS = {
   draft: "grey-6",
   submitted: "primary",
-  sent: "teal-7",
-  awaiting_customer: "orange-8",
+  awaiting_customer: "teal-7",
   customer_submitted: "deep-purple-6",
-  approved: "positive",
-  rejected: "negative"
+  pending_approval: "orange-8",
+  changes_requested: "negative",
+  approved: "positive"
 };
 const EMS_STATE_LABELS = {
   NotStarted: "Not started", Draft: "Draft", Saved: "Saved", Sent: "Sent", Submitted: "Submitted", Cancelled: "Cancelled"
@@ -105,6 +118,12 @@ const EMAIL_EVENT_ICONS = { Sent: "o_send", Delivered: "o_mark_email_read", Open
 
 const labelFrom = (options, value) => options.find((o) => o.value === value)?.label || value || "—";
 
+// "Submitted" is the status of every request sitting in the Admin Pool, which on its own says nothing
+// about the one thing anyone wants to know at that stage: has somebody taken it? The backend already draws
+// that line — a request is pickable while it is Submitted with no assigned admin — so the badge spells it
+// out. Every other status reads exactly as it does elsewhere.
+const awaitingPickUp = (row) => row?.status === "submitted" && !row?.assignedAdmin;
+
 // Static label/colour helpers for rendering REMS rows and detail cards.
 export function useRemsMeta () {
   const typeLabel = (v) => labelFrom(REMS_TYPE_OPTIONS, v);
@@ -124,6 +143,17 @@ export function useRemsMeta () {
   const approvalStatusLabel = (v) => APPROVAL_STATUS_LABELS[v] || v || "—";
   const approvalStatusColor = (v) => APPROVAL_STATUS_COLORS[v] || "grey-6";
   const engagementStatusMeta = (v) => ENGAGEMENT_STATUS_META[v] || { label: v || "—", color: "grey-6" };
+
+  // Status badge for a request ROW (or detail) rather than a bare code: same as statusLabel/statusColor
+  // except that `submitted` splits on whether an admin has picked it up. Every surface showing a request
+  // — the Admin Pool, the Partner Dashboard, the request detail — uses these, so all three say the same
+  // thing about the same request. Surfaces whose rows carry no assignment (the EMS Inbox, the Build EMS
+  // screen) stay on the plain code helpers; they have no way to tell the two apart.
+  const requestStatusLabel = (row) => {
+    if (row?.status !== "submitted") return statusLabel(row?.status);
+    return awaitingPickUp(row) ? "Waiting For Pickup" : "Picked Up";
+  };
+  const requestStatusColor = (row) => (awaitingPickUp(row) ? "amber-8" : statusColor(row?.status));
 
   // The EMS engagement/detail action becomes available only once the customer has submitted their
   // form (AC-REMS-002.5 / 005.6); until then it stays disabled.
@@ -150,6 +180,8 @@ export function useRemsMeta () {
     approvalStatusLabel,
     approvalStatusColor,
     engagementStatusMeta,
+    requestStatusLabel,
+    requestStatusColor,
     emsDetailAvailable,
     emsFormActivity
   };

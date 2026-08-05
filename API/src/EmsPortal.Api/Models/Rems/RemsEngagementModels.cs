@@ -302,5 +302,29 @@ internal static class RemsTaxDueDates
     }
 
     public static string ComputeJson(DateOnly fiscalYearEnd)
-        => JsonSerializer.Serialize(Compute(fiscalYearEnd), new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        => JsonSerializer.Serialize(Compute(fiscalYearEnd), Options);
+
+    /// <summary>
+    /// Reads back a stored schedule. The STORED value wins over recomputing from the fiscal year end, so a
+    /// row keeps the dates it was saved with even if the rule above is ever changed. Unreadable JSON is
+    /// treated as absent rather than throwing on a read-only review screen.
+    /// </summary>
+    public static RemsTaxDueDateSet? TryDeserialize(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<RemsTaxDueDateSet>(json, Options);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 }

@@ -1,3 +1,4 @@
+using EmsPortal.Application.Abstractions.Persistence;
 using EmsPortal.Domain.Entities;
 
 namespace EmsPortal.Api.Models.Rems;
@@ -10,6 +11,25 @@ internal static class RemsWorkspaceMapper
 {
     public static RemsUserRef? UserRef(Guid? id, IReadOnlyDictionary<Guid, string> names)
         => id is { } uid ? new RemsUserRef(uid, names.TryGetValue(uid, out var n) ? n : string.Empty) : null;
+
+    /// <summary>
+    /// The request's EMS-form state as the UI reads it: the form's own status, and whether the client has
+    /// submitted / is still being waited on. Shared so the request detail and the approver's review packet
+    /// can never disagree about what a given form state means.
+    /// </summary>
+    public static (string EmsFormState, string? ClientSubmissionState) FormState(RemsFormStateInfo? form)
+    {
+        if (form is null)
+        {
+            return ("NotStarted", null);
+        }
+
+        var ems = form.FormStatus?.ToString() ?? "NotStarted";
+        var submission = form.HasSubmission || form.FormSubmittedOnUtc is not null
+            ? "Submitted"
+            : form.FormSentOnUtc is not null ? "AwaitingCustomer" : null;
+        return (ems, submission);
+    }
 
     public static RemsAddressView? Address(Address? address)
         => address is null

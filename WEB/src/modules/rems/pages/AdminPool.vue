@@ -65,7 +65,7 @@
 
       <template #body-cell-status="cell">
         <q-td :props="cell">
-          <q-badge :color="poolStatusColor(cell.row)">{{ poolStatusLabel(cell.row) }}</q-badge>
+          <q-badge :color="requestStatusColor(cell.row)">{{ requestStatusLabel(cell.row) }}</q-badge>
         </q-td>
       </template>
 
@@ -154,7 +154,7 @@ import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
 import { useDateFormat } from "composables/useDateFormat";
-import { useRemsMeta, REMS_STATUS_OPTIONS } from "modules/rems/useRemsMeta";
+import { useRemsMeta, REMS_STATUS_FILTER_OPTIONS } from "modules/rems/useRemsMeta";
 
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
@@ -170,28 +170,12 @@ const { confirm } = useConfirm();
 const { has } = usePermissions();
 const fmt = useDateFormat();
 const {
-  priorityLabel, statusLabel, priorityColor, statusColor,
+  priorityLabel, priorityColor, requestStatusLabel, requestStatusColor,
   emsStateLabel, submissionStateLabel, emsDetailAvailable, emsFormActivity
 } = useRemsMeta();
 
 // The pool exists to get unclaimed requests picked up, so it opens on those; the other scopes are a click away.
 const poolScope = ref("unassigned");
-
-// "Submitted" is the status of everything sitting in the pool, which tells an operator nothing about the
-// only thing that matters here: has someone taken it? The backend already draws that line (a request is
-// pickable when it is Submitted with no assigned admin), so the pool spells it out. Every other status
-// reads as it does elsewhere.
-const awaitingPickUp = (row) => row?.status === "submitted" && !row?.assignedAdmin;
-const poolStatusLabel = (row) => {
-  if (row?.status !== "submitted") return statusLabel(row?.status);
-  return awaitingPickUp(row) ? "Waiting For Pickup" : "Picked Up";
-};
-const poolStatusColor = (row) => (awaitingPickUp(row) ? "amber-8" : statusColor(row?.status));
-
-// The filter carries the pool's wording too. It still filters on the `submitted` status, which is why the
-// label names both of the states that status shows up as here rather than just the waiting one.
-const POOL_STATUS_OPTIONS = REMS_STATUS_OPTIONS.map((option) =>
-  (option.value === "submitted" ? { ...option, label: "Submitted/Waiting For Pickup" } : option));
 
 const columns = computed(() => [
   { name: "remsNumber", label: "Request ID", field: "remsNumber", align: "left", sortable: true, default: true, filterable: false },
@@ -201,7 +185,7 @@ const columns = computed(() => [
   { name: "cse", label: "CSE", field: (r) => r.cse?.name || "—", align: "left", default: true, filterable: false },
   { name: "industryGroup", label: "Industry Group", field: (r) => r.industryGroup || "—", align: "left", default: true, filterable: false },
   { name: "customerEmail", label: "Client Email", field: (r) => r.customerEmail || "—", align: "left", default: false, filterable: false },
-  { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true, filterOptions: POOL_STATUS_OPTIONS },
+  { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true, filterOptions: REMS_STATUS_FILTER_OPTIONS },
   { name: "emsFormState", label: "Form Status", field: "emsFormState", align: "left", default: true, filterable: false },
   { name: "clientSubmissionState", label: "Client Submission", field: "clientSubmissionState", align: "left", default: true, filterable: false },
   { name: "createdOnUtc", label: "Created", field: "createdOnUtc", align: "left", sortable: true, default: false, filterable: false },

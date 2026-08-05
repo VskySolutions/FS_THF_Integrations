@@ -45,13 +45,15 @@ public static class DefaultOptionSets
         }),
         new Definition(EntityType.Rems, "REMS.Status", "REMS Status", OptionItemSortMode.Custom, new[]
         {
+            // The request lifecycle, in stage order — each value names who the request is waiting on.
+            // See RemsRequestStatuses for the transitions and the per-engagement roll-up.
             new ItemDefinition("draft", "Draft", 1),
             new ItemDefinition("submitted", "Submitted", 2),
-            new ItemDefinition("sent", "Sent", 3),
-            new ItemDefinition("awaiting_customer", "Awaiting Customer", 4),
-            new ItemDefinition("customer_submitted", "Customer Submitted", 5),
-            new ItemDefinition("approved", "Approved", 6),
-            new ItemDefinition("rejected", "Rejected", 7),
+            new ItemDefinition("awaiting_customer", "Awaiting Customer", 3),
+            new ItemDefinition("customer_submitted", "Engagement Setup", 4),
+            new ItemDefinition("pending_approval", "Pending Approval", 5),
+            new ItemDefinition("changes_requested", "Changes Requested", 6),
+            new ItemDefinition("approved", "Approved", 7),
         }),
         new Definition(EntityType.Rems, "REMS.IndustryGroup", "REMS Industry Group", OptionItemSortMode.Custom, new[]
         {

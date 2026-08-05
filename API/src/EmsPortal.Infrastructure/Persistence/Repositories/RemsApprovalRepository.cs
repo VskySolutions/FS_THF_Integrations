@@ -53,9 +53,12 @@ internal sealed class RemsApprovalRepository : IRemsApprovalRepository
                 .ThenInclude(en => en!.Client).ThenInclude(c => c!.Entities)
             .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
 
+    // The round's sibling tasks come along so the inbox can show how far the round has got (n of m
+    // approved). The caller's checklist is deliberately NOT loaded: the inbox lists rounds, not checkboxes,
+    // and a second collection include would multiply the result set for nothing.
     public async Task<IReadOnlyList<REMSApprovalTask>> ListTasksByApproverAsync(Guid approverId, CancellationToken cancellationToken = default)
         => await _dbContext.RemsApprovalTasks
-            .Include(t => t.ChecklistItems)
+            .Include(t => t.Round).ThenInclude(r => r!.Tasks)
             .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.Entity)
                 .ThenInclude(en => en!.Client).ThenInclude(c => c!.Rems)
             .Where(t => t.ApproverId == approverId)

@@ -8,7 +8,7 @@
       :back-to="{ name: 'rems_partner' }"
     >
       <template #actions>
-        <q-badge v-if="detail" :color="statusColor(detail.status)" class="q-mr-sm">{{ statusLabel(detail.status) }}</q-badge>
+        <q-badge v-if="detail" :color="requestStatusColor(detail)" class="q-mr-sm">{{ requestStatusLabel(detail) }}</q-badge>
         <q-btn v-if="detail?.actions?.canEdit && detail?.status === 'draft'" flat round dense color="primary" icon="o_edit" @click="openEdit">
           <q-tooltip>Edit</q-tooltip>
         </q-btn>
@@ -131,7 +131,8 @@ const { confirm } = useConfirm();
 const { has } = usePermissions();
 const fmt = useDateFormat();
 const {
-  typeLabel, priorityLabel, statusLabel, priorityColor, statusColor, emsStateLabel, submissionStateLabel
+  typeLabel, priorityLabel, priorityColor, requestStatusLabel, requestStatusColor,
+  emsStateLabel, submissionStateLabel
 } = useRemsMeta();
 
 const requestId = route.params.id;
@@ -139,8 +140,10 @@ const loading = ref(true);
 const detail = ref(null);
 
 // Once the customer has submitted their EMS form the request is past the build-and-assign stage — the
-// form is done and the work moves to the engagement workspace — so both actions are withdrawn.
-const customerSubmitted = computed(() => detail.value?.status === "customer_submitted");
+// form is done and the work moves to the engagement workspace — so both actions are withdrawn. Keyed on
+// the submission itself, not on the request status: the status carries on past `customer_submitted` into
+// the approval stages, where these actions must stay withdrawn just the same.
+const customerSubmitted = computed(() => detail.value?.clientSubmissionState === "Submitted");
 // The Build EMS workspace is Admin-only (rems.forms.manage); Partners see the request but not this entry.
 const canBuildEms = computed(() => has(Permissions.RemsFormsManage) && !customerSubmitted.value);
 
@@ -152,7 +155,7 @@ const infoRows = computed(() => {
     { label: "Client", value: d.clientName || "—" },
     { label: "Type", value: typeLabel(d.type) },
     { label: "Priority", type: "priority" },
-    { label: "Status", value: statusLabel(d.status) },
+    { label: "Status", value: requestStatusLabel(d) },
     { label: "Customer Email", value: d.customerEmail || "—" },
     { label: "Customer Mobile", value: d.customerMobileNumber || "—" },
     { label: "Assigned Admin", value: d.assignedAdmin?.name || "Unassigned" },

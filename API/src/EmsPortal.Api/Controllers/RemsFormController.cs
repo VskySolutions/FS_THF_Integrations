@@ -262,6 +262,15 @@ public sealed class RemsFormController : ControllerBase
         form.InviteLockedOnUtc = now;
         _forms.Update(form);
 
+        // The request now waits on the client, so say so — leaving it on "Submitted" reads as still sitting
+        // in the Admin Pool. Guarded on the pool status so a request that has somehow moved further along
+        // (or was never in the pool) is never walked backwards.
+        if (rems.Status == RemsRequestStatuses.Submitted)
+        {
+            rems.Status = RemsRequestStatuses.AwaitingCustomer;
+            _rems.Update(rems);
+        }
+
         // Record the Sent delivery event (later delivery/open/failed events are ingested by WO-121, matched
         // to this row by ProviderMessageId).
         await _forms.AddEmailEventAsync(new REMSFormEmailEvent

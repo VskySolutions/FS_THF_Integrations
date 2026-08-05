@@ -1,4 +1,5 @@
 using EmsPortal.Domain.Entities;
+using EmsPortal.Domain.Enums;
 
 namespace EmsPortal.Application.Abstractions.Persistence;
 
@@ -23,6 +24,13 @@ public interface IRemsEngagementRepository
 
     /// <summary>Active engagements for a set of entities (WO-114 workspace), with marketing and commission loaded.</summary>
     Task<IReadOnlyList<REMSEngagement>> ListByEntityIdsAsync(IReadOnlyCollection<Guid> entityIds, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Every engagement on a request, as (id, status) pairs only. Backs the request-status roll-up: a
+    /// request carries one engagement per entity, and its status summarises them all.
+    /// </summary>
+    Task<IReadOnlyList<(Guid Id, RemsEngagementStatus Status)>> ListStatusesByRemsIdAsync(
+        Guid remsId, CancellationToken cancellationToken = default);
 
     /// <summary>Audit details for a set of engagements (WO-114 workspace).</summary>
     Task<IReadOnlyList<REMSEngagementAuditDetail>> ListAuditDetailsAsync(IReadOnlyCollection<Guid> engagementIds, CancellationToken cancellationToken = default);

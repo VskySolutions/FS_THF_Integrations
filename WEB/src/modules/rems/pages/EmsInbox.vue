@@ -194,8 +194,10 @@ const showEmailLog = (row) =>
   has(Permissions.RemsEmailLogRead) &&
   (!!row.formSentOnUtc || !!row.latestEmailEventType || ["Sent", "Submitted"].includes(row.formStatus));
 // Once the customer has submitted, the form is finished and the work moves to the engagement workspace,
-// so it can no longer be built or rebuilt (mirrors the request detail screen).
-const canBuildRow = (row) => row.requestStatus !== "customer_submitted";
+// so it can no longer be built or rebuilt (mirrors the request detail screen). Keyed on the form's own
+// state rather than the request status, which carries on past `customer_submitted` into the approval
+// stages — where the form is, if anything, even more finished.
+const canBuildRow = (row) => row.formStatus !== "Submitted";
 
 // Where the Request ID itself takes you — the row's most relevant destination, resolved once so the
 // tooltip and the click can never disagree: Submitted → Engagement Workspace; Sent/Submitted → Email Log;

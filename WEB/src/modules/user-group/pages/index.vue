@@ -207,7 +207,7 @@ const memberColumns = [
   { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true },
   { name: "addedBy", label: "Added By", field: "addedBy", align: "left", sortable: true, default: true },
   { name: "addedOnUtc", label: "Added On", field: (r) => fmt.formatDateTime(r.addedOnUtc), align: "left", sortable: true, default: true },
-  { name: "actions", label: "", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 
 const { rows, loading, search, pagination, load, onRequest } = useListTable({

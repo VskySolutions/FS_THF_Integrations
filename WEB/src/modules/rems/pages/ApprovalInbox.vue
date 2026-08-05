@@ -58,6 +58,16 @@
         </q-td>
       </template>
 
+      <!-- How far the whole ROUND has got, not just this task: "1/4" reads as one of four approvers done. -->
+      <template #body-cell-approvals="cell">
+        <q-td :props="cell">
+          <q-badge :color="progressColor(cell.row)">
+            {{ cell.row.approvedCount }}/{{ cell.row.approverCount }}
+          </q-badge>
+          <q-tooltip>{{ progressHint(cell.row) }}</q-tooltip>
+        </q-td>
+      </template>
+
       <template #body-cell-sentOnUtc="cell">
         <q-td :props="cell">{{ fmt.formatDateTime(cell.row.sentOnUtc) }}</q-td>
       </template>
@@ -106,8 +116,17 @@ const columns = [
   { name: "client", label: "Client / Entity", field: "clientName", align: "left", sortable: true, default: true },
   { name: "role", label: "Your Role", field: "role", align: "left", sortable: true, default: true },
   { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true },
+  // Sorts on how much of the round is still outstanding, so the ones closest to done rise together.
+  {
+    name: "approvals",
+    label: "Approvals",
+    field: (r) => (r.approverCount || 0) - (r.approvedCount || 0),
+    align: "left",
+    sortable: true,
+    default: true
+  },
   { name: "sentOnUtc", label: "Sent", field: "sentOnUtc", align: "left", sortable: true, default: true },
-  { name: "actions", label: "", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 
 // Own-tasks list loads in full (no server pagination); tenant-switch reload comes from useListTable.
@@ -123,6 +142,23 @@ const filteredRows = computed(() => {
   return rows.value.filter((r) =>
     [r.remsNumber, r.clientName, r.entityName].some((v) => (v || "").toLowerCase().includes(q)));
 });
+
+// Round progress. A rejection ENDS the round, so the undecided tasks never decide — "awaiting" is only
+// meaningful while the round is still open, and the counts must not imply otherwise.
+const pendingOf = (row) => Math.max(0, (row.approverCount || 0) - (row.approvedCount || 0) - (row.rejectedCount || 0));
+
+const progressColor = (row) => {
+  if (row.rejectedCount > 0) return "negative";
+  if (row.approverCount > 0 && row.approvedCount === row.approverCount) return "positive";
+  return "primary";
+};
+
+const progressHint = (row) => {
+  const parts = [`${row.approvedCount || 0} of ${row.approverCount || 0} approved`];
+  if (row.rejectedCount > 0) parts.push(`${row.rejectedCount} rejected — the round ended`);
+  else if (pendingOf(row) > 0) parts.push(`${pendingOf(row)} still to decide`);
+  return parts.join(" · ");
+};
 
 const openTask = (row) => router.push({ name: "rems_approval_task", params: { taskId: row.taskId } });
 </script>

@@ -345,7 +345,7 @@ public sealed class RemsPublicFormController : ControllerBase
             form.Status = RemsFormStatus.Submitted;
             form.SubmittedOnUtc = now;
             form.InviteLockedOnUtc ??= now;
-            form.Rems!.Status = RemsRequestStatuses.CustomerSubmitted;
+            form.Rems!.Status = RemsRequestStatuses.EngagementSetup;
 
             // 8. Commit.
             await _unitOfWork.SaveChangesAsync(ct);

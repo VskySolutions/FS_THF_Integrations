@@ -534,18 +534,7 @@ public sealed class RemsRequestsController : ControllerBase
 
     /// <summary>Projects the (optional) EMS form into dashboard state strings. No form => "NotStarted"/null.</summary>
     private static (string EmsFormState, string? ClientSubmissionState) MapFormState(RemsFormStateInfo? form)
-    {
-        if (form is null)
-        {
-            return ("NotStarted", null);
-        }
-
-        var ems = form.FormStatus?.ToString() ?? "NotStarted";
-        var submission = form.HasSubmission || form.FormSubmittedOnUtc is not null
-            ? "Submitted"
-            : form.FormSentOnUtc is not null ? "AwaitingCustomer" : null;
-        return (ems, submission);
-    }
+        => RemsWorkspaceMapper.FormState(form);
 
     private static CreateNotificationDto AssignmentNotification(Guid recipientId, REMS rems)
         => new(

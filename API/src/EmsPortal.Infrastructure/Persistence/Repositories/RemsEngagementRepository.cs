@@ -1,5 +1,6 @@
 using EmsPortal.Application.Abstractions.Persistence;
 using EmsPortal.Domain.Entities;
+using EmsPortal.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace EmsPortal.Infrastructure.Persistence.Repositories;
@@ -42,6 +43,15 @@ internal sealed class RemsEngagementRepository : IRemsEngagementRepository
                 .Include(e => e.CommissionSplits)
                 .Where(e => entityIds.Contains(e.REMSEntityId))
                 .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<(Guid Id, RemsEngagementStatus Status)>> ListStatusesByRemsIdAsync(
+        Guid remsId, CancellationToken cancellationToken = default)
+        => (await _dbContext.RemsEngagements
+                .Where(e => e.Entity!.Client!.REMSId == remsId)
+                .Select(e => new { e.Id, e.Status })
+                .ToListAsync(cancellationToken))
+            .Select(e => (e.Id, e.Status))
+            .ToList();
 
     public async Task<IReadOnlyList<REMSEngagementAuditDetail>> ListAuditDetailsAsync(IReadOnlyCollection<Guid> engagementIds, CancellationToken cancellationToken = default)
         => engagementIds.Count == 0

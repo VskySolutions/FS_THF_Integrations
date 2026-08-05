@@ -21,13 +21,20 @@ namespace EmsPortal.Infrastructure.Persistence.Repositories;
 /// </summary>
 internal sealed class DeletedRecordsRepository : IDeletedRecordsRepository
 {
-    /// <summary>The four operations for one entity type, closed over its concrete CLR type.</summary>
+    /// <summary>
+    /// The four operations for one entity type, closed over its concrete CLR type.
+    /// <see cref="PurgeChildren"/> is set only for a type that roots an aggregate, and runs before the
+    /// record itself is removed.
+    /// </summary>
     private sealed record Handler(
         Func<Guid?, IQueryable<DeletedRecordRow>> Deleted,
         Func<Guid, Guid?, IQueryable<DeletedRecordRow>> ById,
         Func<Guid, Guid?, CancellationToken, Task<int>> Restore,
         Func<Guid, Guid?, CancellationToken, Task<int>> Purge,
-        Func<DateTime, Guid?, CancellationToken, Task<int>> CountOverdue);
+        Func<DateTime, Guid?, CancellationToken, Task<int>> CountOverdue)
+    {
+        public Func<Guid, CancellationToken, Task>? PurgeChildren { get; init; }
+    }
 
     private readonly EmsPortalDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
@@ -67,8 +74,16 @@ internal sealed class DeletedRecordsRepository : IDeletedRecordsRepository
         // better to a human anyway.
         AddNullableTenant(map, EntityType.EmailTemplate, _dbContext.EmailTemplates, t => t.Subject, t => t.TenantId);
 
-        // Global, with no tenant column at all: visible to whoever may manage them.
+        // Global, with no tenant column at all: visible to whoever may manage them. A user belongs to
+        // tenants through their role assignments rather than by a column, and a tenant is the scope.
         AddGlobal(map, EntityType.Role, _dbContext.Roles, r => r.Name);
+        AddGlobal(map, EntityType.User, _dbContext.Users, u => u.DisplayName);
+        AddGlobal(map, EntityType.Tenant, _dbContext.Tenants, t => t.Name);
+
+        // A REMS request roots an aggregate rather than standing alone, so purging one has to take its
+        // whole graph with it.
+        Add(map, EntityType.Rems, _dbContext.Rems, r => r.REMSNumber, r => r.TenantId);
+        map[EntityType.Rems] = map[EntityType.Rems] with { PurgeChildren = PurgeRemsAggregateAsync };
 
         return map;
     }
@@ -233,6 +248,14 @@ internal sealed class DeletedRecordsRepository : IDeletedRecordsRepository
         // UF rows first: they reference the record by (EntityType, EntityId) rather than by FK, so nothing
         // in the database would clean them up, and removing the record first would strand them.
         await CascadeDeleteUniversalFeaturesAsync(entityType, entityId, cancellationToken);
+
+        // Then the record's own children, for a type that roots an aggregate. Every REMS FK is Restrict,
+        // so the root cannot go until its graph has.
+        if (handler.PurgeChildren is { } purgeChildren)
+        {
+            await purgeChildren(entityId, cancellationToken);
+        }
+
         return await handler.Purge(entityId, Effective(tenantId), cancellationToken) > 0;
     }
 
@@ -249,6 +272,85 @@ internal sealed class DeletedRecordsRepository : IDeletedRecordsRepository
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Permanently removes everything hanging off a REMS request, deepest first, so no statement ever
+    /// leaves a row whose parent has already gone. Every FK in this graph is <c>Restrict</c> — nothing
+    /// cascades in the database — so the order below is load-bearing rather than a tidiness preference.
+    /// <para>
+    /// Two orderings are less obvious than the depth-first shape suggests. REMSClient carries
+    /// <c>SourceFormSubmissionId</c>, so a client has to go before the submission it was materialised
+    /// from. And an engagement's approval rounds are removed with the engagement's own detail rows rather
+    /// than after it, because both point at the engagement.
+    /// </para>
+    /// Shared rows are deliberately left behind: the Address rows an entity referenced, the Person rows
+    /// behind its contacts, and the Media behind a signed client-acceptance form all live in tables with
+    /// their own lists and lifecycles, and may be referenced elsewhere. Only the REMS-owned link rows go.
+    /// </summary>
+    private async Task PurgeRemsAggregateAsync(Guid remsId, CancellationToken cancellationToken)
+    {
+        var engagementIds = _dbContext.RemsEngagements.IgnoreQueryFilters()
+            .Where(e => e.Entity!.Client!.REMSId == remsId).Select(e => e.Id);
+        var entityIds = _dbContext.RemsEntities.IgnoreQueryFilters()
+            .Where(n => n.Client!.REMSId == remsId).Select(n => n.Id);
+        var formIds = _dbContext.RemsForms.IgnoreQueryFilters()
+            .Where(f => f.REMSId == remsId).Select(f => f.Id);
+        var roundIds = _dbContext.RemsApprovalRounds.IgnoreQueryFilters()
+            .Where(r => engagementIds.Contains(r.REMSEngagementId)).Select(r => r.Id);
+        var taskIds = _dbContext.RemsApprovalTasks.IgnoreQueryFilters()
+            .Where(t => roundIds.Contains(t.REMSApprovalRoundId)).Select(t => t.Id);
+        var taxDetailIds = _dbContext.RemsEngagementTaxDetails.IgnoreQueryFilters()
+            .Where(d => engagementIds.Contains(d.REMSEngagementId)).Select(d => d.Id);
+
+        // Approval chain.
+        await _dbContext.RemsApprovalChecklistItems.IgnoreQueryFilters()
+            .Where(i => taskIds.Contains(i.REMSApprovalTaskId)).ExecuteDeleteAsync(cancellationToken);
+        await _dbContext.RemsApprovalTasks.IgnoreQueryFilters()
+            .Where(t => roundIds.Contains(t.REMSApprovalRoundId)).ExecuteDeleteAsync(cancellationToken);
+        await _dbContext.RemsApprovalRounds.IgnoreQueryFilters()
+            .Where(r => engagementIds.Contains(r.REMSEngagementId)).ExecuteDeleteAsync(cancellationToken);
+
+        // Engagement detail.
+        await _dbContext.RemsEngagementTaxForms.IgnoreQueryFilters()
+            .Where(f => taxDetailIds.Contains(f.REMSEngagementTaxDetailId)).ExecuteDeleteAsync(cancellationToken);
+        await _dbContext.RemsEngagementTaxDetails.IgnoreQueryFilters()
+            .Where(d => engagementIds.Contains(d.REMSEngagementId)).ExecuteDeleteAsync(cancellationToken);
+        await _dbContext.RemsEngagementGovernmentDetails.IgnoreQueryFilters()
+            .Where(d => engagementIds.Contains(d.REMSEngagementId)).ExecuteDeleteAsync(cancellationToken);
+        await _dbContext.RemsEngagementAuditDetails.IgnoreQueryFilters()
+            .Where(d => engagementIds.Contains(d.REMSEngagementId)).ExecuteDeleteAsync(cancellationToken);
+        await _dbContext.RemsEngagementMarketingMethods.IgnoreQueryFilters()
+            .Where(m => engagementIds.Contains(m.REMSEngagementId)).ExecuteDeleteAsync(cancellationToken);
+        await _dbContext.RemsEngagementCommissionSplits.IgnoreQueryFilters()
+            .Where(s => engagementIds.Contains(s.REMSEngagementId)).ExecuteDeleteAsync(cancellationToken);
+        await _dbContext.RemsEngagementApprovers.IgnoreQueryFilters()
+            .Where(a => engagementIds.Contains(a.REMSEngagementId)).ExecuteDeleteAsync(cancellationToken);
+        await _dbContext.RemsEngagements.IgnoreQueryFilters()
+            .Where(e => entityIds.Contains(e.REMSEntityId)).ExecuteDeleteAsync(cancellationToken);
+
+        // Client graph. The client precedes the submissions because it references the one it came from.
+        await _dbContext.RemsEntityAddresses.IgnoreQueryFilters()
+            .Where(a => entityIds.Contains(a.REMSEntityId)).ExecuteDeleteAsync(cancellationToken);
+        await _dbContext.RemsEntityContacts.IgnoreQueryFilters()
+            .Where(c => entityIds.Contains(c.REMSEntityId)).ExecuteDeleteAsync(cancellationToken);
+        await _dbContext.RemsEntities.IgnoreQueryFilters()
+            .Where(n => n.Client!.REMSId == remsId).ExecuteDeleteAsync(cancellationToken);
+        await _dbContext.RemsClients.IgnoreQueryFilters()
+            .Where(c => c.REMSId == remsId).ExecuteDeleteAsync(cancellationToken);
+
+        // Form graph.
+        await _dbContext.RemsFormEmailEvents.IgnoreQueryFilters()
+            .Where(e => formIds.Contains(e.REMSFormId)).ExecuteDeleteAsync(cancellationToken);
+        await _dbContext.RemsFormDrafts.IgnoreQueryFilters()
+            .Where(d => formIds.Contains(d.REMSFormId)).ExecuteDeleteAsync(cancellationToken);
+        await _dbContext.RemsFormSubmissions.IgnoreQueryFilters()
+            .Where(s => formIds.Contains(s.REMSFormId)).ExecuteDeleteAsync(cancellationToken);
+        await _dbContext.RemsForms.IgnoreQueryFilters()
+            .Where(f => f.REMSId == remsId).ExecuteDeleteAsync(cancellationToken);
+
+        await _dbContext.RemsFiles.IgnoreQueryFilters()
+            .Where(f => f.REMSId == remsId).ExecuteDeleteAsync(cancellationToken);
     }
 
     /// <summary>Un-deletes the soft-deleted UF rows that share the record's (EntityType, EntityId) key.</summary>

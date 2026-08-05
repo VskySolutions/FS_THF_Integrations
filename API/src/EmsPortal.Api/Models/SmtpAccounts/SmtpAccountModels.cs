@@ -60,6 +60,7 @@ public sealed record SmtpAccountSummaryResponse(
     bool IsActive,
     string? CreatedByName,
     DateTime CreatedOnUtc,
+    string? UpdatedByName,
     DateTime UpdatedOnUtc);
 
 /// <summary>The outcome of a set-active operation.</summary>

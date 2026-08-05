@@ -31,12 +31,15 @@ public sealed class OptionSetsController : ControllerBase
 {
     private readonly IOptionSetService _service;
     private readonly IOptionSetRepository _sets;
+    private readonly IUserRepository _users;
     private readonly ITenantContext _tenantContext;
 
-    public OptionSetsController(IOptionSetService service, IOptionSetRepository sets, ITenantContext tenantContext)
+    public OptionSetsController(
+        IOptionSetService service, IOptionSetRepository sets, IUserRepository users, ITenantContext tenantContext)
     {
         _service = service;
         _sets = sets;
+        _users = users;
         _tenantContext = tenantContext;
     }
 
@@ -59,7 +62,16 @@ public sealed class OptionSetsController : ControllerBase
 
         var counts = await _sets.CountItemsAsync(visible.Select(s => s.Id).ToList(), cancellationToken);
 
-        var summaries = visible.Select(s => ToSummary(s, counts.TryGetValue(s.Id, out var c) ? c : 0)).ToList();
+        // One name lookup for the page, so the audit columns read as people rather than guids.
+        var names = await _users.GetFullNamesAsync(
+            visible.SelectMany(s => new[] { s.CreatedById, s.UpdatedById })
+                .Where(id => id.HasValue).Select(id => id!.Value),
+            cancellationToken);
+        string? NameOf(Guid? id) => id is { } uid && names.TryGetValue(uid, out var n) ? n : null;
+
+        var summaries = visible
+            .Select(s => ToSummary(s, counts.TryGetValue(s.Id, out var c) ? c : 0, NameOf))
+            .ToList();
         return Ok(ApiResponseFactory.Success<IEnumerable<OptionSetSummaryResponse>>(summaries, "Option lists retrieved."));
     }
 
@@ -248,9 +260,10 @@ public sealed class OptionSetsController : ControllerBase
     /// </summary>
     private static bool IsEditable(OptionSet set) => true;
 
-    private static OptionSetSummaryResponse ToSummary(OptionSet s, int itemCount) => new(
+    private static OptionSetSummaryResponse ToSummary(OptionSet s, int itemCount, Func<Guid?, string?> nameOf) => new(
         s.Id, s.TenantId, (int)s.EntityType, s.Key, s.Name, s.ParentSetId,
-        s.ItemSortMode.ToString(), s.IsSystem, s.IsActive, IsEditable(s), itemCount, s.CreatedOnUtc, s.UpdatedOnUtc);
+        s.ItemSortMode.ToString(), s.IsSystem, s.IsActive, IsEditable(s), itemCount,
+        nameOf(s.CreatedById), s.CreatedOnUtc, nameOf(s.UpdatedById), s.UpdatedOnUtc);
 
     private static OptionSetDetailResponse ToDetail(OptionSet s) => new(
         s.Id, s.TenantId, (int)s.EntityType, s.Key, s.Name, s.ParentSetId,

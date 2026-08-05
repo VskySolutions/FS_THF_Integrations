@@ -142,6 +142,7 @@ import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
+import { useAuditColumns } from "composables/useAuditColumns";
 
 import AppDataTable from "components/common/AppDataTable.vue";
 import { stripHtml } from "utils/richText";
@@ -150,6 +151,7 @@ import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
 import PermissionGroupFormDrawer from "modules/permission-group/components/PermissionGroupFormDrawer.vue";
 
+const auditColumns = useAuditColumns();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const { canChooseTenant } = useTenantOptions();
@@ -177,6 +179,7 @@ const columns = computed(() => [
   { name: "status", label: "Status", field: "isActive", align: "left", sortable: true, default: true, filterOptions: STATUS_OPTIONS },
   { name: "category", label: "Category", field: "category", align: "left", default: false, filterOptions: CATEGORY_OPTIONS },
   ...(canChooseTenant.value ? [{ name: "tenantName", label: "Tenant", field: "tenantName", align: "left", sortable: true, default: true, filterable: false }] : []),
+  ...auditColumns(),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ]);
 

@@ -58,7 +58,11 @@ public sealed class RoleGroupCompositionController : ControllerBase
         var groups = await _groups.GetByRoleAsync(roleId, cancellationToken);
         var preview = await _effective.PreviewForRoleAsync(roleId, cancellationToken);
         var summaries = groups
-            .Select(g => new PermissionGroupSummaryResponse(g.Id, g.Name, g.Description, g.Permissions.Count, 0, g.IsActive, g.TenantId, g.Tenant?.Name, g.CapacityLimit, 0, false))
+            // Role composition, not an audited list: the counts are placeholders here and the audit *By
+            // names are left unresolved rather than paying for a lookup this surface never shows.
+            .Select(g => new PermissionGroupSummaryResponse(
+                g.Id, g.Name, g.Description, g.Permissions.Count, 0, g.IsActive, g.TenantId, g.Tenant?.Name,
+                g.CapacityLimit, 0, false, null, g.CreatedOnUtc, null, g.UpdatedOnUtc))
             .ToList();
         return Ok(ApiResponseFactory.Success(new RoleGroupsResponse(roleId, summaries, preview.Permissions), "Role groups retrieved."));
     }
@@ -152,7 +156,11 @@ public sealed class RoleGroupCompositionController : ControllerBase
         var preview = await _effective.PreviewForRoleAsync(roleId, cancellationToken);
         var groups = await _groups.GetByRoleAsync(roleId, cancellationToken);
         var summaries = groups
-            .Select(g => new PermissionGroupSummaryResponse(g.Id, g.Name, g.Description, g.Permissions.Count, 0, g.IsActive, g.TenantId, g.Tenant?.Name, g.CapacityLimit, 0, false))
+            // Role composition, not an audited list: the counts are placeholders here and the audit *By
+            // names are left unresolved rather than paying for a lookup this surface never shows.
+            .Select(g => new PermissionGroupSummaryResponse(
+                g.Id, g.Name, g.Description, g.Permissions.Count, 0, g.IsActive, g.TenantId, g.Tenant?.Name,
+                g.CapacityLimit, 0, false, null, g.CreatedOnUtc, null, g.UpdatedOnUtc))
             .ToList();
         return Ok(ApiResponseFactory.Success(new RoleGroupsResponse(roleId, summaries, preview.Permissions), "Groups assigned to role."));
     }

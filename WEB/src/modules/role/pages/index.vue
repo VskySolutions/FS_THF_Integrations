@@ -105,6 +105,7 @@ import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
+import { useAuditColumns } from "composables/useAuditColumns";
 
 import AppDataTable from "components/common/AppDataTable.vue";
 import { stripHtml } from "utils/richText";
@@ -116,6 +117,7 @@ import AppSelect from "components/common/AppSelect.vue";
 import AppRichTextField from "components/common/AppRichTextField.vue";
 import RolePermissionGroupsPanel from "modules/permission-group/components/RolePermissionGroupsPanel.vue";
 
+const auditColumns = useAuditColumns();
 const notify = useNotify();
 const { confirm } = useConfirm();
 
@@ -133,6 +135,7 @@ const columns = [
     filterOptions: [{ label: "System", value: true }, { label: "Custom", value: false }]
   },
   { name: "permissionCount", label: "Permissions", field: "permissionCount", align: "left", sortable: true, default: true, filterable: false },
+  ...auditColumns(),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 

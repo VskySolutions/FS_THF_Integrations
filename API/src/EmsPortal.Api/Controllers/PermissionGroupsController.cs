@@ -29,6 +29,7 @@ namespace EmsPortal.Api.Controllers;
 public sealed class PermissionGroupsController : ControllerBase
 {
     private readonly IPermissionGroupRepository _groups;
+    private readonly IUserRepository _users;
     private readonly IRoleRepository _roles;
     private readonly ITenantRepository _tenants;
     private readonly IPermissionGroupEffectivePermissionService _effective;
@@ -40,11 +41,13 @@ public sealed class PermissionGroupsController : ControllerBase
         IPermissionGroupRepository groups,
         IRoleRepository roles,
         ITenantRepository tenants,
+        IUserRepository users,
         IPermissionGroupEffectivePermissionService effective,
         IAuditTrailService audit,
         IAuditTrailRepository auditRead,
         IUnitOfWork unitOfWork)
     {
+        _users = users;
         _groups = groups;
         _roles = roles;
         _tenants = tenants;
@@ -113,12 +116,19 @@ public sealed class PermissionGroupsController : ControllerBase
         // Batch the per-group current usage (distinct active members) in one query to avoid N+1.
         var usageByGroup = await _groups.CountActiveMembersForGroupsAsync(items.Select(i => i.Id).ToList(), cancellationToken);
 
+        // One name lookup for the page, so the audit columns read as people rather than guids.
+        var names = await _users.GetFullNamesAsync(
+            items.SelectMany(g => new[] { g.CreatedById, g.UpdatedById })
+                .Where(id => id.HasValue).Select(id => id!.Value),
+            cancellationToken);
+        string? NameOf(Guid? id) => id is { } uid && names.TryGetValue(uid, out var n) ? n : null;
+
         var data = new List<PermissionGroupSummaryResponse>(items.Count);
         foreach (var g in items)
         {
             var rolesUsing = await _groups.CountRolesUsingGroupAsync(g.Id, cancellationToken);
             var usage = usageByGroup.TryGetValue(g.Id, out var u) ? u : 0;
-            data.Add(ToSummary(g, rolesUsing, usage));
+            data.Add(ToSummary(g, rolesUsing, usage, NameOf));
         }
 
         return Ok(ApiResponseFactory.Paginated(data, "Permission groups retrieved.", page, limit, total));
@@ -375,9 +385,11 @@ public sealed class PermissionGroupsController : ControllerBase
                 ApiErrorCodes.PermissionCeilingExceeded, "One or more permission keys are outside your tenant's permission ceiling.", string.Join(", ", disallowed)));
     }
 
-    private static PermissionGroupSummaryResponse ToSummary(PermissionGroup g, int rolesUsing, int currentUsage)
+    private static PermissionGroupSummaryResponse ToSummary(
+        PermissionGroup g, int rolesUsing, int currentUsage, Func<Guid?, string?> nameOf)
         => new(g.Id, g.Name, g.Description, g.Permissions.Count, rolesUsing, g.IsActive, g.TenantId, g.Tenant?.Name,
-            g.CapacityLimit, currentUsage, IsFull(g.CapacityLimit, currentUsage));
+            g.CapacityLimit, currentUsage, IsFull(g.CapacityLimit, currentUsage),
+            nameOf(g.CreatedById), g.CreatedOnUtc, nameOf(g.UpdatedById), g.UpdatedOnUtc);
 
     /// <summary>A group is full when it has a limit and usage has reached (or exceeded) it.</summary>
     private static bool IsFull(int? capacityLimit, int currentUsage) => capacityLimit is { } limit && currentUsage >= limit;

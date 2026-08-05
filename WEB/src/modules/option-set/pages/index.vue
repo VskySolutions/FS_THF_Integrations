@@ -100,6 +100,7 @@ import { optionSetApi, getApiErrorMessage, OptionItemSortMode } from "services/a
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { usePermissions, Permissions } from "composables/usePermissions";
+import { useAuditColumns } from "composables/useAuditColumns";
 import { useEntityMeta } from "composables/uf/useEntityMeta";
 import { useEntityTypeOptions } from "composables/useOptionSet";
 import AppListHeader from "components/common/AppListHeader.vue";
@@ -107,6 +108,7 @@ import AppDataTable from "components/common/AppDataTable.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import OptionSetFormDrawer from "modules/option-set/components/OptionSetFormDrawer.vue";
 
+const auditColumns = useAuditColumns();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const { has } = usePermissions();
@@ -128,6 +130,7 @@ const columns = [
   { name: "itemSortMode", label: "Order", field: "itemSortMode", align: "left", default: true },
   { name: "origin", label: "Type", field: "isSystem", align: "left", default: true },
   { name: "isActive", label: "Status", field: "isActive", align: "left", default: true },
+  ...auditColumns(),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 

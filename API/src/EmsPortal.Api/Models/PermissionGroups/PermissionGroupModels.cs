@@ -57,7 +57,12 @@ public sealed record PermissionGroupSummaryResponse(
     // Capacity limits (WO-119): null limit = unlimited; CurrentUsage = distinct active members; IsFull = at/over limit.
     int? CapacityLimit,
     int CurrentUsage,
-    bool IsFull);
+    bool IsFull,
+    // The audit trail every list offers as hidden-by-default columns; *By resolved by the controller.
+    string? CreatedBy,
+    DateTime CreatedOnUtc,
+    string? UpdatedBy,
+    DateTime UpdatedOnUtc);
 
 public sealed record RoleUsingGroupResponse(Guid RoleId, string RoleName);
 

@@ -121,6 +121,7 @@ import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
 import { useDateFormat } from "composables/useDateFormat";
+import { useAuditColumns } from "composables/useAuditColumns";
 import { useSmtpOptions } from "composables/useSmtpOptions";
 
 import AppDataTable from "components/common/AppDataTable.vue";
@@ -130,6 +131,7 @@ import AppListHeader from "components/common/AppListHeader.vue";
 import SmtpAccountFormDrawer from "modules/smtp/components/SmtpAccountFormDrawer.vue";
 import TestEmailDialog from "modules/smtp/components/TestEmailDialog.vue";
 
+const auditColumns = useAuditColumns();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const fmt = useDateFormat();
@@ -156,6 +158,9 @@ const columns = [
   { name: "status", label: "Status", field: "isActive", align: "left", sortable: true, default: true, filterOptions: STATUS_OPTIONS },
   { name: "createdByName", label: "Created By", field: "createdByName", align: "left", default: true, filterable: false },
   { name: "createdOnUtc", label: "Created Date", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true, default: true, filterable: false },
+  // Created By / Created Date are already visible above under their own labels, so the shared set
+  // contributes the updated pair. The API names them *ByName here, hence the overrides.
+  ...auditColumns({ only: ["updatedBy", "updatedOnUtc"], overrides: { updatedBy: "updatedByName" } }),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 

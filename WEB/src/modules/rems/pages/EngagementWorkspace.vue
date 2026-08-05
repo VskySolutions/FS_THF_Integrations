@@ -6,6 +6,10 @@
           outline no-caps color="primary" icon="o_visibility" label="View submitted form"
           :disable="!workspace" class="q-mr-sm" @click="submittedOpen = true"
         />
+        <q-btn
+          outline no-caps color="primary" icon="o_forum" label="Notes"
+          :disable="!workspace" @click="conversationOpen = true"
+        />
       </template>
     </app-detail-header>
 
@@ -99,6 +103,11 @@
 
     <!-- Read-only submitted-form review — reused, SEPARATE from this editable workspace (AC-REMS-013.3/023.7). -->
     <submitted-form-dialog v-model="submittedOpen" :rems-id="remsId" />
+
+    <!-- The REQUEST's thread, the same one the pool, the dashboards and the approval task show — so a
+         question raised while setting the engagement up reaches the partner and the approvers, rather
+         than starting a conversation only this screen can see. -->
+    <conversation-dialog v-model="conversationOpen" :request-id="remsId" :subtitle="conversationSubtitle" />
   </q-page>
 </template>
 
@@ -114,6 +123,7 @@ import { usePermissions, Permissions } from "composables/usePermissions";
 import { useRemsMeta, useRemsEngagementOptionSets } from "modules/rems/useRemsMeta";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import SubmittedFormDialog from "modules/rems/components/SubmittedFormDialog.vue";
+import ConversationDialog from "modules/rems/components/ConversationDialog.vue";
 import EngagementClientCard from "modules/rems/components/engagement/EngagementClientCard.vue";
 import EngagementEntityPanel from "modules/rems/components/engagement/EngagementEntityPanel.vue";
 
@@ -137,7 +147,12 @@ const recipientOptions = ref([]);
 const loading = ref(true);
 const errorMsg = ref("");
 const submittedOpen = ref(false);
+const conversationOpen = ref(false);
 const activeEntity = ref(null);
+
+// Identifier then human label, matching the pool's and the dashboard's conversation subtitles.
+const conversationSubtitle = computed(() =>
+  [workspace.value?.remsNumber, workspace.value?.client?.name].filter(Boolean).join(" — "));
 
 // Where the client / entity divider sits, as a % of the width. Persisted across visits, the same way the
 // layout remembers its drawer — resizing is only useful if the choice sticks.

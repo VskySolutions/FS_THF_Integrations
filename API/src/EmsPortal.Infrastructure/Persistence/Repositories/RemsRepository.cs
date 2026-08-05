@@ -27,34 +27,92 @@ internal sealed class RemsRepository : IRemsRepository
     public async Task<(IReadOnlyList<REMS> Items, int Total)> ListRequestsAsync(
         RemsRequestListOptions options, CancellationToken cancellationToken = default)
     {
+        var query = ApplyFieldFilters(ApplyScope(ApplyVisibility(options), options), options);
+
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderByDescending(r => r.CreatedOnUtc)
+            .Skip((options.Page - 1) * options.Limit)
+            .Take(options.Limit)
+            .ToListAsync(cancellationToken);
+
+        return (items, total);
+    }
+
+    /// <summary>
+    /// How many pool requests fall into each of the Admin Pool's three views, in one round trip. Built on
+    /// the SAME visibility predicate and field filters as <see cref="ListRequestsAsync"/> — minus the pool
+    /// sub-filter, which is what is being counted — so the badge on a view can never disagree with the
+    /// number of rows clicking it produces.
+    /// </summary>
+    public async Task<RemsPoolCounts> CountPoolScopesAsync(
+        RemsRequestListOptions options, CancellationToken cancellationToken = default)
+    {
         var me = options.CallerUserId;
         const string draft = RemsRequestStatuses.Draft;
 
-        // Tenant isolation is ambient; this is the ADDITIONAL record-level visibility predicate (WO-111).
-        var query = options.CallerIsPrivileged
+        var query = ApplyFieldFilters(ApplyVisibility(options), options)
+            .Where(r => r.Status != draft);
+
+        // GroupBy over a constant collapses the three counts into a single aggregate query.
+        var counts = await query
+            .GroupBy(_ => 1)
+            .Select(g => new RemsPoolCounts(
+                g.Count(r => r.AdminAssignedToId == null),
+                g.Count(r => r.AdminAssignedToId == me),
+                g.Count()))
+            .FirstOrDefaultAsync(cancellationToken);
+
+        // No matching rows => no groups => no row at all, which is a legitimate all-zero result.
+        return counts ?? new RemsPoolCounts(0, 0, 0);
+    }
+
+    /// <summary>
+    /// The record-level visibility predicate (WO-111) — who may see which requests at all. Tenant
+    /// isolation is ambient and applied on top of this by the DbContext query filter.
+    /// </summary>
+    private IQueryable<REMS> ApplyVisibility(RemsRequestListOptions options)
+    {
+        var me = options.CallerUserId;
+        const string draft = RemsRequestStatuses.Draft;
+
+        return options.CallerIsPrivileged
             // Admin / Super Admin: every non-draft tenant request, plus the caller's own drafts.
             ? _dbContext.Rems.Where(r => r.Status != draft || r.CreatedById == me)
             // Partner-only: own drafts; non-draft only when created or involved (creator/assignee/CSE).
             : _dbContext.Rems.Where(r =>
                 (r.Status == draft && r.CreatedById == me) ||
                 (r.Status != draft && (r.CreatedById == me || r.AdminAssignedToId == me || r.CSEId == me)));
+    }
 
-        // View scope layered on top of the security predicate.
+    /// <summary>The requested VIEW, layered on top of the security predicate — never a substitute for it.</summary>
+    private static IQueryable<REMS> ApplyScope(IQueryable<REMS> query, RemsRequestListOptions options)
+    {
+        var me = options.CallerUserId;
+        const string draft = RemsRequestStatuses.Draft;
+
         if (options.Scope == RemsListScope.Partner)
         {
-            query = query.Where(r => r.CreatedById == me || r.AdminAssignedToId == me || r.CSEId == me);
-        }
-        else if (options.Scope == RemsListScope.Pool)
-        {
-            query = query.Where(r => r.Status != draft);
-            query = options.PoolFilter switch
-            {
-                RemsPoolFilter.Unassigned => query.Where(r => r.AdminAssignedToId == null),
-                RemsPoolFilter.Mine => query.Where(r => r.AdminAssignedToId == me),
-                _ => query,
-            };
+            return query.Where(r => r.CreatedById == me || r.AdminAssignedToId == me || r.CSEId == me);
         }
 
+        if (options.Scope != RemsListScope.Pool)
+        {
+            return query;
+        }
+
+        query = query.Where(r => r.Status != draft);
+        return options.PoolFilter switch
+        {
+            RemsPoolFilter.Unassigned => query.Where(r => r.AdminAssignedToId == null),
+            RemsPoolFilter.Mine => query.Where(r => r.AdminAssignedToId == me),
+            _ => query,
+        };
+    }
+
+    /// <summary>The user-supplied search/filter narrowing, shared by the list and its pool counts.</summary>
+    private static IQueryable<REMS> ApplyFieldFilters(IQueryable<REMS> query, RemsRequestListOptions options)
+    {
         if (!string.IsNullOrWhiteSpace(options.ClientName))
         {
             var t = options.ClientName.Trim();
@@ -81,14 +139,7 @@ internal sealed class RemsRepository : IRemsRepository
             query = query.Where(r => r.CreatedOnUtc <= to);
         }
 
-        var total = await query.CountAsync(cancellationToken);
-        var items = await query
-            .OrderByDescending(r => r.CreatedOnUtc)
-            .Skip((options.Page - 1) * options.Limit)
-            .Take(options.Limit)
-            .ToListAsync(cancellationToken);
-
-        return (items, total);
+        return query;
     }
 
     public async Task<IReadOnlyList<RemsFormStateInfo>> GetFormStatesAsync(

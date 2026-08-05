@@ -106,9 +106,11 @@ const sections = [
     ]
   },
   {
-    // REMS (Phase 15). Each item is gated by its own permission — never a role name — so a user sees
-    // only the areas their roles grant (e.g. an Approver-only user holds just rems.approvals.act and
-    // therefore sees only "Approvals", never the Partner/Admin items). AC-ADM-019.5 / REQ-REMS-001.7.
+    // REMS (Phase 15). Each item is gated by its own permission — never a role name — so a user sees only
+    // the areas their roles grant. AC-ADM-019.5 / REQ-REMS-001.7. Approvals is the exception and is open
+    // to everyone: anyone can be made an approver (the CSE, a commission recipient, or someone added on
+    // the Approval tab), no permission governs it, and a role gate there would hide the page from a real
+    // approver. Users with no tasks simply see an empty inbox.
     key: "rems",
     label: "REMS",
     icon: "o_business_center",
@@ -117,7 +119,7 @@ const sections = [
       { label: "Admin Pool", icon: "o_inbox", to: "/rems/admin-pool", permissions: [Permissions.RemsPoolRead] },
       { label: "EMS Inbox", icon: "o_move_to_inbox", to: "/rems/ems-inbox", permissions: [Permissions.RemsFormsManage] },
       { label: "Client Forms", icon: "o_dynamic_form", to: "/rems/client-forms", permissions: [Permissions.RemsEngagementsManage] },
-      { label: "Approvals", icon: "o_approval", to: "/rems/approvals", permissions: [Permissions.RemsApprovalsAct] }
+      { label: "Approvals", icon: "o_approval", to: "/rems/approvals", permissions: null }
     ]
   },
   {

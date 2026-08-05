@@ -60,7 +60,12 @@ public sealed record RemsApprovalTaskRow(
     string EntityName,
     int ApprovedCount,
     int RejectedCount,
-    int ApproverCount);
+    int ApproverCount,
+    // The TASK's own audit trail — the row is keyed on it — offered as hidden-by-default columns.
+    string? CreatedBy,
+    DateTime CreatedOnUtc,
+    string? UpdatedBy,
+    DateTime UpdatedOnUtc);
 
 /// <summary>A checklist line on an approval task.</summary>
 public sealed record RemsChecklistItemView(Guid Id, int DisplayOrder, string Label, bool IsCompleted, DateTime? CompletedOnUtc);

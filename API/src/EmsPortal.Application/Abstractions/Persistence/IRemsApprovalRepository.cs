@@ -1,6 +1,20 @@
 using EmsPortal.Domain.Entities;
+using EmsPortal.Domain.Enums;
 
 namespace EmsPortal.Application.Abstractions.Persistence;
+
+/// <summary>
+/// The approver's own task-list query (WO-117): quick search over the REMS number, client and entity name,
+/// optional narrowing by the role they act in and their decision state, and server-side paging — an
+/// approver accumulates every historical task they were ever routed, so the list is not bounded.
+/// </summary>
+public sealed record RemsApprovalTaskQuery(
+    Guid ApproverId,
+    string? Search,
+    RemsApproverRole? Role,
+    RemsApprovalTaskStatus? Status,
+    int Page,
+    int Limit);
 
 /// <summary>
 /// Data access for the REMS approval chain (WO-110): immutable rounds, per-approver tasks and their
@@ -28,8 +42,13 @@ public interface IRemsApprovalRepository
     /// </summary>
     Task<REMSApprovalTask?> GetTaskWithContextAsync(Guid id, CancellationToken cancellationToken = default);
 
-    /// <summary>The caller's own approval tasks (pending and historical), newest round first, with round + engagement context.</summary>
-    Task<IReadOnlyList<REMSApprovalTask>> ListTasksByApproverAsync(Guid approverId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// A page of the caller's own approval tasks (pending and historical), newest round first, with round +
+    /// engagement context and the round's sibling tasks (for the n-of-m progress badge). Filtered and paged
+    /// server-side, so the pager reports the filtered total rather than the page in hand.
+    /// </summary>
+    Task<(IReadOnlyList<REMSApprovalTask> Items, int Total)> ListTasksByApproverAsync(
+        RemsApprovalTaskQuery query, CancellationToken cancellationToken = default);
 
     Task AddRoundAsync(REMSApprovalRound round, CancellationToken cancellationToken = default);
 

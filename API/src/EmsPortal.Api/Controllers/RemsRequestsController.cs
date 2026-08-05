@@ -93,13 +93,43 @@ public sealed class RemsRequestsController : ControllerBase
         var (items, total) = await _rems.ListRequestsAsync(options, cancellationToken);
 
         var names = await _users.GetFullNamesAsync(
-            items.SelectMany(r => new[] { r.AdminAssignedToId, r.CSEId }).Where(id => id.HasValue).Select(id => id!.Value),
+            items.SelectMany(r => new[] { r.AdminAssignedToId, r.CSEId, r.CreatedById, r.UpdatedById })
+                .Where(id => id.HasValue).Select(id => id!.Value),
             cancellationToken);
         var formStates = (await _rems.GetFormStatesAsync(items.Select(r => r.Id).ToList(), cancellationToken))
             .ToDictionary(f => f.RemsId);
 
         var rows = items.Select(r => ToRow(r, me, privileged, names, formStates));
         return Ok(ApiResponseFactory.Paginated(rows, "REMS requests retrieved.", page, limit, total));
+    }
+
+    /// <summary>
+    /// How many pool requests sit in each Admin Pool view (Unassigned / Assigned to me / All), so the view
+    /// switcher can show the size of each. Takes the same filters as the list and applies the same
+    /// visibility rules, so a count always matches the rows that view would produce.
+    /// </summary>
+    [HttpGet("pool-counts")]
+    [RequirePermission(Permissions.RemsPoolRead)]
+    [ProducesResponseType<ApiResponse<RemsPoolCounts>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> PoolCounts(
+        [FromQuery] string? clientName = null,
+        [FromQuery] string? contact = null,
+        [FromQuery] string? status = null,
+        [FromQuery] DateTime? createdFrom = null,
+        [FromQuery] DateTime? createdTo = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (User.GetUserId() is not { } me)
+        {
+            return Unauthorized(ApiResponseFactory.Unauthorized("No user context."));
+        }
+
+        // Paging is irrelevant to an aggregate; PoolFilter is what is being counted, so neither is read.
+        var options = new RemsRequestListOptions(
+            me, IsPrivileged(), clientName, contact, status, createdFrom, createdTo,
+            RemsListScope.Pool, RemsPoolFilter.All, 1, 1);
+        var counts = await _rems.CountPoolScopesAsync(options, cancellationToken);
+        return Ok(ApiResponseFactory.Success(counts, "REMS pool counts retrieved."));
     }
 
     [HttpGet("{id:guid}")]
@@ -504,8 +534,11 @@ public sealed class RemsRequestsController : ControllerBase
         var (ems, submission) = MapFormState(form);
         return new RemsRequestRow(
             r.Id, r.REMSNumber, r.Title, r.RequestedClientName, r.Type, r.Priority, r.CreatedOnUtc, r.Status,
+            r.CustomerEmail, r.CustomerMobileNumber,
             UserRefOf(r.AdminAssignedToId, names), UserRefOf(r.CSEId, names),
-            form?.IndustryGroup, ems, submission, ActionsFor(r, me, privileged));
+            form?.IndustryGroup, ems, submission,
+            NameOf(names, r.CreatedById), NameOf(names, r.UpdatedById), r.UpdatedOnUtc,
+            ActionsFor(r, me, privileged));
     }
 
     private async Task<RemsRequestDetail> BuildDetailAsync(REMS rems, Guid me, bool privileged, CancellationToken cancellationToken)

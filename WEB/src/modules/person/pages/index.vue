@@ -102,6 +102,7 @@ import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
 import { useDateFormat } from "composables/useDateFormat";
+import { useAuditColumns } from "composables/useAuditColumns";
 import { debounce } from "quasar";
 
 import AppDataTable from "components/common/AppDataTable.vue";
@@ -118,6 +119,7 @@ const notify = useNotify();
 const { confirm } = useConfirm();
 const { has } = usePermissions();
 const fmt = useDateFormat();
+const auditColumns = useAuditColumns();
 const { canChooseTenant, activeTenantId, tenantOptions, loadingTenants, loadTenants } = useTenantOptions();
 
 const canWrite = computed(() => has(Permissions.PersonsWrite));
@@ -147,6 +149,8 @@ const columns = computed(() => [
   { name: "isUser", label: "Account", field: "isUser", align: "left", sortable: true, default: true, filterOptions: [{ label: "User", value: true }, { label: "Not a user", value: false }] },
   { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true, filterOptions: [{ label: "Active", value: true }, { label: "Inactive", value: false }] },
   { name: "updatedOnUtc", label: "Updated", field: (r) => fmt.formatDateTime(r.updatedOnUtc), align: "left", sortable: true, default: true, filterable: false },
+  // Updated On is already visible above, so the shared set contributes the other three.
+  ...auditColumns({ only: ["createdBy", "createdOnUtc", "updatedBy"] }),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ]);
 

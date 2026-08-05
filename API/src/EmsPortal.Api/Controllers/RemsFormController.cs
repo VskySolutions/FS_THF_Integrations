@@ -333,8 +333,10 @@ public sealed class RemsFormController : ControllerBase
 
     /// <summary>
     /// The EMS Inbox: every request that has a form, paginated and newest-modified first, with request
-    /// context, form state, creator, and latest send/delivery/open info (AC-REMS-009). Filter by form
-    /// state via <paramref name="formState"/> (draft/saved/sent/submitted/cancelled).
+    /// context, form state, creator, and latest send/delivery/open info (AC-REMS-009). Narrow it with
+    /// <paramref name="formState"/> (draft/saved/sent/submitted/cancelled), <paramref name="requestStatus"/>,
+    /// and <paramref name="search"/> over the REMS number and client name. Filtering is server-side so the
+    /// pager reports the filtered total rather than the page in hand.
     /// </summary>
     [HttpGet("/api/rems/inbox")]
     [RequireAnyPermission(Permissions.RemsPoolRead, Permissions.RemsFormsManage)]
@@ -343,6 +345,8 @@ public sealed class RemsFormController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int limit = 20,
         [FromQuery] string? formState = null,
+        [FromQuery] string? search = null,
+        [FromQuery] string? requestStatus = null,
         CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
@@ -350,8 +354,15 @@ public sealed class RemsFormController : ControllerBase
 
         RemsFormStatus? state = Enum.TryParse<RemsFormStatus>(formState, ignoreCase: true, out var parsed) ? parsed : null;
 
-        var (items, total) = await _forms.ListInboxAsync(new RemsInboxQuery(state, page, limit), cancellationToken);
-        var names = await _users.GetFullNamesAsync(items.Select(i => i.FormCreatedByUserId), cancellationToken);
+        var (items, total) = await _forms.ListInboxAsync(
+            new RemsInboxQuery(state, search, requestStatus, page, limit), cancellationToken);
+        var names = await _users.GetFullNamesAsync(
+            items.Select(i => i.FormCreatedByUserId)
+                .Concat(items.SelectMany(i => new[] { i.CreatedById, i.UpdatedById })
+                    .Where(id => id.HasValue).Select(id => id!.Value)),
+            cancellationToken);
+
+        string? NameOf(Guid? id) => id is { } uid && names.TryGetValue(uid, out var name) ? name : null;
 
         var rows = items.Select(i => new RemsInboxRow(
             i.RemsId, i.RemsNumber, i.ClientName, i.EngagementType, i.RequestStatus,
@@ -359,7 +370,8 @@ public sealed class RemsFormController : ControllerBase
             new RemsUserRef(i.FormCreatedByUserId, names.TryGetValue(i.FormCreatedByUserId, out var n) ? n : string.Empty),
             i.FormSentOnUtc,
             i.LatestEmailEventType?.ToString(),
-            i.LatestEmailEventOnUtc));
+            i.LatestEmailEventOnUtc,
+            NameOf(i.CreatedById), i.CreatedOnUtc, NameOf(i.UpdatedById), i.UpdatedOnUtc));
 
         return Ok(ApiResponseFactory.Paginated(rows, "REMS EMS inbox retrieved.", page, limit, total));
     }

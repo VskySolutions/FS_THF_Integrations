@@ -62,6 +62,7 @@ public sealed record RemsEmailEventRow(
 /// One EMS-Inbox row (WO-112, AC-REMS-009): a request with a form, its request context, form state,
 /// creator, and the latest send/delivery/open info.
 /// </summary>
+// Trailing four: the owning request's audit trail, offered as hidden-by-default columns.
 public sealed record RemsInboxRow(
     Guid RemsId,
     string RemsNumber,
@@ -72,4 +73,8 @@ public sealed record RemsInboxRow(
     RemsUserRef? FormCreatedBy,
     DateTime? FormSentOnUtc,
     string? LatestEmailEventType,
-    DateTime? LatestEmailEventOnUtc);
+    DateTime? LatestEmailEventOnUtc,
+    string? CreatedBy,
+    DateTime CreatedOnUtc,
+    string? UpdatedBy,
+    DateTime UpdatedOnUtc);

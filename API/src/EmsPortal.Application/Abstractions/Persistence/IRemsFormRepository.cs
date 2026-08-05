@@ -10,6 +10,20 @@ namespace EmsPortal.Application.Abstractions.Persistence;
 /// </summary>
 public sealed record RemsInboxQuery(
     RemsFormStatus? FormState,
+    // Quick search over the REMS number and the requested client name.
+    string? Search,
+    string? RequestStatus,
+    int Page,
+    int Limit);
+
+/// <summary>
+/// The Client-Forms list query (WO-114): quick search over REMS number / client name, plus optional
+/// narrowing by whether the client has submitted and by the request's status.
+/// </summary>
+public sealed record RemsClientFormQuery(
+    string? Search,
+    bool? Submitted,
+    string? RequestStatus,
     int Page,
     int Limit);
 
@@ -29,7 +43,13 @@ public sealed record RemsInboxItem(
     Guid FormCreatedByUserId,
     DateTime? FormSentOnUtc,
     RemsFormEmailEventType? LatestEmailEventType,
-    DateTime? LatestEmailEventOnUtc);
+    DateTime? LatestEmailEventOnUtc,
+    // The owning REQUEST's audit trail — the row is keyed on it. Distinct from the form's own creator,
+    // which this list already surfaces as "Form Creator".
+    Guid? CreatedById,
+    DateTime CreatedOnUtc,
+    Guid? UpdatedById,
+    DateTime UpdatedOnUtc);
 
 /// <summary>
 /// One client-forms row (WO-114, AC-REMS-013.1): a request that has an EMS form, with its
@@ -43,7 +63,11 @@ public sealed record RemsClientFormItem(
     bool Submitted,
     DateTime? SubmittedOnUtc,
     Guid? AdminAssignedToId,
-    Guid? CSEId);
+    Guid? CSEId,
+    Guid? CreatedById,
+    DateTime CreatedOnUtc,
+    Guid? UpdatedById,
+    DateTime UpdatedOnUtc);
 
 /// <summary>
 /// Data access for the REMS customer-facing form and its drafts, submissions and email events
@@ -56,7 +80,7 @@ public interface IRemsFormRepository
     /// the request's assigned Admin/CSE. Tenant-scoped by the ambient query filter.
     /// </summary>
     Task<(IReadOnlyList<RemsClientFormItem> Items, int Total)> ListClientFormsAsync(
-        int page, int limit, CancellationToken cancellationToken = default);
+        RemsClientFormQuery query, CancellationToken cancellationToken = default);
 
     /// <summary>The form with its drafts, submissions and email events loaded.</summary>
     Task<REMSForm?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);

@@ -21,7 +21,12 @@ public sealed record RemsClientFormRow(
     bool Submitted,
     DateTime? SubmittedOnUtc,
     RemsUserRef? AssignedAdmin,
-    RemsUserRef? Cse);
+    RemsUserRef? Cse,
+    // The owning REQUEST's audit trail — the row is keyed on it, and it is what the actions open.
+    string? CreatedBy,
+    DateTime CreatedOnUtc,
+    string? UpdatedBy,
+    DateTime UpdatedOnUtc);
 
 /// <summary>
 /// The read-only submitted-form view (AC-REMS-013.2/3), rendered from the immutable

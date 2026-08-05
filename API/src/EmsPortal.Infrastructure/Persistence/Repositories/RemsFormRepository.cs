@@ -35,23 +35,42 @@ internal sealed class RemsFormRepository : IRemsFormRepository
             .FirstOrDefaultAsync(f => f.REMSId == remsId, cancellationToken);
 
     public async Task<(IReadOnlyList<RemsClientFormItem> Items, int Total)> ListClientFormsAsync(
-        int page, int limit, CancellationToken cancellationToken = default)
+        RemsClientFormQuery query, CancellationToken cancellationToken = default)
     {
         // Every request that has a form. Inner-join REMS (tenant + not-deleted) to its form so both ambient
         // query filters apply; project the submitted state and the request's assigned Admin/CSE.
         // Order on the SOURCE columns before projecting — EF cannot translate an OrderBy over the
         // projected record. SubmittedOnUtc DESC puts submitted forms first, not-yet-submitted (null) last.
-        var query =
+        var rows =
             from r in _dbContext.Rems
             join f in _dbContext.RemsForms on r.Id equals f.REMSId
             select new { Rems = r, Form = f };
 
-        var total = await query.CountAsync(cancellationToken);
-        var items = await query
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var t = query.Search.Trim();
+            rows = rows.Where(x => x.Rems.REMSNumber.Contains(t) || x.Rems.RequestedClientName.Contains(t));
+        }
+        if (query.Submitted is { } submitted)
+        {
+            // "Submitted" is the same expression the projection reports, so the filter and the column agree.
+            rows = submitted
+                ? rows.Where(x => x.Form.Status == RemsFormStatus.Submitted || x.Form.SubmittedOnUtc != null)
+                : rows.Where(x => x.Form.Status != RemsFormStatus.Submitted && x.Form.SubmittedOnUtc == null);
+        }
+        if (!string.IsNullOrWhiteSpace(query.RequestStatus))
+        {
+            var s = query.RequestStatus.Trim();
+            rows = rows.Where(x => x.Rems.Status == s);
+        }
+
+        // Counted AFTER the filters so the pager reflects the filtered set, not the whole list.
+        var total = await rows.CountAsync(cancellationToken);
+        var items = await rows
             .OrderByDescending(x => x.Form.SubmittedOnUtc)
             .ThenBy(x => x.Rems.REMSNumber)
-            .Skip((page - 1) * limit)
-            .Take(limit)
+            .Skip((query.Page - 1) * query.Limit)
+            .Take(query.Limit)
             .Select(x => new RemsClientFormItem(
                 x.Rems.Id,
                 x.Rems.REMSNumber,
@@ -60,7 +79,11 @@ internal sealed class RemsFormRepository : IRemsFormRepository
                 x.Form.Status == RemsFormStatus.Submitted || x.Form.SubmittedOnUtc != null,
                 x.Form.SubmittedOnUtc,
                 x.Rems.AdminAssignedToId,
-                x.Rems.CSEId))
+                x.Rems.CSEId,
+                x.Rems.CreatedById,
+                x.Rems.CreatedOnUtc,
+                x.Rems.UpdatedById,
+                x.Rems.UpdatedOnUtc))
             .ToListAsync(cancellationToken);
 
         return (items, total);
@@ -163,7 +186,18 @@ internal sealed class RemsFormRepository : IRemsFormRepository
         {
             forms = forms.Where(f => f.Status == state);
         }
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var t = query.Search.Trim();
+            forms = forms.Where(f => f.Rems!.REMSNumber.Contains(t) || f.Rems!.RequestedClientName.Contains(t));
+        }
+        if (!string.IsNullOrWhiteSpace(query.RequestStatus))
+        {
+            var s = query.RequestStatus.Trim();
+            forms = forms.Where(f => f.Rems!.Status == s);
+        }
 
+        // Counted AFTER the filters so the pager reflects the filtered set, not the whole inbox.
         var total = await forms.CountAsync(cancellationToken);
 
         // Project the latest email event via an anonymous-type subquery (FirstOrDefault => null when the
@@ -184,6 +218,10 @@ internal sealed class RemsFormRepository : IRemsFormRepository
                 f.UpdatedOnUtc,
                 f.CreatedByUserId,
                 f.SentOnUtc,
+                RemsCreatedById = f.Rems!.CreatedById,
+                RemsCreatedOnUtc = f.Rems!.CreatedOnUtc,
+                RemsUpdatedById = f.Rems!.UpdatedById,
+                RemsUpdatedOnUtc = f.Rems!.UpdatedOnUtc,
                 LatestEvent = f.EmailEvents
                     .OrderByDescending(e => e.OccurredOnUtc)
                     .Select(e => new { e.EventType, e.OccurredOnUtc })
@@ -203,7 +241,11 @@ internal sealed class RemsFormRepository : IRemsFormRepository
                 x.CreatedByUserId,
                 x.SentOnUtc,
                 x.LatestEvent is null ? null : x.LatestEvent.EventType,
-                x.LatestEvent is null ? null : x.LatestEvent.OccurredOnUtc))
+                x.LatestEvent is null ? null : x.LatestEvent.OccurredOnUtc,
+                x.RemsCreatedById,
+                x.RemsCreatedOnUtc,
+                x.RemsUpdatedById,
+                x.RemsUpdatedOnUtc))
             .ToList();
 
         return (items, total);

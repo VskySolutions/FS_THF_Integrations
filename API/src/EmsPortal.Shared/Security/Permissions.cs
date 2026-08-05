@@ -72,8 +72,11 @@ public static class Permissions
     public const string RemsEngagementsManage = "rems.engagements.manage";
     /// <summary>Initiate/route a REMS approval round.</summary>
     public const string RemsApprovalsSend = "rems.approvals.send";
-    /// <summary>Act on (approve/reject) a REMS approval task assigned to the caller. Record-scoped.</summary>
-    public const string RemsApprovalsAct = "rems.approvals.act";
+    // There is deliberately no "act on an approval task" permission. Approver-ness is data, not a role —
+    // the CSE, each commission recipient and anyone added on the Approval tab become approvers, and any
+    // role can end up in one of those seats. A permission gate could therefore contradict the engagement
+    // data and lock a real approver out of a task created for them. Ownership is the check instead:
+    // RemsApprovalController requires an authenticated caller and ApproverId == caller on every task.
     /// <summary>Read the REMS email log.</summary>
     public const string RemsEmailLogRead = "rems.emailLog.read";
 
@@ -90,7 +93,7 @@ public static class Permissions
         OptionSetsRead, OptionSetsManage,
         RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsDelete, RemsRequestsAssign,
         RemsPoolRead, RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
-        RemsApprovalsSend, RemsApprovalsAct, RemsEmailLogRead
+        RemsApprovalsSend, RemsEmailLogRead
     };
 
     /// <summary>Permission sets for the seeded system roles.</summary>
@@ -114,12 +117,11 @@ public static class Permissions
         SettingsManage, RecordsAdminDelete,
         // Tenant Admins manage their tenant's option lists.
         OptionSetsRead, OptionSetsManage,
-        // Full REMS access within their tenant — the same set a REMS Admin holds, plus the approver's own
-        // act permission. Tenant isolation still applies: this widens WHAT they can do in their tenant,
-        // never WHICH tenant. RemsApprovalsAct stays record-scoped to tasks assigned to them.
+        // Full REMS access within their tenant — the same set a REMS Admin holds. Tenant isolation still
+        // applies: this widens WHAT they can do in their tenant, never WHICH tenant.
         RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsDelete, RemsRequestsAssign,
         RemsPoolRead, RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
-        RemsApprovalsSend, RemsApprovalsAct, RemsEmailLogRead
+        RemsApprovalsSend, RemsEmailLogRead
     };
 
     /// <summary>REMS Partner: works their own requests (read/create/update) and assigns them.</summary>
@@ -128,32 +130,22 @@ public static class Permissions
         RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsAssign, OptionSetsRead
     };
 
-    /// <summary>
-    /// REMS Admin: full request lifecycle plus pool, forms, engagements, approvals routing and the email log
-    /// — and acting on approval tasks of their own.
-    /// <para>
-    /// <see cref="RemsApprovalsAct"/> is not optional here: an Admin is routinely made an APPROVER by the
-    /// normal flow. The CSE is picked from the tenant's Admins on the Build-EMS screen and is an automatic
-    /// approver on every engagement of that request, and commission recipients (also automatic approvers)
-    /// come from the CSE user group. Without this key such a user gets a pending task they can neither see
-    /// nor decide, and since a round completes only when EVERY task is approved, the engagement would sit in
-    /// PendingApproval indefinitely. As on <see cref="ForTenantAdmin"/>, the key stays record-scoped: every
-    /// approval endpoint additionally requires <c>ApproverId == caller</c> and 404s otherwise, so this grants
-    /// no visibility of anyone else's tasks.
-    /// </para>
-    /// </summary>
+    /// <summary>REMS Admin: full request lifecycle plus pool, forms, engagements, approvals routing and the email log.</summary>
     public static IReadOnlyList<string> ForAdmin() => new[]
     {
         RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsDelete, RemsRequestsAssign,
         RemsPoolRead, RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
-        RemsApprovalsSend, RemsApprovalsAct, RemsEmailLogRead, OptionSetsRead
+        RemsApprovalsSend, RemsEmailLogRead, OptionSetsRead
     };
 
     /// <summary>
-    /// REMS Approver: may act on approval tasks. Visibility is record-scoped to the caller's assigned
-    /// REMSApprovalTask rows (enforced in the REMS query layer), not tenant-wide.
+    /// REMS Approver: grants nothing, and that is the point. Deciding an approval task is authorised by
+    /// OWNING the task, so no permission is needed to do it — and none could be required without risking
+    /// locking a genuine approver out. The role's job is to mark someone as offerable in the "add
+    /// approvers" picker (<c>RemsApprovalController.ApproverOptionsAsync</c> lists its holders); it is a
+    /// directory, not a capability.
     /// </summary>
-    public static IReadOnlyList<string> ForApprover() => new[] { RemsApprovalsAct };
+    public static IReadOnlyList<string> ForApprover() => Array.Empty<string>();
 
     /// <summary>
     /// The seeded permission set for a system role name (SuperAdmin/TenantAdmin and the REMS operational

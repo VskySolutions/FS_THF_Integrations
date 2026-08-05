@@ -2,9 +2,13 @@
   <q-page padding>
     <app-list-header
       :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'EMS Inbox' }]"
+      :search="search"
+      show-search
+      search-placeholder="Search REMS number or client"
       show-filters
       :filter-count="filterChips.length"
       show-back
+      @update:search="search = $event"
       @filters="filterOpen = true"
       @back="$router.back()"
     />
@@ -94,18 +98,21 @@
             <q-tooltip>Preview &amp; Send</q-tooltip>
           </q-btn>
           <q-btn
-            v-if="showEmailLog(cell.row)" flat round dense color="primary" icon="o_history"
-            @click="openEmailLog(cell.row)"
-          >
-            <q-tooltip>Email Log</q-tooltip>
-          </q-btn>
-          <q-btn
             v-if="showEngagement" flat round dense color="primary" icon="o_work"
             :disable="cell.row.formStatus !== 'Submitted'" @click="openEngagement(cell.row)"
           >
             <q-tooltip>
               {{ cell.row.formStatus === "Submitted" ? "Engagement Setup" : "Available once the client submits their form" }}
             </q-tooltip>
+          </q-btn>
+          <q-btn
+            v-if="showEmailLog(cell.row)" flat round dense color="primary" icon="o_history"
+            @click="openEmailLog(cell.row)"
+          >
+            <q-tooltip>Email Log</q-tooltip>
+          </q-btn>
+          <q-btn flat round dense color="primary" icon="o_forum" @click.stop="openConversation(cell.row)">
+            <q-tooltip>Notes</q-tooltip>
           </q-btn>
         </q-td>
       </template>
@@ -124,6 +131,7 @@
       :can-view-email-log="canViewEmailLog" @sent="onSent" @view-log="viewLogFromSend"
     />
     <email-log-dialog v-model="logOpen" :rems-id="actionRemsId" :subtitle="actionSubtitle" />
+    <conversation-dialog v-model="conversationOpen" :request-id="conversationId" :subtitle="conversationSubtitle" />
   </q-page>
 </template>
 
@@ -137,7 +145,8 @@ import { useNotify } from "composables/useNotify";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
 import { useDateFormat } from "composables/useDateFormat";
-import { useRemsMeta, REMS_FORM_STATE_OPTIONS } from "modules/rems/useRemsMeta";
+import { useAuditColumns } from "composables/useAuditColumns";
+import { useRemsMeta, REMS_FORM_STATE_OPTIONS, REMS_STATUS_FILTER_OPTIONS } from "modules/rems/useRemsMeta";
 
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
@@ -145,10 +154,12 @@ import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppDataTable from "components/common/AppDataTable.vue";
 import SendEmsDialog from "modules/rems/components/SendEmsDialog.vue";
 import EmailLogDialog from "modules/rems/components/EmailLogDialog.vue";
+import ConversationDialog from "modules/rems/components/ConversationDialog.vue";
 
 const router = useRouter();
 const notify = useNotify();
 const fmt = useDateFormat();
+const auditColumns = useAuditColumns();
 const { has } = usePermissions();
 const {
   typeLabel, statusLabel, statusColor, emsStateLabel, emsStateColor, emailEventLabel, emailEventColor
@@ -161,28 +172,32 @@ const columns = computed(() => [
   { name: "remsNumber", label: "Request ID", field: "remsNumber", align: "left", sortable: true, default: true, filterable: false },
   { name: "clientName", label: "Client", field: "clientName", align: "left", sortable: true, default: true, filterable: false },
   { name: "engagementType", label: "Engagement Type", field: "engagementType", align: "left", default: true, filterable: false },
-  { name: "requestStatus", label: "Request Status", field: "requestStatus", align: "left", default: true, filterable: false },
+  { name: "requestStatus", label: "Request Status", field: "requestStatus", align: "left", default: true, filterOptions: REMS_STATUS_FILTER_OPTIONS },
   { name: "formStatus", label: "EMS Form State", field: "formStatus", align: "left", default: true, filterOptions: REMS_FORM_STATE_OPTIONS },
   { name: "formCreatedBy", label: "Form Creator", field: (r) => r.formCreatedBy?.name || "—", align: "left", default: true, filterable: false },
   { name: "formSentOnUtc", label: "Sent", field: "formSentOnUtc", align: "left", sortable: true, default: true, filterable: false },
   { name: "latestEvent", label: "Delivery / Open", field: "latestEmailEventType", align: "left", default: true, filterable: false },
+  ...auditColumns(),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ]);
 
-const { rows, loading, totalRecords, filterOpen, pagination, load, onRequest } = useListTable({
+const { rows, loading, totalRecords, search, filterOpen, pagination, load, onRequest } = useListTable({
   fetcher: ({ page, limit }) =>
     remsApi.inbox({
       page,
       limit,
-      formState: filters.formStatus || undefined
+      search: search.value || undefined,
+      formState: filters.formStatus || undefined,
+      requestStatus: filters.requestStatus || undefined
     }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),
   onError: (err) => notify.error(getApiErrorMessage(err))
 });
 
-// The inbox endpoint filters by form state server-side (no client-name search param exists on it).
+// Search and filters are applied server-side, so the pager counts the whole filtered set rather than
+// whichever page happens to be loaded.
 const { filters, filterableColumns, filterChips, removeFilter, clearFilters } = useColumnFilters(columns, rows, { server: true });
 const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);
-watch(filters, reload, { deep: true });
+watch([search, filters], reload, { deep: true });
 
 // ---- State-based row navigation (AC-REMS-009.5) ----
 const detailRoute = (row) => ({ name: "rems_request_detail", params: { id: row.remsId } });
@@ -237,4 +252,16 @@ const openSend = (row) => { setAction(row); sendOpen.value = true; };
 const openEmailLog = (row) => { setAction(row); logOpen.value = true; };
 const viewLogFromSend = () => { logOpen.value = true; };
 const onSent = () => load();
+
+// ---- Notes ----
+// The REQUEST's thread, the same one every other REMS surface opens — so a note left here reaches the
+// partner, the pool and the approvers rather than being visible only from this list.
+const conversationOpen = ref(false);
+const conversationId = ref(null);
+const conversationSubtitle = ref("");
+const openConversation = (row) => {
+  conversationId.value = row.remsId;
+  conversationSubtitle.value = `${row.remsNumber} — ${row.clientName || ""}`.trim();
+  conversationOpen.value = true;
+};
 </script>

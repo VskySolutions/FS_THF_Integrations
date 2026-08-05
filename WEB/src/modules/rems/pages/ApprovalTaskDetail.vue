@@ -332,7 +332,7 @@
 
         <!-- Checklist + decision. -->
         <div class="col-12 col-md-4">
-          <q-card flat bordered class="rems-card">
+          <q-card flat bordered class="rems-card q-mb-md">
             <q-card-section class="text-subtitle1 text-weight-medium">
               Your Checklist
               <q-badge :color="allChecklistComplete ? 'positive' : 'grey-6'" class="q-ml-sm">
@@ -383,6 +383,17 @@
               </q-card-section>
             </template>
           </q-card>
+
+          <!-- The REQUEST's conversation, not a thread of its own: an approver's question needs to reach
+               the partner who raised it and the CSE, who read it on the request detail and in the pool's
+               Conversations dialog. A private per-task thread would be a dead end. -->
+          <q-card v-if="request.remsId" flat bordered class="rems-card">
+            <q-card-section class="text-subtitle1 text-weight-medium">Conversation</q-card-section>
+            <q-separator />
+            <q-card-section>
+              <entity-notes-panel :entity-type="EntityType.Rems" :entity-id="request.remsId" />
+            </q-card-section>
+          </q-card>
         </div>
       </div>
     </template>
@@ -426,7 +437,7 @@
 // a 409 is surfaced), and Reject requires a reason. Once decided, the task is read-only.
 import { ref, computed, onMounted } from "vue";
 import { useRoute } from "vue-router";
-import { remsApi, mediaApi, getApiErrorMessage } from "services/api";
+import { remsApi, mediaApi, EntityType, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
@@ -437,6 +448,9 @@ import { addressText } from "modules/rems/remsAddress";
 import { renderRichText } from "utils/richText";
 
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
+// Explicit import: boot/components.js registers only the Zw* inputs globally, so without this the tag
+// resolves to nothing and the Conversation card renders empty — no error, just a blank panel.
+import EntityNotesPanel from "components/universal/EntityNotesPanel.vue";
 
 const route = useRoute();
 const notify = useNotify();

@@ -62,6 +62,28 @@ export const REMS_FORM_STATE_OPTIONS = [
   { label: "Cancelled", value: "Cancelled" }
 ];
 
+// Whether the client has returned their form — the Client Forms list's "Form" column. Sent as a string
+// and parsed to a bool server-side, because a column filter's value is always a string.
+export const REMS_FORM_SUBMITTED_OPTIONS = [
+  { label: "Submitted", value: "true" },
+  { label: "Not submitted", value: "false" }
+];
+
+// Approval-task filters (RemsApproverRole / RemsApprovalTaskStatus names, matched server-side).
+export const REMS_APPROVER_ROLE_OPTIONS = [
+  { label: "CSE", value: "CSE" },
+  { label: "Department Director", value: "DepartmentDirector" },
+  { label: "Managing Shareholder", value: "ManagingShareholder" },
+  { label: "Commission Recipient", value: "CommissionRecipient" },
+  { label: "Approver", value: "Approver" }
+];
+
+export const REMS_APPROVAL_STATUS_OPTIONS = [
+  { label: "Pending", value: "Pending" },
+  { label: "Approved", value: "Approved" },
+  { label: "Rejected", value: "Rejected" }
+];
+
 const PRIORITY_COLORS = { urgent: "red-8", high: "deep-orange-7", medium: "amber-8", low: "blue-grey-5" };
 // Awaiting Customer borrows the EMS "Sent" teal — it is the same moment seen from the request — and the
 // approval stages borrow ENGAGEMENT_STATUS_META's colours, so a request badge and the engagement badge
@@ -90,7 +112,9 @@ const APPROVER_ROLE_LABELS = {
   CSE: "CSE",
   DepartmentDirector: "Department Director",
   ManagingShareholder: "Managing Shareholder",
-  CommissionRecipient: "Commission Recipient"
+  CommissionRecipient: "Commission Recipient",
+  // A hand-picked approver with no other standing on the engagement (RemsApproverRole.Approver).
+  Approver: "Approver"
 };
 const APPROVER_ROLE_ICONS = {
   CSE: "o_support_agent",

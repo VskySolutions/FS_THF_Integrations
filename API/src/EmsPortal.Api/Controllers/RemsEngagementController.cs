@@ -87,19 +87,29 @@ public sealed class RemsEngagementController : ControllerBase
     [HttpGet("client-forms")]
     [ProducesResponseType<ApiResponse<IEnumerable<RemsClientFormRow>>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> ClientForms(
-        [FromQuery] int page = 1, [FromQuery] int limit = 20, CancellationToken cancellationToken = default)
+        [FromQuery] int page = 1,
+        [FromQuery] int limit = 20,
+        [FromQuery] string? search = null,
+        [FromQuery] bool? submitted = null,
+        [FromQuery] string? requestStatus = null,
+        CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
         limit = Math.Clamp(limit, 1, 100);
 
-        var (items, total) = await _forms.ListClientFormsAsync(page, limit, cancellationToken);
+        var (items, total) = await _forms.ListClientFormsAsync(
+            new RemsClientFormQuery(search, submitted, requestStatus, page, limit), cancellationToken);
         var names = await _users.GetFullNamesAsync(
-            items.SelectMany(i => new[] { i.AdminAssignedToId, i.CSEId }).Where(id => id.HasValue).Select(id => id!.Value),
+            items.SelectMany(i => new[] { i.AdminAssignedToId, i.CSEId, i.CreatedById, i.UpdatedById })
+                .Where(id => id.HasValue).Select(id => id!.Value),
             cancellationToken);
+
+        string? NameOf(Guid? id) => id is { } uid && names.TryGetValue(uid, out var n) ? n : null;
 
         var rows = items.Select(i => new RemsClientFormRow(
             i.RemsId, i.RemsNumber, i.ClientName, i.RequestStatus, HasForm: true, i.Submitted, i.SubmittedOnUtc,
-            RemsWorkspaceMapper.UserRef(i.AdminAssignedToId, names), RemsWorkspaceMapper.UserRef(i.CSEId, names)));
+            RemsWorkspaceMapper.UserRef(i.AdminAssignedToId, names), RemsWorkspaceMapper.UserRef(i.CSEId, names),
+            NameOf(i.CreatedById), i.CreatedOnUtc, NameOf(i.UpdatedById), i.UpdatedOnUtc));
 
         return Ok(ApiResponseFactory.Paginated(rows, "REMS client forms retrieved.", page, limit, total));
     }

@@ -83,11 +83,20 @@ public sealed record RemsRequestRow(
     string Priority,
     DateTime CreatedOnUtc,
     string Status,
+    // The Admin Pool renders these under the client name and lets you filter on them (its `contact`
+    // filter searches exactly these two columns server-side), so the row has to carry them — without
+    // them the contact line and the Client Email column could only ever render "—".
+    string? CustomerEmail,
+    string? CustomerMobileNumber,
     RemsUserRef? AssignedAdmin,
     RemsUserRef? Cse,
     string? IndustryGroup,
     string EmsFormState,
     string? ClientSubmissionState,
+    // Audit trail, offered as hidden-by-default columns on every list (mirrors RemsRequestDetail).
+    string? CreatedBy,
+    string? UpdatedBy,
+    DateTime UpdatedOnUtc,
     RemsRowActions Actions);
 
 /// <summary>An attached file on a request detail (linked media).</summary>

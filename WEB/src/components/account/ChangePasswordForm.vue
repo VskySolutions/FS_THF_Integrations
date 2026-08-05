@@ -71,7 +71,7 @@
 // complexity policy of its own, so these rules are the only thing enforcing one.
 import { ref } from "vue";
 import useVuelidate from "@vuelidate/core";
-import { required, helpers, minLength, sameAs } from "@vuelidate/validators";
+import { required, helpers, minLength } from "@vuelidate/validators";
 import { useRouter } from "vue-router";
 import { authApi, getApiErrorMessage } from "services/api";
 import { useAuthStore } from "stores/auth";
@@ -112,7 +112,15 @@ const rules = {
   confirmPassword: {
     required: helpers.withMessage("Confirm password is required", required),
     // A rule rather than a post-validate check, so the mismatch is reported on the field itself.
-    sameAsNew: helpers.withMessage("New password and confirmation do not match", sameAs(() => model.value.newPassword))
+    //
+    // Compared inline rather than with the library's sameAs(): that helper resolves its argument with
+    // `unref`, which unwraps a ref but hands a FUNCTION straight back — so sameAs(() => other) compared
+    // the input against the arrow function itself and could never be equal, rejecting every password
+    // however carefully it was retyped. Reading model.value here keeps the dependency reactive, so the
+    // error also clears when the new password is edited to match, not only when the confirmation is.
+    sameAsNew: helpers.withMessage(
+      "New password and confirmation do not match",
+      (value) => value === model.value.newPassword)
   }
 };
 

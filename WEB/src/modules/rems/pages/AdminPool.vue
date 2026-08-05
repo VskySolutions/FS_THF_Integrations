@@ -17,11 +17,7 @@
           v-model="poolScope"
           no-caps unelevated dense
           toggle-color="primary" color="white" text-color="primary"
-          :options="[
-            { label: 'Unassigned', value: 'unassigned' },
-            { label: 'Assigned to me', value: 'mine' },
-            { label: 'All', value: 'all' }
-          ]"
+          :options="scopeOptions"
         />
       </template>
     </app-list-header>
@@ -77,10 +73,9 @@
         <q-td :props="cell">{{ submissionStateLabel(cell.row.clientSubmissionState) }}</q-td>
       </template>
 
-      <template #body-cell-createdOnUtc="cell">
-        <q-td :props="cell">{{ fmt.formatDateTime(cell.row.createdOnUtc) }}</q-td>
-      </template>
-
+      <!-- Action order is the same on every REMS list: View, Edit, this list's own actions, Notes, Delete.
+           Notes and Delete keep the last two seats everywhere, so the button under the cursor never changes
+           meaning as you move between lists — and Delete is never adjacent to something routine. -->
       <template #body-cell-actions="cell">
         <q-td :props="cell" class="text-right">
           <q-btn flat round dense color="primary" icon="o_visibility" :to="detailRoute(cell.row)">
@@ -92,21 +87,12 @@
           >
             <q-tooltip>Edit</q-tooltip>
           </q-btn>
-          <q-btn flat round dense color="primary" icon="o_forum" @click="openConversation(cell.row)">
-            <q-tooltip>Send message</q-tooltip>
-          </q-btn>
           <q-btn
             v-if="cell.row.actions?.canAssign && has(Permissions.RemsPoolRead)"
             flat round dense color="primary"
             :icon="cell.row.assignedAdmin ? 'o_swap_horiz' : 'o_pan_tool'" @click="openAssign(cell.row)"
           >
             <q-tooltip>{{ cell.row.assignedAdmin ? "Assign Admin" : "Pick up or assign" }}</q-tooltip>
-          </q-btn>
-          <q-btn
-            v-if="showEmailLog(cell.row)" flat round dense color="primary" icon="o_mark_email_read"
-            :to="'/rems/ems-inbox'"
-          >
-            <q-tooltip>Email Log</q-tooltip>
           </q-btn>
           <q-btn
             v-if="showEngagement(cell.row)" flat round dense color="primary" icon="o_work"
@@ -116,6 +102,15 @@
             <q-tooltip>
               {{ emsDetailAvailable(cell.row) ? "Engagement Setup" : "Available once the customer submits their form" }}
             </q-tooltip>
+          </q-btn>
+          <q-btn
+            v-if="showEmailLog(cell.row)" flat round dense color="primary" icon="o_mark_email_read"
+            :to="'/rems/ems-inbox'"
+          >
+            <q-tooltip>Email Log</q-tooltip>
+          </q-btn>
+          <q-btn flat round dense color="primary" icon="o_forum" @click="openConversation(cell.row)">
+            <q-tooltip>Notes</q-tooltip>
           </q-btn>
           <q-btn
             v-if="cell.row.actions?.canDelete" flat round dense color="negative" icon="o_delete"
@@ -146,14 +141,14 @@
 
 <script setup>
 import { ref, computed, watch } from "vue";
-import { debounce } from "quasar";
+import { debounce, LocalStorage } from "quasar";
 import { remsApi, getApiErrorMessage } from "services/api";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
-import { useDateFormat } from "composables/useDateFormat";
+import { useAuditColumns } from "composables/useAuditColumns";
 import { useRemsMeta, REMS_STATUS_FILTER_OPTIONS } from "modules/rems/useRemsMeta";
 
 import AppListHeader from "components/common/AppListHeader.vue";
@@ -168,46 +163,91 @@ import ConversationDialog from "modules/rems/components/ConversationDialog.vue";
 const notify = useNotify();
 const { confirm } = useConfirm();
 const { has } = usePermissions();
-const fmt = useDateFormat();
+// Date formatting now lives inside the shared audit columns; the pool has no other date cell of its own.
+const auditColumns = useAuditColumns();
 const {
-  priorityLabel, priorityColor, requestStatusLabel, requestStatusColor,
+  typeLabel, priorityLabel, priorityColor, requestStatusLabel, requestStatusColor,
   emsStateLabel, submissionStateLabel, emsDetailAvailable, emsFormActivity
 } = useRemsMeta();
 
-// The pool exists to get unclaimed requests picked up, so it opens on those; the other scopes are a click away.
-const poolScope = ref("unassigned");
+const POOL_SCOPE_OPTIONS = [
+  { label: "Unassigned", value: "unassigned" },
+  { label: "Assigned to me", value: "mine" },
+  { label: "All", value: "all" }
+];
+
+// Which view the user last worked in, remembered across visits the same way the engagement workspace
+// remembers its splitter — the pool is somewhere people sit for a shift, and resetting the scope on
+// every refresh loses their place. Unassigned is still the default on a first visit: the pool exists to
+// get unclaimed requests picked up. A stored value is checked against the options, so a stale or
+// hand-edited key falls back to the default instead of sending an unknown scope to the API.
+const POOL_SCOPE_KEY = "remsPoolScope";
+const storedScope = LocalStorage.getItem(POOL_SCOPE_KEY);
+const poolScope = ref(
+  POOL_SCOPE_OPTIONS.some((o) => o.value === storedScope) ? storedScope : "unassigned");
+watch(poolScope, (value) => LocalStorage.set(POOL_SCOPE_KEY, value));
+
+// How much work sits behind each view, so the size of the queue is visible without clicking through.
+// Counts honour the active filters exactly as the list does, so a badge can never promise rows the view
+// would not show. A count is shown only when there is something to show: zero reads better as a plain
+// label than as "(0)", and it means a number on a view always signals work waiting. The same falsy test
+// covers the not-yet-loaded case, so the toggle never flashes "(0)" before the first response lands.
+const poolCounts = ref(null);
+const scopeOptions = computed(() => POOL_SCOPE_OPTIONS.map((option) => {
+  const count = poolCounts.value?.[option.value];
+  return count ? { ...option, label: `${option.label} (${count})` } : option;
+}));
 
 const columns = computed(() => [
   { name: "remsNumber", label: "Request ID", field: "remsNumber", align: "left", sortable: true, default: true, filterable: false },
   { name: "client", label: "Client / Contact", field: "clientName", align: "left", sortable: true, default: true, filterable: false },
+  { name: "title", label: "Title", field: "title", align: "left", sortable: true, default: false, filterable: false },
+  { name: "type", label: "Type", field: (r) => typeLabel(r.type), align: "left", default: false, filterable: false },
   { name: "priority", label: "Priority", field: "priority", align: "left", sortable: true, default: true, filterable: false },
   { name: "assignedAdmin", label: "Assigned Admin", field: (r) => r.assignedAdmin?.name || "—", align: "left", default: true, filterable: false },
   { name: "cse", label: "CSE", field: (r) => r.cse?.name || "—", align: "left", default: true, filterable: false },
   { name: "industryGroup", label: "Industry Group", field: (r) => r.industryGroup || "—", align: "left", default: true, filterable: false },
   { name: "customerEmail", label: "Client Email", field: (r) => r.customerEmail || "—", align: "left", default: false, filterable: false },
+  { name: "customerMobileNumber", label: "Client Mobile", field: (r) => r.customerMobileNumber || "—", align: "left", default: false, filterable: false },
   { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true, filterOptions: REMS_STATUS_FILTER_OPTIONS },
   { name: "emsFormState", label: "Form Status", field: "emsFormState", align: "left", default: true, filterable: false },
   { name: "clientSubmissionState", label: "Client Submission", field: "clientSubmissionState", align: "left", default: true, filterable: false },
-  { name: "createdOnUtc", label: "Created", field: "createdOnUtc", align: "left", sortable: true, default: false, filterable: false },
+  ...auditColumns(),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ]);
 
 // Extra server filter without a display column (the WO-111 list supports a `contact` param).
 const contactFilter = ref("");
 
+// The filters both the list and the counts are narrowed by — one definition, so the badge on a view and
+// the rows behind it can never be computed from different criteria.
+const activeFilters = () => ({
+  clientName: search.value || undefined,
+  contact: contactFilter.value || undefined,
+  status: filters.status || undefined
+});
+
 const { rows, loading, totalRecords, search, filterOpen, pagination, load, onRequest } = useListTable({
   fetcher: ({ page, limit }) =>
-    remsApi.list({
-      scope: "pool",
-      poolScope: poolScope.value,
-      page,
-      limit,
-      clientName: search.value || undefined,
-      contact: contactFilter.value || undefined,
-      status: filters.status || undefined
-    }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),
+    remsApi.list({ scope: "pool", poolScope: poolScope.value, page, limit, ...activeFilters() })
+      .then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),
   onError: (err) => notify.error(getApiErrorMessage(err))
 });
+
+// A failed count is swallowed: a stale badge is not worth a second error toast beside the list's own.
+const loadCounts = async () => {
+  try {
+    poolCounts.value = await remsApi.poolCounts(activeFilters());
+  } catch {
+    // keep whatever was showing rather than blanking the toggle
+  }
+};
+
+// Counts follow the list. Everything that refreshes the table goes through `load` — mount, a filter or
+// scope change, an assignment, a delete, the Refresh button, a tenant switch — so keying off the loaded
+// rows keeps the badges in step without every one of those call sites having to remember them. Paging
+// re-counts needlessly; that is one small aggregate query, cheaper than three refresh paths to maintain.
+watch(rows, loadCounts);
 
 const { filters, filterableColumns, filterChips, removeFilter, clearFilters } = useColumnFilters(columns, rows, { server: true });
 

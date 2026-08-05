@@ -48,6 +48,13 @@ public sealed record RemsRequestListOptions(
     int Limit);
 
 /// <summary>
+/// How many pool requests fall into each Admin Pool view, under the caller's visibility and the filters
+/// currently applied. <see cref="All"/> is the total the other two are drawn from, not their sum: a
+/// request assigned to someone else is in neither.
+/// </summary>
+public sealed record RemsPoolCounts(int Unassigned, int Mine, int All);
+
+/// <summary>
 /// The EMS-form and client-submission state for a request, projected from the (at most one active)
 /// <see cref="REMSForm"/> and its submissions. Absent when the form has not been started (WO-111 left-join;
 /// forms/submissions are populated by later WOs).
@@ -79,6 +86,14 @@ public interface IRemsRepository
     /// plus the requested filters and view scope, tenant-scoped by the ambient filter.
     /// </summary>
     Task<(IReadOnlyList<REMS> Items, int Total)> ListRequestsAsync(
+        RemsRequestListOptions options, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Counts for the Admin Pool's Unassigned / Assigned-to-me / All views in one round trip, under the
+    /// same visibility predicate and field filters as <see cref="ListRequestsAsync"/>. The options'
+    /// <see cref="RemsRequestListOptions.PoolFilter"/> is ignored — it is what is being counted.
+    /// </summary>
+    Task<RemsPoolCounts> CountPoolScopesAsync(
         RemsRequestListOptions options, CancellationToken cancellationToken = default);
 
     /// <summary>

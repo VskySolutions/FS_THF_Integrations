@@ -2,7 +2,7 @@
   <div class="column q-gutter-sm">
     <!-- Header: title (left) + quick search with loader + Add note (right) -->
     <div class="row items-center no-wrap q-gutter-sm">
-      <div class="text-subtitle1">Notes</div>
+      <!-- <div class="text-subtitle1">Notes</div> -->
       <q-space />
       <q-input
         v-model="search"

@@ -459,6 +459,11 @@ export const remsApi = {
   // params: { scope?, poolScope?, clientName?, contact?, status?, createdFrom?, createdTo?, page?, limit? }
   // scope: "partner" | "pool"; poolScope: "unassigned" | "mine" | "all". Returns the standard envelope.
   list: (params) => api.get("/api/rems/requests", { params }).then(envelope),
+  // Admin Pool view sizes: { unassigned, mine, all }. Takes the SAME filter params as list() (minus
+  // paging and poolScope) and applies the same visibility rules, so each count matches the rows that
+  // view would return. `all` is the total the other two are drawn from, not their sum — a request
+  // assigned to someone else is in neither.
+  poolCounts: (params) => api.get("/api/rems/requests/pool-counts", { params }).then(unwrap),
   get: (id) => api.get(`/api/rems/requests/${id}`).then(unwrap),
   // payload: { existingClientReferenceId?, clientName, type, priority, title, description?,
   //            customerEmail?, customerMobileNumber?, mediaId?, submit, assignAdminUserId? }
@@ -492,13 +497,17 @@ export const remsApi = {
   sendForm: (remsId) => api.post(`/api/rems/requests/${remsId}/form/send`).then(unwrap),
   // Provider email events, newest first: [{ id, eventType, recipientEmail, occurredOnUtc, providerMessageId }].
   emailLog: (remsId) => api.get(`/api/rems/requests/${remsId}/email-log`).then(unwrap),
-  // EMS Inbox (paginated envelope). Rows: { remsId, remsNumber, clientName, engagementType, requestStatus,
+  // EMS Inbox (paginated envelope). params: { page?, limit?, formState?, search?, requestStatus? } —
+  // search covers the REMS number and client name. Filtering is server-side, so the pager reports the
+  // filtered total. Rows: { remsId, remsNumber, clientName, engagementType, requestStatus,
   //   formStatus, formCreatedBy:{id,name}|null, formSentOnUtc, latestEmailEventType, latestEmailEventOnUtc }.
   inbox: (params) => api.get("/api/rems/inbox", { params }).then(envelope),
 
   // ---- Client forms + submitted-form review (WO-114, WO-116) ----
-  // Client Forms list (paginated envelope). Rows: { remsId, remsNumber, clientName, requestStatus, hasForm,
-  //   submitted, submittedOnUtc, assignedAdmin:{id,name}|null, cse:{id,name}|null }.
+  // Client Forms list (paginated envelope). params: { page?, limit?, search?, submitted?, requestStatus? } —
+  // search covers the REMS number and client name; `submitted` is a bool. Filtering is server-side. Rows:
+  //   { remsId, remsNumber, clientName, requestStatus, hasForm,
+  //     submitted, submittedOnUtc, assignedAdmin:{id,name}|null, cse:{id,name}|null }.
   clientForms: (params) => api.get("/api/rems/client-forms", { params }).then(envelope),
   // The immutable submitted-form snapshot: { submissionId, remsId, remsNumber, industryGroup, lockedEmail,
   //   submittedOnUtc, payload } — payload is the RemsFormPayloadV1 wire shape, rendered read-only, grouped.
@@ -556,14 +565,17 @@ export const remsApi = {
   resubmitApproval: (engagementId) => api.post(`/api/rems/engagements/${engagementId}/approval/resubmit`).then(unwrap),
 
   // ---- Approval inbox (WO-117 Part B / WO-114) — the caller's OWN approval tasks only ----
-  // The caller's own approval tasks (pending + historical), newest round first. Rows:
+  // The caller's own approval tasks (pending + historical), newest round first. Paged and filtered
+  // SERVER-side — params: { page?, limit?, search?, role?, status? }, where search covers the REMS number,
+  // client and entity name, and role/status take the RemsApproverRole / RemsApprovalTaskStatus names.
+  // Returns the standard paginated envelope. Rows:
   //   { taskId, roundId, roundNumber, role, status, sentOnUtc, decidedOnUtc, roundStatus,
   //     engagementId, remsId, remsNumber, clientName, entityName,
   //     approvedCount, rejectedCount, approverCount }.
   // The three counts describe the whole ROUND (how many approvers, how many have decided), not the
   // caller's own task — they drive the inbox's "1/4" progress column. Still awaiting =
   // approverCount - approvedCount - rejectedCount; a rejection ends the round, so the rest never decide.
-  myApprovalTasks: () => api.get("/api/rems/approval-tasks").then(unwrap),
+  myApprovalTasks: (params) => api.get("/api/rems/approval-tasks", { params }).then(envelope),
   // The caller's own approval task with the full review packet (404 for anyone else's task) — the same
   // material as the staff engagement workspace, since that is what is being signed off. Shape:
   //   { taskId, roundId, roundNumber, role, status, decidedOnUtc, rejectionReason, canDecide,

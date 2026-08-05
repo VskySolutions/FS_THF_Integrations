@@ -56,14 +56,41 @@ internal sealed class RemsApprovalRepository : IRemsApprovalRepository
     // The round's sibling tasks come along so the inbox can show how far the round has got (n of m
     // approved). The caller's checklist is deliberately NOT loaded: the inbox lists rounds, not checkboxes,
     // and a second collection include would multiply the result set for nothing.
-    public async Task<IReadOnlyList<REMSApprovalTask>> ListTasksByApproverAsync(Guid approverId, CancellationToken cancellationToken = default)
-        => await _dbContext.RemsApprovalTasks
+    public async Task<(IReadOnlyList<REMSApprovalTask> Items, int Total)> ListTasksByApproverAsync(
+        RemsApprovalTaskQuery query, CancellationToken cancellationToken = default)
+    {
+        var tasks = _dbContext.RemsApprovalTasks.Where(t => t.ApproverId == query.ApproverId);
+
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var t = query.Search.Trim();
+            tasks = tasks.Where(x =>
+                x.Round!.Engagement!.Entity!.Client!.Rems!.REMSNumber.Contains(t) ||
+                x.Round!.Engagement!.Entity!.Client!.Name.Contains(t) ||
+                x.Round!.Engagement!.Entity!.Name.Contains(t));
+        }
+        if (query.Role is { } role)
+        {
+            tasks = tasks.Where(t => t.ApproverRole == role);
+        }
+        if (query.Status is { } status)
+        {
+            tasks = tasks.Where(t => t.Status == status);
+        }
+
+        // Counted AFTER the filters so the pager reflects the filtered set.
+        var total = await tasks.CountAsync(cancellationToken);
+        var items = await tasks
             .Include(t => t.Round).ThenInclude(r => r!.Tasks)
             .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.Entity)
                 .ThenInclude(en => en!.Client).ThenInclude(c => c!.Rems)
-            .Where(t => t.ApproverId == approverId)
             .OrderByDescending(t => t.Round!.SentOnUtc)
+            .Skip((query.Page - 1) * query.Limit)
+            .Take(query.Limit)
             .ToListAsync(cancellationToken);
+
+        return (items, total);
+    }
 
     public async Task AddRoundAsync(REMSApprovalRound round, CancellationToken cancellationToken = default)
         => await _dbContext.RemsApprovalRounds.AddAsync(round, cancellationToken);

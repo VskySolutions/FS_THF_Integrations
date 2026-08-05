@@ -56,20 +56,23 @@ export default [
       },
       {
         // The task-isolated Approval Inbox (WO-117 Part B): the approver's OWN pending + historical tasks.
-        // Task-isolation is enforced server-side (the list returns only the caller's tasks; the detail 404s
-        // anyone else's), so this surface never exposes another approver's tasks or an approver picker.
+        // Deliberately NOT permission-gated — anyone can be made an approver (the CSE, a commission
+        // recipient, or someone added on the Approval tab), so no permission can predict who needs this
+        // page, and gating it locked real approvers out. Task-isolation is enforced server-side: the list
+        // returns only the caller's own tasks, so a user with none simply sees an empty inbox.
         path: "approvals",
         name: "rems_approvals",
         component: () => import("modules/rems/pages/ApprovalInbox.vue"),
-        meta: { requiresAuth: true, permissions: ["rems.approvals.act"], title: "REMS Approvals" }
+        meta: { requiresAuth: true, title: "REMS Approvals" }
       },
       {
-        // The role-scoped approval-task detail: the review data the approver's role is entitled to, the
-        // per-role checklist, and the checklist-gated Approve / reason-required Reject decision.
+        // The approval-task review packet, the caller's checklist, and the checklist-gated Approve /
+        // reason-required Reject decision. Ungated for the same reason as the inbox; the server 404s any
+        // task that is not the caller's own, which is the real boundary.
         path: "approvals/:taskId",
         name: "rems_approval_task",
         component: () => import("modules/rems/pages/ApprovalTaskDetail.vue"),
-        meta: { requiresAuth: true, permissions: ["rems.approvals.act"], title: "Approval Task" }
+        meta: { requiresAuth: true, title: "Approval Task" }
       }
     ]
   },

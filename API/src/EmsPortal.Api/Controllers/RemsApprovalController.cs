@@ -7,16 +7,26 @@ using EmsPortal.Domain.Entities;
 using EmsPortal.Domain.Enums;
 using EmsPortal.Shared.Contracts;
 using EmsPortal.Shared.Security;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EmsPortal.Api.Controllers;
 
 /// <summary>
 /// REMS approval workflow backend (WO-114 Part C). Staff route an engagement for approval and manage
-/// resubmission (<see cref="Permissions.RemsApprovalsSend"/>); approvers act ONLY on their own tasks
-/// (<see cref="Permissions.RemsApprovalsAct"/> + a record-level <c>ApproverId == caller</c> check). A task
-/// or engagement is never revealed to a user merely for holding the Approver role: a task that is not the
-/// caller's own is a 404. Tenant isolation is ambient.
+/// resubmission (<see cref="Permissions.RemsApprovalsSend"/>).
+/// <para>
+/// Acting on an approval task needs no permission — only that the task is YOURS. Approver-ness is data,
+/// not a role: a user becomes an approver by being the request's CSE, a commission recipient, or someone
+/// added on the Approval tab, and any role can find itself in one of those seats (a commission recipient
+/// is routinely a Partner). Gating on a role-derived permission meant the role assignment and the
+/// engagement data had to agree, and when they did not the approver simply could not reach a task that
+/// had been created for them — and since a round completes only when EVERY task is approved, the
+/// engagement stalled indefinitely with no way to unstick it from the UI.
+/// </para>
+/// The boundary is unchanged and is the one that matters: every own-task endpoint requires an
+/// authenticated caller and re-checks <c>ApproverId == caller</c>, so a task that is not the caller's own
+/// is a 404 and the list only ever returns their own rows. Tenant isolation is ambient.
 /// </summary>
 [ApiController]
 [Route("api/rems")]
@@ -279,21 +289,46 @@ public sealed class RemsApprovalController : ControllerBase
     // -------------------- Approver's own tasks --------------------
 
     /// <summary>
-    /// The caller's own approval tasks (pending and historical), newest round first (AC-REMS-019). Each row
-    /// carries the round's approved/rejected/total counts so the inbox can show its progress — the row is
-    /// still the caller's own task, and no other approver's identity is exposed here.
+    /// The caller's own approval tasks (pending and historical), newest round first (AC-REMS-019), paged and
+    /// filtered server-side: <paramref name="search"/> over the REMS number, client and entity name, plus
+    /// optional <paramref name="role"/> / <paramref name="status"/>. Each row carries the round's
+    /// approved/rejected/total counts so the inbox can show its progress — the row is still the caller's own
+    /// task, and no other approver's identity is exposed here.
     /// </summary>
     [HttpGet("approval-tasks")]
-    [RequirePermission(Permissions.RemsApprovalsAct)]
+    [Authorize]
     [ProducesResponseType<ApiResponse<IEnumerable<RemsApprovalTaskRow>>>(StatusCodes.Status200OK)]
-    public async Task<IActionResult> MyTasks(CancellationToken cancellationToken)
+    public async Task<IActionResult> MyTasks(
+        [FromQuery] int page = 1,
+        [FromQuery] int limit = 20,
+        [FromQuery] string? search = null,
+        [FromQuery] string? role = null,
+        [FromQuery] string? status = null,
+        CancellationToken cancellationToken = default)
     {
         if (User.GetUserId() is not { } me)
         {
             return Unauthorized(ApiResponseFactory.Unauthorized("No user context."));
         }
 
-        var tasks = await _approvals.ListTasksByApproverAsync(me, cancellationToken);
+        page = Math.Max(1, page);
+        limit = Math.Clamp(limit, 1, 100);
+
+        // An unparseable role/status is treated as "no filter" rather than an error: these arrive from a
+        // picker, and a stale value should show everything, not fail the page.
+        RemsApproverRole? roleFilter = Enum.TryParse<RemsApproverRole>(role, ignoreCase: true, out var r) ? r : null;
+        RemsApprovalTaskStatus? statusFilter =
+            Enum.TryParse<RemsApprovalTaskStatus>(status, ignoreCase: true, out var s) ? s : null;
+
+        var (tasks, total) = await _approvals.ListTasksByApproverAsync(
+            new RemsApprovalTaskQuery(me, search, roleFilter, statusFilter, page, limit), cancellationToken);
+
+        var auditNames = await _users.GetFullNamesAsync(
+            tasks.SelectMany(t => new[] { t.CreatedById, t.UpdatedById })
+                .Where(id => id.HasValue).Select(id => id!.Value),
+            cancellationToken);
+        string? NameOf(Guid? id) => id is { } uid && auditNames.TryGetValue(uid, out var n) ? n : null;
+
         var rows = tasks.Select(t =>
         {
             var round = t.Round!;
@@ -306,9 +341,10 @@ public sealed class RemsApprovalController : ControllerBase
                 engagement.Id, rems.Id, rems.REMSNumber, client.Name, engagement.Entity!.Name,
                 round.Tasks.Count(x => x.Status == RemsApprovalTaskStatus.Approved),
                 round.Tasks.Count(x => x.Status == RemsApprovalTaskStatus.Rejected),
-                round.Tasks.Count);
+                round.Tasks.Count,
+                NameOf(t.CreatedById), t.CreatedOnUtc, NameOf(t.UpdatedById), t.UpdatedOnUtc);
         });
-        return Ok(ApiResponseFactory.Success(rows, "REMS approval tasks retrieved."));
+        return Ok(ApiResponseFactory.Paginated(rows, "REMS approval tasks retrieved.", page, limit, total));
     }
 
     /// <summary>
@@ -320,7 +356,7 @@ public sealed class RemsApprovalController : ControllerBase
     /// (AC-REMS-019.10). Not the caller's own task =&gt; 404.
     /// </summary>
     [HttpGet("approval-tasks/{taskId:guid}")]
-    [RequirePermission(Permissions.RemsApprovalsAct)]
+    [Authorize]
     [ProducesResponseType<ApiResponse<RemsApprovalTaskView>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> GetTask(Guid taskId, CancellationToken cancellationToken)
     {
@@ -342,7 +378,7 @@ public sealed class RemsApprovalController : ControllerBase
 
     /// <summary>Check / uncheck a checklist item on the caller's own task (AC-REMS-019).</summary>
     [HttpPut("approval-tasks/{taskId:guid}/checklist/{itemId:guid}")]
-    [RequirePermission(Permissions.RemsApprovalsAct)]
+    [Authorize]
     [ProducesResponseType<ApiResponse<RemsChecklistItemView>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> SetChecklistItem(
         Guid taskId, Guid itemId, [FromBody] SetChecklistItemRequest request, CancellationToken cancellationToken)
@@ -383,7 +419,7 @@ public sealed class RemsApprovalController : ControllerBase
     /// notification goes to everyone involved.
     /// </summary>
     [HttpPost("approval-tasks/{taskId:guid}/approve")]
-    [RequirePermission(Permissions.RemsApprovalsAct)]
+    [Authorize]
     [ProducesResponseType<ApiResponse<RemsApprovalTaskView>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Approve(Guid taskId, CancellationToken cancellationToken)
     {
@@ -469,7 +505,7 @@ public sealed class RemsApprovalController : ControllerBase
     /// sender and CSE are notified.
     /// </summary>
     [HttpPost("approval-tasks/{taskId:guid}/reject")]
-    [RequirePermission(Permissions.RemsApprovalsAct)]
+    [Authorize]
     [ProducesResponseType<ApiResponse<RemsApprovalTaskView>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Reject(Guid taskId, [FromBody] RejectApprovalTaskRequest request, CancellationToken cancellationToken)
     {

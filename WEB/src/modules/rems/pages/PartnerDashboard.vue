@@ -75,15 +75,15 @@
           >
             <q-tooltip>Edit</q-tooltip>
           </q-btn>
-          <q-btn flat round dense color="primary" icon="o_forum" @click="openConversation(cell.row)">
-            <q-tooltip>Conversations</q-tooltip>
-          </q-btn>
           <!-- Assigning an admin belongs to the Admin Pool, which is where the pool is worked. -->
           <q-btn
             v-if="cell.row.actions?.canDuplicate"
             flat round dense color="primary" icon="o_content_copy" @click="duplicate(cell.row)"
           >
             <q-tooltip>Duplicate</q-tooltip>
+          </q-btn>
+          <q-btn flat round dense color="primary" icon="o_forum" @click="openConversation(cell.row)">
+            <q-tooltip>Notes</q-tooltip>
           </q-btn>
         </q-td>
       </template>
@@ -113,6 +113,7 @@ import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
 import { useDateFormat } from "composables/useDateFormat";
+import { useAuditColumns } from "composables/useAuditColumns";
 import { useRemsMeta, REMS_STATUS_FILTER_OPTIONS } from "modules/rems/useRemsMeta";
 
 import AppListHeader from "components/common/AppListHeader.vue";
@@ -126,7 +127,11 @@ const notify = useNotify();
 const { confirm } = useConfirm();
 const { has } = usePermissions();
 const fmt = useDateFormat();
-const { typeLabel, priorityLabel, priorityColor, requestStatusLabel, requestStatusColor, emsStateLabel } = useRemsMeta();
+const auditColumns = useAuditColumns();
+const {
+  typeLabel, priorityLabel, priorityColor, requestStatusLabel, requestStatusColor,
+  emsStateLabel, submissionStateLabel
+} = useRemsMeta();
 
 const canCreate = computed(() => has(Permissions.RemsRequestsCreate));
 
@@ -139,6 +144,17 @@ const columns = computed(() => [
   { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true, filterOptions: REMS_STATUS_FILTER_OPTIONS },
   { name: "assignedAdmin", label: "Assigned Admin", field: (r) => r.assignedAdmin?.name || "—", align: "left", default: true, filterable: false },
   { name: "emsFormState", label: "EMS State", field: "emsFormState", align: "left", default: true, filterable: false },
+  // Off by default (the title cell already captions the client), but every field the row carries is
+  // offered in the Columns menu rather than being unreachable.
+  { name: "clientName", label: "Client", field: "clientName", align: "left", sortable: true, default: false, filterable: false },
+  { name: "customerEmail", label: "Client Email", field: (r) => r.customerEmail || "—", align: "left", default: false, filterable: false },
+  { name: "customerMobileNumber", label: "Client Mobile", field: (r) => r.customerMobileNumber || "—", align: "left", default: false, filterable: false },
+  { name: "cse", label: "CSE", field: (r) => r.cse?.name || "—", align: "left", default: false, filterable: false },
+  { name: "industryGroup", label: "Industry Group", field: (r) => r.industryGroup || "—", align: "left", default: false, filterable: false },
+  { name: "clientSubmissionState", label: "Client Submission", field: (r) => submissionStateLabel(r.clientSubmissionState), align: "left", default: false, filterable: false },
+  // Created On is already a visible column here, so only the other three come from the shared set —
+  // two columns of the same name would collide in AppDataTable's visibility map.
+  ...auditColumns({ only: ["createdBy", "updatedBy", "updatedOnUtc"] }),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ]);
 

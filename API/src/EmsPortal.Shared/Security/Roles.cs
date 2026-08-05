@@ -16,9 +16,10 @@ public static class Roles
     public const string Admin = "Admin";
 
     /// <summary>
-    /// Record-scoped approver. The role grants only <c>rems.approvals.act</c>; an Approver's visibility
-    /// is further restricted to the REMSApprovalTask rows assigned to them (enforced in the REMS query
-    /// layer, WO-111/112/114) rather than tenant-wide.
+    /// Marks a user as offerable in the REMS "add approvers" picker. It grants no permissions: deciding an
+    /// approval task is authorised by owning the task, not by holding this role — the CSE and every
+    /// commission recipient approve without it, whatever roles they hold. See
+    /// <see cref="Permissions.ForApprover"/>.
     /// </summary>
     public const string Approver = "Approver";
 }

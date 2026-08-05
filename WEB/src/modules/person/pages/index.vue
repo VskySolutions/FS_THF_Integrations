@@ -18,6 +18,9 @@
 
     <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
       <app-column-filters v-model="filters" :columns="filterableColumns" />
+      <q-toggle
+        v-if="canManageDeleted" v-model="showDeleted" label="Show deleted?" dense class="q-mt-md"
+      />
     </app-filter-drawer>
 
     <app-data-table
@@ -83,6 +86,10 @@
       </template>
     </app-data-table>
 
+    <deleted-records-panel
+      v-if="canManageDeleted" :entity-type="EntityType.Person" :show="showDeleted" @restored="load"
+    />
+
     <!-- Create person -->
     <app-form-drawer v-model="formOpen" title="Create Person" :saving="saving" @submit="submitForm" @cancel="resetForm">
       <q-form ref="formRef" greedy>
@@ -95,17 +102,19 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted } from "vue";
 import { useRouter } from "vue-router";
-import { personApi, getApiErrorMessage } from "services/api";
+import { personApi, getApiErrorMessage, EntityType } from "services/api";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
+import { useDeletedRecords } from "composables/useDeletedRecords";
 import { useDateFormat } from "composables/useDateFormat";
 import { useAuditColumns } from "composables/useAuditColumns";
 import { debounce } from "quasar";
 
 import AppDataTable from "components/common/AppDataTable.vue";
+import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
@@ -115,6 +124,7 @@ import { blankPersonForm } from "composables/personForm";
 import { useTenantOptions } from "composables/useTenantOptions";
 
 const router = useRouter();
+const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const { has } = usePermissions();

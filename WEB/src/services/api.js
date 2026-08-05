@@ -290,14 +290,25 @@ export const optionSetApi = {
 
 // ---------------------------------------------------------------------------
 // Universal Features (Phase 14/15). Attach to any entity via (entityType, entityId).
-// EntityType enum: Tenant=3, User=4, UserGroup=5.
+// EntityType — mirrors EmsPortal.Domain.Enums.EntityType. Values are append-only: they are persisted on
+// every Universal Feature row (notes, tags, attachments, pins, …), so renumbering would silently
+// re-point existing data.
 // ---------------------------------------------------------------------------
 
 export const EntityType = Object.freeze({
   Tenant: 3,
   User: 4,
   UserGroup: 5,
-  Rems: 6
+  Rems: 6,
+  Person: 7,
+  Role: 8,
+  OptionSet: 9,
+  PermissionGroup: 10,
+  SmtpAccount: 11,
+  EmailTemplate: 12,
+  Tag: 13,
+  SavedView: 14,
+  StickyNote: 15
 });
 
 // Notes (@mention-aware annotations).

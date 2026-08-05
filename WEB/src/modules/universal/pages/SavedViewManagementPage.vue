@@ -5,6 +5,9 @@
       show-back
       @back="$router.back()"
     />
+    <q-toggle
+      v-if="canManageDeleted" v-model="showDeleted" label="Show deleted?" dense class="q-mb-md"
+    />
 
     <app-data-table
       page-key="uf_saved_views"
@@ -25,21 +28,28 @@
         </q-td>
       </template>
     </app-data-table>
+
+    <deleted-records-panel
+      v-if="canManageDeleted" :entity-type="EntityType.SavedView" :show="showDeleted" @restored="load"
+    />
   </q-page>
 </template>
 
 <script setup>
 import { ref, onMounted } from "vue";
 import { Dialog } from "quasar";
-import { ufSavedViewApi, getApiErrorMessage } from "services/api";
+import { ufSavedViewApi, getApiErrorMessage, EntityType } from "services/api";
 import { useNotify } from "composables/useNotify";
+import { useDeletedRecords } from "composables/useDeletedRecords";
 import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
 import { useAuditColumns } from "composables/useAuditColumns";
 import AppDataTable from "components/common/AppDataTable.vue";
+import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
 
 const auditColumns = useAuditColumns();
+const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const { formatDateTime } = useDateFormat();

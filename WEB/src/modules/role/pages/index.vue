@@ -18,6 +18,9 @@
 
     <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
       <app-column-filters v-model="filters" :columns="filterableColumns" />
+      <q-toggle
+        v-if="canManageDeleted" v-model="showDeleted" label="Show deleted?" dense class="q-mt-md"
+      />
     </app-filter-drawer>
 
     <app-data-table
@@ -61,6 +64,10 @@
       </template>
     </app-data-table>
 
+    <deleted-records-panel
+      v-if="canManageDeleted" :entity-type="EntityType.Role" :show="showDeleted" @restored="load"
+    />
+
     <!-- Create / edit role -->
     <app-form-drawer
       v-model="formOpen" :title="editingId ? 'Edit Role' : 'Create Role'"
@@ -100,14 +107,16 @@
 <script setup>
 import { ref, reactive, watch } from "vue";
 import { debounce } from "quasar";
-import { roleApi, tenantApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
+import { roleApi, tenantApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes, EntityType } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
+import { useDeletedRecords } from "composables/useDeletedRecords";
 import { useAuditColumns } from "composables/useAuditColumns";
 
 import AppDataTable from "components/common/AppDataTable.vue";
+import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
 import { stripHtml } from "utils/richText";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
@@ -118,6 +127,7 @@ import AppRichTextField from "components/common/AppRichTextField.vue";
 import RolePermissionGroupsPanel from "modules/permission-group/components/RolePermissionGroupsPanel.vue";
 
 const auditColumns = useAuditColumns();
+const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
 const { confirm } = useConfirm();
 

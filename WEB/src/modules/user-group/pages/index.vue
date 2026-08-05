@@ -18,6 +18,9 @@
 
     <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
       <app-column-filters v-model="filters" :columns="filterableColumns" />
+      <q-toggle
+        v-if="canManageDeleted" v-model="showDeleted" label="Show deleted?" dense class="q-mt-md"
+      />
     </app-filter-drawer>
 
     <div class="row q-col-gutter-md">
@@ -127,6 +130,11 @@
       </div>
     </div>
 
+    <!-- Below both panes: this restores GROUPS, not the memberships shown on the right. -->
+    <deleted-records-panel
+      v-if="canManageDeleted" :entity-type="EntityType.UserGroup" :show="showDeleted" @restored="load"
+    />
+
     <!-- Create group dialog -->
     <q-dialog v-model="createOpen" persistent>
       <q-card style="min-width: 380px; max-width: 90vw;">
@@ -171,14 +179,16 @@
 <script setup>
 import { ref, reactive, onMounted, watch } from "vue";
 import { debounce } from "quasar";
-import { userGroupApi, userApi, getApiErrorMessage } from "services/api";
+import { userGroupApi, userApi, getApiErrorMessage, EntityType } from "services/api";
 import { useNotify } from "composables/useNotify";
+import { useDeletedRecords } from "composables/useDeletedRecords";
 import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
 import { useAuditColumns } from "composables/useAuditColumns";
 import AppListHeader from "components/common/AppListHeader.vue";
+import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppDataTable from "components/common/AppDataTable.vue";
@@ -188,6 +198,7 @@ import AppRichTextField from "components/common/AppRichTextField.vue";
 import AppSelect from "components/common/AppSelect.vue";
 
 const auditColumns = useAuditColumns();
+const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const fmt = useDateFormat();

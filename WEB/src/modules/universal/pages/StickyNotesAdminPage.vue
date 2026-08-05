@@ -8,6 +8,9 @@
       @add="openCreate"
       @back="$router.back()"
     />
+    <q-toggle
+      v-if="canManageDeleted" v-model="showDeleted" label="Show deleted?" dense class="q-mb-md"
+    />
 
     <app-data-table
       page-key="uf_sticky_admin"
@@ -31,6 +34,10 @@
       </template>
     </app-data-table>
 
+    <deleted-records-panel
+      v-if="canManageDeleted" :entity-type="EntityType.StickyNote" :show="showDeleted" @restored="load"
+    />
+
     <q-dialog v-model="createOpen">
       <q-card style="min-width: 340px;">
         <q-card-section class="text-h6">New team sticky note</q-card-section>
@@ -50,16 +57,19 @@
 
 <script setup>
 import { ref, reactive, onMounted } from "vue";
-import { ufStickyNoteApi, getApiErrorMessage } from "services/api";
+import { ufStickyNoteApi, getApiErrorMessage, EntityType } from "services/api";
 import { useNotify } from "composables/useNotify";
+import { useDeletedRecords } from "composables/useDeletedRecords";
 import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
 import { useAuditColumns } from "composables/useAuditColumns";
 import AppDataTable from "components/common/AppDataTable.vue";
+import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppTextField from "components/common/AppTextField.vue";
 
 const auditColumns = useAuditColumns();
+const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const { formatDateTime } = useDateFormat();

@@ -25,6 +25,9 @@
     <app-filter-drawer v-model="filterOpen" :chips="allChips" @remove="onRemoveFilter" @clear="onClearFilters">
       <app-column-filters v-model="filters" :columns="filterableColumns" />
       <app-text-field v-model="contactFilter" label="Contact (email or mobile)" clearable :dense="false" />
+      <q-toggle
+        v-if="canManageDeleted" v-model="showDeleted" label="Show deleted?" dense class="q-mt-md"
+      />
     </app-filter-drawer>
 
     <app-data-table
@@ -130,6 +133,10 @@
       </template>
     </app-data-table>
 
+    <deleted-records-panel
+      v-if="canManageDeleted" :entity-type="EntityType.Rems" :show="showDeleted" @restored="load"
+    />
+
     <new-request-dialog v-model="formOpen" :request-id="editingId" @saved="onSaved" />
     <assign-admin-dialog
       v-model="assignOpen" :request-id="assignRequestId" :current-admin-id="assignCurrentAdminId"
@@ -142,12 +149,13 @@
 <script setup>
 import { ref, computed, watch } from "vue";
 import { debounce, LocalStorage } from "quasar";
-import { remsApi, getApiErrorMessage } from "services/api";
+import { remsApi, getApiErrorMessage, EntityType } from "services/api";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
+import { useDeletedRecords } from "composables/useDeletedRecords";
 import { useAuditColumns } from "composables/useAuditColumns";
 import { useRemsMeta } from "modules/rems/useRemsMeta";
 
@@ -156,10 +164,12 @@ import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppTextField from "components/common/AppTextField.vue";
 import AppDataTable from "components/common/AppDataTable.vue";
+import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
 import NewRequestDialog from "modules/rems/components/NewRequestDialog.vue";
 import AssignAdminDialog from "modules/rems/components/AssignAdminDialog.vue";
 import ConversationDialog from "modules/rems/components/ConversationDialog.vue";
 
+const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const { has } = usePermissions();

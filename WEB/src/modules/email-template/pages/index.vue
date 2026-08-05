@@ -22,6 +22,9 @@
 
     <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
       <app-column-filters v-model="filters" :columns="filterableColumns" />
+      <q-toggle
+        v-if="canManageDeleted" v-model="showDeleted" label="Show deleted?" dense class="q-mt-md"
+      />
     </app-filter-drawer>
 
     <q-banner dense rounded class="bg-teal-1 text-primary q-mb-md">
@@ -77,6 +80,10 @@
       </template>
     </app-data-table>
 
+    <deleted-records-panel
+      v-if="canManageDeleted" :entity-type="EntityType.EmailTemplate" :show="showDeleted" @restored="load"
+    />
+
     <email-template-form-drawer
       v-model="formOpen" :template="editing" :scope-params="scopeParams" @saved="onSaved"
     />
@@ -87,15 +94,17 @@
 
 <script setup>
 import { ref, reactive, computed, watch } from "vue";
-import { emailTemplateApi, getApiErrorMessage } from "services/api";
+import { emailTemplateApi, getApiErrorMessage, EntityType } from "services/api";
 import { useTenantOptions } from "composables/useTenantOptions";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
+import { useDeletedRecords } from "composables/useDeletedRecords";
 import { useAuditColumns } from "composables/useAuditColumns";
 
 import AppDataTable from "components/common/AppDataTable.vue";
+import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
@@ -106,6 +115,7 @@ import EmailTemplatePreviewDialog from "modules/email-template/components/EmailT
 const GLOBAL = "__global__";
 
 const auditColumns = useAuditColumns();
+const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const { canChooseTenant, tenantOptions, loadingTenants, loadTenants } = useTenantOptions();

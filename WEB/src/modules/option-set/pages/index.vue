@@ -23,6 +23,9 @@
         />
       </template>
     </app-list-header>
+    <q-toggle
+      v-if="canManageDeleted" v-model="showDeleted" label="Show deleted?" dense class="q-mb-md"
+    />
 
     <app-data-table
       page-key="option_sets"
@@ -89,14 +92,19 @@
       </template>
     </app-data-table>
 
+    <deleted-records-panel
+      v-if="canManageDeleted" :entity-type="EntityType.OptionSet" :show="showDeleted" @restored="load"
+    />
+
     <option-set-form-drawer v-model="formOpen" :set="editing" :sets="rows" @saved="onSaved" />
   </q-page>
 </template>
 
 <script setup>
 import { ref, onMounted } from "vue";
-import { optionSetApi, getApiErrorMessage, OptionItemSortMode } from "services/api";
+import { optionSetApi, getApiErrorMessage, OptionItemSortMode, EntityType } from "services/api";
 import { useNotify } from "composables/useNotify";
+import { useDeletedRecords } from "composables/useDeletedRecords";
 import { useConfirm } from "composables/useConfirm";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import { useAuditColumns } from "composables/useAuditColumns";
@@ -104,10 +112,12 @@ import { useEntityMeta } from "composables/uf/useEntityMeta";
 import { useEntityTypeOptions } from "composables/useOptionSet";
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppDataTable from "components/common/AppDataTable.vue";
+import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import OptionSetFormDrawer from "modules/option-set/components/OptionSetFormDrawer.vue";
 
 const auditColumns = useAuditColumns();
+const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const { has } = usePermissions();

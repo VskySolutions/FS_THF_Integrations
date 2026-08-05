@@ -5,6 +5,9 @@
       <q-space />
       <q-btn unelevated no-caps color="primary" icon="o_add" label="Add Tag" @click="openCreate" />
     </div>
+    <q-toggle
+      v-if="canManageDeleted" v-model="showDeleted" label="Show deleted?" dense class="q-mb-md"
+    />
 
     <app-data-table
       page-key="uf_tags"
@@ -28,6 +31,10 @@
       </template>
     </app-data-table>
 
+    <deleted-records-panel
+      v-if="canManageDeleted" :entity-type="EntityType.Tag" :show="showDeleted" @restored="load"
+    />
+
     <app-form-drawer v-model="drawerOpen" :title="editing ? 'Edit Tag' : 'Add Tag'" :saving="saving" @submit="save" @cancel="drawerOpen = false">
       <q-form ref="formRef">
         <app-text-field v-model="form.name" label="Name *" :rules="[(v) => !!v || 'Name is required']" />
@@ -49,15 +56,18 @@
 
 <script setup>
 import { ref, reactive, onMounted } from "vue";
-import { ufTagsApi, getApiErrorMessage } from "services/api";
+import { ufTagsApi, getApiErrorMessage, EntityType } from "services/api";
 import { useNotify } from "composables/useNotify";
+import { useDeletedRecords } from "composables/useDeletedRecords";
 import { useConfirm } from "composables/useConfirm";
 import { useAuditColumns } from "composables/useAuditColumns";
 import AppDataTable from "components/common/AppDataTable.vue";
+import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppTextField from "components/common/AppTextField.vue";
 
 const auditColumns = useAuditColumns();
+const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const palette = ["#ef5350", "#ec407a", "#ab47bc", "#5c6bc0", "#42a5f5", "#26a69a", "#9ccc65", "#ffa726", "#607d8b"];

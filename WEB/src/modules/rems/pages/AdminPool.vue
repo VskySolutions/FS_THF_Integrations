@@ -99,12 +99,10 @@
           </q-btn>
           <q-btn
             v-if="showEngagement(cell.row)" flat round dense color="primary" icon="o_work"
-            :disable="!emsDetailAvailable(cell.row)"
-            :to="emsDetailAvailable(cell.row) ? `/rems/engagements/${cell.row.id}` : undefined"
+            :disable="!!engagementBlocked(cell.row)"
+            :to="engagementBlocked(cell.row) ? undefined : `/rems/engagements/${cell.row.id}`"
           >
-            <q-tooltip>
-              {{ emsDetailAvailable(cell.row) ? "Engagement Setup" : "Available once the customer submits their form" }}
-            </q-tooltip>
+            <q-tooltip>{{ engagementBlocked(cell.row) || "Engagement Setup" }}</q-tooltip>
           </q-btn>
           <q-btn
             v-if="showEmailLog(cell.row)" flat round dense color="primary" icon="o_mark_email_read"
@@ -178,6 +176,7 @@ const auditColumns = useAuditColumns();
 const {
   typeLabel, priorityLabel, priorityColor, requestStatusLabel, requestStatusColor,
   emsStateLabel, submissionStateLabel, emsDetailAvailable, emsFormActivity,
+  engagementOwnerDenial,
   statusFilterOptions
 } = useRemsMeta();
 
@@ -279,6 +278,11 @@ const detailRoute = (row) => ({ name: "rems_request_detail", params: { id: row.i
 // EMS-inbox / engagement hand-offs live in later WOs; gate them by permission + form/submission state.
 const showEmailLog = (row) => has(Permissions.RemsEmailLogRead) && emsFormActivity(row);
 const showEngagement = (row) => has(Permissions.RemsEngagementsManage);
+
+// Why the Engagement Setup action is unavailable on a row, or null when it is open. The form has to be
+// in before there is anything to set up, and setup then belongs to whoever picked the request up.
+const engagementBlocked = (row) =>
+  (emsDetailAvailable(row) ? engagementOwnerDenial(row) : "Available once the customer submits their form");
 
 // ---- Edit ----
 const formOpen = ref(false);

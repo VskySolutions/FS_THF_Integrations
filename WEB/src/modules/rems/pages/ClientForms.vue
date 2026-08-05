@@ -80,11 +80,9 @@
           <!-- Distinct editable engagement action, kept apart from the read-only review above. -->
           <q-btn
             flat round dense color="primary" icon="o_work"
-            :disable="!cell.row.submitted" @click="openEngagement(cell.row)"
+            :disable="!!engagementBlocked(cell.row)" @click="openEngagement(cell.row)"
           >
-            <q-tooltip>
-              {{ cell.row.submitted ? "Engagement Setup" : "Available once the client submits their form" }}
-            </q-tooltip>
+            <q-tooltip>{{ engagementBlocked(cell.row) || "Engagement Setup" }}</q-tooltip>
           </q-btn>
           <q-btn flat round dense color="primary" icon="o_forum" @click.stop="openConversation(cell.row)">
             <q-tooltip>Notes</q-tooltip>
@@ -129,7 +127,12 @@ const router = useRouter();
 const notify = useNotify();
 const fmt = useDateFormat();
 const auditColumns = useAuditColumns();
-const { statusLabel, statusColor, statusFilterOptions } = useRemsMeta();
+const { statusLabel, statusColor, statusFilterOptions, engagementOwnerDenial } = useRemsMeta();
+
+// Why Engagement Setup is unavailable on a row, or null when it is open: the client has to have
+// submitted, and setup then belongs to whoever picked the request up.
+const engagementBlocked = (row) =>
+  (row?.submitted ? engagementOwnerDenial(row) : "The client has not submitted this form yet");
 
 // REMS number and client are covered by the quick search, so they get no duplicate filter box of their
 // own; the name/date columns the server cannot narrow on opt out entirely.

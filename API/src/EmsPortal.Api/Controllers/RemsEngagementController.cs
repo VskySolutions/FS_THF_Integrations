@@ -155,6 +155,11 @@ public sealed class RemsEngagementController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("REMS request not found."));
         }
 
+        if (await GuardSetupOwnerAsync(remsId, cancellationToken) is { } denied)
+        {
+            return denied;
+        }
+
         var client = await _clients.GetByRemsIdAsync(remsId, cancellationToken);
         if (client is null)
         {
@@ -197,6 +202,11 @@ public sealed class RemsEngagementController : ControllerBase
     [ProducesResponseType<ApiResponse<RemsClientView>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateClient(Guid remsId, [FromBody] UpdateRemsClientRequest request, CancellationToken cancellationToken)
     {
+        if (await GuardSetupOwnerAsync(remsId, cancellationToken) is { } denied)
+        {
+            return denied;
+        }
+
         var client = await _clients.GetByRemsIdAsync(remsId, cancellationToken);
         if (client is null)
         {
@@ -237,6 +247,11 @@ public sealed class RemsEngagementController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("REMS entity not found."));
         }
 
+        if (await GuardSetupOwnerAsync(entity.Client!.REMSId, cancellationToken) is { } denied)
+        {
+            return denied;
+        }
+
         await UpsertEntityAddressAsync(entity, RemsAddressType.Physical, request.PhysicalAddress, cancellationToken);
         await UpsertEntityAddressAsync(entity, RemsAddressType.Mailing, request.MailingAddress, cancellationToken);
 
@@ -260,6 +275,11 @@ public sealed class RemsEngagementController : ControllerBase
         if (entity is null)
         {
             return NotFound(ApiResponseFactory.NotFound("REMS entity not found."));
+        }
+
+        if (await GuardSetupOwnerAsync(entity.Client!.REMSId, cancellationToken) is { } denied)
+        {
+            return denied;
         }
 
         var existing = entity.Contacts.Where(c => !c.Deleted).ToList();
@@ -326,6 +346,11 @@ public sealed class RemsEngagementController : ControllerBase
         {
             return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
         }
+
+        if (await GuardSetupOwnerAsync(engagement.Entity!.Client!.REMSId, cancellationToken) is { } denied)
+        {
+            return denied;
+        }
         if (!IsEditable(engagement))
         {
             return EngagementLocked();
@@ -386,6 +411,11 @@ public sealed class RemsEngagementController : ControllerBase
         {
             return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
         }
+
+        if (await GuardSetupOwnerAsync(engagement.Entity!.Client!.REMSId, cancellationToken) is { } denied)
+        {
+            return denied;
+        }
         if (!IsEditable(engagement))
         {
             return EngagementLocked();
@@ -427,6 +457,11 @@ public sealed class RemsEngagementController : ControllerBase
         {
             return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
         }
+
+        if (await GuardSetupOwnerAsync(engagement.Entity!.Client!.REMSId, cancellationToken) is { } denied)
+        {
+            return denied;
+        }
         if (!IsEditable(engagement))
         {
             return EngagementLocked();
@@ -467,6 +502,11 @@ public sealed class RemsEngagementController : ControllerBase
         if (engagement is null)
         {
             return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
+        }
+
+        if (await GuardSetupOwnerAsync(engagement.Entity!.Client!.REMSId, cancellationToken) is { } denied)
+        {
+            return denied;
         }
         if (!IsEditable(engagement))
         {
@@ -540,6 +580,11 @@ public sealed class RemsEngagementController : ControllerBase
         {
             return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
         }
+
+        if (await GuardSetupOwnerAsync(target.Entity!.Client!.REMSId, cancellationToken) is { } denied)
+        {
+            return denied;
+        }
         if (!IsEditable(target))
         {
             return EngagementLocked();
@@ -596,6 +641,11 @@ public sealed class RemsEngagementController : ControllerBase
         {
             return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
         }
+
+        if (await GuardSetupOwnerAsync(engagement.Entity!.Client!.REMSId, cancellationToken) is { } denied)
+        {
+            return denied;
+        }
         if (!IsEditable(engagement))
         {
             return EngagementLocked();
@@ -645,6 +695,11 @@ public sealed class RemsEngagementController : ControllerBase
         if (engagement is null)
         {
             return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
+        }
+
+        if (await GuardSetupOwnerAsync(engagement.Entity!.Client!.REMSId, cancellationToken) is { } denied)
+        {
+            return denied;
         }
         if (!IsEditable(engagement))
         {
@@ -699,6 +754,47 @@ public sealed class RemsEngagementController : ControllerBase
     /// <summary>An engagement is editable only while it is Draft or has been Rejected (a fresh rework); locked once routed for approval or approved.</summary>
     private static bool IsEditable(REMSEngagement engagement)
         => engagement.Status is RemsEngagementStatus.Draft or RemsEngagementStatus.Rejected;
+
+    /// <summary>
+    /// Engagement setup belongs to whoever picked the request up. Until an Admin is assigned there is no
+    /// owner and the setup cannot be started; once there is, it is theirs to do.
+    /// <para>
+    /// <c>rems.engagements.manage</c> alone is not enough, because every REMS Admin holds it — without
+    /// this any of them could work a request another had claimed, which is the thing picking one up is
+    /// supposed to prevent. Enforced on the server rather than by hiding the button: the workspace is a
+    /// URL, reachable from the pool, the EMS Inbox, the client-forms list or a pasted link.
+    /// </para>
+    /// A Super Admin or Tenant Admin is exempt so an assignment can be worked around in an emergency;
+    /// the ordinary remedy is to reassign the request, which the pool already offers.
+    /// </summary>
+    private async Task<IActionResult?> GuardSetupOwnerAsync(Guid remsId, CancellationToken cancellationToken)
+    {
+        if (User.IsSuperAdmin() || User.GetRoles().Any(r => string.Equals(r, Roles.TenantAdmin, StringComparison.Ordinal)))
+        {
+            return null;
+        }
+
+        var rems = await _rems.GetByIdAsync(remsId, cancellationToken);
+        if (rems is null)
+        {
+            return NotFound(ApiResponseFactory.NotFound("REMS request not found."));
+        }
+
+        if (rems.AdminAssignedToId is null)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden(
+                "This request has not been picked up yet. Assign it to an Admin before starting the engagement setup."));
+        }
+
+        if (rems.AdminAssignedToId != User.GetUserId())
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden(
+                "This request was picked up by another Admin; only they can work its engagement setup."));
+        }
+
+        return null;
+    }
+
 
     private async Task<Guid?> MappedDirectorAsync(string? department, CancellationToken cancellationToken)
     {

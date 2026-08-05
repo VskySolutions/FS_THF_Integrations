@@ -44,6 +44,9 @@ public sealed record RemsInboxItem(
     DateTime? FormSentOnUtc,
     RemsFormEmailEventType? LatestEmailEventType,
     DateTime? LatestEmailEventOnUtc,
+    // Who picked the request up: engagement setup belongs to them, so the inbox can say so rather than
+    // offering an action that 403s.
+    Guid? AdminAssignedToId,
     // The owning REQUEST's audit trail — the row is keyed on it. Distinct from the form's own creator,
     // which this list already surfaces as "Form Creator".
     Guid? CreatedById,

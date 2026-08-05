@@ -74,6 +74,8 @@ public sealed record RemsInboxRow(
     DateTime? FormSentOnUtc,
     string? LatestEmailEventType,
     DateTime? LatestEmailEventOnUtc,
+    // Who picked the request up — engagement setup is theirs, so the list can say so.
+    RemsUserRef? AssignedAdmin,
     string? CreatedBy,
     DateTime CreatedOnUtc,
     string? UpdatedBy,

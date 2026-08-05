@@ -358,7 +358,7 @@ public sealed class RemsFormController : ControllerBase
             new RemsInboxQuery(state, search, requestStatus, page, limit), cancellationToken);
         var names = await _users.GetFullNamesAsync(
             items.Select(i => i.FormCreatedByUserId)
-                .Concat(items.SelectMany(i => new[] { i.CreatedById, i.UpdatedById })
+                .Concat(items.SelectMany(i => new[] { i.CreatedById, i.UpdatedById, i.AdminAssignedToId })
                     .Where(id => id.HasValue).Select(id => id!.Value)),
             cancellationToken);
 
@@ -371,6 +371,7 @@ public sealed class RemsFormController : ControllerBase
             i.FormSentOnUtc,
             i.LatestEmailEventType?.ToString(),
             i.LatestEmailEventOnUtc,
+            RemsWorkspaceMapper.UserRef(i.AdminAssignedToId, names),
             NameOf(i.CreatedById), i.CreatedOnUtc, NameOf(i.UpdatedById), i.UpdatedOnUtc));
 
         return Ok(ApiResponseFactory.Paginated(rows, "REMS EMS inbox retrieved.", page, limit, total));

@@ -99,11 +99,9 @@
           </q-btn>
           <q-btn
             v-if="showEngagement" flat round dense color="primary" icon="o_work"
-            :disable="cell.row.formStatus !== 'Submitted'" @click="openEngagement(cell.row)"
+            :disable="!!engagementBlocked(cell.row)" @click="openEngagement(cell.row)"
           >
-            <q-tooltip>
-              {{ cell.row.formStatus === "Submitted" ? "Engagement Setup" : "Available once the client submits their form" }}
-            </q-tooltip>
+            <q-tooltip>{{ engagementBlocked(cell.row) || "Engagement Setup" }}</q-tooltip>
           </q-btn>
           <q-btn
             v-if="showEmailLog(cell.row)" flat round dense color="primary" icon="o_history"
@@ -163,11 +161,19 @@ const auditColumns = useAuditColumns();
 const { has } = usePermissions();
 const {
   typeLabel, statusLabel, statusColor, emsStateLabel, emsStateColor, emailEventLabel, emailEventColor,
+  engagementOwnerDenial,
   statusFilterOptions
 } = useRemsMeta();
 
 const canViewEmailLog = computed(() => has(Permissions.RemsEmailLogRead));
 const showEngagement = computed(() => has(Permissions.RemsEngagementsManage));
+
+// Why Engagement Setup is unavailable on a row, or null when it is open: the client has to have
+// submitted, and setup then belongs to whoever picked the request up.
+const engagementBlocked = (row) =>
+  (row?.formStatus === "Submitted"
+    ? engagementOwnerDenial(row)
+    : "Available once the client submits their form");
 
 const columns = computed(() => [
   { name: "remsNumber", label: "Request ID", field: "remsNumber", align: "left", sortable: true, default: true, filterable: false },

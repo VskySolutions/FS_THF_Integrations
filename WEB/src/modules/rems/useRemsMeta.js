@@ -1,4 +1,5 @@
 import { ref, computed } from "vue";
+import { useAuthStore } from "stores/auth";
 import { optionSetApi, EntityType } from "services/api";
 import {
   useRemsOptionCatalog, ensureRemsOptionsLoaded, REMS_OPTION_SEED
@@ -122,6 +123,7 @@ const awaitingPickUp = (row) => row?.status === "submitted" && !row?.assignedAdm
 // it was edited from; the enum-backed ones are fixed maps because the backend branches on those values.
 export function useRemsMeta () {
   const options = useRemsOptionCatalog();
+  const auth = useAuthStore();
 
   const typeLabel = (v) => labelFrom(options.type, v);
   const priorityLabel = (v) => labelFrom(options.priority, v);
@@ -160,6 +162,19 @@ export function useRemsMeta () {
   // The EMS engagement/detail action becomes available only once the customer has submitted their
   // form (AC-REMS-002.5 / 005.6); until then it stays disabled.
   const emsDetailAvailable = (row) => row?.clientSubmissionState === "Submitted";
+
+  // Why engagement setup is closed to this user on this row, or null when it is theirs to work.
+  // Setup belongs to whoever picked the request up, so an unclaimed request has no owner and someone
+  // else's is not yours to take over. The server enforces the same rule — the workspace is a URL — but
+  // saying WHY on the button beats letting the click end in a 403.
+  const engagementOwnerDenial = (row) => {
+    const assignee = row?.assignedAdmin?.id;
+    if (!assignee) return "Pick this request up first — engagement setup belongs to the assigned Admin";
+    if (assignee !== auth.user?.userId) {
+      return `Picked up by ${row.assignedAdmin?.name || "another Admin"} — only they can work its engagement setup`;
+    }
+    return null;
+  };
   // The email-log / EMS-inbox action is meaningful once a form has been sent to the customer.
   const emsFormActivity = (row) =>
     !!row?.clientSubmissionState || ["Sent", "Submitted"].includes(row?.emsFormState);
@@ -206,6 +221,7 @@ export function useRemsMeta () {
     engagementStatusMeta,
     requestStatusLabel,
     requestStatusColor,
+    engagementOwnerDenial,
     emsDetailAvailable,
     emsFormActivity
   };

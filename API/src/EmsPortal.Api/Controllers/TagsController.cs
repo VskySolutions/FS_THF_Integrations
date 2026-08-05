@@ -27,12 +27,14 @@ namespace EmsPortal.Api.Controllers;
 public sealed class TagsController : ControllerBase
 {
     private readonly ITagRepository _tags;
+    private readonly IUserRepository _users;
     private readonly IActivityEventWriter _activity;
     private readonly IUnitOfWork _unitOfWork;
 
-    public TagsController(ITagRepository tags, IActivityEventWriter activity, IUnitOfWork unitOfWork)
+    public TagsController(ITagRepository tags, IUserRepository users, IActivityEventWriter activity, IUnitOfWork unitOfWork)
     {
         _tags = tags;
+        _users = users;
         _activity = activity;
         _unitOfWork = unitOfWork;
     }
@@ -46,7 +48,17 @@ public sealed class TagsController : ControllerBase
     {
         var tags = await _tags.ListAsync(search, cancellationToken);
         var counts = await _tags.GetUsageCountsAsync(cancellationToken);
-        var data = tags.Select(t => new TagResponse(t.Id, t.Name, t.Colour, t.Category, counts.TryGetValue(t.Id, out var c) ? c : 0));
+
+        // One name lookup for the page, so the audit columns read as people rather than guids.
+        var names = await _users.GetFullNamesAsync(
+            tags.SelectMany(t => new[] { t.CreatedById, t.UpdatedById })
+                .Where(id => id.HasValue).Select(id => id!.Value),
+            cancellationToken);
+        string? NameOf(Guid? id) => id is { } uid && names.TryGetValue(uid, out var n) ? n : null;
+
+        var data = tags.Select(t => new TagResponse(
+            t.Id, t.Name, t.Colour, t.Category, counts.TryGetValue(t.Id, out var c) ? c : 0,
+            NameOf(t.CreatedById), t.CreatedOnUtc, NameOf(t.UpdatedById), t.UpdatedOnUtc));
         return Ok(ApiResponseFactory.Success(data, "Tags retrieved."));
     }
 

@@ -42,11 +42,17 @@ public sealed class SavedViewsController : ControllerBase
     public async Task<IActionResult> ListShared(CancellationToken cancellationToken)
     {
         var views = await _views.ListSharedAsync(cancellationToken);
+        // Owners AND audit actors in one lookup — the two sets rarely coincide once a view is edited.
         var ownerNames = await _users.GetFullNamesAsync(
-            views.Where(v => v.UserId.HasValue).Select(v => v.UserId!.Value), cancellationToken);
+            views.Where(v => v.UserId.HasValue).Select(v => v.UserId!.Value)
+                .Concat(views.SelectMany(v => new[] { v.CreatedById, v.UpdatedById })
+                    .Where(id => id.HasValue).Select(id => id!.Value)),
+            cancellationToken);
+        string? NameOf(Guid? id) => id is { } uid && ownerNames.TryGetValue(uid, out var n) ? n : null;
+
         var data = views.Select(v => new SharedSavedViewResponse(
-            v.Id, v.Name, v.ListPage, v.UserId,
-            v.UserId is { } id && ownerNames.TryGetValue(id, out var name) ? name : null, v.CreatedOnUtc));
+            v.Id, v.Name, v.ListPage, v.UserId, NameOf(v.UserId), v.CreatedOnUtc,
+            NameOf(v.CreatedById), NameOf(v.UpdatedById), v.UpdatedOnUtc));
         return Ok(ApiResponseFactory.Success(data, "Shared views retrieved."));
     }
 

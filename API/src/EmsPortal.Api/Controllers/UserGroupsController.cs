@@ -43,12 +43,17 @@ public sealed class UserGroupsController : ControllerBase
     {
         var groups = await _groups.ListAsync(search, cancellationToken);
         var counts = await _groups.GetMemberCountsAsync(cancellationToken);
-        // Resolve creator ids to display names for the "created by" tooltip.
-        var creatorNames = await _users.GetFullNamesAsync(
-            groups.Where(g => g.CreatedById.HasValue).Select(g => g.CreatedById!.Value), cancellationToken);
+        // Resolve the audit actor ids to display names for the list's Created/Updated By columns. Both ids
+        // in one lookup — resolving only creators would leave an updater who never created a row unnamed.
+        var actorNames = await _users.GetFullNamesAsync(
+            groups.SelectMany(g => new[] { g.CreatedById, g.UpdatedById })
+                .Where(id => id.HasValue).Select(id => id!.Value),
+            cancellationToken);
+        string? NameOf(Guid? id) => id is { } uid && actorNames.TryGetValue(uid, out var n) ? n : null;
+
         var data = groups.Select(g => new UserGroupResponse(
             g.Id, g.Name, g.Description, counts.TryGetValue(g.Id, out var c) ? c : 0,
-            g.CreatedById is { } cid && creatorNames.TryGetValue(cid, out var name) ? name : null, g.CreatedOnUtc));
+            NameOf(g.CreatedById), g.CreatedOnUtc, NameOf(g.UpdatedById), g.UpdatedOnUtc));
         return Ok(ApiResponseFactory.Success(data, "User groups retrieved."));
     }
 
@@ -68,7 +73,10 @@ public sealed class UserGroupsController : ControllerBase
         if (await _groups.GetByNameAsync(name, cancellationToken) is { } existing)
         {
             return Ok(ApiResponseFactory.Success(
-                new UserGroupResponse(existing.Id, existing.Name, existing.Description, 0, null, existing.CreatedOnUtc), "Group already exists."));
+                new UserGroupResponse(
+                    existing.Id, existing.Name, existing.Description, 0,
+                    null, existing.CreatedOnUtc, null, existing.UpdatedOnUtc),
+                "Group already exists."));
         }
 
         var group = new UserGroup { Id = Guid.NewGuid(), Name = name, Description = request.Description?.Trim() };
@@ -77,7 +85,11 @@ public sealed class UserGroupsController : ControllerBase
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created,
-            ApiResponseFactory.Success(new UserGroupResponse(group.Id, group.Name, group.Description, 0, null, group.CreatedOnUtc), "User group created."));
+            ApiResponseFactory.Success(
+                new UserGroupResponse(
+                    group.Id, group.Name, group.Description, 0,
+                    null, group.CreatedOnUtc, null, group.UpdatedOnUtc),
+                "User group created."));
     }
 
     [HttpDelete("{id:guid}")]

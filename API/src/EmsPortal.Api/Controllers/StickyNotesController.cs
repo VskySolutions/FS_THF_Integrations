@@ -26,11 +26,13 @@ namespace EmsPortal.Api.Controllers;
 public sealed class StickyNotesController : ControllerBase
 {
     private readonly IStickyNoteRepository _notes;
+    private readonly IUserRepository _users;
     private readonly IUnitOfWork _unitOfWork;
 
-    public StickyNotesController(IStickyNoteRepository notes, IUnitOfWork unitOfWork)
+    public StickyNotesController(IStickyNoteRepository notes, IUserRepository users, IUnitOfWork unitOfWork)
     {
         _notes = notes;
+        _users = users;
         _unitOfWork = unitOfWork;
     }
 
@@ -223,8 +225,17 @@ public sealed class StickyNotesController : ControllerBase
     public async Task<IActionResult> AdminList(CancellationToken cancellationToken)
     {
         var rows = await _notes.ListTenantNotesWithCountsAsync(cancellationToken);
+
+        // One name lookup for the page, so the audit columns read as people rather than guids.
+        var names = await _users.GetFullNamesAsync(
+            rows.SelectMany(r => new[] { r.Note.CreatedById, r.Note.UpdatedById })
+                .Where(id => id.HasValue).Select(id => id!.Value),
+            cancellationToken);
+        string? NameOf(Guid? id) => id is { } uid && names.TryGetValue(uid, out var n) ? n : null;
+
         var data = rows.Select(r => new AdminStickyNoteResponse(
-            r.Note.Id, r.Note.Title, r.Note.Body, r.Note.Colour, r.Note.Scope, r.Note.ExpiresAtUtc, r.DismissalCount, r.Note.CreatedOnUtc));
+            r.Note.Id, r.Note.Title, r.Note.Body, r.Note.Colour, r.Note.Scope, r.Note.ExpiresAtUtc, r.DismissalCount,
+            r.Note.CreatedOnUtc, NameOf(r.Note.CreatedById), NameOf(r.Note.UpdatedById), r.Note.UpdatedOnUtc));
         return Ok(ApiResponseFactory.Success(data, "Tenant sticky notes retrieved."));
     }
 

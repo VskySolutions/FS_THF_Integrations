@@ -54,10 +54,12 @@ import { ufStickyNoteApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
+import { useAuditColumns } from "composables/useAuditColumns";
 import AppDataTable from "components/common/AppDataTable.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppTextField from "components/common/AppTextField.vue";
 
+const auditColumns = useAuditColumns();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const { formatDateTime } = useDateFormat();
@@ -71,6 +73,7 @@ const columns = [
   { name: "createdOnUtc", label: "Created", field: "createdOnUtc", align: "left", sortable: true, default: true },
   { name: "expiresAtUtc", label: "Expires", field: "expiresAtUtc", align: "left", default: true },
   { name: "dismissalCount", label: "Dismissals", field: "dismissalCount", align: "left", sortable: true, default: true },
+  ...auditColumns(),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 

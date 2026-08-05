@@ -53,10 +53,12 @@ import { ref, reactive, onMounted } from "vue";
 import { ufTagsApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
+import { useAuditColumns } from "composables/useAuditColumns";
 import AppDataTable from "components/common/AppDataTable.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppTextField from "components/common/AppTextField.vue";
 
+const auditColumns = useAuditColumns();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const palette = ["#ef5350", "#ec407a", "#ab47bc", "#5c6bc0", "#42a5f5", "#26a69a", "#9ccc65", "#ffa726", "#607d8b"];
@@ -69,6 +71,7 @@ const columns = [
   { name: "colour", label: "Colour", field: "colour", align: "left", default: true },
   { name: "category", label: "Category", field: "category", align: "left", sortable: true, default: true },
   { name: "usageCount", label: "Usage", field: "usageCount", align: "left", sortable: true, default: true },
+  ...auditColumns(),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 

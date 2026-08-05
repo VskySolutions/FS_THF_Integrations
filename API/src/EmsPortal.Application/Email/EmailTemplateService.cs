@@ -136,7 +136,12 @@ public sealed class EmailTemplateService : IEmailTemplateService
             effective?.Subject ?? def.Subject,
             effective?.Body ?? def.Body,
             IsOverridden: tenantOverride is not null,
-            def.Placeholders);
+            def.Placeholders,
+            // From whichever row supplied the content; null when the template is still the built-in default.
+            effective?.CreatedById,
+            effective?.CreatedOnUtc,
+            effective?.UpdatedById,
+            effective?.UpdatedOnUtc);
     }
 
     /// <summary>Replaces known <c>{{placeholder}}</c> tokens; unknown tokens are left untouched.</summary>

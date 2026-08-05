@@ -178,6 +178,7 @@ import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
+import { useAuditColumns } from "composables/useAuditColumns";
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
@@ -187,6 +188,7 @@ import AppTextField from "components/common/AppTextField.vue";
 import AppRichTextField from "components/common/AppRichTextField.vue";
 import AppSelect from "components/common/AppSelect.vue";
 
+const auditColumns = useAuditColumns();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const fmt = useDateFormat();
@@ -198,6 +200,8 @@ const columns = [
   { name: "memberCount", label: "Members", field: "memberCount", align: "left", sortable: true, default: true, filterable: false },
   { name: "createdBy", label: "Created By", field: "createdBy", align: "left", sortable: true },
   { name: "createdOnUtc", label: "Created", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true, default: true, filterable: false },
+  // Created By and Created On are already columns here, so the shared set contributes the updated pair.
+  ...auditColumns({ only: ["updatedBy", "updatedOnUtc"] }),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 

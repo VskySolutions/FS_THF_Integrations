@@ -74,7 +74,8 @@ public sealed record UserGroupDto(Guid Id, string Name);
 
 /// <summary>A user group with its member count + provenance (for the groups picker / management list).</summary>
 public sealed record UserGroupResponse(
-    Guid Id, string Name, string? Description, int MemberCount, string? CreatedBy, DateTime CreatedOnUtc);
+    Guid Id, string Name, string? Description, int MemberCount,
+    string? CreatedBy, DateTime CreatedOnUtc, string? UpdatedBy, DateTime UpdatedOnUtc);
 
 public sealed class CreateUserGroupRequest
 {

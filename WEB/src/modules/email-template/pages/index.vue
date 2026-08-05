@@ -93,6 +93,7 @@ import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
+import { useAuditColumns } from "composables/useAuditColumns";
 
 import AppDataTable from "components/common/AppDataTable.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
@@ -104,6 +105,7 @@ import EmailTemplatePreviewDialog from "modules/email-template/components/EmailT
 
 const GLOBAL = "__global__";
 
+const auditColumns = useAuditColumns();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const { canChooseTenant, tenantOptions, loadingTenants, loadTenants } = useTenantOptions();
@@ -131,6 +133,9 @@ const columns = [
     default: true,
     filterOptions: [{ label: "Overridden", value: true }, { label: "Default", value: false }]
   },
+  // Blank on a template nobody has overridden — its content is still the built-in definition in code,
+  // so there is no edit and nobody to attribute it to.
+  ...auditColumns(),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 

@@ -66,8 +66,11 @@ internal sealed class RemsFormRepository : IRemsFormRepository
 
         // Counted AFTER the filters so the pager reflects the filtered set, not the whole list.
         var total = await rows.CountAsync(cancellationToken);
+        // The REQUEST's last touch leads, matching the audit columns this row carries and the other REMS
+        // lists; submission date and number stay as tie-breakers.
         var items = await rows
-            .OrderByDescending(x => x.Form.SubmittedOnUtc)
+            .OrderByDescending(x => x.Rems.UpdatedOnUtc)
+            .ThenByDescending(x => x.Form.SubmittedOnUtc)
             .ThenBy(x => x.Rems.REMSNumber)
             .Skip((query.Page - 1) * query.Limit)
             .Take(query.Limit)
@@ -202,8 +205,11 @@ internal sealed class RemsFormRepository : IRemsFormRepository
 
         // Project the latest email event via an anonymous-type subquery (FirstOrDefault => null when the
         // form has no events yet), then shape the record in memory.
+        // The REQUEST's last touch leads — this row is keyed on it and reports its audit trail — with the
+        // form's own modification date as the tie-break for requests moved in the same tick.
         var rows = await forms
-            .OrderByDescending(f => f.UpdatedOnUtc)
+            .OrderByDescending(f => f.Rems!.UpdatedOnUtc)
+            .ThenByDescending(f => f.UpdatedOnUtc)
             .ThenByDescending(f => f.CreatedOnUtc)
             .Skip((query.Page - 1) * query.Limit)
             .Take(query.Limit)

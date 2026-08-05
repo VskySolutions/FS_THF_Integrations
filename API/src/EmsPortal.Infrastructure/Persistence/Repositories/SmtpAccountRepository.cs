@@ -30,8 +30,12 @@ internal sealed class SmtpAccountRepository : ISmtpAccountRepository
             query = query.Where(a => a.IsActive == active);
         }
 
+        // The ACTIVE account stays pinned to the top ahead of recency: exactly one account actually sends
+        // mail for the tenant, and burying it under whichever inactive one was edited last is a functional
+        // regression, not a presentation choice. Recency orders everything below it.
         return await query
             .OrderByDescending(a => a.IsActive)
+            .ThenByDescending(a => a.UpdatedOnUtc)
             .ThenByDescending(a => a.CreatedOnUtc)
             .ToListAsync(cancellationToken);
     }

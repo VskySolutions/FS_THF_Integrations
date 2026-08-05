@@ -47,7 +47,8 @@ internal sealed class PermissionGroupRepository : IPermissionGroupRepository
 
         var total = await query.CountAsync(cancellationToken);
         var items = await query
-            .OrderBy(g => g.Name)
+            .OrderByDescending(g => g.UpdatedOnUtc)
+            .ThenBy(g => g.Name)
             .Skip((page - 1) * limit)
             .Take(limit)
             .ToListAsync(cancellationToken);

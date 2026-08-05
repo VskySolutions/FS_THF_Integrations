@@ -31,7 +31,7 @@
       :loading="loading"
       :total-records="totalRecords"
       :pagination="pagination"
-      default-sort-by="sentOnUtc"
+      default-sort-by="updatedOnUtc"
       @request="onRequest"
       @refresh="load"
       @row-click="(_, row) => openTask(row)"

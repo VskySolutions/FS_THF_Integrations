@@ -36,7 +36,7 @@
       :loading="loading"
       :total-records="totalRecords"
       :pagination="pagination"
-      default-sort-by="createdOnUtc"
+      default-sort-by="updatedOnUtc"
       @request="onRequest"
       @refresh="load"
     >

@@ -26,7 +26,7 @@
       :loading="loading"
       :total-records="totalRecords"
       :pagination="pagination"
-      default-sort-by="formSentOnUtc"
+      default-sort-by="updatedOnUtc"
       @request="onRequest"
       @refresh="load"
     >

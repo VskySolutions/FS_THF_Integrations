@@ -84,7 +84,10 @@ internal sealed class RemsApprovalRepository : IRemsApprovalRepository
             .Include(t => t.Round).ThenInclude(r => r!.Tasks)
             .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.Entity)
                 .ThenInclude(en => en!.Client).ThenInclude(c => c!.Rems)
-            .OrderByDescending(t => t.Round!.SentOnUtc)
+            // The task's own last touch leads — a checklist tick or a decision floats it up — with the
+            // round's send date as the tie-break for tasks created together and never since touched.
+            .OrderByDescending(t => t.UpdatedOnUtc)
+            .ThenByDescending(t => t.Round!.SentOnUtc)
             .Skip((query.Page - 1) * query.Limit)
             .Take(query.Limit)
             .ToListAsync(cancellationToken);

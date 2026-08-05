@@ -32,8 +32,7 @@
           :loading="loading"
           :total-records="filteredRows.length"
           :pagination="pagination"
-          default-sort-by="name"
-          :default-descending="false"
+          default-sort-by="updatedOnUtc"
           @request="onRequest"
           @refresh="load"
         >

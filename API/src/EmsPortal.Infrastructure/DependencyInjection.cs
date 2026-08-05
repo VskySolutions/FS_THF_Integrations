@@ -111,6 +111,9 @@ public static class DependencyInjection
         services.AddScoped<IRemsEngagementRepository, RemsEngagementRepository>();
         services.AddScoped<IRemsApprovalRepository, RemsApprovalRepository>();
         services.AddScoped<IRemsSettingsRepository, RemsSettingsRepository>();
+
+        // Bubbles a child write's timestamp up to the aggregate root it belongs to (see AggregateRootTouch).
+        services.AddScoped<Application.Abstractions.UniversalFeatures.IAggregateRootTouch, Persistence.AggregateRootTouch>();
         services.AddScoped<IRemsNumberGenerator, Persistence.RemsNumberGenerator>();
 
         return services;

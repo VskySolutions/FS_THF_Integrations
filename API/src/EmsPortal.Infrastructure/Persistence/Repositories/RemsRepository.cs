@@ -21,7 +21,8 @@ internal sealed class RemsRepository : IRemsRepository
 
     public async Task<IReadOnlyList<REMS>> ListAsync(CancellationToken cancellationToken = default)
         => await _dbContext.Rems
-            .OrderByDescending(r => r.CreatedOnUtc)
+            .OrderByDescending(r => r.UpdatedOnUtc)
+            .ThenByDescending(r => r.CreatedOnUtc)
             .ToListAsync(cancellationToken);
 
     public async Task<(IReadOnlyList<REMS> Items, int Total)> ListRequestsAsync(
@@ -30,8 +31,12 @@ internal sealed class RemsRepository : IRemsRepository
         var query = ApplyFieldFilters(ApplyScope(ApplyVisibility(options), options), options);
 
         var total = await query.CountAsync(cancellationToken);
+        // Most-recently-touched first, so a request that anything has moved on — a form sent, an
+        // engagement edited, an approval decided — surfaces at the top rather than staying wherever its
+        // creation date put it. CreatedOnUtc breaks ties for rows written in the same tick.
         var items = await query
-            .OrderByDescending(r => r.CreatedOnUtc)
+            .OrderByDescending(r => r.UpdatedOnUtc)
+            .ThenByDescending(r => r.CreatedOnUtc)
             .Skip((options.Page - 1) * options.Limit)
             .Take(options.Limit)
             .ToListAsync(cancellationToken);

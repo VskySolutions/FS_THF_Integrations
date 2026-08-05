@@ -15,7 +15,7 @@
       :rows="rows"
       :columns="columns"
       :loading="loading"
-      default-sort-by="createdOnUtc"
+      default-sort-by="updatedOnUtc"
       @refresh="load"
     >
       <template #body-cell-expiresAtUtc="cell">

@@ -12,8 +12,7 @@
       :rows="rows"
       :columns="columns"
       :loading="loading"
-      default-sort-by="name"
-      :default-descending="false"
+      default-sort-by="updatedOnUtc"
       @refresh="load"
     >
       <template #body-cell-colour="cell">

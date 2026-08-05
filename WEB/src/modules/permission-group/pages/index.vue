@@ -34,8 +34,7 @@
       :loading="loading"
       :total-records="totalRecords"
       :pagination="pagination"
-      default-sort-by="name"
-      :default-descending="false"
+      default-sort-by="updatedOnUtc"
       selectable
       @request="onRequest"
       @refresh="load"

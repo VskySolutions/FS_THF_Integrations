@@ -146,7 +146,7 @@ import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
 import { useDateFormat } from "composables/useDateFormat";
 import { useAuditColumns } from "composables/useAuditColumns";
-import { useRemsMeta, REMS_FORM_STATE_OPTIONS, REMS_STATUS_FILTER_OPTIONS } from "modules/rems/useRemsMeta";
+import { useRemsMeta, REMS_FORM_STATE_OPTIONS } from "modules/rems/useRemsMeta";
 
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
@@ -162,7 +162,8 @@ const fmt = useDateFormat();
 const auditColumns = useAuditColumns();
 const { has } = usePermissions();
 const {
-  typeLabel, statusLabel, statusColor, emsStateLabel, emsStateColor, emailEventLabel, emailEventColor
+  typeLabel, statusLabel, statusColor, emsStateLabel, emsStateColor, emailEventLabel, emailEventColor,
+  statusFilterOptions
 } = useRemsMeta();
 
 const canViewEmailLog = computed(() => has(Permissions.RemsEmailLogRead));
@@ -172,7 +173,7 @@ const columns = computed(() => [
   { name: "remsNumber", label: "Request ID", field: "remsNumber", align: "left", sortable: true, default: true, filterable: false },
   { name: "clientName", label: "Client", field: "clientName", align: "left", sortable: true, default: true, filterable: false },
   { name: "engagementType", label: "Engagement Type", field: "engagementType", align: "left", default: true, filterable: false },
-  { name: "requestStatus", label: "Request Status", field: "requestStatus", align: "left", default: true, filterOptions: REMS_STATUS_FILTER_OPTIONS },
+  { name: "requestStatus", label: "Request Status", field: "requestStatus", align: "left", default: true, filterOptions: statusFilterOptions.value },
   { name: "formStatus", label: "EMS Form State", field: "formStatus", align: "left", default: true, filterOptions: REMS_FORM_STATE_OPTIONS },
   { name: "formCreatedBy", label: "Form Creator", field: (r) => r.formCreatedBy?.name || "—", align: "left", default: true, filterable: false },
   { name: "formSentOnUtc", label: "Sent", field: "formSentOnUtc", align: "left", sortable: true, default: true, filterable: false },

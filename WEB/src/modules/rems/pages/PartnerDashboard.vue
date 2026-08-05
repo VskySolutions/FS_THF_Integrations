@@ -114,7 +114,7 @@ import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
 import { useDateFormat } from "composables/useDateFormat";
 import { useAuditColumns } from "composables/useAuditColumns";
-import { useRemsMeta, REMS_STATUS_FILTER_OPTIONS } from "modules/rems/useRemsMeta";
+import { useRemsMeta } from "modules/rems/useRemsMeta";
 
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
@@ -130,7 +130,8 @@ const fmt = useDateFormat();
 const auditColumns = useAuditColumns();
 const {
   typeLabel, priorityLabel, priorityColor, requestStatusLabel, requestStatusColor,
-  emsStateLabel, submissionStateLabel
+  emsStateLabel, submissionStateLabel,
+  statusFilterOptions
 } = useRemsMeta();
 
 const canCreate = computed(() => has(Permissions.RemsRequestsCreate));
@@ -141,7 +142,7 @@ const columns = computed(() => [
   { name: "type", label: "Type", field: "type", align: "left", default: true, filterable: false },
   { name: "priority", label: "Priority", field: "priority", align: "left", sortable: true, default: true, filterable: false },
   { name: "createdOnUtc", label: "Created", field: "createdOnUtc", align: "left", sortable: true, default: true, filterable: false },
-  { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true, filterOptions: REMS_STATUS_FILTER_OPTIONS },
+  { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true, filterOptions: statusFilterOptions.value },
   { name: "assignedAdmin", label: "Assigned Admin", field: (r) => r.assignedAdmin?.name || "—", align: "left", default: true, filterable: false },
   { name: "emsFormState", label: "EMS State", field: "emsFormState", align: "left", default: true, filterable: false },
   // Off by default (the title cell already captions the client), but every field the row carries is

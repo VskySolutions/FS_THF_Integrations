@@ -116,7 +116,7 @@ import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
 import { useDateFormat } from "composables/useDateFormat";
 import { useAuditColumns } from "composables/useAuditColumns";
-import { useRemsMeta, REMS_FORM_SUBMITTED_OPTIONS, REMS_STATUS_FILTER_OPTIONS } from "modules/rems/useRemsMeta";
+import { useRemsMeta, REMS_FORM_SUBMITTED_OPTIONS } from "modules/rems/useRemsMeta";
 
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
@@ -129,7 +129,7 @@ const router = useRouter();
 const notify = useNotify();
 const fmt = useDateFormat();
 const auditColumns = useAuditColumns();
-const { statusLabel, statusColor } = useRemsMeta();
+const { statusLabel, statusColor, statusFilterOptions } = useRemsMeta();
 
 // REMS number and client are covered by the quick search, so they get no duplicate filter box of their
 // own; the name/date columns the server cannot narrow on opt out entirely.
@@ -138,7 +138,7 @@ const columns = computed(() => [
   { name: "clientName", label: "Client", field: "clientName", align: "left", sortable: true, default: true, filterable: false },
   { name: "submitted", label: "Form", field: "submitted", align: "left", sortable: true, default: true, filterOptions: REMS_FORM_SUBMITTED_OPTIONS },
   // Off by default so the table keeps its current shape; it is in the filter drawer either way.
-  { name: "requestStatus", label: "Request Status", field: "requestStatus", align: "left", default: false, filterOptions: REMS_STATUS_FILTER_OPTIONS },
+  { name: "requestStatus", label: "Request Status", field: "requestStatus", align: "left", default: false, filterOptions: statusFilterOptions.value },
   { name: "submittedOnUtc", label: "Submitted", field: "submittedOnUtc", align: "left", sortable: true, default: true, filterable: false },
   { name: "assignedAdmin", label: "Assigned Admin", field: (r) => r.assignedAdmin?.name || "—", align: "left", default: true, filterable: false },
   { name: "cse", label: "CSE", field: (r) => r.cse?.name || "—", align: "left", default: true, filterable: false },

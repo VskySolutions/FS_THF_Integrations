@@ -441,9 +441,7 @@ import { remsApi, mediaApi, EntityType, getApiErrorMessage } from "services/api"
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
-import {
-  useRemsMeta, REMS_DEPARTMENT_OPTIONS, REMS_SERVICE_LINE_OPTIONS
-} from "modules/rems/useRemsMeta";
+import { useRemsMeta } from "modules/rems/useRemsMeta";
 import { addressText } from "modules/rems/remsAddress";
 import { renderRichText } from "utils/richText";
 
@@ -458,7 +456,7 @@ const { confirm } = useConfirm();
 const fmt = useDateFormat();
 const {
   typeLabel, priorityLabel, priorityColor, requestStatusLabel, requestStatusColor,
-  industryGroupLabel, emsStateLabel, submissionStateLabel,
+  industryGroupLabel, emsStateLabel, submissionStateLabel, departmentLabel, serviceLineLabel,
   approverRoleLabel, approverRoleIcon, approvalStatusLabel, approvalStatusColor, engagementStatusMeta
 } = useRemsMeta();
 
@@ -504,10 +502,6 @@ const breadcrumbs = computed(() => [
   { label: request.value.remsNumber || "Approval Task" }
 ]);
 
-// Department / Service Line are stored as closed codes — the static seed lists label them without needing
-// optionSets.read (which the approver roles do not carry).
-const deptLabel = (v) => REMS_DEPARTMENT_OPTIONS.find((o) => o.value === v)?.label || v || "—";
-const serviceLineLabel = (v) => REMS_SERVICE_LINE_OPTIONS.find((o) => o.value === v)?.label || v || "—";
 const formatMoney = (v) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(v) || 0);
 const money = (v) => (v == null ? "—" : formatMoney(v));
 const text = (v) => (v == null || v === "" ? "—" : v);
@@ -558,7 +552,7 @@ const setupRows = computed(() => {
   const e = engagement.value;
   const rows = [
     { label: "Entity", value: `${e.entity?.name || "—"}${e.entity?.ein ? ` · EIN ${e.entity.ein}` : ""}` },
-    { label: "Department", value: deptLabel(e.department) },
+    { label: "Department", value: departmentLabel(e.department) },
     { label: "Service Line", value: serviceLineLabel(e.serviceLine) },
     { label: "Department Director", value: text(e.departmentDirector?.name) },
     { label: "Engagement Executive", value: text(e.engagementExecutive?.name) },

@@ -1,57 +1,26 @@
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import { optionSetApi, EntityType } from "services/api";
+import {
+  useRemsOptionCatalog, ensureRemsOptionsLoaded, REMS_OPTION_SEED
+} from "modules/rems/useRemsOptionCatalog";
 
-// The closed REMS.Type / REMS.Priority / REMS.Status codes (mirrors the backend DefaultOptionSets).
-// Used both as select options and as label/colour lookups for the dashboard rows and detail cards.
+// Type / Priority / Status / Industry Group / Department / Service Line are TENANT-CONFIGURABLE option
+// sets, so their labels come from useRemsOptionCatalog — a tenant that renames a status in Administration
+// → Option Sets sees that everywhere, not just in the picker they edited it from. The arrays below are
+// the catalogue's seed, re-exported for the few callers that need the closed set itself (the marking
+// rules, and the sort order a filter dropdown is built in).
 //
-// They double as the FALLBACK for the type/priority pickers: the REMS Partner/Admin roles do not
-// carry `optionSets.read`, so the option-set `resolve` endpoint 403s for pure-REMS users. The codes
-// are a validated closed set server-side (RemsRequestOptionCodes), so falling back to them is safe.
-export const REMS_TYPE_OPTIONS = [
-  { label: "Brand-New Client", value: "brand_new_client" },
-  { label: "New Engagement", value: "new_engagement" },
-  { label: "Existing Client", value: "existing_client" },
-  { label: "Subsidiary / Child of Existing Client", value: "subsidiary_child_of_existing_client" }
-];
-
-export const REMS_PRIORITY_OPTIONS = [
-  { label: "Urgent", value: "urgent" },
-  { label: "High", value: "high" },
-  { label: "Medium", value: "medium" },
-  { label: "Low", value: "low" }
-];
-
-// The request lifecycle, in stage order. Each value names the stage the request is AT — who it is waiting
-// on — rather than the event that last happened to it, so the badge answers "what is happening to this
-// request right now". Mirrors the backend RemsRequestStatuses; `customer_submitted` keeps its code (it is
-// what existing rows hold) but reads as "Engagement Setup", the stage the client's form moves it into.
-export const REMS_STATUS_OPTIONS = [
-  { label: "Draft", value: "draft" },
-  { label: "Submitted", value: "submitted" },
-  { label: "Awaiting Customer", value: "awaiting_customer" },
-  { label: "Engagement Setup", value: "customer_submitted" },
-  { label: "Pending Approval", value: "pending_approval" },
-  { label: "Changes Requested", value: "changes_requested" },
-  { label: "Approved", value: "approved" }
-];
-
-// The same wording carried into the status FILTER. Filtering is still on the `submitted` code, which is
-// why the label names both of the states that one code shows up as in a row rather than just the waiting
-// one. Use this for filter dropdowns and REMS_STATUS_OPTIONS for everything else.
-export const REMS_STATUS_FILTER_OPTIONS = REMS_STATUS_OPTIONS.map((option) =>
-  (option.value === "submitted" ? { ...option, label: "Submitted/Waiting For Pickup" } : option));
+// Everything further down that looks similar — form state, approver role, approval status, engagement
+// status, email events — mirrors a C# ENUM the backend branches on. Those have no option set and must not
+// gain one; their maps stay here as code.
+export const REMS_TYPE_OPTIONS = REMS_OPTION_SEED.type;
+export const REMS_PRIORITY_OPTIONS = REMS_OPTION_SEED.priority;
+export const REMS_STATUS_OPTIONS = REMS_OPTION_SEED.status;
 
 // Type codes that mean "an existing client is referenced" (drives the client-lookup type marking).
 export const REMS_EXISTING_CLIENT_TYPES = ["existing_client", "subsidiary_child_of_existing_client"];
 
-// Industry Group closed codes (mirror the backend REMS.IndustryGroup option set). The Build-EMS picker
-// resolves the tenant-configurable option set first (see useRemsIndustryGroups) and falls back to these
-// when the REMS role lacks optionSets.read (403), exactly as the type/priority pickers do.
-export const REMS_INDUSTRY_GROUP_OPTIONS = [
-  { label: "Individual", value: "individual" },
-  { label: "Business", value: "business" },
-  { label: "Government", value: "government" }
-];
+export const REMS_INDUSTRY_GROUP_OPTIONS = REMS_OPTION_SEED.industryGroup;
 
 // EMS form-state codes (RemsFormStatus) used to filter the EMS Inbox by form state.
 export const REMS_FORM_STATE_OPTIONS = [
@@ -148,17 +117,26 @@ const labelFrom = (options, value) => options.find((o) => o.value === value)?.la
 // out. Every other status reads exactly as it does elsewhere.
 const awaitingPickUp = (row) => row?.status === "submitted" && !row?.assignedAdmin;
 
-// Static label/colour helpers for rendering REMS rows and detail cards.
+// Label/colour helpers for rendering REMS rows and detail cards. The option-set-backed labels read the
+// shared catalogue, so a tenant's rename shows up on every badge and cell rather than only in the picker
+// it was edited from; the enum-backed ones are fixed maps because the backend branches on those values.
 export function useRemsMeta () {
-  const typeLabel = (v) => labelFrom(REMS_TYPE_OPTIONS, v);
-  const priorityLabel = (v) => labelFrom(REMS_PRIORITY_OPTIONS, v);
-  const statusLabel = (v) => labelFrom(REMS_STATUS_OPTIONS, v);
+  const options = useRemsOptionCatalog();
+
+  const typeLabel = (v) => labelFrom(options.type, v);
+  const priorityLabel = (v) => labelFrom(options.priority, v);
+  const statusLabel = (v) => labelFrom(options.status, v);
+  const industryGroupLabel = (v) => labelFrom(options.industryGroup, v);
+  const departmentLabel = (v) => labelFrom(options.department, v);
+  const serviceLineLabel = (v) => labelFrom(options.serviceLine, v);
+
+  // Colours stay in code: they key off the CODE, which is closed and validated server-side, so a rename
+  // never strands a badge on grey. Only the wording is the tenant's to change.
   const priorityColor = (v) => PRIORITY_COLORS[v] || "grey-6";
   const statusColor = (v) => STATUS_COLORS[v] || "grey-6";
   const emsStateLabel = (v) => EMS_STATE_LABELS[v] || v || "—";
   const emsStateColor = (v) => EMS_STATE_COLORS[v] || "grey-6";
   const submissionStateLabel = (v) => (v ? (SUBMISSION_STATE_LABELS[v] || v) : "—");
-  const industryGroupLabel = (v) => labelFrom(REMS_INDUSTRY_GROUP_OPTIONS, v);
   const emailEventLabel = (v) => EMAIL_EVENT_LABELS[v] || v || "—";
   const emailEventColor = (v) => EMAIL_EVENT_COLORS[v] || "grey-6";
   const emailEventIcon = (v) => EMAIL_EVENT_ICONS[v] || "o_mail";
@@ -186,16 +164,38 @@ export function useRemsMeta () {
   const emsFormActivity = (row) =>
     !!row?.clientSubmissionState || ["Sent", "Submitted"].includes(row?.emsFormState);
 
+  // Live option lists for pickers and column filters. Reactive, so a screen built before the catalogue
+  // resolved picks up the tenant's own wording without reloading. The status FILTER carries the pool's
+  // extra wording: it still filters on the `submitted` code, so its label names both of the states that
+  // one code shows up as in a row rather than just the waiting one.
+  const typeOptions = computed(() => options.type);
+  const priorityOptions = computed(() => options.priority);
+  const statusOptions = computed(() => options.status);
+  const industryGroupOptions = computed(() => options.industryGroup);
+  const departmentOptions = computed(() => options.department);
+  const serviceLineOptions = computed(() => options.serviceLine);
+  const statusFilterOptions = computed(() => options.status.map((option) =>
+    (option.value === "submitted" ? { ...option, label: "Submitted/Waiting For Pickup" } : option)));
+
   return {
     typeLabel,
     priorityLabel,
     statusLabel,
+    departmentLabel,
+    serviceLineLabel,
     priorityColor,
     statusColor,
     emsStateLabel,
     emsStateColor,
     submissionStateLabel,
     industryGroupLabel,
+    typeOptions,
+    priorityOptions,
+    statusOptions,
+    industryGroupOptions,
+    departmentOptions,
+    serviceLineOptions,
+    statusFilterOptions,
     emailEventLabel,
     emailEventColor,
     emailEventIcon,
@@ -211,27 +211,16 @@ export function useRemsMeta () {
   };
 }
 
-// Loads the tenant-configurable REMS.Type / REMS.Priority option lists, falling back to the closed
-// codes above when the resolve endpoint is unavailable (e.g. the caller lacks optionSets.read).
+// The Type / Priority pickers. Delegates to the shared catalogue rather than resolving its own copy, so
+// a screen that shows both a picker and a badge cannot end up with two different labels for one code.
+// `load` is kept so existing callers need no change; it just awaits the catalogue.
 export function useRemsOptionSets () {
-  const typeOptions = ref(REMS_TYPE_OPTIONS);
-  const priorityOptions = ref(REMS_PRIORITY_OPTIONS);
-
-  const resolveInto = async (key, target, fallback) => {
-    try {
-      const items = await optionSetApi.resolve({ entityType: EntityType.Rems, key });
-      target.value = items?.length ? items.map((i) => ({ label: i.label, value: i.value })) : fallback;
-    } catch {
-      target.value = fallback;
-    }
+  const catalog = useRemsOptionCatalog();
+  return {
+    typeOptions: computed(() => catalog.type),
+    priorityOptions: computed(() => catalog.priority),
+    load: ensureRemsOptionsLoaded
   };
-
-  const load = () => Promise.all([
-    resolveInto("REMS.Type", typeOptions, REMS_TYPE_OPTIONS),
-    resolveInto("REMS.Priority", priorityOptions, REMS_PRIORITY_OPTIONS)
-  ]);
-
-  return { typeOptions, priorityOptions, load };
 }
 
 // ---- Engagement workspace (WO-117) option sets + conditional logic ----
@@ -241,19 +230,8 @@ export function useRemsOptionSets () {
 export const REMS_DEPARTMENT_CODES = Object.freeze({ CAS: "cas", TAX: "tax", AUDIT: "audit", GCS: "gcs" });
 export const REMS_SERVICE_LINE_GOVERNMENT = "government";
 
-export const REMS_DEPARTMENT_OPTIONS = [
-  { label: "CAS", value: "cas" },
-  { label: "Tax", value: "tax" },
-  { label: "Audit", value: "audit" },
-  { label: "GCS", value: "gcs" }
-];
-
-export const REMS_SERVICE_LINE_OPTIONS = [
-  { label: "Commercial", value: "commercial" },
-  { label: "Non-Profit", value: "non_profit" },
-  { label: "Government", value: "government" },
-  { label: "Individual", value: "individual" }
-];
+export const REMS_DEPARTMENT_OPTIONS = REMS_OPTION_SEED.department;
+export const REMS_SERVICE_LINE_OPTIONS = REMS_OPTION_SEED.serviceLine;
 
 // The REMS.Marketing groups (from each item's MetadataJson `group` tag), in display order.
 const MARKETING_GROUPS = [
@@ -274,21 +252,16 @@ export const isGovernmentAudit = (department, serviceLine) =>
 // OptionSetItem *id* (the REMSEngagementMarketingMethod / REMSEngagementTaxForm FKs), so there is no closed
 // fallback for their ids — the pickers are simply empty (flagged `*Unavailable`) when resolve is denied.
 export function useRemsEngagementOptionSets () {
-  const departmentOptions = ref(REMS_DEPARTMENT_OPTIONS);
-  const serviceLineOptions = ref(REMS_SERVICE_LINE_OPTIONS);
+  // Department + Service Line come from the shared catalogue (same lists the labels read); Marketing and
+  // Tax Form are resolved here because they are keyed by OptionSetItem *id* rather than by code, which is
+  // a different shape and only this workspace needs it.
+  const catalog = useRemsOptionCatalog();
+  const departmentOptions = computed(() => catalog.department);
+  const serviceLineOptions = computed(() => catalog.serviceLine);
   const marketingGroups = ref([]);
   const marketingUnavailable = ref(false);
   const taxFormOptions = ref([]);
   const taxFormUnavailable = ref(false);
-
-  const resolveCodes = async (key, target, fallback) => {
-    try {
-      const items = await optionSetApi.resolve({ entityType: EntityType.Rems, key });
-      target.value = items?.length ? items.map((i) => ({ label: i.label, value: i.value })) : fallback;
-    } catch {
-      target.value = fallback;
-    }
-  };
 
   const groupOf = (metadataJson) => {
     try {
@@ -336,8 +309,7 @@ export function useRemsEngagementOptionSets () {
   };
 
   const load = () => Promise.all([
-    resolveCodes("REMS.Department", departmentOptions, REMS_DEPARTMENT_OPTIONS),
-    resolveCodes("REMS.ServiceLine", serviceLineOptions, REMS_SERVICE_LINE_OPTIONS),
+    ensureRemsOptionsLoaded(),
     resolveMarketing(),
     resolveTaxForms()
   ]);
@@ -353,22 +325,11 @@ export function useRemsEngagementOptionSets () {
   };
 }
 
-// Loads the tenant-configurable REMS.IndustryGroup option list for the Build-EMS picker, falling back to
-// the closed individual/business/government codes when resolve is unavailable (the REMS roles do not carry
-// optionSets.read, so the endpoint 403s for pure-REMS users — mirrors useRemsOptionSets, AC-REMS-007.3).
+// The Build-EMS industry-group picker (AC-REMS-007.3), from the shared catalogue.
 export function useRemsIndustryGroups () {
-  const industryGroupOptions = ref(REMS_INDUSTRY_GROUP_OPTIONS);
-
-  const load = async () => {
-    try {
-      const items = await optionSetApi.resolve({ entityType: EntityType.Rems, key: "REMS.IndustryGroup" });
-      industryGroupOptions.value = items?.length
-        ? items.map((i) => ({ label: i.label, value: i.value }))
-        : REMS_INDUSTRY_GROUP_OPTIONS;
-    } catch {
-      industryGroupOptions.value = REMS_INDUSTRY_GROUP_OPTIONS;
-    }
+  const catalog = useRemsOptionCatalog();
+  return {
+    industryGroupOptions: computed(() => catalog.industryGroup),
+    load: ensureRemsOptionsLoaded
   };
-
-  return { industryGroupOptions, load };
 }

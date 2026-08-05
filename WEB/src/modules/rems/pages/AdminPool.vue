@@ -149,7 +149,7 @@ import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
 import { useAuditColumns } from "composables/useAuditColumns";
-import { useRemsMeta, REMS_STATUS_FILTER_OPTIONS } from "modules/rems/useRemsMeta";
+import { useRemsMeta } from "modules/rems/useRemsMeta";
 
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
@@ -167,7 +167,8 @@ const { has } = usePermissions();
 const auditColumns = useAuditColumns();
 const {
   typeLabel, priorityLabel, priorityColor, requestStatusLabel, requestStatusColor,
-  emsStateLabel, submissionStateLabel, emsDetailAvailable, emsFormActivity
+  emsStateLabel, submissionStateLabel, emsDetailAvailable, emsFormActivity,
+  statusFilterOptions
 } = useRemsMeta();
 
 const POOL_SCOPE_OPTIONS = [
@@ -209,7 +210,7 @@ const columns = computed(() => [
   { name: "industryGroup", label: "Industry Group", field: (r) => r.industryGroup || "—", align: "left", default: true, filterable: false },
   { name: "customerEmail", label: "Client Email", field: (r) => r.customerEmail || "—", align: "left", default: false, filterable: false },
   { name: "customerMobileNumber", label: "Client Mobile", field: (r) => r.customerMobileNumber || "—", align: "left", default: false, filterable: false },
-  { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true, filterOptions: REMS_STATUS_FILTER_OPTIONS },
+  { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true, filterOptions: statusFilterOptions.value },
   { name: "emsFormState", label: "Form Status", field: "emsFormState", align: "left", default: true, filterable: false },
   { name: "clientSubmissionState", label: "Client Submission", field: "clientSubmissionState", align: "left", default: true, filterable: false },
   ...auditColumns(),

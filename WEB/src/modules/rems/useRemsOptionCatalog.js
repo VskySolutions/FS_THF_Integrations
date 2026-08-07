@@ -15,10 +15,11 @@ import { optionSetApi, EntityType } from "services/api";
 // Seeded with the closed codes so the first paint is already right and stays right if a resolve fails
 // (a caller without optionSets.read, an offline tick). The resolved set overlays it when it arrives.
 const SEED = {
+  // "New Engagement" and "Existing Client" were merged into one value — every new engagement for a
+  // client we already have is both — keeping the `existing_client` code (MergeRemsExistingClientTypes).
   type: [
     { label: "Brand-New Client", value: "brand_new_client" },
-    { label: "New Engagement", value: "new_engagement" },
-    { label: "Existing Client", value: "existing_client" },
+    { label: "New Engagement, Existing Client", value: "existing_client" },
     { label: "Subsidiary / Child of Existing Client", value: "subsidiary_child_of_existing_client" }
   ],
   priority: [

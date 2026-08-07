@@ -135,6 +135,20 @@ internal sealed class RemsRepository : IRemsRepository
             var t = options.Status.Trim();
             query = query.Where(r => r.Status == t);
         }
+        if (!string.IsNullOrWhiteSpace(options.Type))
+        {
+            var t = options.Type.Trim();
+            query = query.Where(r => r.Type == t);
+        }
+        if (!string.IsNullOrWhiteSpace(options.Priority))
+        {
+            var t = options.Priority.Trim();
+            query = query.Where(r => r.Priority == t);
+        }
+        if (options.AssignedAdminUserId is { } adminId)
+        {
+            query = query.Where(r => r.AdminAssignedToId == adminId);
+        }
         if (options.CreatedFromUtc is { } from)
         {
             query = query.Where(r => r.CreatedOnUtc >= from);

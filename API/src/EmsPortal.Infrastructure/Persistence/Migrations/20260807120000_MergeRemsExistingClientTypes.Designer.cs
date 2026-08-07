@@ -4,6 +4,7 @@ using EmsPortal.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace EmsPortal.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(EmsPortalDbContext))]
-    partial class EmsPortalDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260807120000_MergeRemsExistingClientTypes")]
+    partial class MergeRemsExistingClientTypes
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1533,12 +1536,6 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
-                    b.Property<Guid?>("SourceEntityId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int?>("SourceEntityType")
-                        .HasColumnType("int");
-
                     b.Property<Guid?>("TenantId")
                         .HasColumnType("uniqueidentifier");
 
@@ -1574,8 +1571,6 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.HasIndex("ProfileMediaId");
 
                     b.HasIndex("TenantId");
-
-                    b.HasIndex("SourceEntityType", "SourceEntityId");
 
                     b.ToTable("Persons", (string)null);
                 });

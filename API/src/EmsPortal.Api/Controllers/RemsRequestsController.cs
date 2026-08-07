@@ -72,6 +72,9 @@ public sealed class RemsRequestsController : ControllerBase
         [FromQuery] string? clientName = null,
         [FromQuery] string? contact = null,
         [FromQuery] string? status = null,
+        [FromQuery] string? type = null,
+        [FromQuery] string? priority = null,
+        [FromQuery] Guid? assignedAdminUserId = null,
         [FromQuery] DateTime? createdFrom = null,
         [FromQuery] DateTime? createdTo = null,
         [FromQuery] string? scope = null,
@@ -88,8 +91,8 @@ public sealed class RemsRequestsController : ControllerBase
         var privileged = IsPrivileged();
 
         var options = new RemsRequestListOptions(
-            me, privileged, clientName, contact, status, createdFrom, createdTo,
-            ParseScope(scope), ParsePoolFilter(poolScope), page, limit);
+            me, privileged, clientName, contact, status, type, priority, assignedAdminUserId,
+            createdFrom, createdTo, ParseScope(scope), ParsePoolFilter(poolScope), page, limit);
         var (items, total) = await _rems.ListRequestsAsync(options, cancellationToken);
 
         var names = await _users.GetFullNamesAsync(
@@ -115,6 +118,9 @@ public sealed class RemsRequestsController : ControllerBase
         [FromQuery] string? clientName = null,
         [FromQuery] string? contact = null,
         [FromQuery] string? status = null,
+        [FromQuery] string? type = null,
+        [FromQuery] string? priority = null,
+        [FromQuery] Guid? assignedAdminUserId = null,
         [FromQuery] DateTime? createdFrom = null,
         [FromQuery] DateTime? createdTo = null,
         CancellationToken cancellationToken = default)
@@ -126,8 +132,8 @@ public sealed class RemsRequestsController : ControllerBase
 
         // Paging is irrelevant to an aggregate; PoolFilter is what is being counted, so neither is read.
         var options = new RemsRequestListOptions(
-            me, IsPrivileged(), clientName, contact, status, createdFrom, createdTo,
-            RemsListScope.Pool, RemsPoolFilter.All, 1, 1);
+            me, IsPrivileged(), clientName, contact, status, type, priority, assignedAdminUserId,
+            createdFrom, createdTo, RemsListScope.Pool, RemsPoolFilter.All, 1, 1);
         var counts = await _rems.CountPoolScopesAsync(options, cancellationToken);
         return Ok(ApiResponseFactory.Success(counts, "REMS pool counts retrieved."));
     }
@@ -179,13 +185,24 @@ public sealed class RemsRequestsController : ControllerBase
                 ApiErrorCodes.ValidationFailed, "Validation failed.", "Unknown assignAdminUserId."));
         }
 
+        // Same name, same client: a request naming somebody already on file is linked to them instead of
+        // being filed as new. Only when the caller did not say who — an explicit reference always wins —
+        // and the type follows, so the row never reads "brand-new client" over a client we already have.
+        var type = request.Type;
+        if (request.ExistingClientReferenceId is null
+            && await FindSoleClientByExactNameAsync(request.ClientName, cancellationToken) is { } matchedClientId)
+        {
+            request.ExistingClientReferenceId = matchedClientId;
+            if (type == RemsRequestTypes.BrandNewClient) type = RemsRequestTypes.ExistingClient;
+        }
+
         var submit = request.Submit;
         var rems = new REMS
         {
             Id = Guid.NewGuid(),
             Title = request.Title,
             Description = request.Description,
-            Type = request.Type,
+            Type = type,
             Priority = request.Priority,
             Status = submit ? RemsRequestStatuses.Submitted : RemsRequestStatuses.Draft,
             RequestedClientName = request.ClientName,
@@ -248,6 +265,43 @@ public sealed class RemsRequestsController : ControllerBase
                 ApiResponseFactory.Forbidden("Not permitted to edit this request."));
         }
 
+        // Assignment can be set, changed or handed back to the pool from the edit form (AC-REMS-005). A
+        // null id alone means "leave it alone", like every other field here, so returning a request to
+        // the pool is said explicitly with unassignAdmin.
+        var newAssignee = request.UnassignAdmin ? null : request.AssignAdminUserId;
+        var assignmentChanging = (request.UnassignAdmin || request.AssignAdminUserId.HasValue)
+            && rems.AdminAssignedToId != newAssignee;
+        if (assignmentChanging)
+        {
+            // Editing a request and choosing who owns it are separate rights; holding the first must not
+            // quietly grant the second.
+            if (!User.HasPermission(Permissions.RemsRequestsAssign))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden,
+                    ApiResponseFactory.Forbidden("Not permitted to assign this request."));
+            }
+
+            if (newAssignee is { } assignId && await _users.GetByIdAsync(assignId, cancellationToken) is null)
+            {
+                return BadRequest(ApiResponseFactory.Error(
+                    ApiErrorCodes.ValidationFailed, "Validation failed.", "Unknown assignAdminUserId."));
+            }
+        }
+
+        // Same name, same client — as on create. Confined to a request that is not already linked, so an
+        // edit can never re-point an existing reference at somebody the name happens to match.
+        if (rems.ExistingClientReferenceId is null
+            && request.ExistingClientReferenceId is null
+            && request.ClientName is not null
+            && await FindSoleClientByExactNameAsync(request.ClientName, cancellationToken) is { } matchedClientId)
+        {
+            request.ExistingClientReferenceId = matchedClientId;
+            if ((request.Type ?? rems.Type) == RemsRequestTypes.BrandNewClient)
+            {
+                request.Type = RemsRequestTypes.ExistingClient;
+            }
+        }
+
         if (request.Title is not null) rems.Title = request.Title;
         if (request.Description is not null) rems.Description = request.Description;
         if (request.Type is not null) rems.Type = request.Type;
@@ -258,6 +312,11 @@ public sealed class RemsRequestsController : ControllerBase
         if (request.CSEId.HasValue) rems.CSEId = request.CSEId;
         if (request.ExistingClientReferenceId.HasValue) rems.ExistingClientReferenceId = request.ExistingClientReferenceId;
 
+        // Applied before the submission notice below, which stays silent on an already-owned request —
+        // submitting and assigning in one save must not also ring the whole pool.
+        var previousAssignee = rems.AdminAssignedToId;
+        if (assignmentChanging) rems.AdminAssignedToId = newAssignee;
+
         // A draft can be submitted to the pool as part of an edit (draft -> submitted).
         var submittingNow = request.Submit && rems.Status == RemsRequestStatuses.Draft;
         if (submittingNow) rems.Status = RemsRequestStatuses.Submitted;
@@ -267,6 +326,19 @@ public sealed class RemsRequestsController : ControllerBase
         {
             await _activity.WriteAsync(new CreateActivityEventDto(EntityType.Rems, rems.Id, ActivityEventTypes.RemsSubmitted), cancellationToken);
             await NotifyPoolOfSubmissionAsync(rems, me, cancellationToken);
+        }
+        if (assignmentChanging)
+        {
+            await _activity.WriteAsync(new CreateActivityEventDto(
+                EntityType.Rems, rems.Id, ActivityEventTypes.RemsAssigned,
+                previousAssignee?.ToString(), newAssignee?.ToString()), cancellationToken);
+            // Only a new owner gets told. Handing the request back to the pool has nobody to notify —
+            // NotifyPoolOfSubmissionAsync covers the pool, and only when the request enters it.
+            if (newAssignee is { } assignedId)
+            {
+                await _notifications.DispatchAsync(AssignmentNotification(assignedId, rems), cancellationToken);
+                await NotifyRequesterOfPickUpAsync(rems, assignedId, me, cancellationToken);
+            }
         }
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -501,6 +573,37 @@ public sealed class RemsRequestsController : ControllerBase
     /// <summary>Record-level ACT (edit/assign/delete): the creator or a privileged caller.</summary>
     private static bool CanAct(REMS r, Guid me, bool privileged)
         => privileged || r.CreatedById == me;
+
+    /// <summary>
+    /// The client already on file under this exact name, if there is exactly one. THF treats one client
+    /// name as one client, so a request naming somebody we already have must reference them rather than
+    /// describing a new client — otherwise the same client is onboarded twice.
+    ///
+    /// Matched in memory because <see cref="Person.FullName"/> is [NotMapped]: it is composed from the
+    /// name columns, so there is nothing to compare against in SQL. The search that narrows the
+    /// candidates is the one behind the client picker, so this can only resolve what that picker could
+    /// have offered — the server never rejects a name the partner had no way to find.
+    ///
+    /// Two records under one name is a genuine ambiguity (two real people can share a name), so it
+    /// resolves to null and the request stands as submitted: guessing which one is worse than either.
+    /// </summary>
+    private async Task<Guid?> FindSoleClientByExactNameAsync(string? clientName, CancellationToken cancellationToken)
+    {
+        var name = clientName?.Trim();
+        if (string.IsNullOrEmpty(name) || name.Length < 2)
+        {
+            return null;
+        }
+
+        var (candidates, _) = await _persons.ListAsync(
+            name, tenantId: null, isUser: null, isActive: true, page: 1, limit: 20, cancellationToken);
+        var matches = candidates
+            .Where(p => string.Equals(p.FullName.Trim(), name, StringComparison.OrdinalIgnoreCase))
+            .Select(p => p.Id)
+            .Distinct()
+            .ToList();
+        return matches.Count == 1 ? matches[0] : null;
+    }
 
     /// <summary>A Partner-role caller. Duplicating a request is their workflow, not the pool's.</summary>
     private bool IsPartner()

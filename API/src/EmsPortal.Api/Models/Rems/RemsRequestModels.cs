@@ -52,6 +52,20 @@ public sealed class UpdateRemsRequestRequest
     public Guid? CSEId { get; set; }
     public Guid? ExistingClientReferenceId { get; set; }
 
+    /// <summary>
+    /// The admin to own this request. A null on its own means "leave the assignment alone", exactly like
+    /// every other field on this payload — handing a request back to the pool is said with
+    /// <see cref="UnassignAdmin"/>. Changing the assignment additionally requires
+    /// <c>rems.requests.assign</c>: editing a request and choosing who works it are separate rights.
+    /// </summary>
+    public Guid? AssignAdminUserId { get; set; }
+
+    /// <summary>
+    /// Clears the assignment, returning the request to the Admin Pool for any admin to pick up. Mutually
+    /// exclusive with <see cref="AssignAdminUserId"/>.
+    /// </summary>
+    public bool UnassignAdmin { get; set; }
+
     /// <summary>When true a still-draft request is submitted to the Admin Pool as part of this edit.</summary>
     public bool Submit { get; set; }
 }

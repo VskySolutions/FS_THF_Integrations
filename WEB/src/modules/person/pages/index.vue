@@ -141,6 +141,16 @@ const tenantFilterOptions = computed(() =>
   (canChooseTenant.value && tenantOptions.value.length ? tenantOptions.value : null));
 
 // Filterable columns are server-side; text/date columns are covered by the search box.
+// Where a person record came from. The API sends the EntityType NAME; these are the ones that actually
+// mint persons today — anything else falls through to its own name rather than being hidden, and a row
+// with no source predates provenance tracking (unknown, not "created by nothing").
+const SOURCE_LABELS = {
+  Person: "Added manually",
+  Rems: "REMS request",
+  User: "User account"
+};
+const sourceLabel = (value) => (value ? (SOURCE_LABELS[value] || value) : "—");
+
 const columns = computed(() => [
   {
     name: "tenantName",
@@ -158,6 +168,9 @@ const columns = computed(() => [
   { name: "jobTitle", label: "Job Title", field: "jobTitle", align: "left", sortable: true, filterable: false },
   { name: "isUser", label: "Account", field: "isUser", align: "left", sortable: true, default: true, filterOptions: [{ label: "User", value: true }, { label: "Not a user", value: false }] },
   { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true, filterOptions: [{ label: "Active", value: true }, { label: "Inactive", value: false }] },
+  // Where the record came from. Filtering is client-side over the loaded page (this list is not
+  // server-filtered on it), so it stays a plain column rather than claiming a server filter it lacks.
+  { name: "sourceEntityType", label: "Source", field: (r) => sourceLabel(r.sourceEntityType), align: "left", default: true, filterable: false },
   { name: "updatedOnUtc", label: "Updated", field: (r) => fmt.formatDateTime(r.updatedOnUtc), align: "left", sortable: true, default: true, filterable: false },
   // Updated On is already visible above, so the shared set contributes the other three.
   ...auditColumns({ only: ["createdBy", "createdOnUtc", "updatedBy"] }),

@@ -467,8 +467,12 @@ export const dashboardApi = {
 // The conversation thread / activity / attachments reuse the Universal Features endpoints keyed on
 // EntityType.Rems (see ufNotesApi) — this object deliberately does not duplicate them.
 export const remsApi = {
-  // params: { scope?, poolScope?, clientName?, contact?, status?, createdFrom?, createdTo?, page?, limit? }
-  // scope: "partner" | "pool"; poolScope: "unassigned" | "mine" | "all". Returns the standard envelope.
+  // params: { scope?, poolScope?, clientName?, contact?, status?, type?, priority?,
+  //           assignedAdminUserId?, createdFrom?, createdTo?, page?, limit? }
+  // scope: "partner" | "pool"; poolScope: "unassigned" | "mine" | "all". type/priority/status are
+  // option-set CODES, matched exactly; clientName/contact are "contains"; createdFrom/To are UTC
+  // instants (a date-only picker must convert its own day boundaries — see zonedDayBoundaryUtc).
+  // Returns the standard envelope.
   list: (params) => api.get("/api/rems/requests", { params }).then(envelope),
   // Admin Pool view sizes: { unassigned, mine, all }. Takes the SAME filter params as list() (minus
   // paging and poolScope) and applies the same visibility rules, so each count matches the rows that
@@ -481,6 +485,9 @@ export const remsApi = {
   create: (payload) => api.post("/api/rems/requests", payload).then(unwrap),
   // payload: any subset of { title, description, type, priority, clientName, customerEmail,
   //            customerMobileNumber, existingClientReferenceId, submit } — null fields are unchanged.
+  // Assignment travels here too: `assignAdminUserId` sets the owner, `unassignAdmin: true` hands the
+  // request back to the pool (the two are mutually exclusive), and omitting both leaves it alone.
+  // Changing it needs rems.requests.assign on top of rems.requests.update.
   update: (id, payload) => api.put(`/api/rems/requests/${id}`, payload).then(unwrap),
   assign: (id, adminUserId) => api.post(`/api/rems/requests/${id}/assign`, { adminUserId }).then(unwrap),
   duplicate: (id) => api.post(`/api/rems/requests/${id}/duplicate`).then(unwrap),

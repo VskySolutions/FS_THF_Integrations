@@ -97,6 +97,14 @@
           >
             <q-tooltip>{{ cell.row.assignedAdmin ? "Assign Admin" : "Pick up or assign" }}</q-tooltip>
           </q-btn>
+          <!-- Building the EMS form is what happens next once somebody owns the request, so the action
+               belongs on the row rather than one click deeper on the detail page. -->
+          <q-btn
+            v-if="showBuildEms(cell.row)" flat round dense color="primary" icon="o_dynamic_form"
+            :to="{ name: 'rems_build_ems', params: { id: cell.row.id } }"
+          >
+            <q-tooltip>Build EMS Form</q-tooltip>
+          </q-btn>
           <q-btn
             v-if="showEngagement(cell.row)" flat round dense color="primary" icon="o_work"
             :disable="!!engagementBlocked(cell.row)"
@@ -276,6 +284,13 @@ watch([search, filters, contactFilter, poolScope], reload, { deep: true });
 const detailRoute = (row) => ({ name: "rems_request_detail", params: { id: row.id } });
 
 // EMS-inbox / engagement hand-offs live in later WOs; gate them by permission + form/submission state.
+// Offered from the moment a request is picked up — an unclaimed one has nobody to build it — and
+// withdrawn once the client's form is in, since from then on the engagement workspace is the next step
+// and the form itself is locked. rems.forms.manage is the whole gate, matching the endpoints: unlike
+// engagement setup they carry no owner check, so this does not invent one either.
+const showBuildEms = (row) =>
+  has(Permissions.RemsFormsManage) && !!row.assignedAdmin && !emsDetailAvailable(row);
+
 const showEmailLog = (row) => has(Permissions.RemsEmailLogRead) && emsFormActivity(row);
 const showEngagement = (row) => has(Permissions.RemsEngagementsManage);
 

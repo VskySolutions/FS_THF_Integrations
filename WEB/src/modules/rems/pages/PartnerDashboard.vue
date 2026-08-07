@@ -6,7 +6,7 @@
       show-search
       search-placeholder="Search client name"
       show-filters
-      :filter-count="filterChips.length"
+      :filter-count="allChips.length"
       :show-add="canCreate"
       add-label="New REMS Request"
       show-back
@@ -16,8 +16,18 @@
       @back="$router.back()"
     />
 
-    <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
+    <app-filter-drawer v-model="filterOpen" :chips="allChips" @remove="onRemoveFilter" @clear="onClearFilters">
       <app-column-filters v-model="filters" :columns="filterableColumns" />
+      <!-- Server filters with no column of their own: the contact line is captioned under the title
+           rather than shown as a column, and a created range is two controls, not one.
+           Each sits as its own full-width slot child, like every control above it — AppFilterDrawer
+           already spaces and aligns what it is given, so no row wrapper or margin class is wanted here. -->
+      <app-text-field v-model="extras.contact" label="Contact (email or mobile)" clearable :dense="false" />
+      <app-date-field v-model="extras.createdFrom" label="Created From" :dense="false" />
+      <app-date-field v-model="extras.createdTo" label="Created To" :dense="false" />
+      <div v-if="invalidRange" class="text-caption text-negative">
+        “Created From” is after “Created To” — no request can match both.
+      </div>
       <q-toggle
         v-if="canManageDeleted" v-model="showDeleted" label="Show deleted?" dense class="q-mt-md"
       />
@@ -78,7 +88,14 @@
           >
             <q-tooltip>Edit</q-tooltip>
           </q-btn>
-          <!-- Assigning an admin belongs to the Admin Pool, which is where the pool is worked. -->
+          <!-- Hand a draft straight to a named Admin instead of letting it go to the pool unclaimed.
+               Only offered on drafts: once submitted, re-assignment is the Admin Pool's job. -->
+          <q-btn
+            v-if="cell.row.actions?.canAssign && cell.row.status === 'draft'"
+            flat round dense color="primary" icon="o_person_add" @click="openAssign(cell.row)"
+          >
+            <q-tooltip>Assign to Admin</q-tooltip>
+          </q-btn>
           <q-btn
             v-if="cell.row.actions?.canDuplicate"
             flat round dense color="primary" icon="o_content_copy" @click="duplicate(cell.row)"
@@ -106,12 +123,17 @@
     />
 
     <new-request-dialog v-model="formOpen" :request-id="editingId" @saved="onSaved" />
+    <assign-admin-dialog
+      v-model="assignOpen" mode="draft" :request-id="assignTarget.id"
+      :request-number="assignTarget.number" :request-title="assignTarget.title"
+      @assigned="onAssigned"
+    />
     <conversation-dialog v-model="conversationOpen" :request-id="conversationId" :subtitle="conversationSubtitle" />
   </q-page>
 </template>
 
 <script setup>
-import { ref, computed, watch } from "vue";
+import { ref, reactive, computed, watch, onMounted } from "vue";
 import { debounce } from "quasar";
 import { remsApi, getApiErrorMessage, EntityType } from "services/api";
 import { usePermissions, Permissions } from "composables/usePermissions";
@@ -127,9 +149,12 @@ import { useRemsMeta } from "modules/rems/useRemsMeta";
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
+import AppTextField from "components/common/AppTextField.vue";
+import AppDateField from "components/common/AppDateField.vue";
 import AppDataTable from "components/common/AppDataTable.vue";
 import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
 import NewRequestDialog from "modules/rems/components/NewRequestDialog.vue";
+import AssignAdminDialog from "modules/rems/components/AssignAdminDialog.vue";
 import ConversationDialog from "modules/rems/components/ConversationDialog.vue";
 
 const { showDeleted, canManageDeleted } = useDeletedRecords();
@@ -141,19 +166,44 @@ const auditColumns = useAuditColumns();
 const {
   typeLabel, priorityLabel, priorityColor, requestStatusLabel, requestStatusColor,
   emsStateLabel, submissionStateLabel,
-  statusFilterOptions
+  statusFilterOptions, typeOptions, priorityOptions
 } = useRemsMeta();
 
 const canCreate = computed(() => has(Permissions.RemsRequestsCreate));
 
+// The Assigned Admin filter needs the admin list, which is gated the same way the assign action is.
+const canSeeAdmins = computed(() => has(Permissions.RemsRequestsAssign) || has(Permissions.RemsPoolRead));
+const adminFilterOptions = ref([]);
+onMounted(async () => {
+  if (!canSeeAdmins.value) return;
+  try {
+    const admins = await remsApi.admins();
+    adminFilterOptions.value = (admins || []).map((a) => ({ label: a.name, value: a.id }));
+  } catch {
+    // A filter nobody can populate simply stays empty; the list itself is unaffected, and the table's
+    // own error toast is the one worth showing.
+  }
+});
+
 const columns = computed(() => [
   { name: "remsNumber", label: "Request ID", field: "remsNumber", align: "left", sortable: true, default: true, filterable: false },
   { name: "title", label: "Title / Client", field: "title", align: "left", sortable: true, default: true, filterable: false },
-  { name: "type", label: "Type", field: "type", align: "left", default: true, filterable: false },
-  { name: "priority", label: "Priority", field: "priority", align: "left", sortable: true, default: true, filterable: false },
+  { name: "type", label: "Type", field: "type", align: "left", default: true, filterOptions: typeOptions.value },
+  { name: "priority", label: "Priority", field: "priority", align: "left", sortable: true, default: true, filterOptions: priorityOptions.value },
+  // Filtered through the Created From/To pair in the drawer — a single "contains" box over a formatted
+  // timestamp would match on the digits of a date rather than on the date.
   { name: "createdOnUtc", label: "Created", field: "createdOnUtc", align: "left", sortable: true, default: true, filterable: false },
   { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true, filterOptions: statusFilterOptions.value },
-  { name: "assignedAdmin", label: "Assigned Admin", field: (r) => r.assignedAdmin?.name || "—", align: "left", default: true, filterable: false },
+  // Only offered to callers who may read the admin list; without it the picker would be empty, which
+  // reads as "nobody is assigned" rather than "you cannot see who is".
+  {
+    name: "assignedAdmin",
+    label: "Assigned Admin",
+    field: (r) => r.assignedAdmin?.name || "—",
+    align: "left",
+    default: true,
+    ...(canSeeAdmins.value ? { filterOptions: adminFilterOptions.value } : { filterable: false })
+  },
   { name: "emsFormState", label: "EMS State", field: "emsFormState", align: "left", default: true, filterable: false },
   // Off by default (the title cell already captions the client), but every field the row carries is
   // offered in the Columns menu rather than being unreachable.
@@ -169,6 +219,13 @@ const columns = computed(() => [
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ]);
 
+// Server filters with no column to hang off. Kept in one reactive object so the chips, the reset and
+// the watcher below each have a single thing to read.
+const extras = reactive({ contact: "", createdFrom: "", createdTo: "" });
+
+const invalidRange = computed(() =>
+  !!extras.createdFrom && !!extras.createdTo && extras.createdFrom > extras.createdTo);
+
 const { rows, loading, totalRecords, search, filterOpen, pagination, load, onRequest } = useListTable({
   fetcher: ({ page, limit }) =>
     remsApi.list({
@@ -176,14 +233,43 @@ const { rows, loading, totalRecords, search, filterOpen, pagination, load, onReq
       page,
       limit,
       clientName: search.value || undefined,
-      status: filters.status || undefined
+      status: filters.status || undefined,
+      type: filters.type || undefined,
+      priority: filters.priority || undefined,
+      assignedAdminUserId: filters.assignedAdmin || undefined,
+      contact: extras.contact || undefined,
+      // The pickers are date-only and read in the tenant's zone; the column they filter is a UTC
+      // instant. Both ends are converted to that day's real boundaries, so "to" includes its own day.
+      createdFrom: fmt.zonedDayBoundaryUtc(extras.createdFrom, "start"),
+      createdTo: fmt.zonedDayBoundaryUtc(extras.createdTo, "end")
     }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),
   onError: (err) => notify.error(getApiErrorMessage(err))
 });
 
 const { filters, filterableColumns, filterChips, removeFilter, clearFilters } = useColumnFilters(columns, rows, { server: true });
+
+// The column chips plus one per standalone filter, so everything narrowing the list is visible in the
+// same place and removable the same way.
+const extraChips = [
+  { key: "contact", label: "Contact" },
+  { key: "createdFrom", label: "Created From" },
+  { key: "createdTo", label: "Created To" }
+];
+const allChips = computed(() => [
+  ...filterChips.value,
+  ...extraChips.filter((c) => extras[c.key]).map((c) => ({ key: c.key, label: `${c.label}: ${extras[c.key]}` }))
+]);
+const onRemoveFilter = (key) => {
+  if (key in extras) extras[key] = "";
+  else removeFilter(key);
+};
+const onClearFilters = () => {
+  clearFilters();
+  extraChips.forEach((c) => { extras[c.key] = ""; });
+};
+
 const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);
-watch([search, filters], reload, { deep: true });
+watch([search, filters, extras], reload, { deep: true });
 
 const detailRoute = (row) => ({ name: "rems_request_detail", params: { id: row.id } });
 
@@ -193,6 +279,18 @@ const editingId = ref(null);
 const openCreate = () => { editingId.value = null; formOpen.value = true; };
 const openEdit = (row) => { editingId.value = row.id; formOpen.value = true; };
 const onSaved = () => { formOpen.value = false; load(); };
+
+// ---- Assign a draft straight to an Admin (submits it in the same step) ----
+const assignOpen = ref(false);
+const assignTarget = reactive({ id: null, number: "", title: "" });
+const openAssign = (row) => {
+  assignTarget.id = row.id;
+  assignTarget.number = row.remsNumber || "";
+  assignTarget.title = row.title || "";
+  assignOpen.value = true;
+};
+// The row leaves draft on success, so the list has to be re-read rather than patched in place.
+const onAssigned = () => { assignOpen.value = false; load(); };
 
 // ---- Conversation ----
 const conversationOpen = ref(false);

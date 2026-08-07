@@ -31,10 +31,14 @@ public static class DefaultOptionSets
     {
         new Definition(EntityType.Rems, "REMS.Type", "REMS Type", OptionItemSortMode.Custom, new[]
         {
+            // Three ways a referral can relate to THF's records. "New Engagement" and "Existing Client"
+            // used to be separate values, which asked the partner to split a hair nobody could: every
+            // new engagement for a client we already have is both. They are one value now — the code
+            // `existing_client` survived the merge (see MergeRemsExistingClientTypes), so the rows and
+            // the REMS_EXISTING_CLIENT_TYPES marking rule that read it need no translation.
             new ItemDefinition("brand_new_client", "Brand-New Client", 1),
-            new ItemDefinition("new_engagement", "New Engagement", 2),
-            new ItemDefinition("existing_client", "Existing Client", 3),
-            new ItemDefinition("subsidiary_child_of_existing_client", "Subsidiary / Child of Existing Client", 4),
+            new ItemDefinition("existing_client", "New Engagement, Existing Client", 2),
+            new ItemDefinition("subsidiary_child_of_existing_client", "Subsidiary / Child of Existing Client", 3),
         }),
         new Definition(EntityType.Rems, "REMS.Priority", "REMS Priority", OptionItemSortMode.Custom, new[]
         {

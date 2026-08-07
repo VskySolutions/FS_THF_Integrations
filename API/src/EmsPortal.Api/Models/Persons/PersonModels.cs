@@ -96,6 +96,11 @@ public sealed record PersonSummary(
     string? TenantName,
     bool IsUser,
     bool IsActive,
+    // Where this record came from — the Person screen, a REMS engagement, a client's EMS form. Sent as
+    // the EntityType NAME rather than its integer so the column is readable without a lookup table, and
+    // null when the row predates provenance tracking (unknown, not "created by nothing").
+    string? SourceEntityType,
+    Guid? SourceEntityId,
     string? CreatedBy,
     string? UpdatedBy,
     DateTime CreatedOnUtc,

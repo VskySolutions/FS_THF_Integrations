@@ -94,6 +94,9 @@ public sealed class PersonsController : ControllerBase
             Notes = request.Notes,
             IsActive = true,
             LastProfileUpdatedOn = DateTime.UtcNow,
+            // Entered directly on the Person screen. No SourceEntityId: there is no other record behind
+            // this one to point back at.
+            SourceEntityType = EntityType.Person,
         };
 
         if (request.Address is { } addressInput)
@@ -134,6 +137,7 @@ public sealed class PersonsController : ControllerBase
             p.Id, p.PersonCode, p.FullName, p.PrimaryEmail, p.MobileNumber, p.JobTitle,
             p.TenantId, p.Tenant?.Name,
             p.UserId is not null, p.IsActive,
+            p.SourceEntityType?.ToString(), p.SourceEntityId,
             NameOf(names, p.CreatedById), NameOf(names, p.UpdatedById), p.CreatedOnUtc, p.UpdatedOnUtc));
 
         return Ok(ApiResponseFactory.Paginated(summaries, "Persons retrieved.", page, limit, total));

@@ -415,7 +415,7 @@ public sealed class RemsPublicFormController : ControllerBase
             IsMainEntity = true,
         });
         StageEntityAddresses(graph, tenantId, mainEntityId, payload.PhysicalAddress, payload.MailingDiffers, payload.MailingAddress);
-        StageRoleContacts(graph, tenantId, form.IndustryGroup, mainEntityId, payload.Roles);
+        StageRoleContacts(graph, tenantId, form.REMSId, form.IndustryGroup, mainEntityId, payload.Roles);
         var mainEngagementId = StageBlankEngagement(graph, tenantId, mainEntityId);
 
         if (isGovernment)
@@ -479,7 +479,8 @@ public sealed class RemsPublicFormController : ControllerBase
         }
     }
 
-    private static void StageRoleContacts(SubmitGraph graph, Guid tenantId, string industryGroup, Guid entityId, RemsRolesPayload? roles)
+    private static void StageRoleContacts(
+        SubmitGraph graph, Guid tenantId, Guid sourceRemsId, string industryGroup, Guid entityId, RemsRolesPayload? roles)
     {
         if (roles is null)
         {
@@ -493,7 +494,7 @@ public sealed class RemsPublicFormController : ControllerBase
                 continue;
             }
 
-            var person = BuildContactPerson(tenantId, role);
+            var person = BuildContactPerson(tenantId, sourceRemsId, role);
             graph.Persons.Add(person);
             graph.Contacts.Add(new REMSEntityContact
             {
@@ -513,8 +514,13 @@ public sealed class RemsPublicFormController : ControllerBase
     /// platform account, so this is the lightest record that satisfies the FK: TenantId is set EXPLICITLY
     /// (no stamping without a resolved tenant) and PersonCode is a fresh GUID-derived code (globally unique
     /// by the filtered unique index, so no existence pre-check is needed).
+    /// <para>
+    /// Provenance is stamped with the originating request. These are the least deliberate persons the
+    /// platform creates — a client typed them into a public form — so being able to tell them apart from
+    /// staff-entered records, and trace them back to the form they came off, matters most here.
+    /// </para>
     /// </summary>
-    private static Person BuildContactPerson(Guid tenantId, RemsRolePayload role)
+    private static Person BuildContactPerson(Guid tenantId, Guid sourceRemsId, RemsRolePayload role)
     {
         var (first, last) = SplitName(role.Name);
         return new Person
@@ -522,6 +528,8 @@ public sealed class RemsPublicFormController : ControllerBase
             Id = Guid.NewGuid(),
             PersonCode = "PER-" + Guid.NewGuid().ToString("N").ToUpperInvariant(),
             TenantId = tenantId,
+            SourceEntityType = EntityType.Rems,
+            SourceEntityId = sourceRemsId,
             FirstName = first,
             LastName = last,
             DisplayName = Clean(role.Name) ?? first,

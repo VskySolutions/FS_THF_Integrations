@@ -1,4 +1,5 @@
 using EmsPortal.Api.Models.Rems;
+using EmsPortal.Domain.Entities;
 using FluentValidation;
 
 namespace EmsPortal.Api.Validators.Rems;
@@ -48,6 +49,12 @@ public sealed class UpdateRemsRequestRequestValidator : AbstractValidator<Update
         RuleFor(x => x.Priority).Must(RemsRequestOptionCodes.IsKnownPriority)
             .WithMessage($"priority must be one of: {string.Join(", ", RemsRequestOptionCodes.Priorities)}.")
             .When(x => x.Priority is not null);
+
+        // Naming an admin and handing the request back to the pool are opposite instructions; sending
+        // both leaves the endpoint to guess which one was meant.
+        RuleFor(x => x)
+            .Must(x => !(x.UnassignAdmin && x.AssignAdminUserId.HasValue))
+            .WithMessage("assignAdminUserId and unassignAdmin cannot both be set.");
     }
 }
 
@@ -67,10 +74,10 @@ public sealed class AssignRemsRequestRequestValidator : AbstractValidator<Assign
 /// </summary>
 internal static class RemsRequestOptionCodes
 {
-    public static readonly IReadOnlyList<string> Types = new[]
-    {
-        "brand_new_client", "new_engagement", "existing_client", "subsidiary_child_of_existing_client",
-    };
+    // From RemsRequestTypes so the accepted set and the codes the controllers branch on cannot drift.
+    // 'new_engagement' was merged into 'existing_client' (MergeRemsExistingClientTypes) and is no longer
+    // accepted: the migration re-pointed every row that held it, so nothing can still be carrying it.
+    public static readonly IReadOnlyList<string> Types = RemsRequestTypes.All;
 
     public static readonly IReadOnlyList<string> Priorities = new[] { "urgent", "high", "medium", "low" };
 

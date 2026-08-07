@@ -298,7 +298,7 @@ public sealed class RemsEngagementController : ControllerBase
             var contact = existing.FirstOrDefault(c => string.Equals(c.ContactRole, role, StringComparison.OrdinalIgnoreCase));
             if (contact is null)
             {
-                var person = NewContactPerson(input);
+                var person = NewContactPerson(input, entity.Client!.REMSId);
                 await _persons.AddAsync(person, cancellationToken);
                 await _clients.AddEntityContactAsync(new REMSEntityContact
                 {
@@ -967,13 +967,19 @@ public sealed class RemsEngagementController : ControllerBase
     private static AddressType AddressTypeFor(RemsAddressType type)
         => type == RemsAddressType.Physical ? AddressType.Office : AddressType.Other;
 
-    private static Person NewContactPerson(RemsEntityContactInput input)
+    /// <param name="sourceRemsId">
+    /// The request whose engagement setup captured this contact, recorded as the person's provenance —
+    /// otherwise they are indistinguishable in the Person list from somebody onboarded deliberately.
+    /// </param>
+    private static Person NewContactPerson(RemsEntityContactInput input, Guid sourceRemsId)
     {
         var person = new Person
         {
             Id = Guid.NewGuid(),
             PersonCode = "PER-" + Guid.NewGuid().ToString("N").ToUpperInvariant(),
             IsActive = true,
+            SourceEntityType = EntityType.Rems,
+            SourceEntityId = sourceRemsId,
         };
         ApplyContactPerson(person, input);
         return person;

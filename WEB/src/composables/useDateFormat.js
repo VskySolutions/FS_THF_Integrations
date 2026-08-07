@@ -44,5 +44,37 @@ export function useDateFormat () {
     return `${p.month}-${p.day}-${p.year}`;
   };
 
-  return { formatDateTime, formatDate, tenantTimeZone };
+  // How far the tenant's clock runs ahead of UTC at a given instant (DST-aware, since the offset is
+  // read at that instant rather than assumed constant).
+  const tzOffsetMs = (utcMs) => {
+    const p = partsFor(new Date(utcMs), {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false
+    });
+    // Intl renders midnight as "24" in some locales' hour-cycle; normalise it back to 0.
+    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - utcMs;
+  };
+
+  // The inverse of the formatters above: the UTC instant at which the tenant's clock reads the start
+  // (or end) of the given yyyy-mm-dd. Date-only filters need this — a range picked as tenant-local days
+  // and compared against UTC timestamps otherwise drops or admits rows around each boundary, and a
+  // "to" date taken at face value would exclude everything created during that very day.
+  const zonedDayBoundaryUtc = (isoDate, edge = "start") => {
+    if (!isoDate) return undefined;
+    const [y, m, d] = String(isoDate).split("-").map(Number);
+    if (!y || !m || !d) return undefined;
+    const wall = edge === "end"
+      ? Date.UTC(y, m - 1, d, 23, 59, 59, 999)
+      : Date.UTC(y, m - 1, d, 0, 0, 0, 0);
+    // One correction pass: read the offset at the naive instant, then shift by it. Only a boundary
+    // falling inside a DST transition could land an hour out, which no day filter can express anyway.
+    return new Date(wall - tzOffsetMs(wall)).toISOString();
+  };
+
+  return { formatDateTime, formatDate, tenantTimeZone, zonedDayBoundaryUtc };
 }

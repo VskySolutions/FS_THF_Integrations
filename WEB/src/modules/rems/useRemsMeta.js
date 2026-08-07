@@ -18,8 +18,17 @@ export const REMS_TYPE_OPTIONS = REMS_OPTION_SEED.type;
 export const REMS_PRIORITY_OPTIONS = REMS_OPTION_SEED.priority;
 export const REMS_STATUS_OPTIONS = REMS_OPTION_SEED.status;
 
+// The two type codes the intake form picks on the partner's behalf: picking a client out of the lookup
+// means THF already has them, typing a name nobody matched means they are new. Named rather than inlined
+// because they are CODES — the tenant may relabel either one, and the auto-selection has to keep working.
+export const REMS_TYPE_BRAND_NEW_CLIENT = "brand_new_client";
+export const REMS_TYPE_EXISTING_CLIENT = "existing_client";
+
 // Type codes that mean "an existing client is referenced" (drives the client-lookup type marking).
-export const REMS_EXISTING_CLIENT_TYPES = ["existing_client", "subsidiary_child_of_existing_client"];
+// A subsidiary is one too, so picking a client never overrides a partner who already chose it.
+export const REMS_EXISTING_CLIENT_TYPES = [
+  REMS_TYPE_EXISTING_CLIENT, "subsidiary_child_of_existing_client"
+];
 
 export const REMS_INDUSTRY_GROUP_OPTIONS = REMS_OPTION_SEED.industryGroup;
 

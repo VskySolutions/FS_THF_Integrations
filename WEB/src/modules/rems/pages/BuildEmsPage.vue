@@ -65,9 +65,9 @@
             <q-separator />
             <q-card-section>
               <app-select
-                v-model="cseId" :options="cseOptions" label="CSE" required
-                :loading="csesLoading" :clearable="false" class="q-mb-md"
-                info="Lists users holding the Admin or Super Admin role in this tenant. The CSE becomes an approver on every engagement for this request."
+                v-model="cseId" :options="cseSelectOptions" label="CSE" required
+                :loading="csesLoading" :clearable="false" class="q-mb-md" :hint="cseHint"
+                info="Lists members of the &quot;CSE&quot; user group, maintained in Administration → User Groups. The CSE becomes an approver on every engagement for this request."
               />
               <app-select
                 v-model="industryGroup" :options="industryGroupOptions" label="Industry Group" required
@@ -241,17 +241,38 @@ const loadScreen = async () => {
   }
 };
 
+// Scoped to the "CSE" user group, kept in Administration → User Groups — the same group the engagement
+// workspace's CSE picker reads. This screen used to offer every Admin and Super Admin in the tenant,
+// which made the group's membership decorative: whoever was picked here became an approver on every
+// engagement for the request, regardless of whether they were a CSE at all.
+//
+// An absent or empty group yields an empty list on purpose (the picker then names the group that needs
+// members) rather than quietly falling back to every admin — matching the workspace's other pickers.
+const CSE_GROUP = "CSE";
+
 const loadCses = async () => {
   csesLoading.value = true;
   try {
-    const admins = await remsApi.admins();
-    cseOptions.value = (admins || []).map((a) => ({ label: a.name, value: a.id }));
+    const cses = await remsApi.admins(CSE_GROUP);
+    cseOptions.value = (cses || []).map((a) => ({ label: a.name, value: a.id }));
   } catch {
     cseOptions.value = [];
   } finally {
     csesLoading.value = false;
   }
 };
+
+// A CSE saved before this picker was scoped — or since removed from the group — stays selectable, so
+// opening the screen on their request neither blanks the field nor quietly offers to replace them.
+const cseSelectOptions = computed(() => {
+  const current = screen.value?.cse;
+  if (!current?.id || cseOptions.value.some((o) => o.value === current.id)) return cseOptions.value;
+  return [{ label: `${current.name} (not in the "${CSE_GROUP}" group)`, value: current.id }, ...cseOptions.value];
+});
+
+const cseHint = computed(() => (cseSelectOptions.value.length
+  ? ""
+  : `No members in the "${CSE_GROUP}" group — add them in Administration → User Groups.`));
 
 const save = async () => {
   if (!canSave.value) {

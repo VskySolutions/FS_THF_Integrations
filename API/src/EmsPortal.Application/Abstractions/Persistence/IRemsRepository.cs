@@ -40,6 +40,13 @@ public sealed record RemsRequestListOptions(
     string? ClientName,
     string? Contact,
     string? Status,
+    // Option-set CODES (REMS.Type / REMS.Priority), matched exactly — the label is the tenant's to
+    // rename, the code is what the row stores.
+    string? Type,
+    string? Priority,
+    /// <summary>A specific owning admin. Distinct from <see cref="PoolFilter"/>, which asks
+    /// unassigned/mine/any rather than naming somebody.</summary>
+    Guid? AssignedAdminUserId,
     DateTime? CreatedFromUtc,
     DateTime? CreatedToUtc,
     RemsListScope Scope,

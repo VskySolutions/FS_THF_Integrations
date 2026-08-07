@@ -11,6 +11,10 @@
         <q-badge v-if="detail" :color="detail.isActive ? 'positive' : 'grey'" class="q-mr-sm">
           {{ detail.isActive ? "Active" : "Inactive" }}
         </q-badge>
+        <q-badge v-if="detail" :color="detail.isFull ? 'negative' : 'grey-7'" class="q-mr-sm" data-test="members-badge">
+          <q-icon v-if="detail.isFull" name="o_block" size="12px" class="q-mr-xs" />
+          {{ detail.currentUsage }}<template v-if="detail.capacityLimit != null"> / {{ detail.capacityLimit }}</template> members
+        </q-badge>
         <q-btn v-if="detail" flat round dense color="primary" icon="o_edit" @click="openEdit">
           <q-tooltip>Edit</q-tooltip>
         </q-btn>
@@ -43,7 +47,7 @@
           <div v-for="group in keyGroups" :key="group.category" class="q-mb-md">
             <div class="section-subhead q-mb-xs">{{ group.category }}</div>
             <div class="row q-gutter-xs">
-              <q-badge v-for="key in group.keys" :key="key" color="blue-1" text-color="primary" class="pg-key">
+              <q-badge v-for="key in group.keys" :key="key" color="teal-1" text-color="primary" class="pg-key">
                 {{ humanizeKey(key) }}
                 <q-tooltip>{{ key }}</q-tooltip>
               </q-badge>

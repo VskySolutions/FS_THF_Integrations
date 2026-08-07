@@ -29,6 +29,7 @@ namespace EmsPortal.Api.Controllers;
 public sealed class PermissionGroupsController : ControllerBase
 {
     private readonly IPermissionGroupRepository _groups;
+    private readonly IUserRepository _users;
     private readonly IRoleRepository _roles;
     private readonly ITenantRepository _tenants;
     private readonly IPermissionGroupEffectivePermissionService _effective;
@@ -40,11 +41,13 @@ public sealed class PermissionGroupsController : ControllerBase
         IPermissionGroupRepository groups,
         IRoleRepository roles,
         ITenantRepository tenants,
+        IUserRepository users,
         IPermissionGroupEffectivePermissionService effective,
         IAuditTrailService audit,
         IAuditTrailRepository auditRead,
         IUnitOfWork unitOfWork)
     {
+        _users = users;
         _groups = groups;
         _roles = roles;
         _tenants = tenants;
@@ -110,11 +113,22 @@ public sealed class PermissionGroupsController : ControllerBase
         var (items, total) = await _groups.ListAsync(
             scopeTenant, search, isActive, usedByRoles, category, Math.Max(1, page), Math.Clamp(limit, 1, 100), cancellationToken);
 
+        // Batch the per-group current usage (distinct active members) in one query to avoid N+1.
+        var usageByGroup = await _groups.CountActiveMembersForGroupsAsync(items.Select(i => i.Id).ToList(), cancellationToken);
+
+        // One name lookup for the page, so the audit columns read as people rather than guids.
+        var names = await _users.GetFullNamesAsync(
+            items.SelectMany(g => new[] { g.CreatedById, g.UpdatedById })
+                .Where(id => id.HasValue).Select(id => id!.Value),
+            cancellationToken);
+        string? NameOf(Guid? id) => id is { } uid && names.TryGetValue(uid, out var n) ? n : null;
+
         var data = new List<PermissionGroupSummaryResponse>(items.Count);
         foreach (var g in items)
         {
             var rolesUsing = await _groups.CountRolesUsingGroupAsync(g.Id, cancellationToken);
-            data.Add(ToSummary(g, rolesUsing));
+            var usage = usageByGroup.TryGetValue(g.Id, out var u) ? u : 0;
+            data.Add(ToSummary(g, rolesUsing, usage, NameOf));
         }
 
         return Ok(ApiResponseFactory.Paginated(data, "Permission groups retrieved.", page, limit, total));
@@ -133,8 +147,9 @@ public sealed class PermissionGroupsController : ControllerBase
         }
 
         var rolesUsing = await _groups.GetRolesUsingGroupAsync(id, cancellationToken);
+        var usage = await _groups.CountActiveMembersAsync(group.Id, group.TenantId, null, cancellationToken);
         var audit = await _auditRead.ListByEntityAsync(nameof(PermissionGroup), id.ToString(), 100, cancellationToken);
-        return Ok(ApiResponseFactory.Success(ToDetail(group, rolesUsing, audit), "Permission group retrieved."));
+        return Ok(ApiResponseFactory.Success(ToDetail(group, rolesUsing, audit, usage), "Permission group retrieved."));
     }
 
     // ---- Create ----
@@ -171,6 +186,7 @@ public sealed class PermissionGroupsController : ControllerBase
             Name = body.Name.Trim(),
             Description = body.Description?.Trim(),
             IsActive = true,
+            CapacityLimit = body.CapacityLimit,
         };
         await _groups.AddAsync(group, cancellationToken);
         foreach (var key in keys)
@@ -178,7 +194,7 @@ public sealed class PermissionGroupsController : ControllerBase
             await _groups.AddPermissionAsync(new PermissionGroupPermission { Id = Guid.NewGuid(), PermissionGroupId = group.Id, PermissionKey = key }, cancellationToken);
         }
         await _audit.AddAsync(nameof(PermissionGroup), group.Id.ToString(), "Created",
-            details: $"name={group.Name}; keys={keys.Count}", cancellationToken: cancellationToken);
+            details: $"name={group.Name}; keys={keys.Count}; capacity={(group.CapacityLimit?.ToString() ?? "unlimited")}", cancellationToken: cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, ApiResponseFactory.Success(new { groupId = group.Id }, "Permission group created."));
@@ -211,9 +227,28 @@ public sealed class PermissionGroupsController : ControllerBase
             return Conflict(ApiResponseFactory.Error(ApiErrorCodes.DuplicateGroupName, "A group with this name already exists.", body.Name.Trim()));
         }
 
+        // Capacity limit (WO-119): a new limit below the group's current usage is rejected — the admin must
+        // remove members first (AC-PG-003.4). Reducing to null (unlimited) is always allowed.
+        if (body.CapacityLimit is { } newLimit)
+        {
+            var currentUsage = await _groups.CountActiveMembersAsync(group.Id, group.TenantId, null, cancellationToken);
+            if (newLimit < currentUsage)
+            {
+                await _audit.AddAsync(nameof(PermissionGroup), group.Id.ToString(), "CapacityChangeRejected",
+                    details: $"Attempted limit {newLimit} is below current usage {currentUsage}.", cancellationToken: cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                return BadRequest(ApiResponseFactory.Error(
+                    ApiErrorCodes.CapacityBelowUsage,
+                    $"The capacity limit ({newLimit}) is below the group's current usage ({currentUsage}). Remove at least {currentUsage - newLimit} member(s) before lowering the limit.",
+                    (currentUsage - newLimit).ToString()));
+            }
+        }
+
         var before = group.Permissions.Select(p => p.PermissionKey).OrderBy(k => k).ToList();
+        var capacityBefore = group.CapacityLimit;
         group.Name = body.Name.Trim();
         group.Description = body.Description?.Trim();
+        group.CapacityLimit = body.CapacityLimit;
         _groups.RemovePermissions(group.Permissions.ToList());
         foreach (var key in keys)
         {
@@ -222,6 +257,11 @@ public sealed class PermissionGroupsController : ControllerBase
         _groups.Update(group);
         await _audit.AddAsync(nameof(PermissionGroup), group.Id.ToString(), "Updated",
             details: $"keys before=[{string.Join(",", before)}] after=[{string.Join(",", keys)}]", cancellationToken: cancellationToken);
+        if (capacityBefore != group.CapacityLimit)
+        {
+            await _audit.AddAsync(nameof(PermissionGroup), group.Id.ToString(), "CapacityChanged",
+                details: $"{(capacityBefore?.ToString() ?? "unlimited")} -> {(group.CapacityLimit?.ToString() ?? "unlimited")}", cancellationToken: cancellationToken);
+        }
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         // Propagate the new permission set to every role composed from this group.
@@ -345,20 +385,28 @@ public sealed class PermissionGroupsController : ControllerBase
                 ApiErrorCodes.PermissionCeilingExceeded, "One or more permission keys are outside your tenant's permission ceiling.", string.Join(", ", disallowed)));
     }
 
-    private static PermissionGroupSummaryResponse ToSummary(PermissionGroup g, int rolesUsing)
-        => new(g.Id, g.Name, g.Description, g.Permissions.Count, rolesUsing, g.IsActive, g.TenantId, g.Tenant?.Name);
+    private static PermissionGroupSummaryResponse ToSummary(
+        PermissionGroup g, int rolesUsing, int currentUsage, Func<Guid?, string?> nameOf)
+        => new(g.Id, g.Name, g.Description, g.Permissions.Count, rolesUsing, g.IsActive, g.TenantId, g.Tenant?.Name,
+            g.CapacityLimit, currentUsage, IsFull(g.CapacityLimit, currentUsage),
+            nameOf(g.CreatedById), g.CreatedOnUtc, nameOf(g.UpdatedById), g.UpdatedOnUtc);
+
+    /// <summary>A group is full when it has a limit and usage has reached (or exceeded) it.</summary>
+    private static bool IsFull(int? capacityLimit, int currentUsage) => capacityLimit is { } limit && currentUsage >= limit;
 
     private bool CanDelete(PermissionGroup g) => true; // groups (unlike templates) are always deletable by managers
 
     private PermissionGroupDetailResponse ToDetail(
         PermissionGroup g,
         IReadOnlyList<(Guid RoleId, string RoleName)> rolesUsing,
-        IReadOnlyList<AuditTrailEntry> audit)
+        IReadOnlyList<AuditTrailEntry> audit,
+        int currentUsage)
         => new(
             g.Id, g.Name, g.Description, g.IsActive, g.TenantId, g.Tenant?.Name,
             g.Permissions.Select(p => p.PermissionKey).OrderBy(k => k).ToList(),
             rolesUsing.Select(r => new RoleUsingGroupResponse(r.RoleId, r.RoleName)).ToList(),
             audit.Select(a => new PermissionGroupAuditEntryResponse(a.Action, a.PerformedBy, a.CreatedDate, a.Details)).ToList(),
             CanDelete(g),
-            g.CreatedOnUtc, g.UpdatedOnUtc);
+            g.CreatedOnUtc, g.UpdatedOnUtc,
+            g.CapacityLimit, currentUsage, IsFull(g.CapacityLimit, currentUsage));
 }

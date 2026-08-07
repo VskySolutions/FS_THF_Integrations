@@ -36,7 +36,7 @@ internal sealed class StickyNoteRepository : IStickyNoteRepository
             query = query.Where(s => s.Scope == "global");
         }
 
-        return await query.OrderByDescending(s => s.CreatedOnUtc).ToListAsync(cancellationToken);
+        return await query.OrderByDescending(s => s.UpdatedOnUtc).ThenByDescending(s => s.CreatedOnUtc).ToListAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<(StickyNote Note, int DismissalCount)>> ListTenantNotesWithCountsAsync(CancellationToken cancellationToken = default)
@@ -44,7 +44,8 @@ internal sealed class StickyNoteRepository : IStickyNoteRepository
         var rows = await _dbContext.StickyNotes
             .Where(s => !s.IsPersonal)
             .Select(s => new { Note = s, Count = _dbContext.StickyNoteDismissals.Count(d => d.StickyNoteId == s.Id) })
-            .OrderByDescending(x => x.Note.CreatedOnUtc)
+            .OrderByDescending(x => x.Note.UpdatedOnUtc)
+            .ThenByDescending(x => x.Note.CreatedOnUtc)
             .ToListAsync(cancellationToken);
         return rows.Select(x => (x.Note, x.Count)).ToList();
     }

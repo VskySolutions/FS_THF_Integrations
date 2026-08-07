@@ -37,6 +37,8 @@ public sealed class AuthController : ControllerBase
     private readonly IUnitOfWork _unitOfWork;
     private readonly AuthenticationOptions _options;
     private readonly IEmailDispatcher _emailDispatcher;
+    private readonly IPasswordResetTokenRepository _passwordResetTokens;
+    private readonly string _baseUrl;
 
     public AuthController(
         IUserRepository users,
@@ -46,7 +48,9 @@ public sealed class AuthController : ControllerBase
         ITenantRepository tenants,
         IUnitOfWork unitOfWork,
         IOptions<AuthenticationOptions> options,
-        IEmailDispatcher emailDispatcher)
+        IEmailDispatcher emailDispatcher,
+        IPasswordResetTokenRepository passwordResetTokens,
+        IOptions<AppOptions> appOptions)
     {
         _users = users;
         _refreshTokens = refreshTokens;
@@ -56,6 +60,8 @@ public sealed class AuthController : ControllerBase
         _unitOfWork = unitOfWork;
         _options = options.Value;
         _emailDispatcher = emailDispatcher;
+        _passwordResetTokens = passwordResetTokens;
+        _baseUrl = appOptions.Value.BaseUrl;
     }
 
     [HttpPost("/api/auth/login")]
@@ -170,9 +176,9 @@ public sealed class AuthController : ControllerBase
             return Unauthorized(ApiResponseFactory.Unauthorized("No user context."));
         }
 
-        var isSuperAdmin = user.TenantRoles.Any(r => r.Role == UserRole.SuperAdmin);
-        var assignment = user.TenantRoles.FirstOrDefault(r => r.TenantId == request.TenantId);
-        if (!isSuperAdmin && assignment is null)
+        var isSuperAdmin = user.TenantRoles.Any(IsSuperAdminAssignment);
+        var hasAssignment = user.TenantRoles.Any(r => r.TenantId == request.TenantId);
+        if (!isSuperAdmin && !hasAssignment)
         {
             return StatusCode(StatusCodes.Status403Forbidden,
                 ApiResponseFactory.Forbidden("You are not assigned to the requested tenant."));
@@ -185,10 +191,19 @@ public sealed class AuthController : ControllerBase
         }
 
         var access = _jwt.CreateAccessToken(user, request.TenantId);
-        var role = isSuperAdmin ? Roles.SuperAdmin : assignment!.Role.ToString();
+        // The distinct role names for the switched-to tenant (a Super Admin assignment wins everywhere).
+        var roleNames = isSuperAdmin
+            ? new[] { Roles.SuperAdmin }
+            : user.TenantRoles
+                .Where(r => r.TenantId == request.TenantId)
+                .Select(RoleNameOf)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(n => n, StringComparer.Ordinal)
+                .ToArray();
         // Refresh token is intentionally not rotated on switch (AC-ADM-011.5).
         return Ok(ApiResponseFactory.Success(
-            new SwitchTenantResponse(access.Token, access.ExpiresInSeconds, tenant.Identifier, role), "Tenant switched."));
+            new SwitchTenantResponse(access.Token, access.ExpiresInSeconds, tenant.Identifier, roleNames), "Tenant switched."));
     }
 
     [HttpGet("/api/auth/profile")]
@@ -202,17 +217,22 @@ public sealed class AuthController : ControllerBase
             return Unauthorized(ApiResponseFactory.Unauthorized("No user context."));
         }
 
+        // Group the (multi-role) assignments by tenant → one membership row carrying all role names.
         var memberships = new List<TenantMembershipDto>();
-        foreach (var assignment in user.TenantRoles)
+        foreach (var group in user.TenantRoles.GroupBy(r => r.TenantId))
         {
-            var tenant = await _tenants.GetByIdAsync(assignment.TenantId, cancellationToken);
+            var tenant = await _tenants.GetByIdAsync(group.Key, cancellationToken);
+            var roleNames = group
+                .Select(RoleNameOf)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(n => n, StringComparer.Ordinal)
+                .ToArray();
             memberships.Add(new TenantMembershipDto(
-                assignment.TenantId,
+                group.Key,
                 tenant?.Identifier ?? string.Empty,
                 tenant?.Name ?? string.Empty,
-                assignment.Role.ToString(),
-                // The RBAC role name (custom roles); falls back to the legacy enum for display.
-                assignment.RoleEntity?.Name ?? assignment.Role.ToString(),
+                roleNames,
                 tenant?.TimeZoneId ?? "UTC"));
         }
 
@@ -260,6 +280,14 @@ public sealed class AuthController : ControllerBase
         return Ok(ApiResponseFactory.Success(new { message = "Password changed." }, "Password changed."));
     }
 
+    /// <summary>The RBAC role name for an assignment, falling back to the legacy enum string.</summary>
+    private static string RoleNameOf(UserTenantRole assignment)
+        => assignment.RoleEntity?.Name ?? assignment.Role.ToString();
+
+    /// <summary>True when an assignment resolves to the SuperAdmin role (by name, else legacy enum).</summary>
+    private static bool IsSuperAdminAssignment(UserTenantRole assignment)
+        => string.Equals(RoleNameOf(assignment), Roles.SuperAdmin, StringComparison.Ordinal);
+
     private Task<User?> CurrentUserAsync(CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
@@ -283,4 +311,120 @@ public sealed class AuthController : ControllerBase
 
     private static string HashToken(string token)
         => Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+
+    // -------------------- Self-service password reset --------------------
+
+    /// <summary>How long an emailed reset link stays valid.</summary>
+    private const int ResetTokenLifetimeMinutes = 60;
+
+    /// <summary>
+    /// Starts the "forgot password" flow: emails a one-time reset link to the address if it belongs to an
+    /// active account. ALWAYS returns 200 with the same body — a different response for a known address
+    /// would turn this endpoint into an account-enumeration oracle.
+    /// </summary>
+    [HttpPost("/api/auth/forgot-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request, CancellationToken cancellationToken)
+    {
+        const string Message = "If that email address has an account, a reset link is on its way.";
+        var email = request.Email?.Trim();
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            return Ok(ApiResponseFactory.Success(new { message = Message }, Message));
+        }
+
+        var user = await _users.GetByEmailAsync(email, cancellationToken);
+        // Inactive accounts and unknown addresses take the same silent path as a success.
+        if (user is null || !user.IsActive)
+        {
+            return Ok(ApiResponseFactory.Success(new { message = Message }, Message));
+        }
+
+        var now = DateTime.UtcNow;
+
+        // One live link per account: requesting again supersedes the previous email.
+        await _passwordResetTokens.InvalidateAllForUserAsync(user.Id, now, cancellationToken);
+
+        // 32 random bytes, URL-safe. Only its hash is stored, so the plaintext exists solely in the email.
+        var plaintext = Base64UrlToken();
+        await _passwordResetTokens.AddAsync(new PasswordResetToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            TokenHash = HashToken(plaintext),
+            ExpiresAtUtc = now.AddMinutes(ResetTokenLifetimeMinutes),
+        }, cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // The flow is anonymous, so there is no active tenant — send through the user's first assignment,
+        // which is the same fallback the change-password confirmation uses.
+        if (user.TenantRoles.FirstOrDefault()?.TenantId is { } tenantId)
+        {
+            _emailDispatcher.Enqueue(tenantId, EmailTemplateKey.PasswordResetLink, user.Email,
+                new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["FullName"] = user.Person?.FullName ?? user.DisplayName,
+                    ["ResetUrl"] = $"{_baseUrl.TrimEnd('/')}/auth/reset-password?token={Uri.EscapeDataString(plaintext)}",
+                    ["ExpiryMinutes"] = ResetTokenLifetimeMinutes.ToString(),
+                });
+        }
+
+        return Ok(ApiResponseFactory.Success(new { message = Message }, Message));
+    }
+
+    /// <summary>
+    /// Completes the flow: redeems the token and sets the new password. The token is single-use and
+    /// time-limited; success invalidates every existing session, as changing a password does.
+    /// </summary>
+    [HttpPost("/api/auth/reset-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordWithTokenRequest request, CancellationToken cancellationToken)
+    {
+        // One message for every failure mode — expired, spent, forged — so nothing about a token's state
+        // can be probed from the outside.
+        IActionResult Invalid() => BadRequest(ApiResponseFactory.Error(
+            ApiErrorCodes.ValidationFailed, "Validation failed.",
+            "This reset link is invalid or has expired. Please request a new one."));
+
+        if (string.IsNullOrWhiteSpace(request.Token) || string.IsNullOrWhiteSpace(request.NewPassword))
+        {
+            return Invalid();
+        }
+
+        var token = await _passwordResetTokens.GetByHashAsync(HashToken(request.Token.Trim()), cancellationToken);
+        var now = DateTime.UtcNow;
+        if (token is null || token.UsedOnUtc is not null || token.ExpiresAtUtc <= now)
+        {
+            return Invalid();
+        }
+
+        var user = await _users.GetByIdAsync(token.UserId, cancellationToken);
+        if (user is null || !user.IsActive)
+        {
+            return Invalid();
+        }
+
+        var (hash, salt) = _passwordHasher.Hash(request.NewPassword);
+        user.PasswordHash = hash;
+        user.Salt = salt;
+        // They chose this password deliberately, so do not force another change at sign-in.
+        user.MustChangePassword = false;
+        user.TokenVersion++; // invalidate all sessions
+        _users.Update(user);
+
+        token.UsedOnUtc = now;
+        _passwordResetTokens.Update(token);
+
+        await _refreshTokens.RevokeAllForUserAsync(user.Id, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Ok(ApiResponseFactory.Success(
+            new { message = "Your password has been reset." }, "Your password has been reset."));
+    }
+
+    /// <summary>A 256-bit URL-safe random token (no padding), suitable for a query string.</summary>
+    private static string Base64UrlToken()
+        => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+            .TrimEnd('=').Replace('+', '-').Replace('/', '_');
 }

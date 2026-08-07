@@ -2,7 +2,7 @@
   <div class="column q-gutter-sm">
     <!-- Header: title (left) + quick search with loader + Add note (right) -->
     <div class="row items-center no-wrap q-gutter-sm">
-      <div class="text-subtitle1">Notes</div>
+      <!-- <div class="text-subtitle1">Notes</div> -->
       <q-space />
       <q-input
         v-model="search"
@@ -130,6 +130,10 @@ import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import { useAuthStore } from "stores/auth";
+import { escapeHtml, sanitizeHtml, isHtml, hasRichTextContent as hasContent } from "utils/richText";
+// Token markup and id extraction are shared with AppRichTextField's CKEditor mentions — one definition,
+// so a mention typed in either editor resolves in both.
+import { mentionTokenHtml, extractMentionIds, fetchMentionCandidates } from "composables/useMentions";
 
 const props = defineProps({
   entityType: { type: Number, required: true },
@@ -246,7 +250,7 @@ const onEditorKeyup = () => {
 
 const fetchCandidates = async (term) => {
   try {
-    candidates.value = (await ufNotesApi.mentionCandidates(term)) || [];
+    candidates.value = await fetchMentionCandidates(term);
     mentionOpen.value = true;
   } catch {
     candidates.value = [];
@@ -261,19 +265,10 @@ const pickMention = (c) => {
     sel.removeAllRanges();
     sel.addRange(mentionRange);
   }
-  const html = `<span class="uf-mention" data-user-id="${c.userId}" contenteditable="false">@${escapeHtml(c.name)}</span>&nbsp;`;
+  const html = `${mentionTokenHtml(c)}&nbsp;`;
   editorRef.value?.runCmd?.("insertHTML", html);
   mentionRange = null;
   mentionOpen.value = false;
-};
-
-// User ids are derived from the mention tokens present in the saved HTML — robust to manual edits.
-const extractMentionIds = (html) => {
-  const doc = new DOMParser().parseFromString(html || "", "text/html");
-  const ids = Array.from(doc.querySelectorAll("[data-user-id]"))
-    .map((el) => el.getAttribute("data-user-id"))
-    .filter(Boolean);
-  return [...new Set(ids)];
 };
 
 // ---- post / edit / delete ----
@@ -334,31 +329,11 @@ const remove = async (note) => {
 };
 
 // ---- rendering ----
-const escapeHtml = (s) => (s || "").replace(/[&<>"']/g, (c) => (
-  { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c]
-));
-
-// True when the editor holds visible content (q-editor leaves an empty <br> / whitespace behind).
-const hasContent = (html) => !!(html || "").replace(/<br\s*\/?>/gi, "").replace(/<[^>]+>/g, "").replace(/&nbsp;/gi, " ").trim();
-
-// Allowlist sanitizer for stored HTML notes (no sanitizer dependency available): drops dangerous
-// elements, inline event handlers, and javascript: URLs while keeping basic rich-text markup.
-const sanitizeHtml = (html) => {
-  const doc = new DOMParser().parseFromString(html || "", "text/html");
-  doc.querySelectorAll("script,style,iframe,object,embed,link,meta,form,input").forEach((n) => n.remove());
-  doc.querySelectorAll("*").forEach((el) => {
-    Array.from(el.attributes).forEach((attr) => {
-      const name = attr.name.toLowerCase();
-      if (name.startsWith("on")) el.removeAttribute(attr.name);
-      else if ((name === "href" || name === "src") && /^\s*javascript:/i.test(attr.value)) el.removeAttribute(attr.name);
-    });
-  });
-  return doc.body.innerHTML;
-};
+// Sanitizing/escaping lives in utils/richText so notes and the description editors share one allowlist.
 
 // New notes are q-editor HTML; legacy notes are plain text with @[Name](id) tokens.
 const renderBody = (body) => {
-  if (/<[a-z][\s\S]*>/i.test(body || "")) {
+  if (isHtml(body)) {
     return sanitizeHtml(body);
   }
   return escapeHtml(body).replace(

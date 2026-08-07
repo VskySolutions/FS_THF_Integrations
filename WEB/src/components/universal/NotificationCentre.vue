@@ -1,5 +1,6 @@
 <template>
-  <q-btn flat round dense icon="o_notifications" aria-label="Notifications">
+  <!-- grey-8 matches the user menu sitting next to it in the header. -->
+  <q-btn flat round dense color="grey-8" icon="o_notifications" aria-label="Notifications">
     <q-badge v-if="unread > 0" floating color="negative" :label="unread > 99 ? '99+' : unread" />
     <q-menu anchor="bottom right" self="top right" @show="loadLatest">
       <q-card style="width: 360px; max-width: 90vw;">
@@ -19,7 +20,7 @@
             :key="n.id"
             v-close-popup
             clickable
-            :class="{ 'bg-blue-1': !n.isRead }"
+            :class="{ 'bg-teal-1': !n.isRead }"
             @click="openNotification(n)"
           >
             <q-item-section avatar>

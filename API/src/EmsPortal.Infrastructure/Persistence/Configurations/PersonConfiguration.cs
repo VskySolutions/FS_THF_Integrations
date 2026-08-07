@@ -70,5 +70,9 @@ internal sealed class PersonConfiguration : IEntityTypeConfiguration<Person>
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(p => p.TenantId);
+
+        // Provenance. Deliberately not an FK — the source is polymorphic, and the pair is indexed
+        // together because it is always read together ("everyone this REMS request brought in").
+        builder.HasIndex(p => new { p.SourceEntityType, p.SourceEntityId });
     }
 }

@@ -18,6 +18,9 @@
 
     <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
       <app-column-filters v-model="filters" :columns="filterableColumns" />
+      <q-toggle
+        v-if="canManageDeleted" v-model="showDeleted" label="Show deleted?" dense class="q-mt-md"
+      />
     </app-filter-drawer>
 
     <app-data-table
@@ -83,6 +86,10 @@
       </template>
     </app-data-table>
 
+    <deleted-records-panel
+      v-if="canManageDeleted" :entity-type="EntityType.Person" :show="showDeleted" @restored="load"
+    />
+
     <!-- Create person -->
     <app-form-drawer v-model="formOpen" title="Create Person" :saving="saving" @submit="submitForm" @cancel="resetForm">
       <q-form ref="formRef" greedy>
@@ -95,16 +102,19 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted } from "vue";
 import { useRouter } from "vue-router";
-import { personApi, getApiErrorMessage } from "services/api";
+import { personApi, getApiErrorMessage, EntityType } from "services/api";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
+import { useDeletedRecords } from "composables/useDeletedRecords";
 import { useDateFormat } from "composables/useDateFormat";
+import { useAuditColumns } from "composables/useAuditColumns";
 import { debounce } from "quasar";
 
 import AppDataTable from "components/common/AppDataTable.vue";
+import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
@@ -114,10 +124,12 @@ import { blankPersonForm } from "composables/personForm";
 import { useTenantOptions } from "composables/useTenantOptions";
 
 const router = useRouter();
+const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const { has } = usePermissions();
 const fmt = useDateFormat();
+const auditColumns = useAuditColumns();
 const { canChooseTenant, activeTenantId, tenantOptions, loadingTenants, loadTenants } = useTenantOptions();
 
 const canWrite = computed(() => has(Permissions.PersonsWrite));
@@ -129,6 +141,16 @@ const tenantFilterOptions = computed(() =>
   (canChooseTenant.value && tenantOptions.value.length ? tenantOptions.value : null));
 
 // Filterable columns are server-side; text/date columns are covered by the search box.
+// Where a person record came from. The API sends the EntityType NAME; these are the ones that actually
+// mint persons today — anything else falls through to its own name rather than being hidden, and a row
+// with no source predates provenance tracking (unknown, not "created by nothing").
+const SOURCE_LABELS = {
+  Person: "Added manually",
+  Rems: "REMS request",
+  User: "User account"
+};
+const sourceLabel = (value) => (value ? (SOURCE_LABELS[value] || value) : "—");
+
 const columns = computed(() => [
   {
     name: "tenantName",
@@ -146,7 +168,12 @@ const columns = computed(() => [
   { name: "jobTitle", label: "Job Title", field: "jobTitle", align: "left", sortable: true, filterable: false },
   { name: "isUser", label: "Account", field: "isUser", align: "left", sortable: true, default: true, filterOptions: [{ label: "User", value: true }, { label: "Not a user", value: false }] },
   { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true, filterOptions: [{ label: "Active", value: true }, { label: "Inactive", value: false }] },
+  // Where the record came from. Filtering is client-side over the loaded page (this list is not
+  // server-filtered on it), so it stays a plain column rather than claiming a server filter it lacks.
+  { name: "sourceEntityType", label: "Source", field: (r) => sourceLabel(r.sourceEntityType), align: "left", default: true, filterable: false },
   { name: "updatedOnUtc", label: "Updated", field: (r) => fmt.formatDateTime(r.updatedOnUtc), align: "left", sortable: true, default: true, filterable: false },
+  // Updated On is already visible above, so the shared set contributes the other three.
+  ...auditColumns({ only: ["createdBy", "createdOnUtc", "updatedBy"] }),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ]);
 

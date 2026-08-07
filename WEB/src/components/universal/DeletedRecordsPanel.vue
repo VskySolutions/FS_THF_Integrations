@@ -224,7 +224,7 @@ defineExpose({ refresh: () => props.show && load() });
 
 <style scoped>
 /* Red accent marks this as the destructive "deleted records" area. */
-/* Match the "All customers" table (the AppDataTable is the card); just tint it red. */
+/* Match the list's data table (the AppDataTable is the card); just tint it red. */
 .uf-deleted :deep(.app-data-table) {
   border-left: 3px solid var(--q-negative);
 }

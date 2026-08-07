@@ -46,4 +46,26 @@ public static class ActivityEventTypes
     public const string AttachmentDeleted = "AttachmentDeleted";
     public const string ChecklistItemCompleted = "ChecklistItemCompleted";
     public const string Restored = "Restored";
+
+    // ---- REMS request lifecycle (WO-111) ----
+    public const string RemsCreated = "RemsCreated";
+    public const string RemsSubmitted = "RemsSubmitted";
+    public const string RemsAssigned = "RemsAssigned";
+    public const string RemsDuplicated = "RemsDuplicated";
+    public const string RemsDeleted = "RemsDeleted";
+
+    // ---- REMS EMS form lifecycle (WO-112) ----
+    public const string RemsFormBuilt = "RemsFormBuilt";
+    public const string RemsFormSent = "RemsFormSent";
+
+    // ---- REMS public client form (WO-113) ----
+    public const string RemsFormSubmitted = "RemsFormSubmitted";
+
+    // ---- REMS engagement workspace + approval (WO-114) ----
+    public const string RemsEngagementUpdated = "RemsEngagementUpdated";
+    public const string RemsApprovalSent = "RemsApprovalSent";
+    public const string RemsApprovalResubmitted = "RemsApprovalResubmitted";
+    public const string RemsApproved = "RemsApproved";
+    public const string RemsRejected = "RemsRejected";
+    public const string RemsFullyApproved = "RemsFullyApproved";
 }

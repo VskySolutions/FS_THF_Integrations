@@ -16,6 +16,9 @@ internal sealed class PermissionGroupConfiguration : IEntityTypeConfiguration<Pe
         builder.Property(g => g.Description).HasMaxLength(500);
         builder.Property(g => g.IsActive).IsRequired();
 
+        // Optional capacity cap (WO-119): nullable int, null = unlimited. No special constraint.
+        builder.Property(g => g.CapacityLimit);
+
         // Unique per (tenant, name); names may repeat across tenants.
         builder.HasIndex(g => new { g.TenantId, g.Name }).IsUnique().HasFilter("[Deleted] = 0");
         builder.HasIndex(g => g.TenantId);

@@ -29,14 +29,6 @@ public static class Permissions
     public const string RolesWrite = "roles.write";
     public const string RolesAssign = "roles.assign";
 
-    // Customer Management workflow
-    /// <summary>Create / enter Customer Requests (Step 1 Basic Information) and save drafts.</summary>
-    public const string CustomersDataEntry = "customers.dataEntry";
-    /// <summary>Enrich submitted Customer Requests and send them for approval (Customer Role User).</summary>
-    public const string CustomersReview = "customers.review";
-    /// <summary>Complete Step 2 fields and approve/reject/return Customer Requests (Customer Approver).</summary>
-    public const string CustomersApprove = "customers.approve";
-
     // Permission Groups (RBAC composition layer)
     /// <summary>Create, edit, and compose Permission Groups (and compose them into roles).</summary>
     public const string GroupsManage = "groups.manage";
@@ -58,6 +50,36 @@ public static class Permissions
     /// <summary>Create, edit, reorder, and delete a tenant's own option lists and values.</summary>
     public const string OptionSetsManage = "optionSets.manage";
 
+    // REMS — Real Estate Management System (WO-110+). The operational roles Partner/Admin/Approver
+    // are composed of these keys (see ForPartner/ForAdmin/ForApprover).
+    /// <summary>View REMS requests.</summary>
+    public const string RemsRequestsRead = "rems.requests.read";
+    /// <summary>Create REMS requests.</summary>
+    public const string RemsRequestsCreate = "rems.requests.create";
+    /// <summary>Edit REMS requests.</summary>
+    public const string RemsRequestsUpdate = "rems.requests.update";
+    /// <summary>Delete REMS requests.</summary>
+    public const string RemsRequestsDelete = "rems.requests.delete";
+    /// <summary>Assign a REMS request to a person/pool.</summary>
+    public const string RemsRequestsAssign = "rems.requests.assign";
+    /// <summary>View the shared REMS request pool.</summary>
+    public const string RemsPoolRead = "rems.pool.read";
+    /// <summary>Create, edit, and configure REMS forms.</summary>
+    public const string RemsFormsManage = "rems.forms.manage";
+    /// <summary>Send REMS forms to recipients.</summary>
+    public const string RemsFormsSend = "rems.forms.send";
+    /// <summary>Create and manage REMS engagements.</summary>
+    public const string RemsEngagementsManage = "rems.engagements.manage";
+    /// <summary>Initiate/route a REMS approval round.</summary>
+    public const string RemsApprovalsSend = "rems.approvals.send";
+    // There is deliberately no "act on an approval task" permission. Approver-ness is data, not a role —
+    // the CSE, each commission recipient and anyone added on the Approval tab become approvers, and any
+    // role can end up in one of those seats. A permission gate could therefore contradict the engagement
+    // data and lock a real approver out of a task created for them. Ownership is the check instead:
+    // RemsApprovalController requires an authenticated caller and ApproverId == caller on every task.
+    /// <summary>Read the REMS email log.</summary>
+    public const string RemsEmailLogRead = "rems.emailLog.read";
+
     /// <summary>Every defined permission key.</summary>
     public static readonly IReadOnlyList<string> All = new[]
     {
@@ -65,11 +87,13 @@ public static class Permissions
         PersonsRead, PersonsWrite, PersonsDelete,
         UsersRead, UsersWrite, UsersResetPassword, UsersGroupManagement,
         RolesRead, RolesWrite, RolesAssign,
-        CustomersDataEntry, CustomersReview, CustomersApprove,
         GroupsManage,
         EmailManage,
         SettingsManage, RecordsAdminDelete,
-        OptionSetsRead, OptionSetsManage
+        OptionSetsRead, OptionSetsManage,
+        RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsDelete, RemsRequestsAssign,
+        RemsPoolRead, RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
+        RemsApprovalsSend, RemsEmailLogRead
     };
 
     /// <summary>Permission sets for the seeded system roles.</summary>
@@ -78,13 +102,13 @@ public static class Permissions
     public static IReadOnlyList<string> ForTenantAdmin() => new[]
     {
         TenantsRead,
-        // Deleting persons and changing role assignments are Super-Admin-only (PersonsDelete /
-        // RolesAssign intentionally excluded here).
+        // Deleting persons stays Super-Admin-only (PersonsDelete intentionally excluded here).
         PersonsRead, PersonsWrite,
         UsersRead, UsersWrite, UsersResetPassword, UsersGroupManagement,
-        RolesRead,
-        // Tenant Admins act as Customer data-entry, Customer Role User and Customer Approver.
-        CustomersDataEntry, CustomersReview, CustomersApprove,
+        // Tenant Admins manage the roles of users in their OWN tenant. The permission alone is not the
+        // whole boundary: UsersController confines them to their active tenant, refuses to grant the
+        // Super Admin role, and refuses a Super Admin target.
+        RolesRead, RolesAssign,
         // Tenant Admins manage Permission Groups within their own tenant.
         GroupsManage,
         // Tenant Admins manage their tenant's SMTP email accounts.
@@ -92,21 +116,50 @@ public static class Permissions
         // Tenant Admins manage tenant-wide UF settings and the deleted-records lifecycle.
         SettingsManage, RecordsAdminDelete,
         // Tenant Admins manage their tenant's option lists.
-        OptionSetsRead, OptionSetsManage
+        OptionSetsRead, OptionSetsManage,
+        // Full REMS access within their tenant — the same set a REMS Admin holds. Tenant isolation still
+        // applies: this widens WHAT they can do in their tenant, never WHICH tenant.
+        RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsDelete, RemsRequestsAssign,
+        RemsPoolRead, RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
+        RemsApprovalsSend, RemsEmailLogRead
     };
 
-    public static IReadOnlyList<string> ForOperator() => Array.Empty<string>();
+    /// <summary>REMS Partner: works their own requests (read/create/update) and assigns them.</summary>
+    public static IReadOnlyList<string> ForPartner() => new[]
+    {
+        RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsAssign, OptionSetsRead
+    };
+
+    /// <summary>REMS Admin: full request lifecycle plus pool, forms, engagements, approvals routing and the email log.</summary>
+    public static IReadOnlyList<string> ForAdmin() => new[]
+    {
+        RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsDelete, RemsRequestsAssign,
+        RemsPoolRead, RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
+        RemsApprovalsSend, RemsEmailLogRead, OptionSetsRead
+    };
 
     /// <summary>
-    /// The seeded permission set for a system role name (SuperAdmin/TenantAdmin/Operator), or an
-    /// empty set for an unrecognised name. Used as the fallback when a caller carries only a role
-    /// claim (API-key callers, pre-RBAC tokens) and no explicit permission claims.
+    /// REMS Approver: grants nothing, and that is the point. Deciding an approval task is authorised by
+    /// OWNING the task, so no permission is needed to do it — and none could be required without risking
+    /// locking a genuine approver out. The role's job is to mark someone as offerable in the "add
+    /// approvers" picker (<c>RemsApprovalController.ApproverOptionsAsync</c> lists its holders); it is a
+    /// directory, not a capability.
+    /// </summary>
+    public static IReadOnlyList<string> ForApprover() => Array.Empty<string>();
+
+    /// <summary>
+    /// The seeded permission set for a system role name (SuperAdmin/TenantAdmin and the REMS operational
+    /// roles Partner/Admin/Approver), or an empty set for any other name (including custom roles). Used
+    /// as the fallback when an assignment carries no explicit permission keys and when a caller holds
+    /// only a role claim (API-key callers, pre-RBAC tokens).
     /// </summary>
     public static IReadOnlyList<string> ForSystemRole(string? roleName) => roleName switch
     {
         Roles.SuperAdmin => ForSuperAdmin(),
         Roles.TenantAdmin => ForTenantAdmin(),
-        Roles.Operator => ForOperator(),
+        Roles.Partner => ForPartner(),
+        Roles.Admin => ForAdmin(),
+        Roles.Approver => ForApprover(),
         _ => Array.Empty<string>(),
     };
 }

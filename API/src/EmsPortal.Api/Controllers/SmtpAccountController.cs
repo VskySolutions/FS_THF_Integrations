@@ -262,11 +262,13 @@ public sealed class SmtpAccountController : ControllerBase
         _ => BadRequest(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, "Validation failed.", ex.Message)),
     };
 
-    /// <summary>Projects accounts to summaries, resolving creator ids to display names. Password is never included.</summary>
+    /// <summary>Projects accounts to summaries, resolving the audit actor ids to display names. Password is never included.</summary>
     private async Task<IReadOnlyList<SmtpAccountSummaryResponse>> ToSummariesAsync(IReadOnlyList<SmtpAccount> accounts, CancellationToken cancellationToken)
     {
         var creatorNames = await _users.GetFullNamesAsync(
-            accounts.Where(a => a.CreatedById.HasValue).Select(a => a.CreatedById!.Value), cancellationToken);
+            accounts.SelectMany(a => new[] { a.CreatedById, a.UpdatedById })
+                .Where(id => id.HasValue).Select(id => id!.Value),
+            cancellationToken);
 
         return accounts.Select(a => new SmtpAccountSummaryResponse(
             a.Id,
@@ -281,6 +283,7 @@ public sealed class SmtpAccountController : ControllerBase
             a.IsActive,
             a.CreatedById is { } cid && creatorNames.TryGetValue(cid, out var name) ? name : null,
             a.CreatedOnUtc,
+            a.UpdatedById is { } uid && creatorNames.TryGetValue(uid, out var updater) ? updater : null,
             a.UpdatedOnUtc)).ToList();
     }
 

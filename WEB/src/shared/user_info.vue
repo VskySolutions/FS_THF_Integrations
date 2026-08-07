@@ -18,8 +18,8 @@
           <q-item-section>
             <q-item-label class="text-subtitle1 text-weight-medium text-capitalize">{{ displayName }}</q-item-label>
             <q-item-label caption>{{ email }}</q-item-label>
-            <q-item-label v-if="role" caption class="text-capitalize user-card__role">
-              {{ role }}
+            <q-item-label v-if="roles.length" caption class="text-capitalize user-card__role">
+              {{ roles.join(" · ") }}
               <q-icon v-if="permissions.length" name="o_info" size="14px" class="q-ml-xs cursor-pointer" />
               <q-tooltip v-if="permissions.length" anchor="bottom left" self="top left" max-width="340px" class="bg-grey-9 text-white">
                 <div class="text-weight-medium q-mb-xs">Permissions ({{ permissions.length }})</div>
@@ -109,7 +109,8 @@ const tenantStore = useTenantStore();
 
 const displayName = computed(() => authStore.user?.displayName || authStore.user?.email || "Account");
 const email = computed(() => authStore.user?.email || "");
-const role = computed(() => tenantStore.activeRole);
+// All RBAC role names the user holds in the active tenant (multi-role, WO-123).
+const roles = computed(() => tenantStore.activeRoles);
 
 // Active tenant name (falls back to its identifier) shown under the role.
 const tenantName = computed(() => tenantStore.activeTenant?.name || tenantStore.activeTenant?.identifier || "");

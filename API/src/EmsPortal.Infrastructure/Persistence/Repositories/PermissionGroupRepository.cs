@@ -47,7 +47,8 @@ internal sealed class PermissionGroupRepository : IPermissionGroupRepository
 
         var total = await query.CountAsync(cancellationToken);
         var items = await query
-            .OrderBy(g => g.Name)
+            .OrderByDescending(g => g.UpdatedOnUtc)
+            .ThenBy(g => g.Name)
             .Skip((page - 1) * limit)
             .Take(limit)
             .ToListAsync(cancellationToken);
@@ -123,6 +124,78 @@ internal sealed class PermissionGroupRepository : IPermissionGroupRepository
         => await _dbContext.RolePermissionGroups.AddAsync(link, cancellationToken);
 
     public void RemoveRoleLink(RolePermissionGroup link) => _dbContext.RolePermissionGroups.Remove(link);
+
+    public async Task<IReadOnlyList<PermissionGroup>> GetGroupsByRolesAsync(IEnumerable<Guid> roleIds, CancellationToken cancellationToken = default)
+    {
+        var ids = roleIds.Distinct().ToList();
+        if (ids.Count == 0)
+        {
+            return Array.Empty<PermissionGroup>();
+        }
+
+        var groupIds = _dbContext.RolePermissionGroups.Where(l => ids.Contains(l.RoleId)).Select(l => l.PermissionGroupId);
+        return await _dbContext.PermissionGroups
+            .IgnoreQueryFilters()
+            .Where(g => groupIds.Contains(g.Id) && !g.Deleted)
+            .ToListAsync(cancellationToken);
+    }
+
+    // ---- Capacity / usage (WO-119) ----
+
+    public async Task<int> CountActiveMembersAsync(
+        Guid groupId, Guid tenantId, IEnumerable<Guid>? additionalRoleIds = null, CancellationToken cancellationToken = default)
+    {
+        // Roles that compose this group (optionally including roles about to be composed in).
+        var composingRoleIds = _dbContext.RolePermissionGroups.Where(l => l.PermissionGroupId == groupId).Select(l => l.RoleId);
+        var extra = additionalRoleIds?.Distinct().ToList() ?? new List<Guid>();
+
+        // Distinct active users holding at least one such active role assignment in the group's tenant.
+        var userIds =
+            from utr in _dbContext.UserTenantRoles.IgnoreQueryFilters()
+            join u in _dbContext.Users.IgnoreQueryFilters() on utr.UserId equals u.Id
+            where !utr.Deleted
+                && utr.TenantId == tenantId
+                && (composingRoleIds.Contains(utr.RoleId) || extra.Contains(utr.RoleId))
+                && !u.Deleted
+                && u.IsActive
+            select utr.UserId;
+
+        return await userIds.Distinct().CountAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, int>> CountActiveMembersForGroupsAsync(
+        IReadOnlyCollection<Guid> groupIds, CancellationToken cancellationToken = default)
+    {
+        if (groupIds.Count == 0)
+        {
+            return new Dictionary<Guid, int>();
+        }
+
+        // One row per (group, active member); each group is scoped to its OWN tenant (a Super Admin's
+        // list may span tenants). Count distinct users per group in a single round-trip (no N+1).
+        var rows =
+            from link in _dbContext.RolePermissionGroups.Where(l => groupIds.Contains(l.PermissionGroupId))
+            join g in _dbContext.PermissionGroups.IgnoreQueryFilters() on link.PermissionGroupId equals g.Id
+            join utr in _dbContext.UserTenantRoles.IgnoreQueryFilters() on link.RoleId equals utr.RoleId
+            join u in _dbContext.Users.IgnoreQueryFilters() on utr.UserId equals u.Id
+            where !g.Deleted && !utr.Deleted && utr.TenantId == g.TenantId && !u.Deleted && u.IsActive
+            select new { link.PermissionGroupId, utr.UserId };
+
+        var counts = await rows
+            .GroupBy(x => x.PermissionGroupId)
+            .Select(grp => new { GroupId = grp.Key, Count = grp.Select(x => x.UserId).Distinct().Count() })
+            .ToListAsync(cancellationToken);
+
+        return counts.ToDictionary(x => x.GroupId, x => x.Count);
+    }
+
+    public Task<bool> IsUserActiveMemberAsync(Guid groupId, Guid tenantId, Guid userId, CancellationToken cancellationToken = default)
+    {
+        var composingRoleIds = _dbContext.RolePermissionGroups.Where(l => l.PermissionGroupId == groupId).Select(l => l.RoleId);
+        return _dbContext.UserTenantRoles
+            .IgnoreQueryFilters()
+            .AnyAsync(utr => !utr.Deleted && utr.TenantId == tenantId && utr.UserId == userId && composingRoleIds.Contains(utr.RoleId), cancellationToken);
+    }
 
     // ---- Templates ----
 

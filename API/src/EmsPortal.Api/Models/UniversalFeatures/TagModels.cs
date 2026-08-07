@@ -19,7 +19,20 @@ public sealed class UpdateTagRequest
 }
 
 /// <summary>A tag as returned to the client, with usage count.</summary>
-public sealed record TagResponse(Guid Id, string Name, string? Colour, string? Category, int UsageCount);
+/// <summary>
+/// A tag in the admin catalogue. The trailing four are the audit trail every list offers as
+/// hidden-by-default columns; they default so the non-list construction sites need not supply them.
+/// </summary>
+public sealed record TagResponse(
+    Guid Id,
+    string Name,
+    string? Colour,
+    string? Category,
+    int UsageCount,
+    string? CreatedBy = null,
+    DateTime? CreatedOnUtc = null,
+    string? UpdatedBy = null,
+    DateTime? UpdatedOnUtc = null);
 
 /// <summary>Request to apply a tag to an entity record.</summary>
 public sealed class ApplyTagRequest

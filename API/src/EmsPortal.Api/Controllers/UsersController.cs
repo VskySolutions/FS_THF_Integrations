@@ -15,7 +15,7 @@ namespace EmsPortal.Api.Controllers;
 
 /// <summary>
 /// User account management (WO-38). Super Admins manage all users; Tenant Admins manage
-/// Operators/Tenant Admins within their active tenant (REQ-ADM-001/002/003/009/010).
+/// Tenant Admins and custom-role users within their active tenant (REQ-ADM-001/002/003/009/010).
 /// </summary>
 [ApiController]
 [Produces("application/json")]
@@ -36,6 +36,10 @@ public sealed class UsersController : ControllerBase
     private readonly IPersonRepository _persons;
     private readonly ITenantRepository _tenants;
     private readonly IUserGroupRepository _groups;
+    private readonly IUserDepartmentRepository _departments;
+    private readonly IRemsSettingsRepository _remsSettings;
+    private readonly IOptionSetRepository _optionSets;
+    private readonly IPermissionGroupRepository _permissionGroups;
     private readonly IEmailNotificationService _emailNotifications;
     private readonly IEmailDispatcher _emailDispatcher;
 
@@ -49,6 +53,10 @@ public sealed class UsersController : ControllerBase
         IPersonRepository persons,
         ITenantRepository tenants,
         IUserGroupRepository groups,
+        IUserDepartmentRepository departments,
+        IRemsSettingsRepository remsSettings,
+        IOptionSetRepository optionSets,
+        IPermissionGroupRepository permissionGroups,
         IEmailNotificationService emailNotifications,
         IEmailDispatcher emailDispatcher)
     {
@@ -61,6 +69,10 @@ public sealed class UsersController : ControllerBase
         _persons = persons;
         _tenants = tenants;
         _groups = groups;
+        _departments = departments;
+        _remsSettings = remsSettings;
+        _optionSets = optionSets;
+        _permissionGroups = permissionGroups;
         _emailNotifications = emailNotifications;
         _emailDispatcher = emailDispatcher;
     }
@@ -70,17 +82,24 @@ public sealed class UsersController : ControllerBase
     [ProducesResponseType<ApiResponse<CreateUserResponse>>(StatusCodes.Status201Created)]
     public async Task<IActionResult> Create([FromBody] CreateUserRequest request, CancellationToken cancellationToken)
     {
-        var (role, roleEntity, roleError) = await ResolveRequestRoleAsync(request.RoleId, request.Role, cancellationToken);
+        var (targetRoles, roleError) = await ResolveTargetRolesAsync(request.RoleIds, request.RoleId, request.Role, cancellationToken);
         if (roleError is not null)
         {
             return roleError;
         }
+        if (targetRoles.Count == 0)
+        {
+            return BadRequest(ApiResponseFactory.Error(
+                ApiErrorCodes.ValidationFailed, "Validation failed.", "At least one role is required."));
+        }
+
+        var anySuperAdmin = targetRoles.Any(IsSuperAdminRole);
 
         Guid? tenantId;
 
         if (User.IsSuperAdmin())
         {
-            if (role != UserRole.SuperAdmin && request.TenantId is null)
+            if (!anySuperAdmin && request.TenantId is null)
             {
                 return BadRequest(ApiResponseFactory.Error(
                     ApiErrorCodes.ValidationFailed, "Validation failed.", "tenantId is required for tenant-scoped roles."));
@@ -90,8 +109,8 @@ public sealed class UsersController : ControllerBase
         }
         else
         {
-            // Tenant Admin: may only create Operator/Tenant Admin in their own tenant.
-            if (role == UserRole.SuperAdmin)
+            // Tenant Admin: may only create non-Super-Admin users in their own tenant.
+            if (anySuperAdmin)
             {
                 return StatusCode(StatusCodes.Status403Forbidden,
                     ApiResponseFactory.Forbidden("Tenant Admins cannot create Super Admin users."));
@@ -102,6 +121,20 @@ public sealed class UsersController : ControllerBase
             {
                 return StatusCode(StatusCodes.Status403Forbidden,
                     ApiResponseFactory.Forbidden("No active tenant for the caller."));
+            }
+        }
+
+        // Capacity (WO-119): if any target role composes a capped group in the tenant, reject when adding
+        // this new (active) user would push the group past its limit (AC-PG-013.2). Checked before any
+        // persistence so a rejection never leaves a half-created account.
+        var userId = Guid.NewGuid();
+        if (tenantId is { } capacityTenant)
+        {
+            var capacityError = await CheckAssignmentCapacityAsync(
+                userId, userIsActive: true, capacityTenant, targetRoles.Select(r => r.RoleId).ToList(), cancellationToken);
+            if (capacityError is not null)
+            {
+                return capacityError;
             }
         }
 
@@ -137,10 +170,24 @@ public sealed class UsersController : ControllerBase
         var temporaryPassword = _passwordHasher.GenerateTemporaryPassword();
         var (hash, salt) = _passwordHasher.Hash(temporaryPassword);
 
-        var userId = Guid.NewGuid();
+        // Job title is mandatory and must come from the tenant's list — a free-text value would defeat the
+        // point of driving it from an option set.
+        var jobTitle = NormalizeTitle(request.JobTitle);
+        if (jobTitle is null)
+        {
+            return BadRequest(ApiResponseFactory.Error(
+                ApiErrorCodes.ValidationFailed, "Validation failed.", "A job title is required."));
+        }
+        var jobTitles = await ResolveJobTitlesAsync(cancellationToken);
+        if (!jobTitles.Contains(jobTitle, StringComparer.OrdinalIgnoreCase))
+        {
+            return BadRequest(ApiResponseFactory.Error(
+                ApiErrorCodes.ValidationFailed, "Validation failed.", $"Unknown job title '{request.JobTitle}'."));
+        }
 
         // Link the person to the new account and refresh its contact details from the request.
         person.UserId = userId;
+        person.JobTitle = jobTitle;
         if (!string.IsNullOrWhiteSpace(request.PhoneNumber))
         {
             person.MobileNumber = request.PhoneNumber;
@@ -172,24 +219,22 @@ public sealed class UsersController : ControllerBase
 
         if (tenantId is { } tid)
         {
-            var (assignedRoleId, availabilityError) = await ResolveAssignmentRoleIdAsync(role, roleEntity, tid, cancellationToken);
-            if (availabilityError is not null)
+            // One row per role — the user may hold several roles in the tenant (multi-role).
+            foreach (var targetRole in targetRoles)
             {
-                return availabilityError;
+                await _users.AddAssignmentAsync(new UserTenantRole
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = user.Id,
+                    TenantId = tid,
+                    Role = targetRole.LegacyRole,
+                    RoleId = targetRole.RoleId,
+                }, cancellationToken);
             }
-
-            await _users.AddAssignmentAsync(new UserTenantRole
-            {
-                Id = Guid.NewGuid(),
-                UserId = user.Id,
-                TenantId = tid,
-                Role = role,
-                RoleId = assignedRoleId,
-            }, cancellationToken);
         }
 
         await _audit.AddAsync(nameof(User), user.Id.ToString(), "Created",
-            details: $"role={role}; tenant={tenantId}", cancellationToken: cancellationToken);
+            details: $"roles={string.Join(",", targetRoles.Select(r => r.Entity.Name))}; tenant={tenantId}", cancellationToken: cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         // Optionally email the invitation (with the temporary password) via the tenant's active SMTP
@@ -218,7 +263,6 @@ public sealed class UsersController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int limit = 20,
         [FromQuery] string? search = null,
-        [FromQuery] Guid? tenantId = null,
         [FromQuery] bool? isActive = null,
         [FromQuery] string? name = null,
         [FromQuery] string? email = null,
@@ -230,8 +274,11 @@ public sealed class UsersController : ControllerBase
         page = Math.Max(1, page);
         limit = Math.Clamp(limit, 1, 100);
 
-        // Super Admins may filter by any tenant; everyone else is scoped to their active tenant.
-        Guid? tenantFilter = User.IsSuperAdmin() ? tenantId : User.GetActiveTenantId();
+        // Everyone sees only the ACTIVE tenant's users — a Super Admin included. Listing every tenant at
+        // once made the page a mix of accounts the caller cannot act on in their current context, and
+        // duplicated what switching tenant (or the Super-Admin tenant scope) already does. The middleware
+        // rewrites this claim when a Super Admin is scoped elsewhere, so it follows that selection.
+        Guid? tenantFilter = User.GetActiveTenantId();
         var (items, total) = await _users.ListAsync(tenantFilter, search, isActive, name, email, phone, role, group, page, limit, cancellationToken);
 
         var names = await ResolveActorNamesAsync(items.SelectMany(u => new[] { u.CreatedById, u.UpdatedById }), cancellationToken);
@@ -257,11 +304,42 @@ public sealed class UsersController : ControllerBase
             .OrderBy(n => n)
             .ToList();
 
-        var summaries = items.Select(u => new UserSummary(
-            u.Id, u.Email,
-            u.Person?.FirstName ?? string.Empty, u.Person?.LastName ?? string.Empty,
-            u.Person?.FullName ?? u.DisplayName, u.Person?.MobileNumber, TenantNamesFor(u), RolesFor(u), GroupsFor(u, tenantFilter), u.IsActive,
-            NameOf(names, u.CreatedById), NameOf(names, u.UpdatedById), u.CreatedOnUtc, u.UpdatedOnUtc));
+        // Department placement for this page of users, resolved to labels. Both the placements and the
+        // option set are tenant-scoped, so a Super Admin who has not switched into a tenant sees none —
+        // the same guard MapAsync applies to the detail response.
+        var placements = new Dictionary<Guid, UserDepartment>();
+        var departmentLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (User.GetActiveTenantId() is not null)
+        {
+            placements = (await _departments.ListForUsersAsync(items.Select(u => u.Id), cancellationToken))
+                .ToDictionary(d => d.UserId);
+            departmentLabels = (await ResolveDepartmentOptionsAsync(cancellationToken))
+                .ToDictionary(o => o.Value, o => o.Label, StringComparer.OrdinalIgnoreCase);
+        }
+
+        // A code with no matching option (the set changed under an existing placement) still shows itself
+        // rather than an empty cell.
+        (string? Department, bool IsHead) DepartmentFor(Guid userId)
+        {
+            if (!placements.TryGetValue(userId, out var row) || string.IsNullOrWhiteSpace(row.Department))
+            {
+                return (null, false);
+            }
+
+            return (departmentLabels.TryGetValue(row.Department, out var label) ? label : row.Department, row.IsHead);
+        }
+
+        var summaries = items.Select(u =>
+        {
+            var (department, isDepartmentHead) = DepartmentFor(u.Id);
+            return new UserSummary(
+                u.Id, u.Email,
+                u.Person?.FirstName ?? string.Empty, u.Person?.LastName ?? string.Empty,
+                u.Person?.FullName ?? u.DisplayName, u.Person?.MobileNumber, u.Person?.JobTitle,
+                TenantNamesFor(u), RolesFor(u), GroupsFor(u, tenantFilter), u.IsActive,
+                department, isDepartmentHead,
+                NameOf(names, u.CreatedById), NameOf(names, u.UpdatedById), u.CreatedOnUtc, u.UpdatedOnUtc);
+        });
         return Ok(ApiResponseFactory.Paginated(summaries, "Users retrieved.", page, limit, total));
     }
 
@@ -275,7 +353,7 @@ public sealed class UsersController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("User not found."));
         }
 
-        return Ok(ApiResponseFactory.Success(Map(user), "User retrieved."));
+        return Ok(ApiResponseFactory.Success(await MapAsync(user, cancellationToken), "User retrieved."));
     }
 
     [HttpPut("/api/admin/users/{id:guid}")]
@@ -307,10 +385,31 @@ public sealed class UsersController : ControllerBase
             user.TokenVersion++; // email change invalidates sessions
         }
 
+        // A supplied job title must come from the tenant's list. Omitted (null) leaves it alone, so this
+        // does not force a title onto users created before the field existed.
+        if (request.JobTitle is not null)
+        {
+            var newTitle = NormalizeTitle(request.JobTitle);
+            if (newTitle is null)
+            {
+                return BadRequest(ApiResponseFactory.Error(
+                    ApiErrorCodes.ValidationFailed, "Validation failed.", "A job title is required."));
+            }
+            if (!(await ResolveJobTitlesAsync(cancellationToken)).Contains(newTitle, StringComparer.OrdinalIgnoreCase))
+            {
+                return BadRequest(ApiResponseFactory.Error(
+                    ApiErrorCodes.ValidationFailed, "Validation failed.", $"Unknown job title '{request.JobTitle}'."));
+            }
+        }
+
         // Personal fields live on the Person record (WO-61).
         var person = user.Person;
         if (person is not null)
         {
+            if (request.JobTitle is not null)
+            {
+                person.JobTitle = NormalizeTitle(request.JobTitle);
+            }
             if (request.FirstName is not null)
             {
                 person.FirstName = request.FirstName;
@@ -347,7 +446,7 @@ public sealed class UsersController : ControllerBase
         await _audit.AddAsync(nameof(User), user.Id.ToString(), "Updated", cancellationToken: cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return Ok(ApiResponseFactory.Success(Map(user), "User updated."));
+        return Ok(ApiResponseFactory.Success(await MapAsync(user, cancellationToken), "User updated."));
     }
 
     [HttpPut("/api/users/me")]
@@ -375,7 +474,7 @@ public sealed class UsersController : ControllerBase
         _users.Update(user);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return Ok(ApiResponseFactory.Success(Map(user), "Profile updated."));
+        return Ok(ApiResponseFactory.Success(await MapAsync(user, cancellationToken), "Profile updated."));
     }
 
     [HttpPut("/api/admin/users/{id:guid}/status")]
@@ -474,11 +573,13 @@ public sealed class UsersController : ControllerBase
     [RequirePermission(Permissions.RolesAssign)]
     public async Task<IActionResult> AssignTenantRole(Guid id, [FromBody] AssignTenantRoleRequest request, CancellationToken cancellationToken)
     {
-        // Changing a user's role is restricted to Super Admins regardless of any granted permission.
-        if (!User.IsSuperAdmin())
+        // A Super Admin assigns anywhere; a Tenant Admin is confined to their own tenant. Assigning into
+        // another tenant would hand them users they cannot otherwise see.
+        if (!User.IsSuperAdmin() &&
+            (User.GetActiveTenantId() is not { } callerTenant || request.TenantId != callerTenant))
         {
             return StatusCode(StatusCodes.Status403Forbidden,
-                ApiResponseFactory.Forbidden("Only a Super Admin can change role assignments."));
+                ApiResponseFactory.Forbidden("You can only change role assignments within your own tenant."));
         }
 
         var user = await _users.GetByIdAsync(id, cancellationToken);
@@ -487,98 +588,96 @@ public sealed class UsersController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("User not found."));
         }
 
-        // Tenant Admins are scoped to their active tenant (Super Admins are unrestricted).
-        if (!User.IsSuperAdmin())
+        // A Super Admin target is off limits to everyone else — otherwise a Tenant Admin could rewrite the
+        // roles of the account that polices them (mirrors the same guard on Update).
+        if (!User.IsSuperAdmin() && user.TenantRoles.Any(r => r.Role == UserRole.SuperAdmin))
         {
-            var activeTenant = User.GetActiveTenantId();
-            if (activeTenant is null || request.TenantId != activeTenant)
-            {
-                return StatusCode(StatusCodes.Status403Forbidden,
-                    ApiResponseFactory.Forbidden("Tenant Admins can only assign roles within their active tenant."));
-            }
-
-            if (user.TenantRoles.Any(r => r.Role == UserRole.SuperAdmin))
-            {
-                return StatusCode(StatusCodes.Status403Forbidden,
-                    ApiResponseFactory.Forbidden("Tenant Admins cannot manage Super Admin users."));
-            }
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseFactory.Forbidden("Not permitted to manage this user."));
         }
 
-        var (role, roleEntity, roleError) = await ResolveRequestRoleAsync(request.RoleId, request.Role, cancellationToken);
+        var (targetRoles, roleError) = await ResolveTargetRolesAsync(request.RoleIds, request.RoleId, request.Role, cancellationToken);
         if (roleError is not null)
         {
             return roleError;
         }
+        if (targetRoles.Count == 0)
+        {
+            return BadRequest(ApiResponseFactory.Error(
+                ApiErrorCodes.ValidationFailed, "Validation failed.", "At least one role is required."));
+        }
 
-        if (!User.IsSuperAdmin() && role == UserRole.SuperAdmin)
+        // The Super Admin role is never grantable by anyone else (AC-ADM-009.2) — the last of the three
+        // ways scoped role assignment could otherwise become a privilege-escalation path.
+        if (!User.IsSuperAdmin() && targetRoles.Any(IsSuperAdminRole))
         {
             return StatusCode(StatusCodes.Status403Forbidden,
-                ApiResponseFactory.Forbidden("Tenant Admins cannot assign the Super Admin role."));
+                ApiResponseFactory.Forbidden("Only a Super Admin can grant the Super Admin role."));
         }
 
-        var (assignedRoleId, availabilityError) = await ResolveAssignmentRoleIdAsync(role, roleEntity, request.TenantId, cancellationToken);
-        if (availabilityError is not null)
+        // Capacity (WO-119): only roles the user does not already hold in the tenant can add them to a new
+        // group's population. Reject if granting one composes a full capped group and this user would be a
+        // new distinct member beyond the limit (AC-PG-013.2).
+        var currentAssignments = await _users.GetAssignmentsAsync(id, request.TenantId, cancellationToken);
+        var currentRoleIds = currentAssignments.Select(a => a.RoleId).ToHashSet();
+        var addedRoleIds = targetRoles.Select(r => r.RoleId).Where(rid => !currentRoleIds.Contains(rid)).ToList();
+        var capacityError = await CheckAssignmentCapacityAsync(user.Id, user.IsActive, request.TenantId, addedRoleIds, cancellationToken);
+        if (capacityError is not null)
         {
-            return availabilityError;
+            return capacityError;
         }
 
-        var existing = await _users.GetAssignmentAsync(id, request.TenantId, cancellationToken);
-        if (existing is not null)
-        {
-            // reassignment updates rather than duplicates (AC-ADM-006.2)
-            existing.Role = role;
-            existing.RoleId = assignedRoleId;
-        }
-        else
-        {
-            await _users.AddAssignmentAsync(new UserTenantRole
-            {
-                Id = Guid.NewGuid(),
-                UserId = id,
-                TenantId = request.TenantId,
-                Role = role,
-                RoleId = assignedRoleId,
-            }, cancellationToken);
-        }
+        // Reconcile the tenant's role set to exactly the requested roles: add missing, soft-delete absent
+        // (AC-ADM-006.2). The validator guarantees a non-empty set here.
+        await ReconcileTenantRolesAsync(id, request.TenantId, targetRoles, cancellationToken);
 
+        var roleNames = targetRoles.Select(r => r.Entity.Name).ToArray();
         await _audit.AddAsync(nameof(User), id.ToString(), "TenantRoleAssigned",
-            details: $"tenant={request.TenantId}; role={role}", cancellationToken: cancellationToken);
+            details: $"tenant={request.TenantId}; roles={string.Join(",", roleNames)}", cancellationToken: cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return Ok(ApiResponseFactory.Success(new { userId = id, tenantId = request.TenantId, role = role.ToString() }, "Assignment saved."));
+        return Ok(ApiResponseFactory.Success(new { userId = id, tenantId = request.TenantId, roleNames }, "Assignment saved."));
     }
 
     [HttpDelete("/api/admin/users/{id:guid}/tenant-assignments/{tenantId:guid}")]
     [RequirePermission(Permissions.RolesAssign)]
     public async Task<IActionResult> RemoveTenantRole(Guid id, Guid tenantId, CancellationToken cancellationToken)
     {
-        // Removing a user's role assignment is restricted to Super Admins.
+        // Same boundary as assigning: a Tenant Admin may only revoke within their own tenant, and never
+        // strip a Super Admin of theirs.
         if (!User.IsSuperAdmin())
         {
-            return StatusCode(StatusCodes.Status403Forbidden,
-                ApiResponseFactory.Forbidden("Only a Super Admin can change role assignments."));
+            if (User.GetActiveTenantId() is not { } callerTenant || tenantId != callerTenant)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden,
+                    ApiResponseFactory.Forbidden("You can only change role assignments within your own tenant."));
+            }
+
+            var target = await _users.GetByIdAsync(id, cancellationToken);
+            if (target is null)
+            {
+                return NotFound(ApiResponseFactory.NotFound("User not found."));
+            }
+            if (target.TenantRoles.Any(r => r.Role == UserRole.SuperAdmin))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden,
+                    ApiResponseFactory.Forbidden("Not permitted to manage this user."));
+            }
         }
 
-        // Tenant Admins are scoped to their active tenant (Super Admins are unrestricted).
-        if (!User.IsSuperAdmin() && User.GetActiveTenantId() != tenantId)
-        {
-            return StatusCode(StatusCodes.Status403Forbidden,
-                ApiResponseFactory.Forbidden("Tenant Admins can only remove roles within their active tenant."));
-        }
-
-        var existing = await _users.GetAssignmentAsync(id, tenantId, cancellationToken);
-        if (existing is null)
+        var existing = await _users.GetAssignmentsAsync(id, tenantId, cancellationToken);
+        if (existing.Count == 0)
         {
             return NotFound(ApiResponseFactory.NotFound("Assignment not found."));
         }
 
-        if (!User.IsSuperAdmin() && existing.Role == UserRole.SuperAdmin)
+        // Remove tenant access entirely: soft-delete every role the user holds in the tenant
+        // (the resulting set is empty — AC-ADM-006.3).
+        foreach (var assignment in existing)
         {
-            return StatusCode(StatusCodes.Status403Forbidden,
-                ApiResponseFactory.Forbidden("Tenant Admins cannot remove a Super Admin assignment."));
+            _users.RemoveAssignment(assignment);
         }
 
-        _users.RemoveAssignment(existing);
         await _audit.AddAsync(nameof(User), id.ToString(), "TenantRoleRemoved",
             details: $"tenant={tenantId}", cancellationToken: cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -628,56 +727,504 @@ public sealed class UsersController : ControllerBase
         return Ok(ApiResponseFactory.Success(new { userId = id, groupIds = requested.ToList() }, "Groups updated."));
     }
 
+    // ---- Departments ----
+
     /// <summary>
-    /// Resolves the role to assign from either an explicit <paramref name="roleId"/> (RBAC) or the
-    /// legacy <paramref name="roleName"/> enum, returning the legacy enum (for transition-era policies)
-    /// and the loaded RBAC role when one was supplied.
+    /// Picker data for a user's department placement: the tenant's selectable departments (the effective
+    /// <c>REMS.Department</c> option list) and the current head of each.
     /// </summary>
-    private async Task<(UserRole Role, Role? RoleEntity, IActionResult? Error)> ResolveRequestRoleAsync(
-        Guid? roleId, string? roleName, CancellationToken cancellationToken)
+    [HttpGet("/api/admin/users/departments")]
+    [RequirePermission(Permissions.UsersRead)]
+    [ProducesResponseType<ApiResponse<DepartmentOptionsResponse>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> ListDepartments(CancellationToken cancellationToken)
     {
-        if (roleId is { } rid)
-        {
-            var roleEntity = await _roles.GetByIdAsync(rid, cancellationToken);
-            if (roleEntity is null)
-            {
-                return (default, null, BadRequest(ApiResponseFactory.Error(
-                    ApiErrorCodes.ValidationFailed, "Validation failed.", "Unknown roleId.")));
-            }
+        var departments = await ResolveDepartmentOptionsAsync(cancellationToken);
 
-            return (MapLegacyRole(roleEntity, roleName), roleEntity, null);
-        }
+        var heads = await _departments.ListHeadsAsync(cancellationToken);
+        var settings = await _remsSettings.GetAsync(cancellationToken);
+        var shareholderId = settings?.ManagingShareholderUserId;
 
-        if (string.IsNullOrWhiteSpace(roleName) || !Enum.TryParse<UserRole>(roleName, ignoreCase: false, out var enumValue))
-        {
-            return (default, null, BadRequest(ApiResponseFactory.Error(
-                ApiErrorCodes.ValidationFailed, "Validation failed.", "A valid role or roleId is required.")));
-        }
+        var names = await _users.GetFullNamesAsync(
+            heads.Select(h => h.UserId).Concat(shareholderId is { } s ? new[] { s } : Array.Empty<Guid>()),
+            cancellationToken);
 
-        return (enumValue, null, null);
+        var headDtos = heads
+            .Select(h => new DepartmentHeadDto(h.Department, h.UserId, NameOf(names, h.UserId) ?? string.Empty))
+            .ToList();
+        var shareholder = shareholderId is { } msId
+            ? new UserRefDto(msId, NameOf(names, msId) ?? string.Empty)
+            : null;
+
+        return Ok(ApiResponseFactory.Success(
+            new DepartmentOptionsResponse(departments, headDtos, shareholder), "Departments retrieved."));
     }
 
     /// <summary>
-    /// Determines the <see cref="UserTenantRole.RoleId"/> to persist. Every role (system or custom) is
-    /// universally assignable, so an RBAC role resolves directly to its id; enum-driven assignments link
-    /// to the matching seeded system role when present.
+    /// Makes this user the tenant's REMS managing shareholder — the firm-wide approver required on every
+    /// engagement (WO-114) — or clears the role. Exactly one user holds it, so granting it displaces the
+    /// incumbent; clearing only ever revokes this user's own role, never someone else's.
     /// </summary>
-    private async Task<(Guid? RoleId, IActionResult? Error)> ResolveAssignmentRoleIdAsync(
-        UserRole role, Role? roleEntity, Guid tenantId, CancellationToken cancellationToken)
+    [HttpPut("/api/admin/users/{id:guid}/managing-shareholder")]
+    [RequirePermission(Permissions.UsersWrite)]
+    [ProducesResponseType<ApiResponse<SetManagingShareholderResponse>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> SetManagingShareholder(
+        Guid id, [FromBody] SetManagingShareholderRequest request, CancellationToken cancellationToken)
     {
-        if (roleEntity is not null)
+        if (User.GetActiveTenantId() is not { } tenantId)
         {
-            return (roleEntity.Id, null);
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden("No active tenant context."));
         }
 
-        var systemRole = await _roles.GetByNameAsync(role.ToString(), cancellationToken);
-        return (systemRole?.Id, null);
+        var user = await _users.GetByIdAsync(id, cancellationToken);
+        if (user is null || !CanCallerSee(user))
+        {
+            return NotFound(ApiResponseFactory.NotFound("User not found."));
+        }
+
+        var targetIsSuperAdmin = user.TenantRoles.Any(r => r.Role == UserRole.SuperAdmin);
+        if (!User.IsSuperAdmin() && targetIsSuperAdmin)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseFactory.Forbidden("Not permitted to manage this user."));
+        }
+
+        // The role approves this tenant's engagements, so its holder has to belong to this tenant.
+        if (!user.TenantRoles.Any(r => r.TenantId == tenantId))
+        {
+            return BadRequest(ApiResponseFactory.Error(
+                ApiErrorCodes.ValidationFailed, "Validation failed.", "The user has no assignment in the active tenant."));
+        }
+
+        var settings = await _remsSettings.GetAsync(cancellationToken);
+        var incumbentId = settings?.ManagingShareholderUserId;
+
+        // Clearing is scoped to this user — someone else's role is left alone (and there is nothing to do).
+        if (!request.IsManagingShareholder && incumbentId != id)
+        {
+            return Ok(ApiResponseFactory.Success(
+                new SetManagingShareholderResponse(false, null), "Managing shareholder unchanged."));
+        }
+
+        if (settings is null)
+        {
+            // Only reachable when granting: clearing without a settings row returned above.
+            settings = new RemsSettings { Id = Guid.NewGuid() };
+            await _remsSettings.AddAsync(settings, cancellationToken);
+        }
+
+        settings.ManagingShareholderUserId = request.IsManagingShareholder ? id : null;
+        _remsSettings.Update(settings);
+
+        var displacedName = request.IsManagingShareholder && incumbentId is { } previous && previous != id
+            ? NameOf(await _users.GetFullNamesAsync(new[] { previous }, cancellationToken), previous)
+            : null;
+
+        await _audit.AddAsync(nameof(User), id.ToString(), "ManagingShareholderUpdated",
+            details: $"isManagingShareholder={request.IsManagingShareholder}", cancellationToken: cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Ok(ApiResponseFactory.Success(
+            new SetManagingShareholderResponse(request.IsManagingShareholder, displacedName),
+            "Managing shareholder updated."));
+    }
+
+    /// <summary>
+    /// Sets (or clears, when no department is supplied) the user's department in the caller's active
+    /// tenant. A department has at most one head, so making this user the head demotes the incumbent and
+    /// repoints the tenant's REMS department-director mapping — which is what prefills an engagement's
+    /// Department Director (WO-114).
+    /// </summary>
+    [HttpPut("/api/admin/users/{id:guid}/department")]
+    [RequirePermission(Permissions.UsersWrite)]
+    [ProducesResponseType<ApiResponse<SetUserDepartmentResponse>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> SetDepartment(
+        Guid id, [FromBody] SetUserDepartmentRequest request, CancellationToken cancellationToken)
+    {
+        if (User.GetActiveTenantId() is not { } tenantId)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden("No active tenant context."));
+        }
+
+        var user = await _users.GetByIdAsync(id, cancellationToken);
+        if (user is null || !CanCallerSee(user))
+        {
+            return NotFound(ApiResponseFactory.NotFound("User not found."));
+        }
+
+        var targetIsSuperAdmin = user.TenantRoles.Any(r => r.Role == UserRole.SuperAdmin);
+        if (!User.IsSuperAdmin() && targetIsSuperAdmin)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseFactory.Forbidden("Not permitted to manage this user."));
+        }
+
+        // A department is a placement *within* a tenant, so the user has to belong to this one.
+        if (!user.TenantRoles.Any(r => r.TenantId == tenantId))
+        {
+            return BadRequest(ApiResponseFactory.Error(
+                ApiErrorCodes.ValidationFailed, "Validation failed.", "The user has no assignment in the active tenant."));
+        }
+
+        var department = NormalizeDepartment(request.Department);
+        if (department is not null)
+        {
+            var known = await ResolveDepartmentOptionsAsync(cancellationToken);
+            if (!known.Any(o => string.Equals(o.Value, department, StringComparison.OrdinalIgnoreCase)))
+            {
+                return BadRequest(ApiResponseFactory.Error(
+                    ApiErrorCodes.ValidationFailed, "Validation failed.", $"Unknown department '{request.Department}'."));
+            }
+        }
+
+        // Headship is meaningless without a department.
+        var isHead = department is not null && request.IsHead;
+        string? demotedHeadName = null;
+
+        await _unitOfWork.ExecuteInTransactionAsync(async ct =>
+        {
+            var existing = await _departments.GetForUserAsync(id, ct);
+            var previousDepartment = existing?.Department;
+            var wasHead = existing?.IsHead ?? false;
+
+            // The incumbent head of the department being taken over (never this same user).
+            var incumbent = isHead ? await _departments.GetHeadAsync(department!, ct) : null;
+            if (incumbent is not null && incumbent.UserId == id)
+            {
+                incumbent = null;
+            }
+
+            // The department this user stops heading: they are moving away from it, or giving up headship.
+            var vacated = wasHead && !(isHead && string.Equals(previousDepartment, department, StringComparison.OrdinalIgnoreCase))
+                ? previousDepartment
+                : null;
+
+            // Step 1 — release the headships first, in their own commit. The "one head per department"
+            // unique index would otherwise reject the incoming head while the incumbent still claims it.
+            if (incumbent is not null)
+            {
+                incumbent.IsHead = false;
+                _departments.Update(incumbent);
+                demotedHeadName = NameOf(await _users.GetFullNamesAsync(new[] { incumbent.UserId }, ct), incumbent.UserId);
+            }
+            if (vacated is not null)
+            {
+                existing!.IsHead = false;
+                _departments.Update(existing);
+            }
+            if (incumbent is not null || vacated is not null)
+            {
+                await _unitOfWork.SaveChangesAsync(ct);
+            }
+
+            // Step 2 — write this user's placement.
+            if (department is null)
+            {
+                if (existing is not null)
+                {
+                    _departments.Remove(existing);
+                }
+            }
+            else if (existing is null)
+            {
+                await _departments.AddAsync(new UserDepartment
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = tenantId,
+                    UserId = id,
+                    Department = department,
+                    IsHead = isHead,
+                }, ct);
+            }
+            else
+            {
+                existing.Department = department;
+                existing.IsHead = isHead;
+                _departments.Update(existing);
+            }
+
+            // Step 3 — keep the REMS department-director map in step with headship.
+            if (vacated is not null || isHead)
+            {
+                var settings = await _remsSettings.GetAsync(ct);
+                if (settings is null && isHead)
+                {
+                    settings = new RemsSettings { Id = Guid.NewGuid() };
+                    await _remsSettings.AddAsync(settings, ct);
+                }
+
+                if (settings is not null)
+                {
+                    if (vacated is not null)
+                    {
+                        await SetDepartmentDirectorAsync(settings, vacated, null, ct);
+                    }
+                    if (isHead)
+                    {
+                        await SetDepartmentDirectorAsync(settings, department!, id, ct);
+                    }
+                }
+            }
+
+            await _audit.AddAsync(nameof(User), id.ToString(), "DepartmentUpdated",
+                details: $"department={department ?? "(none)"}; head={isHead}", cancellationToken: ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+        }, cancellationToken);
+
+        return Ok(ApiResponseFactory.Success(
+            new SetUserDepartmentResponse(department, isHead, demotedHeadName), "Department updated."));
+    }
+
+    /// <summary>The option-set key holding the department codes (shared with the REMS engagement setup).</summary>
+    private const string DepartmentOptionSetKey = "REMS.Department";
+
+    /// <summary>The option-set key holding the selectable job titles.</summary>
+    private const string JobTitleOptionSetKey = "User.JobTitle";
+
+    /// <summary>
+    /// Closed fallback mirroring the seeded <c>User.JobTitle</c> labels, so the picker still offers
+    /// something on a deployment where the option list has not been seeded (the field is mandatory, so an
+    /// empty list would block user creation outright).
+    /// </summary>
+    private static readonly IReadOnlyList<string> FallbackJobTitles = new[]
+    {
+        "Managing Shareholder", "Shareholder", "Partner", "Principal", "Director", "Senior Manager",
+        "Manager", "Supervisor", "Senior Accountant", "Staff Accountant", "Associate", "Intern",
+    };
+
+    /// <summary>
+    /// The tenant's effective job-title list. Labels, not codes: the chosen title is stored verbatim on
+    /// <c>Person.JobTitle</c>, which every other screen already renders as-is.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> ResolveJobTitlesAsync(CancellationToken cancellationToken)
+    {
+        var set = await _optionSets.GetEffectiveSetAsync(
+            User.GetActiveTenantId(), EntityType.User, JobTitleOptionSetKey, cancellationToken);
+
+        var items = set?.Items
+            .Where(i => !i.Deleted && i.IsActive)
+            .OrderBy(i => i.SortOrder)
+            .ThenBy(i => i.Label)
+            .Select(i => i.Label)
+            .ToList();
+
+        return items is { Count: > 0 } ? items : FallbackJobTitles;
+    }
+
+    /// <summary>The selectable job titles for the user create/edit forms (<c>User.JobTitle</c> option list).</summary>
+    [HttpGet("/api/admin/users/job-titles")]
+    [RequirePermission(Permissions.UsersRead)]
+    [ProducesResponseType<ApiResponse<IEnumerable<string>>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> ListJobTitles(CancellationToken cancellationToken)
+        => Ok(ApiResponseFactory.Success(await ResolveJobTitlesAsync(cancellationToken), "Job titles retrieved."));
+
+    /// <summary>
+    /// Closed fallback mirroring the seeded <c>REMS.Department</c> values (see <c>DefaultOptionSets</c>), so
+    /// the picker still works on a deployment where the option list has not been seeded.
+    /// </summary>
+    private static readonly IReadOnlyList<DepartmentOptionDto> FallbackDepartments = new[]
+    {
+        new DepartmentOptionDto("cas", "CAS"),
+        new DepartmentOptionDto("tax", "Tax"),
+        new DepartmentOptionDto("audit", "Audit"),
+        new DepartmentOptionDto("gcs", "GCS"),
+    };
+
+    /// <summary>The tenant's effective department list, falling back to the seeded codes when unavailable.</summary>
+    private async Task<IReadOnlyList<DepartmentOptionDto>> ResolveDepartmentOptionsAsync(CancellationToken cancellationToken)
+    {
+        var set = await _optionSets.GetEffectiveSetAsync(
+            User.GetActiveTenantId(), EntityType.Rems, DepartmentOptionSetKey, cancellationToken);
+
+        var items = set?.Items
+            .Where(i => !i.Deleted && i.IsActive)
+            .OrderBy(i => i.SortOrder)
+            .ThenBy(i => i.Label)
+            .Select(i => new DepartmentOptionDto(i.Value, i.Label))
+            .ToList();
+
+        return items is { Count: > 0 } ? items : FallbackDepartments;
+    }
+
+    /// <summary>
+    /// Points the tenant's REMS director mapping for <paramref name="department"/> at
+    /// <paramref name="directorUserId"/>, or removes the mapping when null. Mutates the supplied settings
+    /// aggregate (already loaded with its rows) so several departments can be adjusted in one commit.
+    /// </summary>
+    private async Task SetDepartmentDirectorAsync(
+        RemsSettings settings, string department, Guid? directorUserId, CancellationToken cancellationToken)
+    {
+        var existing = settings.DepartmentDirectors.FirstOrDefault(
+            d => !d.Deleted && string.Equals(d.Department, department, StringComparison.OrdinalIgnoreCase));
+
+        if (directorUserId is null)
+        {
+            if (existing is not null)
+            {
+                _remsSettings.RemoveDepartmentDirector(existing);
+            }
+            return;
+        }
+
+        if (existing is null)
+        {
+            await _remsSettings.AddDepartmentDirectorAsync(new RemsDepartmentDirector
+            {
+                Id = Guid.NewGuid(),
+                RemsSettingsId = settings.Id,
+                Department = department,
+                DirectorUserId = directorUserId.Value,
+            }, cancellationToken);
+        }
+        else if (existing.DirectorUserId != directorUserId.Value)
+        {
+            existing.DirectorUserId = directorUserId.Value;
+            _remsSettings.UpdateDepartmentDirector(existing);
+        }
+    }
+
+    /// <summary>Department codes are stored lower-cased and trimmed (same rule as the REMS settings map).</summary>
+    private static string? NormalizeDepartment(string? department)
+        => string.IsNullOrWhiteSpace(department) ? null : department.Trim().ToLowerInvariant();
+
+    /// <summary>Trims a job title; blank becomes null. Case is preserved — the label is stored as-is.</summary>
+    private static string? NormalizeTitle(string? title)
+        => string.IsNullOrWhiteSpace(title) ? null : title.Trim();
+
+    /// <summary>A concrete role to assign: its id, the loaded RBAC role, and its legacy fixed-tier shadow.</summary>
+    private sealed record ResolvedRole(Guid RoleId, Role Entity, UserRole LegacyRole);
+
+    private static bool IsSuperAdminRole(ResolvedRole role)
+        => string.Equals(role.Entity.Name, Roles.SuperAdmin, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Resolves an assignment request into the concrete set of roles to reconcile: the multi-role
+    /// <paramref name="roleIds"/> plus the legacy single <paramref name="legacyRoleId"/>; or — only when
+    /// no ids are supplied — the legacy <paramref name="legacyRoleName"/> enum mapped to its seeded system
+    /// role (back-compat). Every id must resolve to a known role. Duplicates collapse to one.
+    /// </summary>
+    private async Task<(IReadOnlyList<ResolvedRole> Roles, IActionResult? Error)> ResolveTargetRolesAsync(
+        IEnumerable<Guid> roleIds, Guid? legacyRoleId, string? legacyRoleName, CancellationToken cancellationToken)
+    {
+        var ids = roleIds?.ToList() ?? new List<Guid>();
+        if (legacyRoleId is { } single)
+        {
+            ids.Add(single);
+        }
+
+        var resolved = new List<ResolvedRole>();
+        foreach (var roleId in ids.Distinct())
+        {
+            var entity = await _roles.GetByIdAsync(roleId, cancellationToken);
+            if (entity is null)
+            {
+                return (Array.Empty<ResolvedRole>(), BadRequest(ApiResponseFactory.Error(
+                    ApiErrorCodes.ValidationFailed, "Validation failed.", $"Unknown roleId {roleId}.")));
+            }
+
+            resolved.Add(new ResolvedRole(entity.Id, entity, MapLegacyRole(entity, null)));
+        }
+
+        // Legacy single-role-by-name fallback (only when no ids were supplied).
+        if (resolved.Count == 0 && !string.IsNullOrWhiteSpace(legacyRoleName))
+        {
+            if (!Enum.TryParse<UserRole>(legacyRoleName, ignoreCase: false, out var enumValue))
+            {
+                return (Array.Empty<ResolvedRole>(), BadRequest(ApiResponseFactory.Error(
+                    ApiErrorCodes.ValidationFailed, "Validation failed.", "A valid role or roleId is required.")));
+            }
+
+            var entity = await _roles.GetByNameAsync(legacyRoleName, cancellationToken);
+            if (entity is null)
+            {
+                return (Array.Empty<ResolvedRole>(), BadRequest(ApiResponseFactory.Error(
+                    ApiErrorCodes.ValidationFailed, "Validation failed.", "No RBAC role matches the requested role.")));
+            }
+
+            resolved.Add(new ResolvedRole(entity.Id, entity, enumValue));
+        }
+
+        return (resolved, null);
+    }
+
+    /// <summary>
+    /// Reconciles the user's active role assignments in a tenant to exactly <paramref name="target"/>:
+    /// missing roles are added, roles no longer present are soft-deleted. An empty target removes the
+    /// user's tenant access entirely (AC-ADM-006.3).
+    /// </summary>
+    private async Task ReconcileTenantRolesAsync(
+        Guid userId, Guid tenantId, IReadOnlyList<ResolvedRole> target, CancellationToken cancellationToken)
+    {
+        var existing = await _users.GetAssignmentsAsync(userId, tenantId, cancellationToken);
+        var targetIds = target.Select(t => t.RoleId).ToHashSet();
+        var existingIds = existing.Select(e => e.RoleId).ToHashSet();
+
+        // Soft-delete assignments no longer in the target set.
+        foreach (var assignment in existing.Where(e => !targetIds.Contains(e.RoleId)))
+        {
+            _users.RemoveAssignment(assignment);
+        }
+
+        // Add roles the user does not yet hold in the tenant.
+        foreach (var role in target.Where(t => !existingIds.Contains(t.RoleId)))
+        {
+            await _users.AddAssignmentAsync(new UserTenantRole
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                TenantId = tenantId,
+                Role = role.LegacyRole,
+                RoleId = role.RoleId,
+            }, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Enforces Permission Group capacity limits (WO-119) when <paramref name="addedRoleIds"/> are about to
+    /// be granted to a user in <paramref name="tenantId"/>. For each capped group in that tenant composed by
+    /// a newly-granted role, if the user is not already an active member and admitting them would push usage
+    /// past the limit, a limit-reached error is returned (and the rejection audited); otherwise null.
+    /// </summary>
+    private async Task<IActionResult?> CheckAssignmentCapacityAsync(
+        Guid userId, bool userIsActive, Guid tenantId, IReadOnlyList<Guid> addedRoleIds, CancellationToken cancellationToken)
+    {
+        // Inactive users never count toward usage, and no new roles means no growth.
+        if (!userIsActive || addedRoleIds.Count == 0)
+        {
+            return null;
+        }
+
+        var groups = await _permissionGroups.GetGroupsByRolesAsync(addedRoleIds, cancellationToken);
+        foreach (var group in groups.Where(g => g.TenantId == tenantId && g.CapacityLimit.HasValue))
+        {
+            var limit = group.CapacityLimit!.Value;
+
+            // Already a member (via a role they keep) → not a new distinct user → no growth.
+            if (await _permissionGroups.IsUserActiveMemberAsync(group.Id, tenantId, userId, cancellationToken))
+            {
+                continue;
+            }
+
+            var projected = await _permissionGroups.CountActiveMembersAsync(group.Id, tenantId, null, cancellationToken) + 1;
+            if (projected > limit)
+            {
+                await _audit.AddAsync(nameof(PermissionGroup), group.Id.ToString(), "CapacityLimitReached",
+                    details: $"Assigning a role composing '{group.Name}' to user {userId} would raise usage to {projected}, above the limit of {limit}.",
+                    cancellationToken: cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                return BadRequest(ApiResponseFactory.Error(
+                    ApiErrorCodes.CapacityLimitReached,
+                    $"Cannot assign this role: permission group '{group.Name}' is at its capacity limit ({limit}).",
+                    group.Name));
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
     /// Maps an RBAC role to a legacy fixed-tier enum for the transition period: system roles map by
-    /// name; custom roles fall back to an explicit enum if given, otherwise least-privilege Operator
-    /// (the enum is superseded by permission-based authorization in Phase 3).
+    /// name; custom roles fall back to an explicit enum if given, otherwise the neutral
+    /// <see cref="UserRole.Custom"/> sentinel (the enum is superseded by permission-based authorization).
     /// </summary>
     private static UserRole MapLegacyRole(Role roleEntity, string? explicitRole)
     {
@@ -691,7 +1238,7 @@ public sealed class UsersController : ControllerBase
             return explicitEnum;
         }
 
-        return UserRole.Operator;
+        return UserRole.Custom;
     }
 
     /// <summary>The tenant whose SMTP account should send a user's email: the caller's active tenant, else the user's first assignment.</summary>
@@ -709,7 +1256,24 @@ public sealed class UsersController : ControllerBase
         return activeTenant is { } tenant && user.TenantRoles.Any(r => r.TenantId == tenant);
     }
 
-    private static UserDetail Map(User user)
+    /// <summary>
+    /// The user detail plus their tenant-scoped REMS roles: the department placement/headship, and whether
+    /// they are the tenant's managing shareholder. Both are meaningless outside a tenant, so a caller with
+    /// no active tenant (a Super Admin who has not switched into one) sees neither.
+    /// </summary>
+    private async Task<UserDetail> MapAsync(User user, CancellationToken cancellationToken)
+    {
+        if (User.GetActiveTenantId() is null)
+        {
+            return Map(user, null, isManagingShareholder: false);
+        }
+
+        var department = await _departments.GetForUserAsync(user.Id, cancellationToken);
+        var settings = await _remsSettings.GetAsync(cancellationToken);
+        return Map(user, department, settings?.ManagingShareholderUserId == user.Id);
+    }
+
+    private static UserDetail Map(User user, UserDepartment? department, bool isManagingShareholder)
     {
         var p = user.Person;
         return new UserDetail(
@@ -721,11 +1285,21 @@ public sealed class UsersController : ControllerBase
             p?.FullName ?? user.DisplayName,
             p?.MobileNumber,
             user.DisplayName,
+            p?.JobTitle,
             user.IsActive,
             user.MustChangePassword,
-            user.TenantRoles.Select(r => new TenantAssignmentDto(r.TenantId, r.Role.ToString(), r.RoleId, r.RoleEntity?.Name)).ToList(),
+            // Group the (multi-role) assignments by tenant → one row carrying all roles held there.
+            user.TenantRoles
+                .GroupBy(r => r.TenantId)
+                .Select(g => new TenantAssignmentDto(
+                    g.Key,
+                    g.Select(r => new TenantAssignmentRoleDto(r.RoleId, r.RoleEntity?.Name, r.Role.ToString())).ToList()))
+                .ToList(),
             // GetByIdAsync already scopes memberships to the active tenant via the ambient filter.
-            GroupsFor(user, null));
+            GroupsFor(user, null),
+            department?.Department,
+            department?.IsHead ?? false,
+            isManagingShareholder);
     }
 
     /// <summary>The user's group memberships as DTOs, optionally restricted to a specific tenant.</summary>

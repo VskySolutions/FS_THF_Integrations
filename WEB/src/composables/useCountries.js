@@ -21,6 +21,9 @@ export const dialCodeOption = (c) => ({ label: `${c.name} (+${c.phonecode})`, va
 /** Country option keyed by ISO-2 code. */
 export const countryOption = (c) => ({ label: c.name, value: c.isoCode });
 
+/** Display name for an ISO-2 code ("US" → "United States"). */
+export const countryNameFromIso = (isoCode) => all.find((c) => c.isoCode === isoCode)?.name || null;
+
 /** Country option keyed by display name (e.g. for nationality fields). */
 export const countryNameOption = (c) => ({ label: c.name, value: c.name });
 
@@ -44,6 +47,7 @@ export function useCountries () {
     dialCodeOption,
     countryOption,
     countryNameOption,
+    countryNameFromIso,
     isoFromDial,
     dialFromIso,
     DEFAULT_COUNTRY_ISO

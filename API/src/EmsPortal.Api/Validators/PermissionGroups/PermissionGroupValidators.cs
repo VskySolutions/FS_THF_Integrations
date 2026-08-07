@@ -9,6 +9,10 @@ public sealed class CreateGroupRequestValidator : AbstractValidator<CreateGroupR
     {
         RuleFor(x => x.Name).NotEmpty().MaximumLength(150);
         RuleFor(x => x.Description).MaximumLength(500);
+        // Capacity limit (WO-119): optional, but a supplied value must be non-negative (0 = no members allowed).
+        RuleFor(x => x.CapacityLimit).GreaterThanOrEqualTo(0)
+            .When(x => x.CapacityLimit.HasValue)
+            .WithMessage("Capacity limit cannot be negative.");
     }
 }
 
@@ -18,6 +22,9 @@ public sealed class UpdateGroupRequestValidator : AbstractValidator<UpdateGroupR
     {
         RuleFor(x => x.Name).NotEmpty().MaximumLength(150);
         RuleFor(x => x.Description).MaximumLength(500);
+        RuleFor(x => x.CapacityLimit).GreaterThanOrEqualTo(0)
+            .When(x => x.CapacityLimit.HasValue)
+            .WithMessage("Capacity limit cannot be negative.");
     }
 }
 

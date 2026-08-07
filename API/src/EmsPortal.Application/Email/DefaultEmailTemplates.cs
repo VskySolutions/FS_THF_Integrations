@@ -56,6 +56,20 @@ public static class DefaultEmailTemplates
             new[] { "FullName", "TemporaryPassword", "LoginUrl", "TenantName" }),
 
         new Definition(
+            EmailTemplateKey.PasswordResetLink,
+            "Password Reset Link",
+            "Sent when a user requests a password reset from the sign-in page. Carries a one-time link, never a password.",
+            "Reset your {{TenantName}} password",
+            """
+            <p>Hello {{FullName}},</p>
+            <p>We received a request to reset your password for <strong>{{TenantName}}</strong>.</p>
+            <p><a href="{{ResetUrl}}">Choose a new password</a></p>
+            <p>This link can be used once and expires in {{ExpiryMinutes}} minutes.</p>
+            <p>If you did not request this, you can ignore this email — your password has not changed.</p>
+            """,
+            new[] { "FullName", "ResetUrl", "ExpiryMinutes", "TenantName" }),
+
+        new Definition(
             EmailTemplateKey.PasswordChanged,
             "Password Changed",
             "Confirmation sent after a user changes their own password.",
@@ -78,77 +92,6 @@ public static class DefaultEmailTemplates
             <p><a href="{{LoginUrl}}">Sign in to get started</a></p>
             """,
             new[] { "FullName", "TenantName", "LoginUrl" }),
-
-        // ---- Customer workflow ----
-
-        new Definition(
-            EmailTemplateKey.CustomerSubmitted,
-            "Customer Submitted (needs review)",
-            "Sent to reviewers when a customer request is submitted and awaits review.",
-            "Customer request {{CustomerRequestNumber}} needs review",
-            """
-            <p>A new customer request has been submitted and is awaiting review.</p>
-            <ul>
-              <li><strong>Customer:</strong> {{CustomerName}}</li>
-              <li><strong>Reference:</strong> {{CustomerRequestNumber}}</li>
-              <li><strong>Submitted by:</strong> {{SubmitterName}}</li>
-            </ul>
-            <p><a href="{{LoginUrl}}">Review the request</a></p>
-            """,
-            new[] { "CustomerName", "CustomerRequestNumber", "SubmitterName", "TenantName", "LoginUrl" }),
-
-        new Definition(
-            EmailTemplateKey.CustomerSentForApproval,
-            "Customer Sent for Approval (needs approval)",
-            "Sent to approvers when a customer request is sent for approval.",
-            "Customer request {{CustomerRequestNumber}} needs approval",
-            """
-            <p>A customer request has been sent for approval.</p>
-            <ul>
-              <li><strong>Customer:</strong> {{CustomerName}}</li>
-              <li><strong>Reference:</strong> {{CustomerRequestNumber}}</li>
-            </ul>
-            <p><a href="{{LoginUrl}}">Review and approve</a></p>
-            """,
-            new[] { "CustomerName", "CustomerRequestNumber", "TenantName", "LoginUrl" }),
-
-        new Definition(
-            EmailTemplateKey.CustomerApproved,
-            "Customer Approved",
-            "Sent to the submitter when their customer request is approved.",
-            "Your customer request {{CustomerRequestNumber}} was approved",
-            """
-            <p>Hello {{SubmitterName}},</p>
-            <p>Your customer request for <strong>{{CustomerName}}</strong> ({{CustomerRequestNumber}}) has been approved by {{ApproverName}}.</p>
-            <p><a href="{{LoginUrl}}">View the request</a></p>
-            """,
-            new[] { "SubmitterName", "CustomerName", "CustomerRequestNumber", "ApproverName", "TenantName", "LoginUrl" }),
-
-        new Definition(
-            EmailTemplateKey.CustomerRejected,
-            "Customer Rejected",
-            "Sent to the submitter when their customer request is rejected.",
-            "Your customer request {{CustomerRequestNumber}} was rejected",
-            """
-            <p>Hello {{SubmitterName}},</p>
-            <p>Your customer request for <strong>{{CustomerName}}</strong> ({{CustomerRequestNumber}}) has been rejected by {{ApproverName}}.</p>
-            <p><strong>Reason:</strong> {{Notes}}</p>
-            <p><a href="{{LoginUrl}}">View the request</a></p>
-            """,
-            new[] { "SubmitterName", "CustomerName", "CustomerRequestNumber", "ApproverName", "Notes", "TenantName", "LoginUrl" }),
-
-        new Definition(
-            EmailTemplateKey.CustomerReturned,
-            "Customer Returned for Corrections",
-            "Sent to the submitter when their customer request is returned for corrections.",
-            "Customer request {{CustomerRequestNumber}} needs corrections",
-            """
-            <p>Hello {{SubmitterName}},</p>
-            <p>Your customer request for <strong>{{CustomerName}}</strong> ({{CustomerRequestNumber}}) was returned for corrections.</p>
-            <p><strong>Notes:</strong> {{Notes}}</p>
-            <p><a href="{{LoginUrl}}">Make the corrections</a></p>
-            """,
-            new[] { "SubmitterName", "CustomerName", "CustomerRequestNumber", "Notes", "TenantName", "LoginUrl" }),
 
         new Definition(
             EmailTemplateKey.MentionReceived,
@@ -175,6 +118,34 @@ public static class DefaultEmailTemplates
             <p><a href="{{LoginUrl}}">Open the record</a></p>
             """,
             new[] { "FullName", "Title", "Body", "TenantName", "LoginUrl" }),
+
+        // ---- REMS external emails (WO-124) ----
+
+        new Definition(
+            EmailTemplateKey.RemsFormLink,
+            "REMS Form Link",
+            "Sent to a client with the secure link to complete an EMS form for a REMS request.",
+            "Action required: complete your form for REMS {{RemsNumber}}",
+            """
+            <p>Hello {{ClientName}},</p>
+            <p>You have been asked to complete a form for REMS request <strong>{{RemsNumber}}</strong>.</p>
+            <p><strong>Request:</strong> {{RequestTitle}}</p>
+            <p><a href="{{FormLink}}">Open and complete the form</a></p>
+            <p>If you were not expecting this, please contact your {{TenantName}} representative.</p>
+            """,
+            new[] { "ClientName", "RemsNumber", "RequestTitle", "FormLink", "TenantName" }),
+
+        new Definition(
+            EmailTemplateKey.RemsFormSubmitted,
+            "REMS Form Submitted",
+            "Sent to the assigned Admin and CSE when a client submits their EMS form for a REMS request.",
+            "Form submitted for REMS {{RemsNumber}}",
+            """
+            <p>{{ClientName}} has submitted their form for REMS request <strong>{{RemsNumber}}</strong>.</p>
+            <p><strong>Submitted on:</strong> {{SubmittedOn}}</p>
+            <p><a href="{{RequestLink}}">Open the request</a></p>
+            """,
+            new[] { "ClientName", "RemsNumber", "SubmittedOn", "RequestLink" }),
     }.ToDictionary(d => d.Key);
 
     /// <summary>All template definitions, in key order.</summary>

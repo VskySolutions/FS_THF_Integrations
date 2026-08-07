@@ -9,8 +9,8 @@ namespace EmsPortal.Infrastructure.Jobs;
 /// <summary>
 /// Recurring (1-minute) sweep that dispatches due reminders. It runs without a resolved tenant so the
 /// ambient query filter is a no-op and it sees every tenant's due reminders; it then sets the tenant
-/// context per reminder so the in-app notification is stamped and the email resolves the right SMTP
-/// account. Each reminder is marked dispatched (and overdue) so it fires only once.
+/// context per reminder so the in-app notification is stamped to the right tenant. Reminders are in-app
+/// only (WO-124 — no email). Each reminder is marked dispatched (and overdue) so it fires only once.
 /// </summary>
 public sealed class ReminderDispatchJob
 {
@@ -52,7 +52,7 @@ public sealed class ReminderDispatchJob
         {
             try
             {
-                // Scope subsequent writes/email to the reminder's tenant.
+                // Scope the in-app notification write to the reminder's tenant.
                 _tenantContext.Set(reminder.TenantId, string.Empty);
 
                 await _notifications.DispatchAsync(new CreateNotificationDto(

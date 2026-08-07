@@ -2,7 +2,7 @@ using EmsPortal.Domain.Enums;
 
 namespace EmsPortal.Application.Abstractions.UniversalFeatures;
 
-/// <summary>The payload for raising one in-app (and optionally email) notification.</summary>
+/// <summary>The payload for raising one in-app notification.</summary>
 /// <param name="UserId">The recipient user.</param>
 /// <param name="Type">The notification category (drives the preference matrix).</param>
 /// <param name="Title">Short headline.</param>
@@ -18,14 +18,13 @@ public sealed record CreateNotificationDto(
     Guid? EntityId = null);
 
 /// <summary>
-/// Fans a notification out to the recipient's enabled channels: an in-app
-/// <see cref="Domain.Entities.Notification"/> record plus a best-effort email via the tenant's active
-/// SMTP account. Honours per-user <see cref="Domain.Entities.NotificationPreference"/> and dedupes
-/// duplicate notifications within a 60-second window. Sending is best-effort — failures are logged and
-/// never block the triggering operation.
+/// Stages an in-app <see cref="Domain.Entities.Notification"/> for the recipient. Honours the per-user
+/// in-app <see cref="Domain.Entities.NotificationPreference"/> and dedupes duplicate notifications within
+/// a 60-second window. In-app only since WO-124 — notification types are never emailed; external email is
+/// limited to the account-security and REMS templates on the email allowlist.
 /// </summary>
 public interface INotificationDispatcher
 {
-    /// <summary>Stages the in-app notification and dispatches email (best-effort) per user preference.</summary>
+    /// <summary>Stages the in-app notification per the user's in-app preference.</summary>
     Task DispatchAsync(CreateNotificationDto notification, CancellationToken cancellationToken = default);
 }

@@ -22,7 +22,8 @@ internal sealed class UserGroupRepository : IUserGroupRepository
             query = query.Where(g => g.Name.Contains(term) || (g.Description != null && g.Description.Contains(term)));
         }
 
-        return await query.OrderBy(g => g.Name).ToListAsync(cancellationToken);
+        // Most-recently-touched first, with name as the tie-break so equal timestamps stay predictable.
+        return await query.OrderByDescending(g => g.UpdatedOnUtc).ThenBy(g => g.Name).ToListAsync(cancellationToken);
     }
 
     public Task<UserGroup?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)

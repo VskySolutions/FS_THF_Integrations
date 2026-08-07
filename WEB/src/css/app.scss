@@ -1,5 +1,8 @@
+@import "./tokens.scss";
+
 body {
-  background-color: #fcfcfc;
+  // Page surface from the palette: a barely-there teal tint, so white cards read as raised against it.
+  background-color: var(--teal-050);
   color: var(--q-dark);
   // font-family: "Merriweather", serif;
   font-family: "poppins", sans-serif;
@@ -15,6 +18,9 @@ body {
 .header {
   // background-color: var(--q-dark-page);
   background-color: white;
+  // Quasar's marginal sections ship white-on-primary. The background is overridden to white above, so the
+  // ink has to come with it — otherwise anything dropped in here without its own colour is invisible.
+  color: var(--q-dark);
   border-bottom: 1px solid rgba(202, 202, 202, 0.171);
   box-shadow: 0 2px 4px #0000001a, 0 6px 20px #0000001a;
   .q-toolbar{
@@ -456,7 +462,7 @@ label.Cutomlabel {
 // Manish Dhuri //
 .Custom-Table thead{
   height: 45px;
-  background: #1b75ab;
+  background: #1f6478;
   color: #ffffff;
 }
 
@@ -493,7 +499,7 @@ label.Cutomlabel {
 //for dropdown colors
 .bg-blue-4 {
   background: rgb(27, 117, 171, 0.2) !important;
-  border: 1px solid #1b75ab !important;
+  border: 1px solid #1f6478 !important;
  }
  .bg-purple-4 {
   background: rgba(128, 0, 128, 0.2) !important;

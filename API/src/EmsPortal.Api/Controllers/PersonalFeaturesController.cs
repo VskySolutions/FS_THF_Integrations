@@ -1,4 +1,3 @@
-using System.Globalization;
 using EmsPortal.Api.Models.UniversalFeatures;
 using EmsPortal.Api.Security;
 using EmsPortal.Api.Storage;
@@ -34,20 +33,17 @@ public sealed class PersonalFeaturesController : ControllerBase
     private readonly IPinRepository _pins;
     private readonly IColourCodeRepository _colours;
     private readonly INoteRepository _notes;
-    private readonly ICustomerRequestRepository _customers;
     private readonly IUnitOfWork _unitOfWork;
 
     public PersonalFeaturesController(
         IPinRepository pins,
         IColourCodeRepository colours,
         INoteRepository notes,
-        ICustomerRequestRepository customers,
         IUnitOfWork unitOfWork)
     {
         _pins = pins;
         _colours = colours;
         _notes = notes;
-        _customers = customers;
         _unitOfWork = unitOfWork;
     }
 
@@ -86,7 +82,7 @@ public sealed class PersonalFeaturesController : ControllerBase
             return Ok(ApiResponseFactory.Success(new PinResponse(existing.Id, existing.EntityType, existing.EntityId, existing.PinnedOnUtc), "Already pinned."));
         }
 
-        // Max 5 pins per entity type (e.g. at most 5 pinned customers), and 50 overall.
+        // Max 5 pins per entity type, and 50 overall.
         if (await _pins.CountByUserAndTypeAsync(userId, request.EntityType, cancellationToken) >= MaxPinsPerType)
         {
             return BadRequest(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, "Pin limit reached.", $"You can pin at most {MaxPinsPerType} records of this type."));
@@ -216,30 +212,14 @@ public sealed class PersonalFeaturesController : ControllerBase
         return File(pdf, "application/pdf", $"{request.EntityType}-{request.EntityId}.pdf");
     }
 
-    private async Task<(string Title, List<string> Lines)> BuildExportContentAsync(PdfExportRequest request, CancellationToken cancellationToken)
+    private static Task<(string Title, List<string> Lines)> BuildExportContentAsync(PdfExportRequest request, CancellationToken cancellationToken)
     {
-        var lines = new List<string>();
-        if (request.EntityType == EntityType.CustomerRequest
-            && await _customers.GetByIdAsync(request.EntityId, cancellationToken) is { } customer)
+        var lines = new List<string>
         {
-            void Add(string label, string? value) => lines.Add($"{label}: {value ?? "-"}");
-            Add("Request Number", customer.CustomerRequestNumber);
-            Add("Status", customer.Status.ToString());
-            Add("Company Name", customer.CompanyName);
-            Add("Legal Name", customer.LegalName);
-            Add("Email", customer.EmailAddress);
-            Add("Phone", customer.PhoneNumber);
-            Add("Currency", customer.Currency);
-            Add("Payment Terms", customer.PaymentTerms);
-            Add("Credit Limit", customer.CreditLimit?.ToString("N2", CultureInfo.InvariantCulture));
-            Add("Business Unit", customer.BusinessUnit);
-            Add("Created", customer.CreatedOnUtc.ToString("u", CultureInfo.InvariantCulture));
-            return ($"Customer Request — {customer.CompanyName}", lines);
-        }
-
-        lines.Add($"Entity Type: {request.EntityType}");
-        lines.Add($"Entity Id: {request.EntityId}");
-        return ($"{request.EntityType} Export", lines);
+            $"Entity Type: {request.EntityType}",
+            $"Entity Id: {request.EntityId}",
+        };
+        return Task.FromResult(($"{request.EntityType} Export", lines));
     }
 
     private async Task AppendNotesAsync(EntityType entityType, Guid entityId, List<string> lines, CancellationToken cancellationToken)

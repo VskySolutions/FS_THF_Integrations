@@ -18,6 +18,9 @@
 
     <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
       <app-column-filters v-model="filters" :columns="filterableColumns" />
+      <q-toggle
+        v-if="canManageDeleted" v-model="showDeleted" label="Show deleted?" dense class="q-mt-md"
+      />
     </app-filter-drawer>
 
     <div class="row q-col-gutter-md">
@@ -32,13 +35,12 @@
           :loading="loading"
           :total-records="filteredRows.length"
           :pagination="pagination"
-          default-sort-by="name"
-          :default-descending="false"
+          default-sort-by="updatedOnUtc"
           @request="onRequest"
           @refresh="load"
         >
           <template #body-cell-memberCount="cell">
-            <q-td :props="cell"><q-badge color="blue-1" text-color="primary">{{ cell.value }}</q-badge></q-td>
+            <q-td :props="cell"><q-badge color="teal-1" text-color="primary">{{ cell.value }}</q-badge></q-td>
           </template>
 
           <template #body-cell-createdOnUtc="cell">
@@ -128,6 +130,11 @@
       </div>
     </div>
 
+    <!-- Below both panes: this restores GROUPS, not the memberships shown on the right. -->
+    <deleted-records-panel
+      v-if="canManageDeleted" :entity-type="EntityType.UserGroup" :show="showDeleted" @restored="load"
+    />
+
     <!-- Create group dialog -->
     <q-dialog v-model="createOpen" persistent>
       <q-card style="min-width: 380px; max-width: 90vw;">
@@ -136,7 +143,7 @@
         <q-card-section>
           <q-form ref="createForm" greedy>
             <app-text-field v-model="newGroup.name" label="Name *" :rules="[(v) => !!v || 'Name is required']" class="q-mb-md" />
-            <app-text-field v-model="newGroup.description" label="Description" />
+            <app-rich-text-field v-model="newGroup.description" label="Description" />
           </q-form>
         </q-card-section>
         <q-separator />
@@ -172,29 +179,39 @@
 <script setup>
 import { ref, reactive, onMounted, watch } from "vue";
 import { debounce } from "quasar";
-import { userGroupApi, userApi, getApiErrorMessage } from "services/api";
+import { userGroupApi, userApi, getApiErrorMessage, EntityType } from "services/api";
 import { useNotify } from "composables/useNotify";
+import { useDeletedRecords } from "composables/useDeletedRecords";
 import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
+import { useAuditColumns } from "composables/useAuditColumns";
 import AppListHeader from "components/common/AppListHeader.vue";
+import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppDataTable from "components/common/AppDataTable.vue";
+import { stripHtml } from "utils/richText";
 import AppTextField from "components/common/AppTextField.vue";
+import AppRichTextField from "components/common/AppRichTextField.vue";
 import AppSelect from "components/common/AppSelect.vue";
 
+const auditColumns = useAuditColumns();
+const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const fmt = useDateFormat();
 
 const columns = [
   { name: "name", label: "Name", field: "name", align: "left", sortable: true, default: true },
-  { name: "description", label: "Description", field: "description", align: "left" },
+  // Descriptions are rich text; the cell shows the text without its markup (see utils/richText).
+  { name: "description", label: "Description", field: (r) => stripHtml(r.description), align: "left" },
   { name: "memberCount", label: "Members", field: "memberCount", align: "left", sortable: true, default: true, filterable: false },
   { name: "createdBy", label: "Created By", field: "createdBy", align: "left", sortable: true },
   { name: "createdOnUtc", label: "Created", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true, default: true, filterable: false },
+  // Created By and Created On are already columns here, so the shared set contributes the updated pair.
+  ...auditColumns({ only: ["updatedBy", "updatedOnUtc"] }),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 
@@ -204,7 +221,7 @@ const memberColumns = [
   { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true },
   { name: "addedBy", label: "Added By", field: "addedBy", align: "left", sortable: true, default: true },
   { name: "addedOnUtc", label: "Added On", field: (r) => fmt.formatDateTime(r.addedOnUtc), align: "left", sortable: true, default: true },
-  { name: "actions", label: "", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 
 const { rows, loading, search, pagination, load, onRequest } = useListTable({

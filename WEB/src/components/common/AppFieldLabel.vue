@@ -1,6 +1,11 @@
 <template>
   <div v-if="text" class="app-field-label">
     {{ text }}<span v-if="isRequired" class="app-field-label__star" aria-hidden="true">*</span>
+    <!-- Explains a rule the control itself cannot show — which group or role a picker is scoped to, where
+         its values come from. Mirrors the info icon AppReadonlyField puts on a derived value. -->
+    <q-icon v-if="info" name="o_info" size="14px" color="grey-6" class="app-field-label__info">
+      <q-tooltip anchor="top middle" self="bottom middle" max-width="280px">{{ info }}</q-tooltip>
+    </q-icon>
   </div>
 </template>
 
@@ -13,7 +18,10 @@ import { useFieldLabel } from "composables/useFieldLabel";
 
 const props = defineProps({
   label: { type: String, default: "" },
-  required: { type: Boolean, default: false }
+  required: { type: Boolean, default: false },
+  // Why this field offers what it offers (group/role scoping, where the values are maintained). Shown on
+  // an info icon beside the label rather than as a caption, so the field keeps its height.
+  info: { type: String, default: "" }
 });
 
 const { text, isRequired } = useFieldLabel(toRef(props, "label"), toRef(props, "required"));
@@ -26,6 +34,11 @@ const { text, isRequired } = useFieldLabel(toRef(props, "label"), toRef(props, "
   color: #423939;
   line-height: 1.2;
   margin-bottom: 4px;
+}
+.app-field-label__info {
+  margin-left: 4px;
+  cursor: help;
+  vertical-align: text-bottom;
 }
 /* Mandatory marker: bigger than the label text and red, so required fields stand out. */
 .app-field-label__star {

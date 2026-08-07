@@ -17,5 +17,11 @@ public static class ApiErrorCodes
     public const string PermissionCeilingExceeded = "PERMISSION_CEILING_EXCEEDED";
     public const string GroupInUse = "GROUP_IN_USE";
 
+    // Permission Group capacity limits (WO-119)
+    /// <summary>A new capacity limit is below the group's current usage (edit rejected, AC-PG-003.4).</summary>
+    public const string CapacityBelowUsage = "CAPACITY_BELOW_USAGE";
+    /// <summary>An action would push a group's usage past its capacity limit (add rejected, AC-PG-013.2).</summary>
+    public const string CapacityLimitReached = "CAPACITY_LIMIT_REACHED";
+
     public const string InternalError = "INTERNAL_ERROR";
 }

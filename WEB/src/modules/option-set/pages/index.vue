@@ -23,6 +23,9 @@
         />
       </template>
     </app-list-header>
+    <q-toggle
+      v-if="canManageDeleted" v-model="showDeleted" label="Show deleted?" dense class="q-mb-md"
+    />
 
     <app-data-table
       page-key="option_sets"
@@ -31,8 +34,7 @@
       :rows="rows"
       :columns="columns"
       :loading="loading"
-      default-sort-by="name"
-      :default-descending="false"
+      default-sort-by="updatedOnUtc"
       @refresh="load"
     >
       <template #body-cell-name="cell">
@@ -54,7 +56,9 @@
       </template>
       <template #body-cell-origin="cell">
         <q-td :props="cell">
-          <q-badge :color="cell.row.isEditable ? 'primary' : 'grey-6'" :label="cell.row.isEditable ? 'Custom' : 'Standard'" />
+          <!-- Origin comes from isSystem, NOT isEditable: standard lists are editable now, so isEditable no
+               longer distinguishes them. -->
+          <q-badge :color="cell.row.isSystem ? 'grey-6' : 'primary'" :label="cell.row.isSystem ? 'Standard' : 'Custom'" />
         </q-td>
       </template>
       <template #body-cell-isActive="cell">
@@ -70,7 +74,9 @@
           <q-btn v-if="cell.row.isEditable && canManage" flat round dense color="primary" icon="o_edit" @click="openEdit(cell.row)">
             <q-tooltip>Edit</q-tooltip>
           </q-btn>
-          <q-btn v-if="cell.row.isEditable && canManage" flat round dense color="negative" icon="o_delete" @click="remove(cell.row)">
+          <!-- A standard list's VALUES are editable, but the list itself cannot be deleted: feature code
+               references its key, and the seeder would recreate it on the next restart anyway. -->
+          <q-btn v-if="!cell.row.isSystem && canManage" flat round dense color="negative" icon="o_delete" @click="remove(cell.row)">
             <q-tooltip>Delete</q-tooltip>
           </q-btn>
         </q-td>
@@ -86,23 +92,32 @@
       </template>
     </app-data-table>
 
+    <deleted-records-panel
+      v-if="canManageDeleted" :entity-type="EntityType.OptionSet" :show="showDeleted" @restored="load"
+    />
+
     <option-set-form-drawer v-model="formOpen" :set="editing" :sets="rows" @saved="onSaved" />
   </q-page>
 </template>
 
 <script setup>
 import { ref, onMounted } from "vue";
-import { optionSetApi, getApiErrorMessage, OptionItemSortMode } from "services/api";
+import { optionSetApi, getApiErrorMessage, OptionItemSortMode, EntityType } from "services/api";
 import { useNotify } from "composables/useNotify";
+import { useDeletedRecords } from "composables/useDeletedRecords";
 import { useConfirm } from "composables/useConfirm";
 import { usePermissions, Permissions } from "composables/usePermissions";
+import { useAuditColumns } from "composables/useAuditColumns";
 import { useEntityMeta } from "composables/uf/useEntityMeta";
 import { useEntityTypeOptions } from "composables/useOptionSet";
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppDataTable from "components/common/AppDataTable.vue";
+import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import OptionSetFormDrawer from "modules/option-set/components/OptionSetFormDrawer.vue";
 
+const auditColumns = useAuditColumns();
+const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const { has } = usePermissions();
@@ -122,8 +137,9 @@ const columns = [
   { name: "entityType", label: "Entity", field: "entityType", align: "left", sortable: true, default: true },
   { name: "itemCount", label: "Values", field: "itemCount", align: "left", sortable: true, default: true },
   { name: "itemSortMode", label: "Order", field: "itemSortMode", align: "left", default: true },
-  { name: "origin", label: "Type", field: "isEditable", align: "left", default: true },
+  { name: "origin", label: "Type", field: "isSystem", align: "left", default: true },
   { name: "isActive", label: "Status", field: "isActive", align: "left", default: true },
+  ...auditColumns(),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 

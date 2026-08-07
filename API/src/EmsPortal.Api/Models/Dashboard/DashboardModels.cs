@@ -1,31 +1,9 @@
 namespace EmsPortal.Api.Models.Dashboard;
 
-// ---- Customers ----
-
-/// <summary>PendingAction = Submitted + UnderReview + PendingApproval + PartiallyApproved + Returned.</summary>
-public sealed record CustomerKpisDto(
-    int Total, int Approved, int PendingAction, int Rejected,
-    double TotalTrendPct, double ApprovedTrendPct);
-
-public sealed record StageCount(string Stage, int Count);
-
-public sealed record AgeingItem(Guid RequestId, string? CustomerRequestNumber, string CompanyName, string Status, int DaysInStatus, bool SlaBreach);
+// ---- Shared ----
 
 public sealed record ActivityEntry(
-    Guid Id, string Action, string? Actor, DateTime TimestampUtc,
-    Guid? CustomerRequestId, string? CustomerRequestNumber, string? Notes);
-
-public sealed record SubmitterCount(Guid? SubmitterId, string SubmitterName, int Count);
-
-public sealed record SubmissionTrendPoint(string WeekStart, int Submitted, int Approved);
-
-public sealed record CustomerDashboardDto(
-    CustomerKpisDto Kpis,
-    IReadOnlyList<StageCount> Funnel,
-    IReadOnlyList<AgeingItem> Ageing,
-    IReadOnlyList<ActivityEntry> ActivityFeed,
-    IReadOnlyList<SubmitterCount> TopSubmitters,
-    IReadOnlyList<SubmissionTrendPoint> SubmissionTrend);
+    Guid Id, string Action, string? Actor, DateTime TimestampUtc, string? Notes);
 
 // ---- Users ----
 
@@ -42,10 +20,10 @@ public sealed record UserDashboardDto(
 // ---- Platform (Super Admin) ----
 
 public sealed record TenantKpisDto(
-    int ActiveTenants, int InactiveTenants, int ArchivedTenants, int TotalUsers, int PendingCustomerApprovals);
+    int ActiveTenants, int InactiveTenants, int ArchivedTenants, int TotalUsers);
 
 public sealed record TenantHealthRow(
-    Guid TenantId, string TenantName, int PendingCustomers, int ActiveUsers);
+    Guid TenantId, string TenantName, int ActiveUsers);
 
 public sealed record GrowthPoint(string Date, int Tenants, int Users);
 
@@ -59,21 +37,13 @@ public sealed record PlatformUserAnalyticsDto(
     int TotalActive, int LoggedInToday, int PendingFirstLogin, int NoRole, int NewThisMonth,
     IReadOnlyList<GrowthPoint> Growth, IReadOnlyList<TenantCount> ByTenant, IReadOnlyList<ActivityEntry> ActivityFeed);
 
-public sealed record CustomerIssueRow(Guid TenantId, string TenantName, int StaleApprovals, int RepeatedReturns);
-
-public sealed record PlatformCustomerDto(
-    int Total, int Approved, int PendingApproval, int Rejected, double TotalTrendPct,
-    IReadOnlyList<TenantCount> ByTenant,
-    IReadOnlyList<StageCount> Funnel, IReadOnlyList<CustomerIssueRow> Issues);
-
 public sealed record PlatformDashboardDto(
     TenantKpisDto TenantKpis,
     IReadOnlyList<TenantHealthRow> TenantHealth,
     IReadOnlyList<GrowthPoint> Growth,
     IReadOnlyList<OnboardingRow> Onboarding,
     IReadOnlyList<SystemAlert> SystemAlerts,
-    PlatformUserAnalyticsDto UserAnalytics,
-    PlatformCustomerDto Customer);
+    PlatformUserAnalyticsDto UserAnalytics);
 
 // ---- Layout ----
 

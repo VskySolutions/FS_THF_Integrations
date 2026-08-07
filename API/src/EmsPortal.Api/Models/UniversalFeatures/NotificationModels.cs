@@ -14,15 +14,17 @@ public sealed record NotificationResponse(
     bool IsGrouped,
     DateTime CreatedOnUtc);
 
-/// <summary>A single notification-type channel preference.</summary>
-public sealed record NotificationPreferenceResponse(NotificationType NotificationType, bool InApp, bool Email);
+/// <summary>
+/// A single notification-type channel preference. Only the in-app channel is user-configurable
+/// (WO-124, AC-UNI-013.2) — notification types are in-app only and never emailed.
+/// </summary>
+public sealed record NotificationPreferenceResponse(NotificationType NotificationType, bool InApp);
 
-/// <summary>Request to update one notification preference row.</summary>
+/// <summary>Request to update one notification preference row (in-app channel only).</summary>
 public sealed class NotificationPreferenceItem
 {
     public NotificationType NotificationType { get; set; }
     public bool InApp { get; set; }
-    public bool Email { get; set; }
 }
 
 /// <summary>Request to update the user's notification preference matrix.</summary>

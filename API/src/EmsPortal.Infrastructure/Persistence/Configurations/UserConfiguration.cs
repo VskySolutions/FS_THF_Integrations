@@ -49,13 +49,14 @@ internal sealed class UserTenantRoleConfiguration : IEntityTypeConfiguration<Use
             .HasConversion<string>()
             .HasMaxLength(30);
 
-        // Optional link to the RBAC role (populated alongside the legacy enum during transition).
+        // Required link to the RBAC role — every assignment row references exactly one concrete role.
         builder.HasOne(r => r.RoleEntity)
             .WithMany()
             .HasForeignKey(r => r.RoleId)
+            .IsRequired()
             .OnDelete(DeleteBehavior.Restrict);
 
-        // One role per (user, tenant).
-        builder.HasIndex(r => new { r.UserId, r.TenantId }).IsUnique().HasFilter("[Deleted] = 0");
+        // One row per (user, tenant, role): a user may hold multiple roles in the same tenant.
+        builder.HasIndex(r => new { r.UserId, r.TenantId, r.RoleId }).IsUnique().HasFilter("[Deleted] = 0");
     }
 }

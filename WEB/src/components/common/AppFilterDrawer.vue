@@ -6,7 +6,7 @@
         v-for="chip in chips"
         :key="chip.key"
         removable
-        color="blue-1"
+        color="teal-1"
         text-color="primary"
         @remove="$emit('remove', chip.key)"
       >

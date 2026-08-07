@@ -28,11 +28,19 @@ public interface IUserRepository
         string? name, string? email, string? phone, string? role, string? group,
         int page, int limit, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Active users assigned to <paramref name="tenantId"/> holding ANY of <paramref name="roleNames"/>
+    /// (exact role-name match). Tenant-specific: the role assignment must be IN this tenant, so users
+    /// whose only assignments are in other tenants are excluded. Distinct.
+    /// </summary>
+    Task<IReadOnlyList<User>> ListByTenantRolesAsync(Guid tenantId, IReadOnlyCollection<string> roleNames, CancellationToken cancellationToken = default);
+
     Task AddAsync(User user, CancellationToken cancellationToken = default);
 
     void Update(User user);
 
-    Task<UserTenantRole?> GetAssignmentAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default);
+    /// <summary>All active (non-deleted) role assignments a user holds in a tenant (multi-role).</summary>
+    Task<IReadOnlyList<UserTenantRole>> GetAssignmentsAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default);
 
     Task AddAssignmentAsync(UserTenantRole assignment, CancellationToken cancellationToken = default);
 

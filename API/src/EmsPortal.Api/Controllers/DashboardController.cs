@@ -45,17 +45,6 @@ public sealed class DashboardController : ControllerBase
         _unitOfWork = unitOfWork;
     }
 
-    // ---- Customers ----
-
-    [HttpGet("customers")]
-    [RequireAnyPermission(Permissions.CustomersDataEntry, Permissions.CustomersReview, Permissions.CustomersApprove)]
-    [ProducesResponseType<ApiResponse<CustomerDashboardDto>>(StatusCodes.Status200OK)]
-    public async Task<IActionResult> Customers([FromQuery] string dateRange = "7d", [FromQuery] Guid? tenantId = null, CancellationToken cancellationToken = default)
-    {
-        var data = await _query.GetCustomersAsync(ResolveScope(tenantId), dateRange, cancellationToken);
-        return Ok(ApiResponseFactory.Success(data, "Customer dashboard retrieved."));
-    }
-
     // ---- Users ----
 
     [HttpGet("users")]
@@ -142,14 +131,17 @@ public sealed class DashboardController : ControllerBase
 
     // ---- Helpers ----
 
-    /// <summary>Super Admins may target any tenant (or pass null for the cross-tenant view); others are pinned to their active tenant.</summary>
+    /// <summary>
+    /// Super Admins may target any tenant explicitly; with none requested they get the tenant they are
+    /// currently viewing (the claim follows the Super-Admin tenant scope), so the dashboard agrees with
+    /// every other screen instead of silently showing a cross-tenant roll-up. Others are pinned to their
+    /// active tenant.
+    /// </summary>
     private Guid? ResolveScope(Guid? requestedTenantId)
-        => User.IsSuperAdmin() ? requestedTenantId : User.GetActiveTenantId();
+        => (User.IsSuperAdmin() ? requestedTenantId : null) ?? User.GetActiveTenantId();
 
     /// <summary>
-    /// Resolves the layout tier: Super Admin, else Tenant Admin (users.read + tenants.read), else a
-    /// Customer-workflow user (any of dataEntry/review/approve) who lands on the customer dashboard,
-    /// else Common.
+    /// Resolves the layout tier: Super Admin, else Tenant Admin (users.read + tenants.read), else Common.
     /// </summary>
     private DashboardRole ResolveDashboardRole()
     {
@@ -160,12 +152,6 @@ public sealed class DashboardController : ControllerBase
         if (User.HasPermission(Permissions.UsersRead) && User.HasPermission(Permissions.TenantsRead))
         {
             return DashboardRole.TenantAdmin;
-        }
-        if (User.HasPermission(Permissions.CustomersDataEntry)
-            || User.HasPermission(Permissions.CustomersReview)
-            || User.HasPermission(Permissions.CustomersApprove))
-        {
-            return DashboardRole.Customer;
         }
         return DashboardRole.Common;
     }

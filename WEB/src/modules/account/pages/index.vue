@@ -2,7 +2,7 @@
   <q-page padding>
     <app-detail-header :items="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'My Account' }]">
       <template #actions>
-        <q-chip v-if="profile" dense color="blue-1" text-color="primary" class="text-weight-medium">
+        <q-chip v-if="profile" dense color="teal-1" text-color="primary" class="text-weight-medium">
           {{ completion }}% complete
         </q-chip>
       </template>
@@ -43,7 +43,7 @@
       <q-separator />
       <q-card-section class="q-py-sm row items-center q-gutter-md">
         <div class="text-caption text-grey-7">Profile completion</div>
-        <q-linear-progress :value="completion / 100" rounded color="primary" track-color="blue-1" class="col" style="height: 8px;" />
+        <q-linear-progress :value="completion / 100" rounded color="primary" track-color="teal-1" class="col" style="height: 8px;" />
         <div class="text-caption text-weight-medium">{{ completion }}%</div>
       </q-card-section>
     </q-card>
@@ -76,13 +76,13 @@
             <q-icon name="o_apartment" color="primary" size="sm" />
             <div class="text-subtitle1 text-weight-medium">Tenants &amp; roles</div>
             <q-space />
-            <q-badge color="blue-1" text-color="primary">{{ assignments.length }}</q-badge>
+            <q-badge color="teal-1" text-color="primary">{{ assignments.length }}</q-badge>
           </q-card-section>
           <q-separator />
           <q-list separator>
             <q-item v-for="t in assignments" :key="t.tenantId">
               <q-item-section avatar>
-                <q-avatar size="34px" color="blue-1" text-color="primary">
+                <q-avatar size="34px" color="teal-1" text-color="primary">
                   <q-icon name="o_business" size="18px" />
                 </q-avatar>
               </q-item-section>
@@ -91,7 +91,10 @@
                 <q-item-label caption>{{ t.identifier }}</q-item-label>
               </q-item-section>
               <q-item-section side>
-                <q-badge color="primary" class="text-capitalize">{{ t.role }}</q-badge>
+                <div class="row q-gutter-xs justify-end">
+                  <q-badge v-for="r in (t.roleNames || [])" :key="r" color="primary" class="text-capitalize">{{ r }}</q-badge>
+                  <span v-if="!(t.roleNames || []).length" class="text-caption text-grey-6">No roles</span>
+                </div>
               </q-item-section>
             </q-item>
             <q-item v-if="!assignments.length">
@@ -147,7 +150,8 @@ const jobLine = computed(() =>
 
 // Assignments come from the tenant store (kept in sync with the auth profile).
 const assignments = computed(() => tenantStore.assignments || authStore.user?.tenants || []);
-const roleChips = computed(() => [...new Set(assignments.value.map((t) => t.role).filter(Boolean))]);
+// Distinct role names across every tenant assignment (multi-role, WO-123).
+const roleChips = computed(() => [...new Set(assignments.value.flatMap((t) => t.roleNames || []))]);
 
 const contactRows = computed(() => [
   { icon: "o_mail", label: "Email", value: email.value },

@@ -16,15 +16,10 @@
       :columns="columns"
       row-key="tenantId"
       page-key="dashboard-tenant-health"
-      default-sort-by="pendingCustomers"
+      default-sort-by="activeUsers"
       :default-descending="true"
       class="cursor-pointer"
     >
-      <template #body-cell-pendingCustomers="cellProps">
-        <q-td :props="cellProps" :class="cellProps.row.pendingCustomers > 0 ? 'bg-orange-1 text-warning' : ''" @click="goToTenant(cellProps.row)">
-          {{ cellProps.row.pendingCustomers ?? 0 }}
-        </q-td>
-      </template>
       <template #body-cell-tenantName="cellProps">
         <q-td :props="cellProps" @click="goToTenant(cellProps.row)">
           <span class="text-primary text-weight-medium">{{ cellProps.row.tenantName }}</span>
@@ -60,7 +55,6 @@ const rows = computed(() => props.tenantHealth || []);
 
 const columns = [
   { name: "tenantName", label: "Tenant", field: "tenantName", align: "left", sortable: true },
-  { name: "pendingCustomers", label: "Pending", field: "pendingCustomers", align: "center", sortable: true },
   { name: "activeUsers", label: "Users", field: "activeUsers", align: "center", sortable: true }
 ];
 

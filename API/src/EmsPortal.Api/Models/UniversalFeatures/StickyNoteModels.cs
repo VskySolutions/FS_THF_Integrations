@@ -55,4 +55,7 @@ public sealed record StickyNoteResponse(
 
 /// <summary>A tenant sticky note with its dismissal count, for the admin management list.</summary>
 public sealed record AdminStickyNoteResponse(
-    Guid Id, string? Title, string Body, string Colour, string Scope, DateTime? ExpiresAtUtc, int DismissalCount, DateTime CreatedOnUtc);
+    Guid Id, string? Title, string Body, string Colour, string Scope, DateTime? ExpiresAtUtc, int DismissalCount,
+    DateTime CreatedOnUtc,
+    // The audit trail every list offers as hidden-by-default columns.
+    string? CreatedBy = null, string? UpdatedBy = null, DateTime? UpdatedOnUtc = null);

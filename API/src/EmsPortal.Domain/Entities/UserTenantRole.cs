@@ -3,9 +3,10 @@ using EmsPortal.Domain.Enums;
 namespace EmsPortal.Domain.Entities;
 
 /// <summary>
-/// Junction assigning a <see cref="User"/> a <see cref="UserRole"/> within a tenant.
-/// Unique per (user, tenant); reassignment updates the role rather than duplicating
-/// (AC-ADM-006.2).
+/// Junction assigning a <see cref="User"/> a single RBAC <see cref="Entities.Role"/> within a tenant.
+/// One row per (user, tenant, role): a user may hold multiple roles in the same tenant, each its own
+/// row (WO-122). The role assignment set is reconciled on assign — rows are added/soft-deleted so the
+/// active set matches the request (AC-ADM-006.2).
 /// </summary>
 public class UserTenantRole : AuditableEntity
 {
@@ -16,17 +17,17 @@ public class UserTenantRole : AuditableEntity
     public Guid TenantId { get; set; }
 
     /// <summary>
-    /// Legacy fixed-tier role. Retained during the RBAC transition as the source for the
-    /// JWT role claim and the role-based authorization policies. Kept in sync with
-    /// <see cref="RoleId"/>.
+    /// Legacy fixed-tier role. Retained during the RBAC transition; operational roles map to
+    /// <see cref="UserRole.Custom"/>. The role NAME (<see cref="RoleEntity"/>.Name) now drives the JWT
+    /// role claim and authorization, so this is a display/back-compat shadow of <see cref="RoleId"/>.
     /// </summary>
     public UserRole Role { get; set; }
 
     /// <summary>
-    /// The assigned RBAC <see cref="Entities.Role"/>. Nullable during the transition; for
-    /// legacy/enum-driven assignments it points at the matching system role.
+    /// The assigned RBAC <see cref="Entities.Role"/>. Required — every row references exactly one
+    /// concrete role (system or custom).
     /// </summary>
-    public Guid? RoleId { get; set; }
+    public Guid RoleId { get; set; }
 
     public User? User { get; set; }
 

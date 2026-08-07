@@ -15,6 +15,8 @@ export const ApiErrorCodes = Object.freeze({
   DuplicateIdentifier: "DUPLICATE_IDENTIFIER",
   DuplicateGroupName: "DUPLICATE_GROUP_NAME",
   PermissionCeilingExceeded: "PERMISSION_CEILING_EXCEEDED",
+  CapacityBelowUsage: "CAPACITY_BELOW_USAGE",
+  CapacityLimitReached: "CAPACITY_LIMIT_REACHED",
   TenantInactive: "TENANT_INACTIVE",
   TenantNotFound: "TENANT_NOT_FOUND",
   TenantArchived: "TENANT_ARCHIVED",
@@ -52,6 +54,21 @@ export function getApiErrorCode (error) {
   return error?.response?.data?.error?.code || null;
 }
 
+/**
+ * Completes a link that points at this web app, using WEB_BASE_URL from config/env.<mode>.cjs.
+ *
+ * The API mints shareable links (the REMS client form link) from its own `App:BaseUrl`, which is a
+ * separate setting and is empty in a fresh environment — leaving a relative "/rems/form/abc123" that is
+ * useless once copied out of the browser. The SPA always knows its own origin, so it fills the gap.
+ * An already-absolute URL is returned untouched, so a correctly configured API still wins.
+ */
+export function webUrl (pathOrUrl) {
+  if (!pathOrUrl) return "";
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(pathOrUrl)) return pathOrUrl;
+  const base = (process.env.WEB_BASE_URL || "").replace(/\/+$/, "");
+  return `${base}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
+}
+
 // Unwrap the standard ApiResponse envelope to its `data` (and attach `meta` for lists).
 const unwrap = (response) => response?.data?.data;
 const envelope = (response) => response?.data;
@@ -69,7 +86,13 @@ export const authApi = {
   profile: () => api.get("/api/auth/profile").then(unwrap),
   changePassword: (currentPassword, newPassword) =>
     api.put("/api/users/me/change-password", { currentPassword, newPassword }).then(envelope),
-  updateMe: (displayName) => api.put("/api/users/me", { displayName }).then(unwrap)
+  updateMe: (displayName) => api.put("/api/users/me", { displayName }).then(unwrap),
+  effectivePermissions: () => api.get("/api/auth/effective-permissions").then(unwrap),
+  // Self-service reset. `forgotPassword` always resolves the same way whether or not the address exists —
+  // never branch the UI on its response, that would leak which accounts are real.
+  forgotPassword: (email) => anonApi.post("/api/auth/forgot-password", { email }).then(envelope),
+  resetPassword: (token, newPassword) =>
+    anonApi.post("/api/auth/reset-password", { token, newPassword }).then(envelope)
 };
 
 export const tenantApi = {
@@ -94,19 +117,36 @@ export const personApi = {
 export const userApi = {
   list: (params) => api.get("/api/admin/users", { params }).then(envelope),
   get: (id) => api.get(`/api/admin/users/${id}`).then(unwrap),
-  // payload: { personId, email?, phoneNumber?, countryCode?, tenantId, roleId } — promotes a Person to a login account.
+  // payload: { personId, email?, phoneNumber?, countryCode?, tenantId, roleIds[] } — promotes a Person
+  // to a login account with one or more RBAC roles in the tenant (multi-role, WO-123).
   create: (payload) => api.post("/api/admin/users", payload).then(unwrap),
   update: (id, payload) => api.put(`/api/admin/users/${id}`, payload).then(unwrap),
   setStatus: (id, isActive) => api.put(`/api/admin/users/${id}/status`, { isActive }).then(unwrap),
   // Admin password reset (REQ-ADM-013) — returns a new temporary password.
   resetPassword: (id) => api.post(`/api/admin/users/${id}/reset-password`).then(unwrap),
-  // payload: { tenantId, role?, roleId? } — roleId (RBAC) takes precedence over the legacy role enum.
+  // payload: { tenantId, roleIds[] } — reconciles the full set of roles the user holds in the tenant
+  // (adds/removes to match; an empty set removes tenant access). WO-123 multi-role.
   assignTenantRole: (id, payload) =>
     api.post(`/api/admin/users/${id}/tenant-assignments`, payload).then(unwrap),
   removeTenantRole: (id, tenantId) =>
     api.delete(`/api/admin/users/${id}/tenant-assignments/${tenantId}`).then(envelope),
   // Replace the user's group memberships with the given set of group ids.
-  setGroups: (id, groupIds) => api.put(`/api/admin/users/${id}/groups`, { groupIds }).then(unwrap)
+  setGroups: (id, groupIds) => api.put(`/api/admin/users/${id}/groups`, { groupIds }).then(unwrap),
+  // Picker data for the approval-roles section: the tenant's REMS.Department list, the current head of
+  // each, and the tenant's managing shareholder → { departments: [{ value, label }],
+  // heads: [{ department, userId, fullName }], managingShareholder: { userId, fullName } | null }.
+  departments: () => api.get("/api/admin/users/departments").then(unwrap),
+  // The selectable job titles (the User.JobTitle option list) → ["Partner", "Tax Manager", …]. The chosen
+  // title is stored verbatim, so these strings are both the option and the value.
+  jobTitles: () => api.get("/api/admin/users/job-titles").then(unwrap),
+  // payload: { department: code|null, isHead } — a null department unassigns the user. Marking a head
+  // demotes the incumbent and repoints the REMS department-director mapping (WO-114), so the response
+  // carries { department, isHead, demotedHeadName } for reporting the handover.
+  setDepartment: (id, payload) => api.put(`/api/admin/users/${id}/department`, payload).then(unwrap),
+  // payload: { isManagingShareholder } — the tenant-wide REMS approver (one holder). Granting it displaces
+  // the incumbent; clearing only revokes this user's own role. → { isManagingShareholder, displacedName }
+  setManagingShareholder: (id, isManagingShareholder) =>
+    api.put(`/api/admin/users/${id}/managing-shareholder`, { isManagingShareholder }).then(unwrap)
 };
 
 // Tenant-scoped user groups (segmentation/tagging, independent of RBAC roles).
@@ -186,49 +226,6 @@ export const mediaApi = {
   absoluteUrl: (publicUrl) => (publicUrl ? `${process.env.API_BASE_URL || ""}${publicUrl}` : null)
 };
 
-// Customer onboarding & approval workflow (WO-65). Super Admins target a tenant via the `tenantId`
-// query param on list and `tenantId` in the create body; everyone else is auto-scoped server-side.
-export const customerApi = {
-  list: (params) => api.get("/api/customers", { params }).then(envelope),
-  get: (id) => api.get(`/api/customers/${id}`).then(unwrap),
-  // payload: step1 fields { tenantId?, legalName, companyName, contactPerson?, emailAddress, ... }
-  create: (payload) => api.post("/api/customers", payload).then(unwrap),
-  update: (id, payload) => api.put(`/api/customers/${id}`, payload).then(unwrap),
-  remove: (id) => api.delete(`/api/customers/${id}`).then(unwrap),
-  // body: { duplicateAcknowledged } → { submitted, customerRequestNumber, status, duplicates[] }
-  submit: (id, duplicateAcknowledged = false) =>
-    api.post(`/api/customers/${id}/submit`, { duplicateAcknowledged }).then(unwrap),
-  // body: enrichment fields → { customerId, status }
-  enrich: (id, payload) => api.post(`/api/customers/${id}/enrich`, payload).then(unwrap),
-  sendForApproval: (id) => api.post(`/api/customers/${id}/send-for-approval`).then(unwrap),
-  // body: step2 fields → { customerId }
-  saveStep2: (id, payload) => api.post(`/api/customers/${id}/step2`, payload).then(unwrap),
-  // body: { step2: {...}, duplicateAcknowledged } → { approved, status, duplicates[] }
-  approve: (id, step2, duplicateAcknowledged = false) =>
-    api.post(`/api/customers/${id}/approve`, { step2, duplicateAcknowledged }).then(unwrap),
-  // Approver rejects an awaiting-approval request with a mandatory reason. body: { reason }
-  reject: (id, reason) => api.post(`/api/customers/${id}/reject`, { reason }).then(unwrap),
-  // Approver sends an awaiting-approval request back to the reviewer. body: { notes? }
-  revertToReviewer: (id, notes = null) => api.post(`/api/customers/${id}/revert-to-reviewer`, { notes }).then(unwrap),
-  // Reviewer returns a request under review to data entry. body: { notes, fields[] } → { customerId, status }
-  returnForCorrections: (id, notes, fields = []) =>
-    api.post(`/api/customers/${id}/return`, { notes, fields }).then(unwrap),
-  reopen: (id) => api.post(`/api/customers/${id}/reopen`).then(unwrap),
-  // ---- Documents ----
-  listDocuments: (id) => api.get(`/api/customers/${id}/documents`).then(unwrap),
-  uploadDocument: (id, file) => {
-    const form = new FormData();
-    form.append("file", file);
-    return api.post(`/api/customers/${id}/documents`, form, {
-      headers: { "Content-Type": "multipart/form-data" }
-    }).then(unwrap);
-  },
-  downloadDocument: (id, documentId) =>
-    api.get(`/api/customers/${id}/documents/${documentId}/download`, { responseType: "blob" }).then((r) => r?.data),
-  removeDocument: (id, documentId) =>
-    api.delete(`/api/customers/${id}/documents/${documentId}`).then(unwrap)
-};
-
 // Per-tenant SMTP email accounts (WO-80/81). Reads require users.read; writes require email.manage.
 // Super Admins target a tenant via the `tenantId` query (list/get/write) or create body; everyone
 // else is auto-scoped to their active tenant. Passwords are write-only and never returned.
@@ -293,14 +290,25 @@ export const optionSetApi = {
 
 // ---------------------------------------------------------------------------
 // Universal Features (Phase 14/15). Attach to any entity via (entityType, entityId).
-// EntityType enum: CustomerRequest=1, Tenant=3, User=4, UserGroup=5.
+// EntityType — mirrors EmsPortal.Domain.Enums.EntityType. Values are append-only: they are persisted on
+// every Universal Feature row (notes, tags, attachments, pins, …), so renumbering would silently
+// re-point existing data.
 // ---------------------------------------------------------------------------
 
 export const EntityType = Object.freeze({
-  CustomerRequest: 1,
   Tenant: 3,
   User: 4,
-  UserGroup: 5
+  UserGroup: 5,
+  Rems: 6,
+  Person: 7,
+  Role: 8,
+  OptionSet: 9,
+  PermissionGroup: 10,
+  SmtpAccount: 11,
+  EmailTemplate: 12,
+  Tag: 13,
+  SavedView: 14,
+  StickyNote: 15
 });
 
 // Notes (@mention-aware annotations).
@@ -440,7 +448,6 @@ export const ufModifiedLogApi = {
 // endpoints auto-scope to the active tenant; Super Admins may target a tenant via `tenantId`.
 // `params` carries `{ dateRange, tenantId? }`. All responses use the standard ApiResponse envelope.
 export const dashboardApi = {
-  customers: (params) => api.get("/api/dashboard/customers", { params }).then(unwrap),
   users: (params) => api.get("/api/dashboard/users", { params }).then(unwrap),
   // Super Admin platform overview. `forceRefresh` bypasses the server cache via a request header.
   platform: (params, forceRefresh = false) =>
@@ -452,4 +459,195 @@ export const dashboardApi = {
   getLayout: () => api.get("/api/dashboard/layout").then(unwrap),
   // payload: { widgetOrder, hiddenWidgets, collapsedWidgets }
   saveLayout: (payload) => api.put("/api/dashboard/layout", payload).then(unwrap)
+};
+
+// REMS (Phase 15, WO-111/115). Request lifecycle: the Partner Dashboard + Admin Pool lists, the
+// create/edit/assign/duplicate/delete actions, and the client + admin pickers. Row visibility and the
+// per-row `actions` flags are enforced server-side; the UI additionally gates on permission keys.
+// The conversation thread / activity / attachments reuse the Universal Features endpoints keyed on
+// EntityType.Rems (see ufNotesApi) — this object deliberately does not duplicate them.
+export const remsApi = {
+  // params: { scope?, poolScope?, clientName?, contact?, status?, type?, priority?,
+  //           assignedAdminUserId?, createdFrom?, createdTo?, page?, limit? }
+  // scope: "partner" | "pool"; poolScope: "unassigned" | "mine" | "all". type/priority/status are
+  // option-set CODES, matched exactly; clientName/contact are "contains"; createdFrom/To are UTC
+  // instants (a date-only picker must convert its own day boundaries — see zonedDayBoundaryUtc).
+  // Returns the standard envelope.
+  list: (params) => api.get("/api/rems/requests", { params }).then(envelope),
+  // Admin Pool view sizes: { unassigned, mine, all }. Takes the SAME filter params as list() (minus
+  // paging and poolScope) and applies the same visibility rules, so each count matches the rows that
+  // view would return. `all` is the total the other two are drawn from, not their sum — a request
+  // assigned to someone else is in neither.
+  poolCounts: (params) => api.get("/api/rems/requests/pool-counts", { params }).then(unwrap),
+  get: (id) => api.get(`/api/rems/requests/${id}`).then(unwrap),
+  // payload: { existingClientReferenceId?, clientName, type, priority, title, description?,
+  //            customerEmail?, customerMobileNumber?, mediaId?, submit, assignAdminUserId? }
+  create: (payload) => api.post("/api/rems/requests", payload).then(unwrap),
+  // payload: any subset of { title, description, type, priority, clientName, customerEmail,
+  //            customerMobileNumber, existingClientReferenceId, submit } — null fields are unchanged.
+  // Assignment travels here too: `assignAdminUserId` sets the owner, `unassignAdmin: true` hands the
+  // request back to the pool (the two are mutually exclusive), and omitting both leaves it alone.
+  // Changing it needs rems.requests.assign on top of rems.requests.update.
+  update: (id, payload) => api.put(`/api/rems/requests/${id}`, payload).then(unwrap),
+  assign: (id, adminUserId) => api.post(`/api/rems/requests/${id}/assign`, { adminUserId }).then(unwrap),
+  duplicate: (id) => api.post(`/api/rems/requests/${id}/duplicate`).then(unwrap),
+  remove: (id) => api.delete(`/api/rems/requests/${id}`).then(envelope),
+  // Client picker (2+ chars): [{ id, name, email, phone, parentCompany:null, pastWork:null }].
+  // parentCompany/pastWork are always null — no external client directory exists in this platform.
+  clientLookup: (q) => api.get("/api/rems/clients/lookup", { params: { q } }).then(unwrap),
+  // Users holding the REMS Admin role in the active tenant: [{ id, name, email }]. Reused as the CSE
+  // picker source (WO-116) — there is no dedicated CSE endpoint, so the staff/Admin list stands in.
+  // Without `group`: Admin + Super Admin users in the tenant (the assign/CSE pickers). With `group`: the
+  // members of that user group — how the Engagement Executive / Billing Manager pickers are scoped. An
+  // unknown or empty group returns [] rather than falling back to every admin.
+  admins: (group) => api.get("/api/rems/admins", { params: group ? { group } : undefined }).then(unwrap),
+
+  // ---- EMS form build / send / email-log (WO-112, WO-116) ----
+  // Build screen: { remsId, remsNumber, requestTitle, clientName, requestStatus, customerEmail,
+  //   customerMobileNumber, cse:{id,name}|null, form:{id,industryGroup,inviteCode,formLink,status,
+  //   sentOnUtc,submittedOnUtc,inviteLockedOnUtc,isLocked}|null }.
+  getForm: (remsId) => api.get(`/api/rems/requests/${remsId}/form`).then(unwrap),
+  // payload: { cseUserId, industryGroup } — both required (AC-REMS-007.7). Returns the build screen.
+  saveForm: (remsId, payload) => api.post(`/api/rems/requests/${remsId}/form`, payload).then(unwrap),
+  // Pre-send preview: { destinationEmail, formLink } (AC-REMS-008.1).
+  previewForm: (remsId) => api.get(`/api/rems/requests/${remsId}/form/preview`).then(unwrap),
+  // Sends the form-link email; returns the refreshed (now Sent/locked) build screen.
+  sendForm: (remsId) => api.post(`/api/rems/requests/${remsId}/form/send`).then(unwrap),
+  // Provider email events, newest first: [{ id, eventType, recipientEmail, occurredOnUtc, providerMessageId }].
+  emailLog: (remsId) => api.get(`/api/rems/requests/${remsId}/email-log`).then(unwrap),
+  // EMS Inbox (paginated envelope). params: { page?, limit?, formState?, search?, requestStatus? } —
+  // search covers the REMS number and client name. Filtering is server-side, so the pager reports the
+  // filtered total. Rows: { remsId, remsNumber, clientName, engagementType, requestStatus,
+  //   formStatus, formCreatedBy:{id,name}|null, formSentOnUtc, latestEmailEventType, latestEmailEventOnUtc }.
+  inbox: (params) => api.get("/api/rems/inbox", { params }).then(envelope),
+
+  // ---- Client forms + submitted-form review (WO-114, WO-116) ----
+  // Client Forms list (paginated envelope). params: { page?, limit?, search?, submitted?, requestStatus? } —
+  // search covers the REMS number and client name; `submitted` is a bool. Filtering is server-side. Rows:
+  //   { remsId, remsNumber, clientName, requestStatus, hasForm,
+  //     submitted, submittedOnUtc, assignedAdmin:{id,name}|null, cse:{id,name}|null }.
+  clientForms: (params) => api.get("/api/rems/client-forms", { params }).then(envelope),
+  // The immutable submitted-form snapshot: { submissionId, remsId, remsNumber, industryGroup, lockedEmail,
+  //   submittedOnUtc, payload } — payload is the RemsFormPayloadV1 wire shape, rendered read-only, grouped.
+  submission: (remsId) => api.get(`/api/rems/requests/${remsId}/submission`).then(unwrap),
+
+  // ---- Engagement workspace (WO-117 / WO-114) ----
+  // Addresses travel in the REMS wire shape — { street, addressLine2, city, state, stateCode, zip,
+  // countryCode, countryName } (street is address line 1) — mapped to/from the AppAddressFields model by
+  // modules/rems/remsAddress. Send the WHOLE shape: an update writes every line it is given.
+  //
+  // The editable engagement workspace graph: { remsId, remsNumber, requestStatus, client, entities[] }.
+  // client: { id, name, email(locked), mobileNumber, referralSource, billingContactName, billingEmail,
+  //   billingAddress:{ id, ...address }|null }. entities[]: { id, name, ein, isMainEntity,
+  //   addresses:[{ id, addressType, address }], contacts:[{ id, role, isRequired, name, email, phone }],
+  //   engagement:{ id, department, serviceLine, departmentDirector, engagementExecutive, billingManager,
+  //     firstYearFeeEstimate, realizationPercentage, status, marketingMethodIds[], commissionSplits[],
+  //     audit, government, tax }|null }.
+  engagement: (remsId) => api.get(`/api/rems/requests/${remsId}/engagement`).then(unwrap),
+  // payload: { name?, mobileNumber?, referralSource?, billingContactName?, billingEmail?,
+  //   billingAddress? } — the client email is LOCKED (never sent/changed).
+  updateClient: (remsId, payload) => api.put(`/api/rems/requests/${remsId}/client`, payload).then(unwrap),
+  // payload: { physicalAddress?, mailingAddress? } — null/all-blank removes the address.
+  updateEntityAddresses: (entityId, payload) => api.put(`/api/rems/entities/${entityId}/addresses`, payload).then(unwrap),
+  // payload: { contacts: [{ role, name?, email?, phone?, isRequired }] } — upserted by role.
+  updateEntityContacts: (entityId, payload) => api.put(`/api/rems/entities/${entityId}/contacts`, payload).then(unwrap),
+  // payload: any subset of { department, serviceLine, departmentDirectorId, engagementExecutiveId,
+  //   billingManagerId, firstYearFeeEstimate, realizationPercentage } — null fields are left unchanged.
+  // Returns { engagement, mappedDepartmentDirectorId } — the director the chosen department maps to (hint).
+  updateEngagement: (id, payload) => api.put(`/api/rems/engagements/${id}`, payload).then(unwrap),
+  // Link a previously-uploaded media id as the signed client-acceptance form (audit engagements).
+  uploadCaf: (id, mediaId) => api.post(`/api/rems/engagements/${id}/audit/client-acceptance-form`, { mediaId }).then(unwrap),
+  // payload: { contractNumber?, floridaOnePercentStateFeeApplies?, contractStartDate?, contractEndDate?,
+  //   originalTerm?, renewalTerms?, purchaseOrderStartDate?, purchaseOrderEndDate? } (government audit).
+  updateGovernment: (id, payload) => api.put(`/api/rems/engagements/${id}/government`, payload).then(unwrap),
+  // payload: { fiscalYearEnd?, taxFormIds:[] } — the response tax detail carries the recomputed due dates.
+  updateTax: (id, payload) => api.put(`/api/rems/engagements/${id}/tax`, payload).then(unwrap),
+  // One-time copy of another entity's engagement setup (address/department/service line/executive/billing).
+  copyEngagement: (id, sourceId) => api.post(`/api/rems/engagements/${id}/copy-from/${sourceId}`).then(unwrap),
+  // Set the marketing tags (≥1 required to save; saving makes approval reachable). Returns the engagement.
+  updateMarketing: (id, marketingMethodIds) => api.put(`/api/rems/engagements/${id}/marketing`, { marketingMethodIds }).then(unwrap),
+  // Set the commission splits (≤10 recipients, each > 0 and ≤ 100). splits: [{ employeeId, percentage }].
+  updateCommission: (id, splits) => api.put(`/api/rems/engagements/${id}/commission`, { splits }).then(unwrap),
+  // The full approver list: { engagementId, engagementStatus, approvers:[{ user:{id,name}, role }],
+  // selectedApproverIds }. approvers = the automatic ones (CSE + commission recipients) plus the added
+  // ones; selectedApproverIds = only the added ones, which is what the picker binds to.
+  approvers: (id) => api.get(`/api/rems/engagements/${id}/approvers`).then(unwrap),
+  // Users selectable as EXTRA approvers — the tenant's Approver-role users → [{ userId, name, jobTitle, email }].
+  approverOptions: (id) => api.get(`/api/rems/engagements/${id}/approver-options`).then(unwrap),
+  // Replace the ADDED approvers. An empty array removes the additions; the automatic ones always route.
+  setApprovers: (id, userIds) => api.put(`/api/rems/engagements/${id}/approvers`, { userIds }).then(unwrap),
+  // Route the engagement for approval; returns the (now locked) approver list with engagementStatus updated.
+  sendApproval: (id) => api.post(`/api/rems/engagements/${id}/approval/send`).then(unwrap),
+  // Resubmit a rejected engagement for a fresh approval round (staff, rems.approvals.send). Returns the
+  // regenerated (locked) approver list with engagementStatus now PendingApproval again.
+  resubmitApproval: (engagementId) => api.post(`/api/rems/engagements/${engagementId}/approval/resubmit`).then(unwrap),
+
+  // ---- Approval inbox (WO-117 Part B / WO-114) — the caller's OWN approval tasks only ----
+  // The caller's own approval tasks (pending + historical), newest round first. Paged and filtered
+  // SERVER-side — params: { page?, limit?, search?, role?, status? }, where search covers the REMS number,
+  // client and entity name, and role/status take the RemsApproverRole / RemsApprovalTaskStatus names.
+  // Returns the standard paginated envelope. Rows:
+  //   { taskId, roundId, roundNumber, role, status, sentOnUtc, decidedOnUtc, roundStatus,
+  //     engagementId, remsId, remsNumber, clientName, entityName,
+  //     approvedCount, rejectedCount, approverCount }.
+  // The three counts describe the whole ROUND (how many approvers, how many have decided), not the
+  // caller's own task — they drive the inbox's "1/4" progress column. Still awaiting =
+  // approverCount - approvedCount - rejectedCount; a rejection ends the round, so the rest never decide.
+  myApprovalTasks: (params) => api.get("/api/rems/approval-tasks", { params }).then(envelope),
+  // The caller's own approval task with the full review packet (404 for anyone else's task) — the same
+  // material as the staff engagement workspace, since that is what is being signed off. Shape:
+  //   { taskId, roundId, roundNumber, role, status, decidedOnUtc, rejectionReason, canDecide,
+  //     checklist:[{ id, displayOrder, label, isCompleted, completedOnUtc }],
+  //     request:{ remsId, remsNumber, title, description, requestedClientName, type, priority, status,
+  //       customerEmail, customerMobileNumber, industryGroup, emsFormState, clientSubmissionState,
+  //       assignedAdmin, cse, requestedBy, createdOnUtc, files:[{ id, mediaId, fileName, mimeType, fileSize, url }] },
+  //     engagement:{ engagementId, status, department, serviceLine,
+  //       client:{ id, name, email, mobileNumber, referralSource, billingContactName, billingEmail,
+  //         billingAddress, entities:[{ id, name, ein, isMainEntity }] },
+  //       entity:{ id, name, ein, isMainEntity, addresses:[{ id, addressType, address }],
+  //         contacts:[{ id, role, isRequired, name, email, phone }] },
+  //       departmentDirector, engagementExecutive, billingManager,
+  //       firstYearFeeEstimate, realizationPercentage, financialsRestricted,
+  //       audit:{ id, clientAcceptanceFormMediaId, fileName, url }|null,
+  //       government:{ ... }|null,
+  //       tax:{ id, fiscalYearEnd, dueDates:{ originalDueDate, extendedDueDate }|null, taxForms:[{ id, label, group }] }|null,
+  //       marketingMethods:[{ id, label, group }], commissionSplits:[{ id, employee:{ id, name }, percentage }] },
+  //     round:{ id, roundNumber, status, sentOnUtc, sentBy, completedOnUtc, rejectionReason,
+  //       decisions:[{ taskId, approver, role, status, decidedOnUtc, rejectionReason, isYou }] } }.
+  // Option-set references arrive resolved to labels — the approver roles do not carry optionSets.read.
+  // `firstYearFeeEstimate`/`realizationPercentage` are null with `financialsRestricted` true for roles
+  // other than Department Director / Managing Shareholder (AC-REMS-019.10).
+  approvalTask: (taskId) => api.get(`/api/rems/approval-tasks/${taskId}`).then(unwrap),
+  // Check / uncheck one checklist item on the caller's own task. Returns the updated item view.
+  setChecklistItem: (taskId, itemId, isCompleted) =>
+    api.put(`/api/rems/approval-tasks/${taskId}/checklist/${itemId}`, { isCompleted }).then(unwrap),
+  // Approve the caller's own task. 409 (REMS_CHECKLIST_INCOMPLETE) when the server re-verify finds an
+  // incomplete checklist. Returns the (now read-only) task view.
+  approveTask: (taskId) => api.post(`/api/rems/approval-tasks/${taskId}/approve`).then(unwrap),
+  // Reject the caller's own task; payload { reason } is required. Returns the (now read-only) task view.
+  rejectTask: (taskId, payload) => api.post(`/api/rems/approval-tasks/${taskId}/reject`, payload).then(unwrap)
+};
+
+// REMS public client EMS form (Phase 15, WO-113/116). The anonymous, no-login client onboarding flow
+// reached via the emailed invite link ({App:BaseUrl}/rems/form/{inviteCode}). These call the
+// AllowAnonymous `api/rems/public/forms` endpoints on the UNAUTHENTICATED `anonApi` instance (no Bearer
+// token / tenant headers) — the form is resolved by its unguessable invite code alone. All bodies are the
+// RemsFormPayloadV1 wire shape (mirrors EmsPortal.Api.Models.Rems.RemsPublicFormModels); the backend
+// re-validates every payload at review + submit, so partial drafts round-trip freely.
+export const remsPublicApi = {
+  // → { state: "Invalid"|"Unavailable"|"Submitted"|"Editable", clientName?, industryGroup?,
+  //     prefill?:{ clientName, email, mobileNumber }, draftPayload?:RemsFormPayloadV1 }. Always HTTP 200.
+  load: (inviteCode) => anonApi.get(`/api/rems/public/forms/${encodeURIComponent(inviteCode)}`).then(unwrap),
+  // Auto-save the single in-progress draft (partial payload allowed) → { lastSavedOnUtc }.
+  saveDraft: (inviteCode, payload) =>
+    anonApi.put(`/api/rems/public/forms/${encodeURIComponent(inviteCode)}/draft`, payload).then(unwrap),
+  // Validate + return the grouped read-only review model, or a 400 VALIDATION_FAILED envelope (per-field
+  // messages in error.details) when the form is incomplete.
+  review: (inviteCode, payload) =>
+    anonApi.post(`/api/rems/public/forms/${encodeURIComponent(inviteCode)}/review`, payload).then(unwrap),
+  // Transactionally submit (re-validates server-side); idempotent → returns the Submitted thank-you state.
+  submit: (inviteCode, payload) =>
+    anonApi.post(`/api/rems/public/forms/${encodeURIComponent(inviteCode)}/submit`, payload).then(unwrap),
+  // Non-destructive client cancellation acknowledgement (the draft is kept; the link stays usable).
+  cancel: (inviteCode) => anonApi.post(`/api/rems/public/forms/${encodeURIComponent(inviteCode)}/cancel`).then(unwrap)
 };

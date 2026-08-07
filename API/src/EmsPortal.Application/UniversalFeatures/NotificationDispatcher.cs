@@ -1,112 +1,54 @@
-using EmsPortal.Application.Abstractions.Email;
 using EmsPortal.Application.Abstractions.Persistence;
-using EmsPortal.Application.Abstractions.Tenancy;
 using EmsPortal.Application.Abstractions.UniversalFeatures;
 using EmsPortal.Domain.Entities;
-using EmsPortal.Domain.Enums;
-using Microsoft.Extensions.Logging;
 
 namespace EmsPortal.Application.UniversalFeatures;
 
 /// <summary>
 /// Default <see cref="INotificationDispatcher"/>. Stages an in-app <see cref="Notification"/> (honouring
-/// the user's per-type preference), dedupes duplicates within a 60-second window, and best-effort sends
-/// an email via the tenant's active SMTP account. Email failures are swallowed so the triggering
-/// operation is never blocked.
+/// the user's per-type in-app preference) and dedupes duplicates within a 60-second window.
+/// <para>
+/// In-app only since WO-124: internal workflow notifications (mentions, reminders, …) never send email
+/// (REQ-UNI-002.2 / 010.2). External email is limited to the account-security and REMS templates on the
+/// email allowlist and is dispatched through <c>IEmailDispatcher</c> / <c>IRemsEmailNotifier</c>, not here.
+/// </para>
 /// </summary>
 public sealed class NotificationDispatcher : INotificationDispatcher
 {
-    /// <summary>Duplicate-suppression window — repeated notifications inside it are grouped (no email).</summary>
+    /// <summary>Duplicate-suppression window — repeated notifications inside it are grouped.</summary>
     private static readonly TimeSpan GroupingWindow = TimeSpan.FromSeconds(60);
 
     private readonly INotificationRepository _notifications;
-    private readonly IUserRepository _users;
-    private readonly IEmailDispatcher _emailDispatcher;
-    private readonly ITenantContext _tenantContext;
-    private readonly ILogger<NotificationDispatcher> _logger;
 
-    public NotificationDispatcher(
-        INotificationRepository notifications,
-        IUserRepository users,
-        IEmailDispatcher emailDispatcher,
-        ITenantContext tenantContext,
-        ILogger<NotificationDispatcher> logger)
+    public NotificationDispatcher(INotificationRepository notifications)
     {
         _notifications = notifications;
-        _users = users;
-        _emailDispatcher = emailDispatcher;
-        _tenantContext = tenantContext;
-        _logger = logger;
     }
 
     public async Task DispatchAsync(CreateNotificationDto notification, CancellationToken cancellationToken = default)
     {
+        // The in-app channel is default-on (AC-UNI-013.4); a user may still opt out of it per type.
         var preference = await _notifications.GetPreferenceAsync(notification.UserId, notification.Type, cancellationToken);
-        var inApp = preference?.InApp ?? true;
-        var email = preference?.Email ?? true;
+        if (!(preference?.InApp ?? true))
+        {
+            return;
+        }
 
         var isGrouped = await _notifications.HasRecentDuplicateAsync(
             notification.UserId, notification.Type, notification.EntityType, notification.EntityId,
             DateTime.UtcNow - GroupingWindow, cancellationToken);
 
-        if (inApp)
+        await _notifications.AddAsync(new Notification
         {
-            await _notifications.AddAsync(new Notification
-            {
-                Id = Guid.NewGuid(),
-                UserId = notification.UserId,
-                Type = notification.Type,
-                Title = notification.Title,
-                Body = notification.Body,
-                EntityType = notification.EntityType,
-                EntityId = notification.EntityId,
-                IsRead = false,
-                IsGrouped = isGrouped,
-            }, cancellationToken);
-        }
-
-        // Email fan-out is best-effort and skipped for grouped duplicates to avoid flooding.
-        if (email && !isGrouped && _tenantContext.IsResolved && MapTemplate(notification.Type) is { } templateKey)
-        {
-            await SendEmailAsync(notification, templateKey, cancellationToken);
-        }
+            Id = Guid.NewGuid(),
+            UserId = notification.UserId,
+            Type = notification.Type,
+            Title = notification.Title,
+            Body = notification.Body,
+            EntityType = notification.EntityType,
+            EntityId = notification.EntityId,
+            IsRead = false,
+            IsGrouped = isGrouped,
+        }, cancellationToken);
     }
-
-    private async Task SendEmailAsync(CreateNotificationDto notification, EmailTemplateKey templateKey, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var user = await _users.GetByIdAsync(notification.UserId, cancellationToken);
-            if (user is null || string.IsNullOrWhiteSpace(user.Email))
-            {
-                return;
-            }
-
-            var names = await _users.GetFullNamesAsync(new[] { notification.UserId }, cancellationToken);
-            var fullName = names.TryGetValue(notification.UserId, out var n) ? n : user.DisplayName;
-
-            _emailDispatcher.Enqueue(
-                _tenantContext.TenantId,
-                templateKey,
-                user.Email,
-                new Dictionary<string, string?>
-                {
-                    ["FullName"] = fullName,
-                    ["Title"] = notification.Title,
-                    ["Body"] = notification.Body,
-                });
-        }
-        catch (Exception ex)
-        {
-            // Best-effort: a failed notification email must never block the triggering operation.
-            _logger.LogWarning(ex, "Failed to send notification email to user {UserId} for {Type}.", notification.UserId, notification.Type);
-        }
-    }
-
-    private static EmailTemplateKey? MapTemplate(NotificationType type) => type switch
-    {
-        NotificationType.Mention => EmailTemplateKey.MentionReceived,
-        NotificationType.ReminderDue => EmailTemplateKey.ReminderDue,
-        _ => null,
-    };
 }

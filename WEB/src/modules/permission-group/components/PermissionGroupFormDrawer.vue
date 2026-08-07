@@ -22,7 +22,15 @@
         v-model="form.name" label="Name *" class="q-mb-md"
         :rules="[(v) => !!v || 'Name is required']"
       />
-      <app-text-field v-model="form.description" label="Description" type="textarea" autogrow class="q-mb-md" />
+      <app-rich-text-field v-model="form.description" label="Description" class="q-mb-md" />
+
+      <!-- Capacity limit (WO-119): optional cap on distinct active members; blank = unlimited. -->
+      <app-text-field
+        v-model="form.capacityLimit" label="Capacity Limit" type="number" class="q-mb-md"
+        clearable placeholder="Unlimited"
+        hint="Maximum distinct active members allowed. Leave blank for unlimited."
+        :rules="[(v) => v == null || v === '' || Number(v) >= 0 || 'Capacity cannot be negative']"
+      />
 
       <!-- Permission keys: grouped by category, live-searchable, with a real-time count badge. -->
       <div class="row items-center q-mb-sm">
@@ -88,6 +96,7 @@ import {
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import AppTextField from "components/common/AppTextField.vue";
+import AppRichTextField from "components/common/AppRichTextField.vue";
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -108,7 +117,7 @@ const open = computed({
   set: (val) => emit("update:modelValue", val)
 });
 
-const blankForm = () => ({ tenantId: null, name: "", description: "" });
+const blankForm = () => ({ tenantId: null, name: "", description: "", capacityLimit: null });
 const form = reactive(blankForm());
 const selectedKeys = ref([]);
 const formRef = ref(null);
@@ -195,6 +204,7 @@ const loadGroup = async (id) => {
     form.tenantId = g.tenantId;
     form.name = g.name;
     form.description = g.description || "";
+    form.capacityLimit = g.capacityLimit ?? null;
     selectedKeys.value = [...(g.permissionKeys || [])];
   } catch (err) {
     notify.error(getApiErrorMessage(err));
@@ -225,9 +235,12 @@ const onSubmit = async ({ clearDraft } = {}) => {
   if (!(await formRef.value?.validate())) return;
   saving.value = true;
   try {
+    // Blank capacity → null (unlimited); otherwise coerce to a number.
+    const capacityLimit = (form.capacityLimit === "" || form.capacityLimit == null) ? null : Number(form.capacityLimit);
     const payload = {
       name: form.name,
       description: form.description || null,
+      capacityLimit,
       permissionKeys: selectedKeys.value
     };
     if (props.groupId) {
@@ -246,6 +259,11 @@ const onSubmit = async ({ clearDraft } = {}) => {
       notify.error(getApiErrorMessage(err, "One or more keys are outside your tenant's permission ceiling."));
     } else if (code === ApiErrorCodes.DuplicateGroupName) {
       notify.error("A group with that name already exists.");
+    } else if (code === ApiErrorCodes.CapacityBelowUsage) {
+      // Server message states how many members must be removed before lowering the limit (AC-PG-003.4).
+      notify.error(getApiErrorMessage(err, "The capacity limit is below the group's current usage."));
+    } else if (code === ApiErrorCodes.CapacityLimitReached) {
+      notify.error(getApiErrorMessage(err, "The group is at its capacity limit."));
     } else {
       notify.error(getApiErrorMessage(err));
     }

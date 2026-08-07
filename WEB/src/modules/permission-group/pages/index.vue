@@ -17,16 +17,15 @@
     >
       <template #actions>
         <q-btn outline no-caps color="primary" icon="o_dashboard_customize" label="Use Template" @click="openTemplatePicker" />
-        <app-select
-          v-if="canChooseTenant" v-model="selectedTenantId" :options="tenantOptions" label="Tenant"
-          :loading="loadingTenants" :clearable="true" style="min-width: 220px;"
-        />
       </template>
     </app-list-header>
 
     <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="onClearFilters">
       <app-column-filters v-model="filters" :columns="filterableColumns" />
       <q-toggle v-model="filters.usedByRoles" label="Used by roles only" left-label color="primary" />
+      <q-toggle
+        v-if="canManageDeleted" v-model="showDeleted" label="Show deleted?" dense class="q-mt-md"
+      />
     </app-filter-drawer>
 
     <app-data-table
@@ -38,13 +37,23 @@
       :loading="loading"
       :total-records="totalRecords"
       :pagination="pagination"
-      default-sort-by="name"
-      :default-descending="false"
+      default-sort-by="updatedOnUtc"
       selectable
       @request="onRequest"
       @refresh="load"
       @update:selected="selected = $event"
     >
+      <template #body-cell-members="cell">
+        <q-td :props="cell">
+          <span class="text-weight-medium">{{ cell.row.currentUsage }}</span>
+          <template v-if="cell.row.capacityLimit != null"> / {{ cell.row.capacityLimit }}</template>
+          <span v-else class="text-grey-6"> · unlimited</span>
+          <q-badge v-if="cell.row.isFull" color="negative" class="q-ml-sm" data-test="full-badge">
+            <q-icon name="o_block" size="12px" class="q-mr-xs" />Full
+          </q-badge>
+        </q-td>
+      </template>
+
       <template #body-cell-status="cell">
         <q-td :props="cell">
           <q-badge :color="cell.value ? 'positive' : 'grey'">{{ cell.value ? "Active" : "Inactive" }}</q-badge>
@@ -92,6 +101,10 @@
       </template>
     </app-data-table>
 
+    <deleted-records-panel
+      v-if="canManageDeleted" :entity-type="EntityType.PermissionGroup" :show="showDeleted" @restored="load"
+    />
+
     <!-- Template picker: choose a template (or start blank) before opening the form drawer. -->
     <q-dialog v-model="templateOpen">
       <q-card style="min-width: 420px; max-width: 92vw;">
@@ -104,7 +117,7 @@
               <q-item-section avatar><q-icon name="o_dashboard_customize" color="primary" /></q-item-section>
               <q-item-section>
                 <q-item-label>{{ t.name }}</q-item-label>
-                <q-item-label caption>{{ t.description || "—" }} · {{ (t.permissionKeys || []).length }} keys</q-item-label>
+                <q-item-label caption>{{ stripHtml(t.description) || "—" }} · {{ (t.permissionKeys || []).length }} keys</q-item-label>
               </q-item-section>
             </q-item>
           </q-list>
@@ -128,45 +141,54 @@
 <script setup>
 import { ref, computed, watch } from "vue";
 import { debounce } from "quasar";
-import { permissionGroupApi, getApiErrorMessage } from "services/api";
-import { useTenantStore } from "stores/tenant";
+import { permissionGroupApi, getApiErrorMessage, EntityType } from "services/api";
 import { useTenantOptions } from "composables/useTenantOptions";
+import { useTenantScope } from "composables/useTenantScope";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
+import { useDeletedRecords } from "composables/useDeletedRecords";
+import { useAuditColumns } from "composables/useAuditColumns";
 
 import AppDataTable from "components/common/AppDataTable.vue";
+import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
+import { stripHtml } from "utils/richText";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
-import AppSelect from "components/common/AppSelect.vue";
 import PermissionGroupFormDrawer from "modules/permission-group/components/PermissionGroupFormDrawer.vue";
 
+const auditColumns = useAuditColumns();
+const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
 const { confirm } = useConfirm();
-const tenantStore = useTenantStore();
-const { canChooseTenant, tenantOptions, loadingTenants, loadTenants } = useTenantOptions();
+const { canChooseTenant } = useTenantOptions();
 
-// Super admins scope the list to a chosen tenant; others are auto-scoped server-side.
-const selectedTenantId = ref(null);
+// The tenant in view comes from the toolbar's global scope control rather than a dropdown of its own —
+// one selection drives every tenant-scoped screen. Passed explicitly because this API takes ?tenantId=,
+// and the form drawer needs it for the group it creates.
+const { selectedTenantId } = useTenantScope();
 
 const STATUS_OPTIONS = [
   { label: "Active", value: "true" },
   { label: "Inactive", value: "false" }
 ];
 const CATEGORY_OPTIONS = [
-  "Tenants", "Users", "Access", "Customers", "Mappings", "Jobs", "Schedules", "System"
+  "Tenants", "Users", "Access", "Mappings", "Jobs", "Schedules", "System"
 ].map((c) => ({ label: c, value: c }));
 
 const columns = computed(() => [
   { name: "name", label: "Group Name", field: "name", align: "left", sortable: true, default: true, filterable: false },
-  { name: "description", label: "Description", field: "description", align: "left", default: true, filterable: false },
+  // Descriptions are rich text; the cell shows the text without its markup (see utils/richText).
+  { name: "description", label: "Description", field: (r) => stripHtml(r.description), align: "left", default: true, filterable: false },
   { name: "permissionCount", label: "Permission Count", field: "permissionCount", align: "left", sortable: true, default: true, filterable: false },
   { name: "rolesUsingCount", label: "Roles Using", field: "rolesUsingCount", align: "left", sortable: true, default: true, filterable: false },
+  { name: "members", label: "Members", field: "currentUsage", align: "left", sortable: true, default: true, filterable: false },
   { name: "status", label: "Status", field: "isActive", align: "left", sortable: true, default: true, filterOptions: STATUS_OPTIONS },
   { name: "category", label: "Category", field: "category", align: "left", default: false, filterOptions: CATEGORY_OPTIONS },
   ...(canChooseTenant.value ? [{ name: "tenantName", label: "Tenant", field: "tenantName", align: "left", sortable: true, default: true, filterable: false }] : []),
+  ...auditColumns(),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ]);
 
@@ -189,12 +211,8 @@ const { filters, filterableColumns, filterChips, removeFilter, clearFilters } = 
 const onClearFilters = () => { clearFilters(); filters.usedByRoles = false; };
 const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);
 watch([search, filters], reload, { deep: true });
-watch(selectedTenantId, () => { pagination.value.page = 1; load(); });
-
-if (canChooseTenant.value) {
-  loadTenants();
-  selectedTenantId.value = tenantStore.activeTenantId;
-}
+// No watcher on the tenant: changing the global scope fires `tenant-switched`, which useListTable already
+// reloads on.
 
 // ---- Create / Edit ----
 const formOpen = ref(false);

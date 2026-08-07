@@ -25,7 +25,8 @@ internal sealed class OptionSetRepository : IOptionSetRepository
         }
 
         return await query
-            .OrderBy(s => s.Name)
+            .OrderByDescending(s => s.UpdatedOnUtc)
+            .ThenBy(s => s.Name)
             .ToListAsync(cancellationToken);
     }
 

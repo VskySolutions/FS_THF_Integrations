@@ -1,39 +1,102 @@
 <template>
   <q-list class="app-menu q-py-xs">
-    <template v-for="(section, index) in visibleSections" :key="section.key">
-      <q-separator v-if="index > 0" class="q-my-xs" />
-      <q-item-label v-if="section.label" header class="app-menu__header text-primary text-weight-bold">
-        {{ section.label }}
-      </q-item-label>
+    <template v-for="section in visibleSections" :key="section.key">
+      <!-- Ungrouped items (no label, e.g. Dashboard) render flat at the top. -->
+      <template v-if="!section.label">
+        <q-item
+          v-for="item in section.items"
+          :key="item.label"
+          v-ripple
+          dense
+          clickable
+          :to="item.to"
+          :exact="item.exact"
+          active-class="text-primary bg-teal-1"
+          @click="onItem(item)"
+        >
+          <q-item-section avatar><q-icon :name="item.icon" size="20px" /></q-item-section>
+          <q-item-section>{{ item.label }}</q-item-section>
+          <q-tooltip v-if="mini" anchor="center right" self="center left">{{ item.label }}</q-tooltip>
+        </q-item>
+      </template>
+
+      <!-- Collapsed, a group is a single icon: Quasar hides expansion content in a mini drawer, so
+           opening one in place would be a dead click. It reopens the menu instead. -->
       <q-item
-        v-for="item in section.items"
-        :key="item.label"
+        v-else-if="mini"
+        :key="`${section.key}-mini`"
         v-ripple
         dense
         clickable
-        :to="item.to"
-        :exact="item.exact"
-        active-class="text-primary bg-blue-1"
+        @click="emit('expand')"
       >
-        <q-item-section avatar>
-          <q-icon :name="item.icon" size="20px" />
-        </q-item-section>
-        <q-item-section>{{ item.label }}</q-item-section>
+        <q-item-section avatar><q-icon :name="section.icon" size="20px" /></q-item-section>
+        <q-item-section>{{ section.label }}</q-item-section>
+        <q-tooltip anchor="center right" self="center left">{{ section.label }}</q-tooltip>
       </q-item>
+
+      <!-- Labelled sections are collapsible groups. Open by default; collapse state is remembered
+           while the drawer stays mounted. The group that contains the active route stays open. -->
+      <q-expansion-item
+        v-else
+        dense
+        :icon="section.icon"
+        :label="section.label"
+        :model-value="isOpen(section)"
+        header-class="app-menu__group text-primary text-weight-bold"
+        @update:model-value="(v) => setOpen(section.key, v)"
+      >
+        <q-item
+          v-for="item in section.items"
+          :key="item.label"
+          v-ripple
+          dense
+          clickable
+          :to="item.to"
+          :exact="item.exact"
+          active-class="text-primary bg-teal-1"
+          class="app-menu__nested"
+          @click="onItem(item)"
+        >
+          <q-item-section avatar><q-icon :name="item.icon" size="20px" /></q-item-section>
+          <q-item-section>{{ item.label }}</q-item-section>
+        </q-item>
+      </q-expansion-item>
     </template>
   </q-list>
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, reactive } from "vue";
+import { LocalStorage } from "quasar";
+import { useRouter } from "vue-router";
 import { useAuthStore } from "stores/auth";
 import { Permissions } from "composables/usePermissions";
 
+defineProps({
+  // The drawer is collapsed to its icon rail: labels are hidden by Quasar, and groups cannot open in
+  // place, so they ask the layout to expand the menu instead.
+  mini: { type: Boolean, default: false }
+});
+const emit = defineEmits(["expand"]);
+
 const authStore = useAuthStore();
+const router = useRouter();
+
+// Menu items with an `action` (e.g. Logout) run a handler instead of navigating.
+const onItem = async (item) => {
+  if (item.action === "logout") {
+    await authStore.logout();
+    router.replace({ name: "login" });
+  } else if (item.action === "logoutAll") {
+    await authStore.logoutAll();
+    router.replace({ name: "login" });
+  }
+};
 
 // Ordered by application flow: overview → set up → configure → operate → personal.
 // `permissions: null` → visible to every authenticated user; otherwise visible when the active
-// tenant grants any one of the listed permissions.
+// tenant grants any one of the listed permissions. `icon` labels the collapsible group header.
 const sections = [
   {
     key: "overview",
@@ -43,16 +106,26 @@ const sections = [
     ]
   },
   {
-    key: "administration",
-    label: "Administration",
+    // REMS (Phase 15). Each item is gated by its own permission — never a role name — so a user sees only
+    // the areas their roles grant. AC-ADM-019.5 / REQ-REMS-001.7. Approvals is the exception and is open
+    // to everyone: anyone can be made an approver (the CSE, a commission recipient, or someone added on
+    // the Approval tab), no permission governs it, and a role gate there would hide the page from a real
+    // approver. Users with no tasks simply see an empty inbox.
+    key: "rems",
+    label: "REMS",
+    icon: "o_business_center",
     items: [
-      { label: "Tenants", icon: "o_apartment", to: "/tenants", permissions: [Permissions.TenantsWrite] },
-      { label: "Customers", icon: "o_groups", to: "/customers", permissions: null }
+      { label: "Partner Dashboard", icon: "o_space_dashboard", to: "/rems/partner", permissions: [Permissions.RemsRequestsRead] },
+      { label: "Admin Pool", icon: "o_inbox", to: "/rems/admin-pool", permissions: [Permissions.RemsPoolRead] },
+      { label: "EMS Inbox", icon: "o_move_to_inbox", to: "/rems/ems-inbox", permissions: [Permissions.RemsFormsManage] },
+      { label: "Client Forms", icon: "o_dynamic_form", to: "/rems/client-forms", permissions: [Permissions.RemsEngagementsManage] },
+      { label: "Approvals", icon: "o_approval", to: "/rems/approvals", permissions: null }
     ]
   },
   {
     key: "access-management",
     label: "Access Management",
+    icon: "o_lock",
     items: [
       { label: "Permission Groups", icon: "o_workspaces", to: "/permission-groups", permissions: [Permissions.GroupsManage] },
       { label: "Person", icon: "o_badge", to: "/persons", permissions: [Permissions.PersonsRead] },
@@ -62,13 +135,24 @@ const sections = [
     ]
   },
   {
+    key: "administration",
+    label: "Administration",
+    icon: "o_corporate_fare",
+    items: [
+      { label: "Tenants", icon: "o_apartment", to: "/tenants", permissions: [Permissions.TenantsWrite] }
+    ]
+  },
+  {
     // Tenant-wide settings and universal features (email, and future cross-cutting settings).
     key: "settings",
     label: "Tenant Settings",
+    icon: "o_settings",
     items: [
       { label: "Email Accounts", icon: "o_mail", to: "/smtp-accounts", permissions: [Permissions.EmailManage] },
       { label: "Email Templates", icon: "o_drafts", to: "/email-templates", permissions: [Permissions.EmailManage] },
-      { label: "Option Sets", icon: "o_list_alt", to: "/option-sets", permissions: [Permissions.OptionSetsRead] },
+      // Gated on MANAGE, not read: Partner and REMS Admin hold optionSets.read so their dropdowns resolve,
+      // but the lists are configuration and only Super Admin / Tenant Admin maintain them.
+      { label: "Option Sets", icon: "o_list_alt", to: "/option-sets", permissions: [Permissions.OptionSetsManage] },
       { label: "Tag Management", icon: "o_label", to: "/settings/tags", permissions: [Permissions.SettingsManage] },
       { label: "Saved Views", icon: "o_view_list", to: "/settings/saved-views", permissions: [Permissions.SettingsManage] },
       { label: "Sticky Notes", icon: "o_sticky_note_2", to: "/settings/sticky-notes", permissions: [Permissions.SettingsManage] },
@@ -79,8 +163,16 @@ const sections = [
   {
     key: "account",
     label: "Account",
+    icon: "o_account_circle",
     items: [
-      { label: "My Account", icon: "o_manage_accounts", to: "/account", permissions: null }
+      { label: "My Account", icon: "o_manage_accounts", to: "/account", permissions: null },
+      { label: "Profile", icon: "o_person", to: { name: "profile" }, permissions: null },
+      { label: "Change Password", icon: "o_lock", to: { name: "change_password" }, permissions: null },
+      { label: "My Mentions", icon: "o_alternate_email", to: { name: "uf_mentions" }, permissions: null },
+      { label: "My Pinned", icon: "o_push_pin", to: { name: "uf_pinned" }, permissions: null },
+      { label: "Notification Preferences", icon: "o_tune", to: { name: "uf_notification_preferences" }, permissions: null },
+      { label: "Logout", icon: "o_logout", action: "logout", permissions: null },
+      { label: "Logout all devices", icon: "o_devices", action: "logoutAll", permissions: null }
     ]
   }
 ];
@@ -91,6 +183,20 @@ const visibleSections = computed(() =>
   sections
     .map((section) => ({ ...section, items: section.items.filter((item) => canSee(item.permissions)) }))
     .filter((section) => section.items.length));
+
+// Per-group collapse state, persisted to LocalStorage so the user's expand/collapse choices survive a
+// page refresh. The stored object holds only the collapsed groups ({ [sectionKey]: true }).
+const STORAGE_KEY = "appMenuCollapsed";
+const collapsed = reactive(LocalStorage.getItem(STORAGE_KEY) || {});
+const isOpen = (section) => collapsed[section.key] !== true;
+const setOpen = (key, open) => {
+  if (open) {
+    delete collapsed[key];
+  } else {
+    collapsed[key] = true;
+  }
+  LocalStorage.set(STORAGE_KEY, { ...collapsed });
+};
 </script>
 
 <style scoped>
@@ -103,14 +209,20 @@ const visibleSections = computed(() =>
   min-width: 32px;
   padding-right: 8px;
 }
-/* Slim, uppercase section headers in the theme colour — made to stand out. */
-.app-menu__header {
-  min-height: auto;
-  padding: 10px 16px 2px;
+/* Slim, uppercase collapsible group headers in the theme colour. */
+.app-menu :deep(.app-menu__group) {
+  min-height: 38px;
+  padding: 4px 12px;
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  line-height: 1.2;
-  opacity: 1;
+}
+.app-menu :deep(.app-menu__group .q-item__section--avatar) {
+  min-width: 30px;
+  padding-right: 6px;
+}
+/* Indent the items within a group so the hierarchy reads clearly. */
+.app-menu__nested {
+  padding-left: 20px;
 }
 </style>

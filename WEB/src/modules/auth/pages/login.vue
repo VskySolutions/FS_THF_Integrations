@@ -53,8 +53,9 @@
         </template>
       </q-input>
 
-      <div class="row items-center q-mt-sm q-mb-lg">
+      <div class="row items-center justify-between q-mt-sm q-mb-lg">
         <q-checkbox v-model="model.isRememberMeChecked" dense label="Remember me" color="primary" />
+        <q-btn flat dense no-caps color="primary" label="Forgot password?" :to="{ name: 'forgot_password' }" />
       </div>
 
       <q-btn label="Login" type="submit" color="primary" unelevated no-caps size="md" class="full-width" :loading="loading" />

@@ -5,7 +5,7 @@ what the platform does, who can do what, and how to perform every common task �
 login to triggering an import and checking whether it succeeded.
 
 > EMS Portal automates importing financial data from **Concur** into **Maconomy** —
-> expense reports, vendor invoices, and vendor payments. It also handles customer onboarding,
+> expense reports, vendor invoices, and vendor payments. It also handles
 > user/role administration, email, dashboards, and a cross-cutting **Universal Features** layer.
 > You can drive it through the **web app** (`WEB/`, a Quasar/Vue SPA) or directly through the REST API
 > — via the **Scalar API reference** in your browser, `curl`, or any HTTP client (Postman, Insomnia, a script).
@@ -55,14 +55,13 @@ login to triggering an import and checking whether it succeeded.
 ## 2. Who can do what (roles)
 
 Access is **permission-based** (RBAC). Each role carries a set of permission keys (e.g. `users.write`,
-`persons.delete`, `roles.assign`); endpoints check the relevant permission. The three seeded
+`persons.delete`, `roles.assign`); endpoints check the relevant permission. The two seeded
 **system roles**, in order of authority:
 
 | Role | Can do |
 |------|--------|
 | **Super Admin** | Everything, across **all** tenants. Creates/archives tenants, manages people and users, **deletes people**, **assigns/changes roles**, switches between tenants, views all jobs/logs. |
-| **Tenant Admin** | Everything **within their own tenant**: manage Concur/Maconomy credentials, manage mappings, manage people and create users, reset passwords, trigger imports, view their tenant's jobs/logs/retries. **Cannot delete a person or change a user's role** (Super-Admin-only). |
-| **Operator** | Trigger imports and view their tenant's jobs/logs/retries. Cannot manage credentials, mappings, people, or users. |
+| **Tenant Admin** | Everything **within their own tenant**: manage people and create users, reset passwords, manage permission groups, roles and settings. **Cannot delete a person or change a user's role** (Super-Admin-only). |
 
 > **Super-Admin-only actions:** deleting a **Person** and changing a user's **role assignment**
 > (assign/remove a tenant role) are reserved for Super Admins, even if a custom role was granted the
@@ -404,7 +403,7 @@ curl -X POST http://localhost:5080/api/admin/users \
 - A person already linked to a user returns `409` (can't be promoted twice).
 - **Tenant Admins** create within their own tenant (`tenantId` forced to your active tenant);
   **Super Admins** can target any tenant. `roleId` (RBAC) is preferred; the legacy `role` enum
-  (`SuperAdmin`/`TenantAdmin`/`Operator`) is still accepted.
+  (`SuperAdmin`/`TenantAdmin`) is still accepted.
 
 ### List / inspect users
 
@@ -459,7 +458,7 @@ curl -X DELETE http://localhost:5080/api/admin/persons/<person-guid> \
 
 ## 10. Running imports
 
-> **Role required: Operator or above.** The import runs against your **active tenant**.
+> **Role required: Tenant Admin or above.** The import runs against your **active tenant**.
 
 **Before you run:** make sure the tenant has valid Concur **and** Maconomy credentials
 ([section 7](#7-connecting-concur-and-maconomy-tenant-admin)).
@@ -653,14 +652,14 @@ Common HTTP status codes:
 3. **Tenant Admin** logs in, changes the temporary password ([4](#4-getting-started-your-first-login), [5](#5-managing-your-account)).
 4. **Tenant Admin** stores and **tests** Concur and Maconomy credentials ([7](#7-connecting-concur-and-maconomy-tenant-admin)).
 5. **Tenant Admin** adds any field mappings ([8](#8-field-mappings)).
-6. **Tenant Admin** creates Operator users as needed ([9](#9-managing-users)).
-7. Anyone with Operator+ triggers a test import and confirms it via jobs/logs ([10](#10-running-imports), [11](#11-monitoring-jobs-logs-and-retries)).
+6. **Tenant Admin** creates users as needed ([9](#9-managing-users)).
+7. A **Tenant Admin** triggers a test import and confirms it via jobs/logs ([10](#10-running-imports), [11](#11-monitoring-jobs-logs-and-retries)).
 
-### B. Run and verify an expense import (Operator)
+### B. Run and verify an expense import (Tenant Admin)
 
 1. `POST /api/concur/expenses/import` → save the `jobId`.
 2. `GET /api/admin/jobs?interfaceName=ExpenseImport` → find the job, check `status`.
-   *(Need Tenant Admin to view jobs — ask your admin if you're an Operator without access.)*
+   *(Viewing jobs requires Tenant Admin or above.)*
 3. If `Failed`: `GET /api/admin/logs?jobId=<jobId>` to see why.
 4. If it was a transient failure: `POST /api/admin/retry/<jobId>`, or let the automatic retry handle it.
 
@@ -682,7 +681,6 @@ Common HTTP status codes:
 | Credential **test** says `connected: false` | Wrong client ID/secret, username/password, base URL, or company UUID. Re-enter and test again. |
 | `409 Conflict` creating a tenant/user | The identifier or email is already in use. Choose a different one. |
 | `409 Conflict` archiving a tenant | The tenant still has active jobs. Wait for them to finish, then archive. |
-| Can't see jobs/logs as an Operator | Viewing jobs/logs requires **Tenant Admin or above**. Operators can trigger imports but not browse admin views — ask your Tenant Admin. |
 | `mustChangePassword: true` blocks me | Change your password first via `PUT /api/users/me/change-password`. |
 
 ---
@@ -704,7 +702,7 @@ Common HTTP status codes:
 | Delete a person | `DELETE /api/admin/persons/{id}` | **Super Admin** |
 | Create (promote a person) / list / disable users | `POST·GET·PUT /api/admin/users[...]` | Tenant Admin |
 | Assign / change tenant roles | `POST·DELETE /api/admin/users/{id}/tenant-assignments` | **Super Admin** |
-| Trigger an import | `POST /api/concur/{expenses\|invoices\|payments}/import` | Operator |
+| Trigger an import | `POST /api/concur/{expenses\|invoices\|payments}/import` | Tenant Admin |
 | View jobs / logs / retries | `GET /api/admin/{jobs\|logs\|retries}` | Tenant Admin |
 | Manually retry a job | `POST /api/admin/retry/{jobId}` | Tenant Admin |
 | Manage import schedules | `GET·PUT /api/admin/job-schedules[...]` | Tenant Admin |

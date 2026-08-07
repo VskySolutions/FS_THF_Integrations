@@ -23,6 +23,9 @@
         label="Status"
       />
       <q-toggle v-model="filters.includeArchived" label="Show archived" />
+      <q-toggle
+        v-if="canManageDeleted" v-model="showDeleted" label="Show deleted?" dense class="q-mt-md"
+      />
     </app-filter-drawer>
 
     <app-data-table
@@ -82,6 +85,10 @@
       </template>
     </app-data-table>
 
+    <deleted-records-panel
+      v-if="canManageDeleted" :entity-type="EntityType.Tenant" :show="showDeleted" @restored="load"
+    />
+
     <!-- Create / Edit drawer -->
     <app-form-drawer
       v-model="formOpen"
@@ -135,18 +142,21 @@
 <script setup>
 import { ref, reactive, computed, watch } from "vue";
 import { debounce } from "quasar";
-import { tenantApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
+import { tenantApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes, EntityType } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
+import { useDeletedRecords } from "composables/useDeletedRecords";
 import { useDateFormat } from "composables/useDateFormat";
 
 import AppDataTable from "components/common/AppDataTable.vue";
+import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppSelect from "components/common/AppSelect.vue";
 
+const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const fmt = useDateFormat();

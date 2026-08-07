@@ -62,7 +62,10 @@ public sealed record OptionSetSummaryResponse(
     bool IsActive,
     bool IsEditable,
     int ItemCount,
+    // *By names are resolved by the controller so the list's audit columns read as people, not guids.
+    string? CreatedBy,
     DateTime CreatedOnUtc,
+    string? UpdatedBy,
     DateTime UpdatedOnUtc);
 
 public sealed record OptionSetItemResponse(

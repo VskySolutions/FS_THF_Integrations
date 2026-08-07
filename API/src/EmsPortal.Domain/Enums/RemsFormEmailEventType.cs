@@ -1,0 +1,20 @@
+namespace EmsPortal.Domain.Enums;
+
+/// <summary>
+/// A delivery-tracking event reported for a REMS onboarding-form email (REMS WO-110). Rows are
+/// append-only. Stored as a string in the database (<c>HasConversion&lt;string&gt;</c>).
+/// </summary>
+public enum RemsFormEmailEventType
+{
+    /// <summary>The provider accepted the message for delivery.</summary>
+    Sent,
+
+    /// <summary>The provider confirmed delivery to the recipient's mailbox.</summary>
+    Delivered,
+
+    /// <summary>The recipient opened the message.</summary>
+    Opened,
+
+    /// <summary>Delivery failed (bounce, rejection, etc.).</summary>
+    Failed,
+}

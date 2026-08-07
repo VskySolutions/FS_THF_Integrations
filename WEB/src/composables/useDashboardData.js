@@ -14,51 +14,6 @@ const paramsFrom = (dateRange, tenantId) => {
   return params;
 };
 
-// ---- Customers ----
-export function useCustomerDashboard (dateRange, tenantId = null) {
-  const loading = ref(false);
-  const error = ref(null);
-  const kpis = ref(null);
-  const funnel = ref([]);
-  const ageing = ref([]);
-  const activityFeed = ref([]);
-  const topSubmitters = ref([]);
-  const submissionTrend = ref([]);
-
-  const refresh = async () => {
-    loading.value = true;
-    error.value = null;
-    try {
-      const data = await dashboardApi.customers(paramsFrom(dateRange, tenantId));
-      kpis.value = data?.kpis ?? null;
-      funnel.value = data?.funnel ?? [];
-      ageing.value = data?.ageing ?? [];
-      activityFeed.value = data?.activityFeed ?? [];
-      topSubmitters.value = data?.topSubmitters ?? [];
-      submissionTrend.value = data?.submissionTrend ?? [];
-    } catch (err) {
-      error.value = getApiErrorMessage(err);
-    } finally {
-      loading.value = false;
-    }
-  };
-
-  watch(() => [unref(dateRange), unref(tenantId)], refresh);
-  onMounted(refresh);
-
-  return {
-    loading,
-    error,
-    refresh,
-    kpis,
-    funnel,
-    ageing,
-    activityFeed,
-    topSubmitters,
-    submissionTrend
-  };
-}
-
 // ---- Users ----
 export function useUserDashboard (dateRange, tenantId = null) {
   const loading = ref(false);
@@ -98,7 +53,6 @@ export function usePlatformDashboard (dateRange, tenantId = null) {
   const onboarding = ref([]);
   const systemAlerts = ref([]);
   const userAnalytics = ref(null);
-  const customer = ref(null);
 
   // The platform endpoint takes no tenantId; `forceRefresh` bypasses the server cache.
   const refresh = async (forceRefresh = false) => {
@@ -112,7 +66,6 @@ export function usePlatformDashboard (dateRange, tenantId = null) {
       onboarding.value = data?.onboarding ?? [];
       systemAlerts.value = data?.systemAlerts ?? [];
       userAnalytics.value = data?.userAnalytics ?? null;
-      customer.value = data?.customer ?? null;
     } catch (err) {
       error.value = getApiErrorMessage(err);
     } finally {
@@ -132,7 +85,6 @@ export function usePlatformDashboard (dateRange, tenantId = null) {
     growth,
     onboarding,
     systemAlerts,
-    userAnalytics,
-    customer
+    userAnalytics
   };
 }

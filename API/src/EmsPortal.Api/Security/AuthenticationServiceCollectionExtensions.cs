@@ -72,6 +72,8 @@ public static class AuthenticationServiceCollectionExtensions
                 .RequireAuthenticatedUser()
                 .Build();
 
+            // RequireRole succeeds when ANY of the caller's `role` claims matches — multi-role users
+            // emit one claim per role name and RoleClaimType is `role` (see BuildTokenValidationParameters).
             options.AddPolicy(AuthorizationPolicies.SuperAdminOnly, policy => policy
                 .AddAuthenticationSchemes(AuthenticationSchemes.Jwt, AuthenticationSchemes.ApiKey)
                 .RequireAuthenticatedUser()
@@ -81,11 +83,6 @@ public static class AuthenticationServiceCollectionExtensions
                 .AddAuthenticationSchemes(AuthenticationSchemes.Jwt, AuthenticationSchemes.ApiKey)
                 .RequireAuthenticatedUser()
                 .RequireRole(Roles.SuperAdmin, Roles.TenantAdmin));
-
-            options.AddPolicy(AuthorizationPolicies.OperatorOrAbove, policy => policy
-                .AddAuthenticationSchemes(AuthenticationSchemes.Jwt, AuthenticationSchemes.ApiKey)
-                .RequireAuthenticatedUser()
-                .RequireRole(Roles.SuperAdmin, Roles.TenantAdmin, Roles.Operator));
         });
 
         // Permission-based authorization: a dynamic policy provider materializes "perm:<key>"

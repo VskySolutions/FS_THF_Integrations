@@ -146,14 +146,28 @@ internal sealed class UserRepository : IUserRepository
         return (items, total);
     }
 
+    public async Task<IReadOnlyList<User>> ListByTenantRolesAsync(
+        Guid tenantId, IReadOnlyCollection<string> roleNames, CancellationToken cancellationToken = default)
+        // Tenant-specific: the role assignment must be IN this tenant. Distinct active users.
+        => await _dbContext.Users
+            .IgnoreQueryFilters()
+            .Where(u => !u.Deleted && u.IsActive)
+            .Include(u => u.Person)
+            .Where(u => u.TenantRoles.Any(r =>
+                !r.Deleted && r.TenantId == tenantId && r.RoleEntity != null && roleNames.Contains(r.RoleEntity.Name)))
+            .OrderBy(u => u.DisplayName)
+            .ToListAsync(cancellationToken);
+
     public async Task AddAsync(User user, CancellationToken cancellationToken = default)
         => await _dbContext.Users.AddAsync(user, cancellationToken);
 
     public void Update(User user) => _dbContext.Users.Update(user);
 
-    public Task<UserTenantRole?> GetAssignmentAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default)
-        => _dbContext.UserTenantRoles.FirstOrDefaultAsync(
-            r => r.UserId == userId && r.TenantId == tenantId, cancellationToken);
+    public async Task<IReadOnlyList<UserTenantRole>> GetAssignmentsAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default)
+        // The soft-delete query filter excludes removed rows, so this returns only the active set.
+        => await _dbContext.UserTenantRoles.Include(r => r.RoleEntity)
+            .Where(r => r.UserId == userId && r.TenantId == tenantId)
+            .ToListAsync(cancellationToken);
 
     public async Task AddAssignmentAsync(UserTenantRole assignment, CancellationToken cancellationToken = default)
         => await _dbContext.UserTenantRoles.AddAsync(assignment, cancellationToken);

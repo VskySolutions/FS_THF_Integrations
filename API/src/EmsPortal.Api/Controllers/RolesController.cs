@@ -28,15 +28,36 @@ public sealed class RolesController : ControllerBase
 {
     private readonly IRoleRepository _roles;
     private readonly ITenantRepository _tenants;
+    private readonly IUserRepository _users;
     private readonly IAuditTrailService _audit;
     private readonly IUnitOfWork _unitOfWork;
 
-    public RolesController(IRoleRepository roles, ITenantRepository tenants, IAuditTrailService audit, IUnitOfWork unitOfWork)
+    public RolesController(
+        IRoleRepository roles,
+        ITenantRepository tenants,
+        IUserRepository users,
+        IAuditTrailService audit,
+        IUnitOfWork unitOfWork)
     {
         _roles = roles;
         _tenants = tenants;
+        _users = users;
         _audit = audit;
         _unitOfWork = unitOfWork;
+    }
+
+    /// <summary>
+    /// Resolves the Created/Updated actor ids across a set of rows to display names, so the list's audit
+    /// columns read as people rather than guids. One lookup for the whole page.
+    /// </summary>
+    private async Task<Func<Guid?, string?>> AuditNamesAsync(
+        IEnumerable<Role> rows, CancellationToken cancellationToken)
+    {
+        var names = await _users.GetFullNamesAsync(
+            rows.SelectMany(r => new[] { r.CreatedById, r.UpdatedById })
+                .Where(id => id.HasValue).Select(id => id!.Value),
+            cancellationToken);
+        return id => id is { } uid && names.TryGetValue(uid, out var n) ? n : null;
     }
 
     [HttpGet("/api/admin/permissions")]
@@ -57,7 +78,9 @@ public sealed class RolesController : ControllerBase
                 r.Name.Contains(term, StringComparison.OrdinalIgnoreCase) ||
                 (r.Description != null && r.Description.Contains(term, StringComparison.OrdinalIgnoreCase)));
         }
-        return Ok(ApiResponseFactory.Success(result.Select(ToSummary), "Roles retrieved."));
+        var page = result.ToList();
+        var nameOf = await AuditNamesAsync(page, cancellationToken);
+        return Ok(ApiResponseFactory.Success(page.Select(r => ToSummary(r, nameOf)), "Roles retrieved."));
     }
 
     [HttpGet("/api/admin/roles/{id:guid}")]
@@ -190,7 +213,9 @@ public sealed class RolesController : ControllerBase
             .Where(r => User.IsSuperAdmin() || !(r.IsSystem && r.Name == Roles.SuperAdmin))
             .OrderBy(r => r.Name);
 
-        return Ok(ApiResponseFactory.Success(assignable.Select(ToSummary), "Tenant roles retrieved."));
+        var rows = assignable.ToList();
+        var nameOf = await AuditNamesAsync(rows, cancellationToken);
+        return Ok(ApiResponseFactory.Success(rows.Select(r => ToSummary(r, nameOf)), "Tenant roles retrieved."));
     }
 
     [HttpPost("/api/admin/tenants/{tenantId:guid}/roles")]
@@ -247,5 +272,7 @@ public sealed class RolesController : ControllerBase
 
     private static RoleResponse ToResponse(Role r) => new(r.Id, r.Name, r.Description, r.IsSystem, r.Permissions, r.CreatedOnUtc, r.UpdatedOnUtc);
 
-    private static RoleSummary ToSummary(Role r) => new(r.Id, r.Name, r.Description, r.IsSystem, r.Permissions.Count);
+    private static RoleSummary ToSummary(Role r, Func<Guid?, string?> nameOf) => new(
+        r.Id, r.Name, r.Description, r.IsSystem, r.Permissions.Count,
+        nameOf(r.CreatedById), r.CreatedOnUtc, nameOf(r.UpdatedById), r.UpdatedOnUtc);
 }

@@ -60,6 +60,10 @@ bld/
 
 # Local secrets / settings overrides
 appsettings.*.local.json
+# App config carrying environment-specific connection strings / secrets. Not tracked — copy the
+# committed appsettings.json.example to appsettings.json and fill in local values.
+/API/src/EmsPortal.Api/appsettings.json
+/API/src/EmsPortal.Workers/appsettings.json
 
 # ---------------------------------------------------------------------
 # WEB — Node / Quasar (WEB/)

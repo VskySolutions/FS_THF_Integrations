@@ -33,6 +33,7 @@ public static class DependencyInjection
         services.Configure<AuthenticationOptions>(configuration.GetSection(ConfigurationSections.Authentication));
         services.Configure<ApiKeysOptions>(configuration.GetSection(ConfigurationSections.ApiKeys));
         services.Configure<AppOptions>(configuration.GetSection(ConfigurationSections.App));
+        services.Configure<RemsWebhookOptions>(configuration.GetSection(ConfigurationSections.RemsEmailWebhook));
 
         services.AddSecurity();
         services.AddEmail();
@@ -70,14 +71,13 @@ public static class DependencyInjection
         services.AddScoped<ITenantRepository, TenantRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+        services.AddScoped<IPasswordResetTokenRepository, PasswordResetTokenRepository>();
         services.AddScoped<IRoleRepository, RoleRepository>();
         services.AddScoped<IPersonRepository, PersonRepository>();
         services.AddScoped<IUserGroupRepository, UserGroupRepository>();
+        services.AddScoped<IUserDepartmentRepository, UserDepartmentRepository>();
         services.AddScoped<IAddressRepository, AddressRepository>();
         services.AddScoped<IMediaRepository, MediaRepository>();
-        services.AddScoped<ICustomerRequestRepository, CustomerRequestRepository>();
-        services.AddScoped<ICustomerAuditRepository, CustomerAuditRepository>();
-        services.AddScoped<ICustomerDocumentRepository, CustomerDocumentRepository>();
         services.AddScoped<IPermissionGroupRepository, PermissionGroupRepository>();
         services.AddScoped<IDashboardLayoutRepository, DashboardLayoutRepository>();
         services.AddScoped<ISmtpAccountRepository, SmtpAccountRepository>();
@@ -103,6 +103,18 @@ public static class DependencyInjection
         // Universal Features recurring jobs (Hangfire resolves them from DI).
         services.AddScoped<Jobs.ReminderDispatchJob>();
         services.AddScoped<Jobs.StickyNoteExpiryJob>();
+
+        // REMS (WO-110) repositories and per-tenant request-number generation.
+        services.AddScoped<IRemsRepository, RemsRepository>();
+        services.AddScoped<IRemsFormRepository, RemsFormRepository>();
+        services.AddScoped<IRemsClientRepository, RemsClientRepository>();
+        services.AddScoped<IRemsEngagementRepository, RemsEngagementRepository>();
+        services.AddScoped<IRemsApprovalRepository, RemsApprovalRepository>();
+        services.AddScoped<IRemsSettingsRepository, RemsSettingsRepository>();
+
+        // Bubbles a child write's timestamp up to the aggregate root it belongs to (see AggregateRootTouch).
+        services.AddScoped<Application.Abstractions.UniversalFeatures.IAggregateRootTouch, Persistence.AggregateRootTouch>();
+        services.AddScoped<IRemsNumberGenerator, Persistence.RemsNumberGenerator>();
 
         return services;
     }

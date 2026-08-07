@@ -18,6 +18,9 @@
 
     <app-filter-drawer v-model="filterOpen" :chips="filterChips" @remove="removeFilter" @clear="clearFilters">
       <app-column-filters v-model="filters" :columns="filterableColumns" />
+      <q-toggle
+        v-if="canManageDeleted" v-model="showDeleted" label="Show deleted?" dense class="q-mt-md"
+      />
     </app-filter-drawer>
 
     <app-data-table
@@ -61,6 +64,10 @@
       </template>
     </app-data-table>
 
+    <deleted-records-panel
+      v-if="canManageDeleted" :entity-type="EntityType.Role" :show="showDeleted" @restored="load"
+    />
+
     <!-- Create / edit role -->
     <app-form-drawer
       v-model="formOpen" :title="editingId ? 'Edit Role' : 'Create Role'"
@@ -72,10 +79,7 @@
           :readonly="nameLocked" :hint="nameLocked ? 'System role names are fixed; permissions can still be tuned.' : undefined"
           :rules="[(v) => !!v || 'Name is required']"
         />
-        <q-input
-          v-model="form.description" outlined stack-label hide-bottom-space label="Description" class="q-mb-md"
-          type="textarea" autogrow
-        />
+        <app-rich-text-field v-model="form.description" label="Description" class="q-mb-md" />
         <app-select
           v-model="form.permissions" :options="permissionOptions" label="Permissions" multiple
           :loading="loadingPermissions"
@@ -103,26 +107,34 @@
 <script setup>
 import { ref, reactive, watch } from "vue";
 import { debounce } from "quasar";
-import { roleApi, tenantApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
+import { roleApi, tenantApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes, EntityType } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
+import { useDeletedRecords } from "composables/useDeletedRecords";
+import { useAuditColumns } from "composables/useAuditColumns";
 
 import AppDataTable from "components/common/AppDataTable.vue";
+import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
+import { stripHtml } from "utils/richText";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppSelect from "components/common/AppSelect.vue";
+import AppRichTextField from "components/common/AppRichTextField.vue";
 import RolePermissionGroupsPanel from "modules/permission-group/components/RolePermissionGroupsPanel.vue";
 
+const auditColumns = useAuditColumns();
+const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
 const { confirm } = useConfirm();
 
 const columns = [
   { name: "name", label: "Name", field: "name", align: "left", sortable: true, default: true },
-  { name: "description", label: "Description", field: "description", align: "left", default: true },
+  // Descriptions are rich text; the cell shows the text without its markup (see utils/richText).
+  { name: "description", label: "Description", field: (r) => stripHtml(r.description), align: "left", default: true },
   {
     name: "isSystem",
     label: "Type",
@@ -133,6 +145,7 @@ const columns = [
     filterOptions: [{ label: "System", value: true }, { label: "Custom", value: false }]
   },
   { name: "permissionCount", label: "Permissions", field: "permissionCount", align: "left", sortable: true, default: true, filterable: false },
+  ...auditColumns(),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 

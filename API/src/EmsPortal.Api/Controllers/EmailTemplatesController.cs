@@ -1,6 +1,7 @@
 using EmsPortal.Api.Models.EmailTemplates;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.Email;
+using EmsPortal.Application.Abstractions.Persistence;
 using EmsPortal.Domain.Enums;
 using EmsPortal.Shared.Contracts;
 using EmsPortal.Shared.Security;
@@ -38,10 +39,31 @@ public sealed class EmailTemplatesController : ControllerBase
     };
 
     private readonly IEmailTemplateService _templates;
+    private readonly IUserRepository _users;
 
-    public EmailTemplatesController(IEmailTemplateService templates)
+    public EmailTemplatesController(IEmailTemplateService templates, IUserRepository users)
     {
         _templates = templates;
+        _users = users;
+    }
+
+    /// <summary>
+    /// Fills in the Created/Updated By display names on a page of descriptors. A template that has never
+    /// been overridden carries no actor ids and is returned untouched — there is no edit to attribute.
+    /// </summary>
+    private async Task<IReadOnlyList<EmailTemplateDescriptor>> WithAuditNamesAsync(
+        IEnumerable<EmailTemplateDescriptor> templates, CancellationToken cancellationToken)
+    {
+        var rows = templates.ToList();
+        var names = await _users.GetFullNamesAsync(
+            rows.SelectMany(t => new[] { t.CreatedById, t.UpdatedById })
+                .Where(id => id.HasValue).Select(id => id!.Value),
+            cancellationToken);
+        string? NameOf(Guid? id) => id is { } uid && names.TryGetValue(uid, out var n) ? n : null;
+
+        return rows
+            .Select(t => t with { CreatedBy = NameOf(t.CreatedById), UpdatedBy = NameOf(t.UpdatedById) })
+            .ToList();
     }
 
     [HttpGet]
@@ -56,7 +78,8 @@ public sealed class EmailTemplatesController : ControllerBase
         }
 
         var templates = await _templates.ListAsync(scope, cancellationToken);
-        return Ok(ApiResponseFactory.Success(templates, "Email templates retrieved."));
+        return Ok(ApiResponseFactory.Success(
+            await WithAuditNamesAsync(templates, cancellationToken), "Email templates retrieved."));
     }
 
     [HttpGet("{key}")]

@@ -62,8 +62,7 @@ const cards = computed(() => {
     { key: "archivedTenants", label: "Archived Tenants", value: k.archivedTenants ?? 0, icon: "o_inventory_2", color: "grey", route: { path: "/tenants" } },
     { key: "totalUsers", label: "Total Users", value: k.totalUsers ?? 0, icon: "o_group", color: "primary", route: { path: "/users" } },
     { key: "jobsToday", label: "Jobs Today", value: k.jobsToday ?? 0, icon: "o_sync", color: "primary" },
-    { key: "platformSuccessRate", label: "Success Rate", value: `${Math.round(k.platformSuccessRate ?? 0)}%`, icon: "o_verified", color: (k.platformSuccessRate ?? 0) >= 90 ? "positive" : "warning", valueClass: (k.platformSuccessRate ?? 0) >= 90 ? "text-positive" : "text-warning" },
-    { key: "pendingCustomerApprovals", label: "Pending Approvals", value: k.pendingCustomerApprovals ?? 0, icon: "o_pending_actions", color: "orange", highlight: (k.pendingCustomerApprovals ?? 0) > 0, route: { path: "/customers" } }
+    { key: "platformSuccessRate", label: "Success Rate", value: `${Math.round(k.platformSuccessRate ?? 0)}%`, icon: "o_verified", color: (k.platformSuccessRate ?? 0) >= 90 ? "positive" : "warning", valueClass: (k.platformSuccessRate ?? 0) >= 90 ? "text-positive" : "text-warning" }
   ];
 });
 </script>

@@ -28,4 +28,17 @@ public sealed record RoleResponse(
     DateTime CreatedOnUtc,
     DateTime UpdatedOnUtc);
 
-public sealed record RoleSummary(Guid Id, string Name, string? Description, bool IsSystem, int PermissionCount);
+/// <summary>
+/// A role as the list shows it. The trailing four are the audit trail every list offers as
+/// hidden-by-default columns; the *By names are resolved by the controller.
+/// </summary>
+public sealed record RoleSummary(
+    Guid Id,
+    string Name,
+    string? Description,
+    bool IsSystem,
+    int PermissionCount,
+    string? CreatedBy,
+    DateTime CreatedOnUtc,
+    string? UpdatedBy,
+    DateTime UpdatedOnUtc);

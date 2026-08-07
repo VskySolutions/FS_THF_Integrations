@@ -3,8 +3,8 @@ using EmsPortal.Domain.Enums;
 namespace EmsPortal.Domain.Entities;
 
 /// <summary>
-/// An in-app notification for a single user. Created by <c>NotificationDispatcher</c>, which also
-/// fans out to email (best-effort). May optionally deep-link to an entity record.
+/// An in-app notification for a single user. Created by <c>NotificationDispatcher</c> (in-app only since
+/// WO-124 — notifications are never emailed). May optionally deep-link to an entity record.
 /// </summary>
 public class Notification : AuditableEntity
 {
@@ -38,7 +38,10 @@ public class Notification : AuditableEntity
     public bool IsGrouped { get; set; }
 }
 
-/// <summary>A user's per-channel delivery preference for one notification type.</summary>
+/// <summary>
+/// A user's delivery preference for one notification type. Only the in-app channel is configurable since
+/// WO-124 (AC-UNI-013.2); notification types are in-app only and never emailed.
+/// </summary>
 public class NotificationPreference : AuditableEntity
 {
     public Guid Id { get; set; }
@@ -55,6 +58,6 @@ public class NotificationPreference : AuditableEntity
     /// <summary>Deliver to the in-app notification centre.</summary>
     public bool InApp { get; set; } = true;
 
-    /// <summary>Deliver via email.</summary>
-    public bool Email { get; set; } = true;
+    /// <summary>Retained column, no longer used (WO-124): notification types are in-app only, never emailed.</summary>
+    public bool Email { get; set; }
 }

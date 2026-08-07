@@ -1,5 +1,5 @@
 <template>
-  <div class="column q-gutter-sm">
+  <div class="column app-column-filters">
     <template v-for="col in columns" :key="col.name">
       <app-select
         v-if="col.filterOptions"
@@ -32,3 +32,13 @@ defineProps({
   columns: { type: Array, default: () => [] }
 });
 </script>
+
+<style scoped>
+/* Spaced with flex `gap`, not q-gutter-*. This list always renders inside AppFilterDrawer, whose slot
+   container is itself a q-gutter-sm: a nested gutter class has its own negative margin overridden by
+   the parent's `> *` rule (same specificity, declared later), so it never cancels — which left every
+   control here sitting 8px right of the drawer's other filters. `gap` spaces without any margin. */
+.app-column-filters {
+  gap: 8px;
+}
+</style>

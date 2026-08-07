@@ -5,16 +5,12 @@ namespace EmsPortal.Application;
 /// <summary>
 /// Composition-root entry point for the Application layer. Host projects
 /// (Api, Workers, McpServer) call <see cref="AddApplication"/> to register
-/// the customer-management, access, email, option-set, and universal-feature services.
+/// the access, email, option-set, and universal-feature services.
 /// </summary>
 public static class DependencyInjection
 {
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
-        // Customer Management workflow services.
-        services.AddScoped<Abstractions.Customers.ICustomerApprovalService, Customers.CustomerApprovalService>();
-        services.AddScoped<Abstractions.Customers.ICustomerDuplicateChecker, Customers.CustomerDuplicateChecker>();
-
         // Permission Groups: effective-permission cache computation.
         services.AddScoped<Abstractions.Security.IPermissionGroupEffectivePermissionService, Security.PermissionGroupEffectivePermissionService>();
 
@@ -23,6 +19,12 @@ public static class DependencyInjection
 
         // Email templates: management + rendering.
         services.AddScoped<Abstractions.Email.IEmailTemplateService, Email.EmailTemplateService>();
+
+        // REMS external emails (WO-124): typed background dispatch for WO-112/113.
+        services.AddScoped<Abstractions.Email.IRemsEmailNotifier, Email.RemsEmailNotifier>();
+
+        // Swallowed delivery failures surface as a Failed event on the REMS form's email log.
+        services.AddScoped<Abstractions.Email.IEmailDeliveryFailureSink, Email.RemsEmailDeliveryFailureSink>();
 
         // Option Sets: tenant-configurable input value lists.
         services.AddScoped<Abstractions.OptionSets.IOptionSetService, OptionSets.OptionSetService>();

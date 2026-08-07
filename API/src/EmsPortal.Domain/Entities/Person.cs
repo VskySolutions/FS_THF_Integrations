@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations.Schema;
+using EmsPortal.Domain.Enums;
 
 namespace EmsPortal.Domain.Entities;
 
@@ -76,6 +77,29 @@ public class Person : AuditableEntity
 
     /// <summary>Active flag (soft-delete handled by <see cref="AuditableEntity.Deleted"/>).</summary>
     public bool IsActive { get; set; } = true;
+
+    // ---- Provenance ----
+    // Persons arrive from several places, not just the Person screen: a REMS engagement's role contacts
+    // and a client's submitted EMS form both mint one to satisfy REMSEntityContact.PersonId. Once mixed
+    // into the same list they are indistinguishable, which matters — a contact captured off a public
+    // form is not a colleague somebody onboarded, and the client picker offers all of them alike.
+    //
+    // Uses the platform's standard (EntityType, EntityId) pair (Universal Features ADR-001) rather than
+    // an FK: the source is polymorphic, and a source record being deleted must not cascade into the
+    // person it created.
+
+    /// <summary>
+    /// What kind of record created this person, e.g. <c>Rems</c> for a contact captured during an
+    /// engagement or from a client's EMS form, <c>Person</c> for one entered on the Person screen.
+    /// Null on rows written before provenance was tracked — unknown, not "created by nothing".
+    /// </summary>
+    public EntityType? SourceEntityType { get; set; }
+
+    /// <summary>
+    /// The specific record that created this person (the REMS request id, and so on). Null when the
+    /// source is the Person screen itself, which has no record to point back at.
+    /// </summary>
+    public Guid? SourceEntityId { get; set; }
 
     // ---- Navigations ----
     public Address? Address { get; set; }

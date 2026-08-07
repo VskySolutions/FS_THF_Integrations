@@ -9,7 +9,7 @@
       :back-to="{ name: 'account' }"
     >
       <template #actions>
-        <q-chip v-if="profile" dense color="blue-1" text-color="primary" class="text-weight-medium">
+        <q-chip v-if="profile" dense color="teal-1" text-color="primary" class="text-weight-medium">
           {{ profile.profileCompletionPercentage }}% complete
         </q-chip>
       </template>
@@ -52,7 +52,7 @@
           <app-select v-model="form.maritalStatus" :options="maritalOptions" label="Marital Status" class="col-12 col-sm-6" />
           <app-select
             v-model="form.nationality" :options="countryNameOptions" label="Nationality"
-            use-input class="col-12 col-sm-6" @filter="filterCountryNames"
+            use-input class="col-12 col-sm-6"
           />
         </q-card-section>
       </q-card>
@@ -91,7 +91,9 @@
         <q-card-section class="text-subtitle1 text-weight-medium">Address</q-card-section>
         <q-separator />
         <q-card-section>
-          <app-address-fields ref="addressRef" v-model="address" />
+          <!-- `extended` keeps the landmark / building / floor / unit details this record has always
+               captured; the address itself stays optional on a profile. -->
+          <app-address-fields ref="addressRef" v-model="address" extended />
         </q-card-section>
       </q-card>
 
@@ -110,33 +112,63 @@
             <q-item-label>{{ t.name || t.identifier }}</q-item-label>
             <q-item-label caption>{{ t.identifier }}</q-item-label>
           </q-item-section>
-          <q-item-section side><q-badge color="primary" class="text-capitalize">{{ t.role }}</q-badge></q-item-section>
+          <q-item-section side>
+            <div class="row q-gutter-xs justify-end">
+              <q-badge v-for="r in (t.roleNames || [])" :key="r" color="primary" class="text-capitalize">{{ r }}</q-badge>
+              <span v-if="!(t.roleNames || []).length" class="text-caption text-grey-6">No roles</span>
+            </div>
+          </q-item-section>
         </q-item>
         <q-item v-if="!assignments.length"><q-item-section class="text-grey-6">No assignments.</q-item-section></q-item>
       </q-list>
     </q-card>
 
-    <!-- Password change -->
+    <!-- Effective permissions (read-only source view) -->
+    <q-card flat bordered class="profile-card q-mb-md">
+      <q-card-section class="text-subtitle1 text-weight-medium">
+        Effective permissions
+        <q-badge v-if="effective" color="primary" class="q-ml-sm">{{ effective.effectivePermissions.length }}</q-badge>
+        <div class="text-caption text-grey-6">Your permissions in the active tenant, and where each comes from (Role → Permission Group → key). Read-only.</div>
+      </q-card-section>
+      <q-separator />
+      <q-card-section>
+        <div v-if="!effective || !effective.roles.length" class="text-grey-6">
+          You have no assigned role or effective permissions in the active tenant.
+        </div>
+        <div v-for="role in (effective?.roles || [])" :key="role.roleId || role.roleName" class="q-mb-md">
+          <div class="row items-center q-gutter-xs">
+            <q-icon name="o_admin_panel_settings" color="grey-7" />
+            <span class="text-weight-medium">{{ role.roleName }}</span>
+          </div>
+          <div v-if="role.directPermissions.length" class="q-ml-md q-mt-xs">
+            <div class="section-subhead q-mb-xs">Direct on role</div>
+            <div class="row q-gutter-xs">
+              <q-badge v-for="k in role.directPermissions" :key="k" color="teal-1" text-color="primary" class="pg-key">
+                {{ humanizeKey(k) }}<q-tooltip>{{ k }}</q-tooltip>
+              </q-badge>
+            </div>
+          </div>
+          <div v-for="g in role.permissionGroups" :key="g.groupId" class="q-ml-md q-mt-xs">
+            <div class="section-subhead q-mb-xs">Via permission group · {{ g.groupName }}</div>
+            <div class="row q-gutter-xs">
+              <q-badge v-for="k in g.permissionKeys" :key="k" color="teal-1" text-color="primary" class="pg-key">
+                {{ humanizeKey(k) }}<q-tooltip>{{ k }}</q-tooltip>
+              </q-badge>
+            </div>
+          </div>
+          <div v-if="!role.directPermissions.length && !role.permissionGroups.length" class="q-ml-md text-caption text-grey-6">
+            No permission keys.
+          </div>
+        </div>
+      </q-card-section>
+    </q-card>
+
+    <!-- Password change. Shares ChangePasswordForm with /account/change-password so the requirements,
+         show/hide toggles and post-change sign-out behave identically in both places. -->
     <q-card flat bordered class="profile-card">
       <q-card-section class="text-subtitle1 text-weight-medium">Change password</q-card-section>
       <q-separator />
-      <q-form ref="pwForm" greedy @submit.prevent.stop="changePassword">
-        <q-card-section class="row q-col-gutter-md">
-          <app-text-field
-            v-model="pw.current" label="Current Password *" type="password" class="col-12"
-            :rules="[(v) => !!v || 'Current password is required']"
-          />
-          <app-text-field v-model="pw.next" label="New Password *" type="password" class="col-12" :rules="passwordRules" />
-          <app-text-field
-            v-model="pw.confirm" label="Confirm Password *" type="password" class="col-12"
-            :rules="[(v) => !!v || 'Please confirm', (v) => v === pw.next || 'Passwords do not match']"
-          />
-        </q-card-section>
-        <q-separator />
-        <q-card-actions align="right">
-          <q-btn unelevated no-caps color="primary" label="Update password" type="submit" :loading="savingPw" />
-        </q-card-actions>
-      </q-form>
+      <change-password-form submit-label="Update password" />
     </q-card>
 
   </q-page>
@@ -144,9 +176,9 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from "vue";
-import { useRouter } from "vue-router";
 import { orderedCountries, countryNameOption } from "composables/useCountries";
 import { authApi, profileApi, mediaApi, getApiErrorMessage } from "services/api";
+import { humanizeKey } from "composables/usePermissionCategories";
 import { useAuthStore } from "stores/auth";
 import { useNotify } from "composables/useNotify";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
@@ -156,8 +188,8 @@ import AppDateField from "components/common/AppDateField.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
 import AppAddressFields from "components/common/AppAddressFields.vue";
 import AppImageUpload from "components/common/AppImageUpload.vue";
+import ChangePasswordForm from "components/account/ChangePasswordForm.vue";
 
-const router = useRouter();
 const authStore = useAuthStore();
 const notify = useNotify();
 
@@ -168,11 +200,7 @@ const maritalOptions = ["Single", "Married", "Divorced", "Widowed", "Separated"]
 
 // ---- Country options for the Nationality field (address country/state/city now live in
 // AppAddressFields, which owns its own cascade). ----
-const countryNameOptions = ref(orderedCountries.map(countryNameOption));
-const filterCountryNames = (val, update) => {
-  const needle = (val || "").toLowerCase();
-  update(() => { countryNameOptions.value = orderedCountries.map(countryNameOption).filter((o) => o.label.toLowerCase().includes(needle)); });
-};
+const countryNameOptions = orderedCountries.map(countryNameOption);
 
 const addressRef = ref(null);
 
@@ -258,6 +286,16 @@ const load = async () => {
     notify.error(getApiErrorMessage(err));
   } finally {
     loading.value = false;
+  }
+};
+
+// ---- Effective permissions (read-only source view, WO-120) ----
+const effective = ref(null);
+const loadEffectivePermissions = async () => {
+  try {
+    effective.value = await authApi.effectivePermissions();
+  } catch {
+    /* non-fatal; the card shows an empty state */
   }
 };
 
@@ -357,33 +395,10 @@ const save = async () => {
   }
 };
 
-// ---- Password change ----
-const pwForm = ref(null);
-const savingPw = ref(false);
-const pw = reactive({ current: "", next: "", confirm: "" });
-const passwordRules = [
-  (v) => !!v || "New password is required",
-  (v) => (v || "").length >= 8 || "At least 8 characters",
-  (v) => /[A-Z]/.test(v) || "Must contain an uppercase letter",
-  (v) => /[0-9]/.test(v) || "Must contain a digit"
-];
-
-const changePassword = async () => {
-  if (!(await pwForm.value?.validate())) return;
-  savingPw.value = true;
-  try {
-    await authApi.changePassword(pw.current, pw.next);
-    notify.success("Password updated. Please sign in again.");
-    authStore.clearSession();
-    router.replace({ name: "login" });
-  } catch (err) {
-    notify.error(getApiErrorMessage(err));
-  } finally {
-    savingPw.value = false;
-  }
-};
-
-onMounted(load);
+onMounted(() => {
+  load();
+  loadEffectivePermissions();
+});
 </script>
 
 <style scoped>
@@ -397,5 +412,9 @@ onMounted(load);
   text-transform: uppercase;
   color: var(--q-primary);
   margin-top: 4px;
+}
+.pg-key {
+  font-size: 12px;
+  padding: 4px 8px;
 }
 </style>

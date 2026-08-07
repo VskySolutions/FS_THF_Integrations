@@ -6,8 +6,9 @@ using EmsPortal.Domain.Entities;
 namespace EmsPortal.Application.OptionSets;
 
 /// <summary>
-/// Default <see cref="IOptionSetService"/>. Writes are pinned to the resolved tenant; standard
-/// (seeded) lists — those with a null TenantId / <see cref="OptionSet.IsSystem"/> — are read-only.
+/// Default <see cref="IOptionSetService"/>. Writes are pinned to the resolved tenant. A standard (seeded)
+/// list is a starting point rather than a fixed one: its values can be added, renamed, re-ordered and
+/// removed. Only deleting the list itself is refused, since feature code references its key.
 /// </summary>
 public sealed class OptionSetService : IOptionSetService
 {
@@ -63,8 +64,6 @@ public sealed class OptionSetService : IOptionSetService
             return null;
         }
 
-        EnsureEditable(set);
-
         set.Name = input.Name.Trim();
         set.ItemSortMode = input.ItemSortMode;
         set.IsActive = input.IsActive;
@@ -82,7 +81,7 @@ public sealed class OptionSetService : IOptionSetService
             return null;
         }
 
-        EnsureEditable(set);
+        EnsureDeletable(set);
 
         _sets.RemoveSet(set);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -98,8 +97,6 @@ public sealed class OptionSetService : IOptionSetService
             return null;
         }
 
-        EnsureEditable(set);
-
         var value = input.Value.Trim();
         if (await _sets.ItemValueExistsAsync(set.Id, tenantId, value, excludeId: null, cancellationToken))
         {
@@ -113,7 +110,9 @@ public sealed class OptionSetService : IOptionSetService
         {
             Id = Guid.NewGuid(),
             OptionSetId = set.Id,
-            TenantId = tenantId,
+            // Match the parent list: a value added to a standard (platform) list belongs to it exactly as
+            // the seeded values do, rather than being stamped with whichever tenant happened to add it.
+            TenantId = set.TenantId ?? tenantId,
             ParentItemId = input.ParentItemId,
             Value = value,
             Label = input.Label.Trim(),
@@ -138,8 +137,6 @@ public sealed class OptionSetService : IOptionSetService
         {
             return null;
         }
-
-        EnsureEditable(set);
 
         var item = await _sets.GetItemAsync(itemId, setId, cancellationToken);
         if (item is null)
@@ -175,8 +172,6 @@ public sealed class OptionSetService : IOptionSetService
             return null;
         }
 
-        EnsureEditable(set);
-
         var item = await _sets.GetItemAsync(itemId, setId, cancellationToken);
         if (item is null)
         {
@@ -195,8 +190,6 @@ public sealed class OptionSetService : IOptionSetService
         {
             return null;
         }
-
-        EnsureEditable(set);
 
         var items = await _sets.ListItemsAsync(setId, cancellationToken);
         var byId = items.ToDictionary(i => i.Id);
@@ -222,12 +215,17 @@ public sealed class OptionSetService : IOptionSetService
         return true;
     }
 
-    /// <summary>Guards against editing a platform-standard (seeded) list.</summary>
-    private static void EnsureEditable(OptionSet set)
+    /// <summary>
+    /// Guards against DELETING a platform-standard (seeded) list. Their values are editable — a standard
+    /// list is a starting point, not a fixed one — but removing the list itself is not offered: the key is
+    /// referenced by feature code (REMS.Department, User.JobTitle …), and the seeder would simply recreate
+    /// it on the next restart.
+    /// </summary>
+    private static void EnsureDeletable(OptionSet set)
     {
         if (set.TenantId is null || set.IsSystem)
         {
-            throw new OptionSetException(OptionSetErrorCodes.ReadOnlyStandardSet, "Standard lists are read-only and cannot be modified.");
+            throw new OptionSetException(OptionSetErrorCodes.ReadOnlyStandardSet, "A standard list cannot be deleted. Its values can be edited instead.");
         }
     }
 

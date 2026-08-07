@@ -95,7 +95,7 @@
   /* width: 100%; */
 }
 .color-blue {
-  color: #1b75ab;
+  color: #1f6478;
 }
 .theme-blue {
   /* background-color: #f3fbff; */
@@ -145,7 +145,7 @@
 }
 .WhiteTable th{
   font-weight: 600;
-  background-color: #1b75ab;
+  background-color: #1f6478;
   color: white;
   font-size: 17px;
 }
@@ -374,4 +374,23 @@ body {
 /* List row action icons (View / ⋮ menu / inline actions) — standard 20px. */
 .app-data-table tbody .q-btn .q-icon {
   font-size: 20px !important;
+}
+
+/* REMS workspace card headers. Defined once so cards sitting side by side line up exactly: some
+   headers carry an action button and some are text only, and a bare text row is the shorter of the
+   two. 52px = q-py-sm (16px) + a standard q-btn (36px). */
+.rems-card__title {
+  min-height: 52px;
+}
+
+/* Sub-heading that splits a form into labelled blocks ("Billing", "Tax Forms", "Physical Address"…).
+   Defined once: it was copied into four components with three different margins, so the same heading
+   sat at a different height depending on which form you were looking at. */
+.section-subhead {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--q-primary);
+  margin: 16px 0 8px;
 }

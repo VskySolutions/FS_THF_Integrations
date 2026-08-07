@@ -31,7 +31,9 @@ internal sealed class SavedViewRepository : ISavedViewRepository
     public async Task<IReadOnlyList<SavedView>> ListSharedAsync(CancellationToken cancellationToken = default)
         => await _dbContext.SavedViews
             .Where(v => v.IsShared)
-            .OrderBy(v => v.ListPage)
+            // Most-recently-touched first, with the page/name grouping kept as the tie-break.
+            .OrderByDescending(v => v.UpdatedOnUtc)
+            .ThenBy(v => v.ListPage)
             .ThenBy(v => v.Name)
             .ToListAsync(cancellationToken);
 }

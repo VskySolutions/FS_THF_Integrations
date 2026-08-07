@@ -16,7 +16,7 @@
       <q-list separator>
         <q-item v-for="p in pins" :key="p.id" clickable @click="openRecord(p)">
           <q-item-section avatar>
-            <q-avatar color="blue-1" text-color="primary"><q-icon :name="iconFor(p.entityType)" /></q-avatar>
+            <q-avatar color="teal-1" text-color="primary"><q-icon :name="iconFor(p.entityType)" /></q-avatar>
           </q-item-section>
           <q-item-section>
             <q-item-label>{{ labelFor(p.entityType) }}</q-item-label>

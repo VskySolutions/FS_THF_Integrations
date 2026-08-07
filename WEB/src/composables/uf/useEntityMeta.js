@@ -3,11 +3,6 @@ import { EntityType } from "services/api";
 // Display metadata + permalink routing for each Universal Features entity type.
 // Used by cross-entity surfaces (Pinned Records, Mention Inbox, Activity, permalinks).
 const META = {
-  [EntityType.CustomerRequest]: {
-    label: "Customer Request",
-    icon: "o_groups",
-    route: (id) => ({ name: "customer_detail", params: { id } })
-  },
   [EntityType.Tenant]: {
     label: "Tenant",
     icon: "o_apartment",
@@ -22,6 +17,13 @@ const META = {
     label: "User Group",
     icon: "o_groups",
     route: () => ({ name: "user_groups" })
+  },
+  // REMS request/approval (Phase 15). REMS notifications carry the REMS request id, so they deep-link to
+  // the shared request detail (/rems/requests/:id) — clicking the notification navigates there + marks read.
+  [EntityType.Rems]: {
+    label: "REMS",
+    icon: "o_assignment",
+    route: (id) => ({ name: "rems_request_detail", params: { id } })
   }
 };
 

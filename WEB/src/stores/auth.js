@@ -24,10 +24,8 @@ export const useAuthStore = defineStore("auth", {
 
   getters: {
     isAuthenticated: (state) => !!state.token,
-    roles: (state) => {
-      const active = useTenantStore().activeTenant;
-      return active?.role ? [active.role] : [];
-    },
+    // WO-123: the RBAC role names the user holds in the active tenant (multi-role).
+    roles: () => useTenantStore().activeTenant?.roleNames || [],
     // Permission predicates for the active tenant.
     hasPermission: (state) => (permission) => state.permissions.includes(permission),
     hasAnyPermission: (state) => (permissions) =>

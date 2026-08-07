@@ -120,11 +120,11 @@ public sealed class NotificationsController : ControllerBase
         var stored = (await _notifications.GetPreferencesAsync(userId, cancellationToken))
             .ToDictionary(p => p.NotificationType);
 
-        // Return the full matrix: every type, defaulting to both channels on when unset.
+        // Return the full matrix: every type, in-app only (default-on when unset, AC-UNI-013.4).
         var data = Enum.GetValues<NotificationType>().Select(type =>
             stored.TryGetValue(type, out var p)
-                ? new NotificationPreferenceResponse(type, p.InApp, p.Email)
-                : new NotificationPreferenceResponse(type, true, true));
+                ? new NotificationPreferenceResponse(type, p.InApp)
+                : new NotificationPreferenceResponse(type, true));
         return Ok(ApiResponseFactory.Success(data, "Preferences retrieved."));
     }
 
@@ -148,13 +148,14 @@ public sealed class NotificationsController : ControllerBase
                     UserId = userId,
                     NotificationType = item.NotificationType,
                     InApp = item.InApp,
-                    Email = item.Email,
+                    // In-app only (WO-124, AC-UNI-013.2): the email channel is no longer user-configurable.
+                    Email = false,
                 }, cancellationToken);
             }
             else
             {
                 existing.InApp = item.InApp;
-                existing.Email = item.Email;
+                existing.Email = false;
                 _notifications.UpdatePreference(existing);
             }
         }

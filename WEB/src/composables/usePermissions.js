@@ -17,16 +17,28 @@ export const Permissions = Object.freeze({
   RolesWrite: "roles.write",
   RolesAssign: "roles.assign",
   GroupsManage: "groups.manage",
-  CustomersDataEntry: "customers.dataEntry",
-  CustomersReview: "customers.review",
-  CustomersApprove: "customers.approve",
   EmailManage: "email.manage",
   // Universal Features (Phase 14/15).
   SettingsManage: "settings.manage",
   RecordsAdminDelete: "records.adminDelete",
   // Option Sets (tenant-configurable input value lists).
   OptionSetsRead: "optionSets.read",
-  OptionSetsManage: "optionSets.manage"
+  OptionSetsManage: "optionSets.manage",
+  // REMS (Phase 15) — role-aware navigation is gated per permission, not per role name.
+  RemsRequestsRead: "rems.requests.read",
+  RemsRequestsCreate: "rems.requests.create",
+  RemsRequestsUpdate: "rems.requests.update",
+  RemsRequestsDelete: "rems.requests.delete",
+  RemsRequestsAssign: "rems.requests.assign",
+  RemsPoolRead: "rems.pool.read",
+  RemsFormsManage: "rems.forms.manage",
+  RemsFormsSend: "rems.forms.send",
+  RemsEmailLogRead: "rems.emailLog.read",
+  RemsEngagementsManage: "rems.engagements.manage",
+  RemsApprovalsSend: "rems.approvals.send"
+  // No "approvals.act" key: deciding an approval task is authorised by owning the task, not by a
+  // permission, so the Approvals inbox and task detail are open to every authenticated user and the
+  // server returns only the caller's own tasks. Mirrors EmsPortal.Shared.Security.Permissions.
 });
 
 // Reactive permission checks for the active tenant. `has`/`hasAny` read the auth store's

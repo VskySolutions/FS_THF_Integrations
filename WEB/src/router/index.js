@@ -20,7 +20,6 @@ import tenantRoutes from "modules/tenant/routes";
 import personRoutes from "modules/person/routes";
 import userRoutes from "modules/user/routes";
 import roleRoutes from "modules/role/routes";
-import customerRoutes from "modules/customer/routes";
 import permissionGroupRoutes from "modules/permission-group/routes";
 import userGroupRoutes from "modules/user-group/routes";
 import dashboardRoutes from "modules/dashboard/routes";
@@ -28,6 +27,7 @@ import smtpRoutes from "modules/smtp/routes";
 import emailTemplateRoutes from "modules/email-template/routes";
 import optionSetRoutes from "modules/option-set/routes";
 import universalRoutes from "modules/universal/routes";
+import remsRoutes from "modules/rems/routes";
 
 routes.push(...accountRoutes);
 routes.push(...authRoutes);
@@ -35,7 +35,6 @@ routes.push(...tenantRoutes);
 routes.push(...personRoutes);
 routes.push(...userRoutes);
 routes.push(...roleRoutes);
-routes.push(...customerRoutes);
 routes.push(...permissionGroupRoutes);
 routes.push(...userGroupRoutes);
 routes.push(...dashboardRoutes);
@@ -43,6 +42,7 @@ routes.push(...smtpRoutes);
 routes.push(...emailTemplateRoutes);
 routes.push(...optionSetRoutes);
 routes.push(...universalRoutes);
+routes.push(...remsRoutes);
 
 export default route(function ({ store }) {
   const createHistory = process.env.SERVER

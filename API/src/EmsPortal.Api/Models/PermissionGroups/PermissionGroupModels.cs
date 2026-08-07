@@ -9,6 +9,9 @@ public sealed class CreateGroupRequest
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public List<string> PermissionKeys { get; set; } = new();
+
+    /// <summary>Optional capacity limit (WO-119); null/omitted = unlimited.</summary>
+    public int? CapacityLimit { get; set; }
 }
 
 public sealed class UpdateGroupRequest
@@ -16,6 +19,9 @@ public sealed class UpdateGroupRequest
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public List<string> PermissionKeys { get; set; } = new();
+
+    /// <summary>Optional capacity limit (WO-119); null = unlimited. A value below current usage is rejected.</summary>
+    public int? CapacityLimit { get; set; }
 }
 
 public sealed class SetGroupStatusRequest
@@ -47,7 +53,16 @@ public sealed record PermissionGroupSummaryResponse(
     int RolesUsingCount,
     bool IsActive,
     Guid TenantId,
-    string? TenantName);
+    string? TenantName,
+    // Capacity limits (WO-119): null limit = unlimited; CurrentUsage = distinct active members; IsFull = at/over limit.
+    int? CapacityLimit,
+    int CurrentUsage,
+    bool IsFull,
+    // The audit trail every list offers as hidden-by-default columns; *By resolved by the controller.
+    string? CreatedBy,
+    DateTime CreatedOnUtc,
+    string? UpdatedBy,
+    DateTime UpdatedOnUtc);
 
 public sealed record RoleUsingGroupResponse(Guid RoleId, string RoleName);
 
@@ -69,7 +84,11 @@ public sealed record PermissionGroupDetailResponse(
     IReadOnlyList<PermissionGroupAuditEntryResponse> AuditTrail,
     bool CanDelete,
     DateTime CreatedOnUtc,
-    DateTime UpdatedOnUtc);
+    DateTime UpdatedOnUtc,
+    // Capacity limits (WO-119): null limit = unlimited; CurrentUsage = distinct active members; IsFull = at/over limit.
+    int? CapacityLimit,
+    int CurrentUsage,
+    bool IsFull);
 
 public sealed record PermissionGroupTemplateResponse(
     Guid Id,

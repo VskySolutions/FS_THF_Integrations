@@ -31,7 +31,7 @@
               >
                 <q-item-section>
                   <q-item-label>{{ t.name || t.identifier }}</q-item-label>
-                  <q-item-label caption class="text-capitalize">{{ t.roleName || t.role }}</q-item-label>
+                  <q-item-label caption class="text-capitalize">{{ (t.roleNames || []).join(", ") || "No roles" }}</q-item-label>
                 </q-item-section>
                 <q-item-section v-if="t.tenantId === activeTenantId" side>
                   <q-icon name="o_check" color="primary" />
@@ -40,6 +40,22 @@
             </q-list>
           </q-btn-dropdown>
 
+          <!-- Active-tenant roles (AC-REMS-001.8): the user's roles for the active tenant, shown on
+               every authenticated screen alongside their name (in user-info). Hidden on very small
+               screens where they are still reachable from the user menu. -->
+          <div v-if="isLoggedIn && activeRoles.length" class="gt-xs row items-center q-gutter-xs">
+            <q-chip
+              v-for="r in activeRoles" :key="r" dense square color="teal-1" text-color="primary"
+              class="text-capitalize q-my-none"
+            >
+              {{ r }}
+            </q-chip>
+          </div>
+
+          <!-- Super-Admin tenant scope. One control for the whole app, so it lives in the toolbar rather
+               than being repeated per page; the pages that support it simply follow the selection. -->
+          <app-tenant-scope-select v-if="isLoggedIn" class="gt-xs" />
+
           <notification-centre v-if="isLoggedIn" />
           <user-info v-if="isLoggedIn" />
           <q-btn v-else unelevated color="primary" no-caps icon="o_login" label="Login" :to="{ name: 'login' }" />
@@ -47,14 +63,43 @@
       </q-toolbar>
     </q-header>
 
-    <q-drawer v-if="isLoggedIn" v-model="leftDrawerOpen" bordered :width="292" :breakpoint="1024" class="bg-white">
+    <!-- Collapsed, the drawer stays put as a 60px icon rail rather than disappearing. It deliberately does
+         NOT use mini-to-overlay: that promotes the drawer to z-index 3000, above the header, which puts it
+         over the very hamburger button used to reopen it. The rail keeps its place in the layout instead,
+         and clicking a group icon expands the menu (see AppMenu's `mini`). -->
+    <q-drawer
+      v-if="isLoggedIn"
+      v-model="leftDrawerOpen"
+      show-if-above
+      :mini="menuCollapsed"
+      :width="292"
+      :mini-width="60"
+      :breakpoint="1024"
+      bordered
+      class="bg-white"
+    >
       <aside-header />
       <q-scroll-area class="fit">
-        <AppMenu />
+        <AppMenu :mini="menuCollapsed" @expand="menuCollapsed = false" />
       </q-scroll-area>
     </q-drawer>
 
     <q-page-container>
+      <!-- The tenant scope is global and sticky (it survives reloads), so it is stated on every screen.
+           Without this a Super Admin can return later and edit the wrong tenant believing it is their own. -->
+      <!-- inline-actions keeps the message and the button on ONE row; without it q-banner drops actions
+           onto a second line and the banner takes twice the height on every page. -->
+      <q-banner
+        v-if="isLoggedIn && tenantScopeActive" dense inline-actions
+        class="bg-orange-2 text-orange-10 q-px-md"
+      >
+        <template #avatar><q-icon name="o_visibility" color="orange-10" /></template>
+        Viewing <span class="text-weight-bold">{{ scopedTenantName || "another tenant" }}</span> — changes apply to that tenant.
+        <template #action>
+          <q-btn flat dense no-caps color="orange-10" label="Back to my tenant" @click="clearScope" />
+        </template>
+      </q-banner>
+
       <router-view />
     </q-page-container>
 
@@ -76,7 +121,7 @@
 
 <script setup>
 import { ref, computed, watch } from "vue";
-import { LocalStorage, Dialog } from "quasar";
+import { LocalStorage, Dialog, useQuasar } from "quasar";
 import { storeToRefs } from "pinia";
 import { useTenantStore } from "stores/tenant";
 
@@ -85,19 +130,45 @@ import AsideHeader from "shared/aside_header.vue";
 import AppMenu from "src/components/app_menu.vue";
 import NotificationCentre from "components/universal/NotificationCentre.vue";
 import StickyNoteLayer from "components/universal/StickyNoteLayer.vue";
+import AppTenantScopeSelect from "components/common/AppTenantScopeSelect.vue";
+import { useTenantScope } from "composables/useTenantScope";
 
+const $q = useQuasar();
 const isLoggedIn = !!LocalStorage.getItem("token");
 
-// Persist the drawer open/closed state across reloads (defaults to open).
+// Persist the drawer open/closed state across reloads (defaults to open). Above the breakpoint the
+// drawer is always mounted (show-if-above) and this only governs the mobile overlay.
 const DRAWER_KEY = "leftDrawerOpen";
 const storedDrawer = LocalStorage.getItem(DRAWER_KEY);
 const leftDrawerOpen = ref(storedDrawer === null ? true : storedDrawer);
 watch(leftDrawerOpen, (value) => LocalStorage.set(DRAWER_KEY, value));
-const toggleLeftDrawer = () => { leftDrawerOpen.value = !leftDrawerOpen.value; };
+
+// …and remember whether the user collapsed it to the icon rail.
+const MINI_KEY = "leftDrawerMini";
+const menuCollapsed = ref(LocalStorage.getItem(MINI_KEY) === true);
+watch(menuCollapsed, (value) => LocalStorage.set(MINI_KEY, value));
+
+const toggleLeftDrawer = () => {
+  // Below the breakpoint the drawer is an overlay and Quasar ignores mini entirely, so there the button
+  // has to keep opening and closing it outright.
+  if ($q.screen.lt.md) {
+    leftDrawerOpen.value = !leftDrawerOpen.value;
+    return;
+  }
+  menuCollapsed.value = !menuCollapsed.value;
+};
+
+// Super-Admin tenant scope: shown as a banner because the selection is global and survives a reload.
+const {
+  isScoped: tenantScopeActive, scopedTenantName, loadTenants: loadScopeTenants, clearScope
+} = useTenantScope();
+if (isLoggedIn) loadScopeTenants();
 
 const tenantStore = useTenantStore();
 const { assignments, activeTenantId } = storeToRefs(tenantStore);
 const hasMultipleTenants = computed(() => tenantStore.hasMultipleTenants);
+// The role names the user holds in the active tenant (multi-role), shown in the header.
+const activeRoles = computed(() => tenantStore.activeRoles);
 const activeTenantLabel = computed(() => {
   const t = tenantStore.activeTenant;
   return t?.name || t?.identifier || "Tenant";

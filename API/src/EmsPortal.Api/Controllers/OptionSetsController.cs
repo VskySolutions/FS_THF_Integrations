@@ -14,9 +14,9 @@ namespace EmsPortal.Api.Controllers;
 
 /// <summary>
 /// Manage tenant-configurable option lists (e.g. Payment Terms) and their values. Reads require
-/// <c>optionSets.read</c>; writes require <c>optionSets.manage</c>. Standard (seeded) lists carry a
-/// null tenant and are returned read-only — only the caller tenant's own lists can be modified.
-/// Lists are scoped to the caller's resolved tenant.
+/// <c>optionSets.read</c>; writes require <c>optionSets.manage</c>. Values are manageable on every list a
+/// caller can see, standard (seeded) ones included; only deleting a standard LIST is refused. Lists are
+/// scoped to the caller's resolved tenant, and a tenant's own copy of a key hides the standard original.
 /// </summary>
 [ApiController]
 [Authorize]
@@ -31,12 +31,15 @@ public sealed class OptionSetsController : ControllerBase
 {
     private readonly IOptionSetService _service;
     private readonly IOptionSetRepository _sets;
+    private readonly IUserRepository _users;
     private readonly ITenantContext _tenantContext;
 
-    public OptionSetsController(IOptionSetService service, IOptionSetRepository sets, ITenantContext tenantContext)
+    public OptionSetsController(
+        IOptionSetService service, IOptionSetRepository sets, IUserRepository users, ITenantContext tenantContext)
     {
         _service = service;
         _sets = sets;
+        _users = users;
         _tenantContext = tenantContext;
     }
 
@@ -49,9 +52,26 @@ public sealed class OptionSetsController : ControllerBase
     {
         var filter = entityType is { } et ? (EntityType)et : (EntityType?)null;
         var sets = await _sets.ListSetsForScopeAsync(ScopeTenantId, filter, cancellationToken);
-        var counts = await _sets.CountItemsAsync(sets.Select(s => s.Id).ToList(), cancellationToken);
 
-        var summaries = sets.Select(s => ToSummary(s, counts.TryGetValue(s.Id, out var c) ? c : 0)).ToList();
+        // A tenant with its own copy of a standard list sees only that copy. Both rows are in scope (the
+        // shared original never goes away), and showing them together would put the same list on screen
+        // twice — once editable, once not — with no way to tell which one is in force. The tenant's wins,
+        // matching how GetEffectiveSetAsync resolves a key.
+        var owned = sets.Where(s => s.TenantId is not null).Select(s => (s.EntityType, s.Key)).ToHashSet();
+        var visible = sets.Where(s => s.TenantId is not null || !owned.Contains((s.EntityType, s.Key))).ToList();
+
+        var counts = await _sets.CountItemsAsync(visible.Select(s => s.Id).ToList(), cancellationToken);
+
+        // One name lookup for the page, so the audit columns read as people rather than guids.
+        var names = await _users.GetFullNamesAsync(
+            visible.SelectMany(s => new[] { s.CreatedById, s.UpdatedById })
+                .Where(id => id.HasValue).Select(id => id!.Value),
+            cancellationToken);
+        string? NameOf(Guid? id) => id is { } uid && names.TryGetValue(uid, out var n) ? n : null;
+
+        var summaries = visible
+            .Select(s => ToSummary(s, counts.TryGetValue(s.Id, out var c) ? c : 0, NameOf))
+            .ToList();
         return Ok(ApiResponseFactory.Success<IEnumerable<OptionSetSummaryResponse>>(summaries, "Option lists retrieved."));
     }
 
@@ -232,11 +252,18 @@ public sealed class OptionSetsController : ControllerBase
         _ => set.Items.OrderBy(i => i.SortOrder).ThenBy(i => i.Label),
     };
 
-    private static bool IsEditable(OptionSet set) => set.TenantId is not null && !set.IsSystem;
+    /// <summary>
+    /// Every list a caller can see is manageable — a standard list is a starting point, not a fixed one, so
+    /// its values can be added, renamed, re-ordered and removed. Only DELETING a standard list is refused
+    /// (see <c>OptionSetService.EnsureDeletable</c>). Use <see cref="OptionSet.IsSystem"/>, not this flag,
+    /// to tell Standard from Custom.
+    /// </summary>
+    private static bool IsEditable(OptionSet set) => true;
 
-    private static OptionSetSummaryResponse ToSummary(OptionSet s, int itemCount) => new(
+    private static OptionSetSummaryResponse ToSummary(OptionSet s, int itemCount, Func<Guid?, string?> nameOf) => new(
         s.Id, s.TenantId, (int)s.EntityType, s.Key, s.Name, s.ParentSetId,
-        s.ItemSortMode.ToString(), s.IsSystem, s.IsActive, IsEditable(s), itemCount, s.CreatedOnUtc, s.UpdatedOnUtc);
+        s.ItemSortMode.ToString(), s.IsSystem, s.IsActive, IsEditable(s), itemCount,
+        nameOf(s.CreatedById), s.CreatedOnUtc, nameOf(s.UpdatedById), s.UpdatedOnUtc);
 
     private static OptionSetDetailResponse ToDetail(OptionSet s) => new(
         s.Id, s.TenantId, (int)s.EntityType, s.Key, s.Name, s.ParentSetId,

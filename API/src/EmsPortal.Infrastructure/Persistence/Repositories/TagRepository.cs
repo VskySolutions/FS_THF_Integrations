@@ -32,7 +32,8 @@ internal sealed class TagRepository : ITagRepository
             query = query.Where(t => EF.Functions.Like(t.Name, $"%{search}%"));
         }
 
-        return await query.OrderBy(t => t.Name).ToListAsync(cancellationToken);
+        // Most-recently-touched first, with name as the tie-break so equal timestamps stay predictable.
+        return await query.OrderByDescending(t => t.UpdatedOnUtc).ThenBy(t => t.Name).ToListAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyDictionary<Guid, int>> GetUsageCountsAsync(CancellationToken cancellationToken = default)

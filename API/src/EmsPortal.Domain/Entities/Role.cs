@@ -5,7 +5,7 @@ namespace EmsPortal.Domain.Entities;
 /// <summary>
 /// A named set of permissions (RBAC). Created and managed by Super Admins, made
 /// available to tenants via <see cref="TenantRole"/>, and assigned to users.
-/// System roles (SuperAdmin/TenantAdmin/Operator) are seeded and cannot be deleted.
+/// System roles (SuperAdmin/TenantAdmin) are seeded and cannot be deleted.
 /// </summary>
 public class Role : AuditableEntity
 {

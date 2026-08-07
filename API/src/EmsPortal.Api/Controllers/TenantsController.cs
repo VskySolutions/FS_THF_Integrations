@@ -2,6 +2,7 @@ using EmsPortal.Api.Models.Tenants;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.Auditing;
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.OptionSets;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Domain.Enums;
 using EmsPortal.Shared.Contracts;
@@ -27,17 +28,20 @@ public sealed class TenantsController : ControllerBase
 {
     private readonly ITenantRepository _tenants;
     private readonly IUserRepository _users;
+    private readonly IOptionSetRepository _optionSets;
     private readonly IAuditTrailService _audit;
     private readonly IUnitOfWork _unitOfWork;
 
     public TenantsController(
         ITenantRepository tenants,
         IUserRepository users,
+        IOptionSetRepository optionSets,
         IAuditTrailService audit,
         IUnitOfWork unitOfWork)
     {
         _tenants = tenants;
         _users = users;
+        _optionSets = optionSets;
         _audit = audit;
         _unitOfWork = unitOfWork;
     }
@@ -64,6 +68,11 @@ public sealed class TenantsController : ControllerBase
             CreatedDate = DateTime.UtcNow,
         };
         await _tenants.AddAsync(tenant, cancellationToken);
+
+        // The new tenant gets its OWN copy of the platform's default option lists, so its admins can manage
+        // the values (add / rename / delete / re-order) without touching the shared originals.
+        await TenantOptionSetSeeder.EnsureDefaultsAsync(_optionSets, tenant.Id, cancellationToken);
+
         await _audit.AddAsync(nameof(Tenant), tenant.Id.ToString(), "Created", details: tenant.Identifier, cancellationToken: cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 

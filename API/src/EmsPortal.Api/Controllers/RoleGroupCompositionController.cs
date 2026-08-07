@@ -58,7 +58,11 @@ public sealed class RoleGroupCompositionController : ControllerBase
         var groups = await _groups.GetByRoleAsync(roleId, cancellationToken);
         var preview = await _effective.PreviewForRoleAsync(roleId, cancellationToken);
         var summaries = groups
-            .Select(g => new PermissionGroupSummaryResponse(g.Id, g.Name, g.Description, g.Permissions.Count, 0, g.IsActive, g.TenantId, g.Tenant?.Name))
+            // Role composition, not an audited list: the counts are placeholders here and the audit *By
+            // names are left unresolved rather than paying for a lookup this surface never shows.
+            .Select(g => new PermissionGroupSummaryResponse(
+                g.Id, g.Name, g.Description, g.Permissions.Count, 0, g.IsActive, g.TenantId, g.Tenant?.Name,
+                g.CapacityLimit, 0, false, null, g.CreatedOnUtc, null, g.UpdatedOnUtc))
             .ToList();
         return Ok(ApiResponseFactory.Success(new RoleGroupsResponse(roleId, summaries, preview.Permissions), "Role groups retrieved."));
     }
@@ -110,6 +114,32 @@ public sealed class RoleGroupCompositionController : ControllerBase
             return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden("Groups must belong to your tenant."));
         }
 
+        // Capacity (WO-119): composing this role into a group that already has users must not push the
+        // group's usage past its limit (AC-PG-013.2). Check every newly-composed capped group up front
+        // — the role's active users would join the group's population — and reject before any write.
+        foreach (var group in loaded)
+        {
+            if (group.CapacityLimit is not { } limit)
+            {
+                continue;
+            }
+            if (await _groups.GetRoleLinkAsync(roleId, group.Id, cancellationToken) is not null)
+            {
+                continue; // already composed — no new members
+            }
+            var projected = await _groups.CountActiveMembersAsync(group.Id, group.TenantId, new[] { roleId }, cancellationToken);
+            if (projected > limit)
+            {
+                await _audit.AddAsync(nameof(PermissionGroup), group.Id.ToString(), "CapacityLimitReached",
+                    details: $"Composing role '{role.Name}' would raise usage to {projected}, above the limit of {limit}.", cancellationToken: cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                return BadRequest(ApiResponseFactory.Error(
+                    ApiErrorCodes.CapacityLimitReached,
+                    $"Cannot compose group '{group.Name}' into this role: its capacity limit ({limit}) would be exceeded (projected usage {projected}).",
+                    group.Name));
+            }
+        }
+
         foreach (var group in loaded)
         {
             if (await _groups.GetRoleLinkAsync(roleId, group.Id, cancellationToken) is null)
@@ -126,7 +156,11 @@ public sealed class RoleGroupCompositionController : ControllerBase
         var preview = await _effective.PreviewForRoleAsync(roleId, cancellationToken);
         var groups = await _groups.GetByRoleAsync(roleId, cancellationToken);
         var summaries = groups
-            .Select(g => new PermissionGroupSummaryResponse(g.Id, g.Name, g.Description, g.Permissions.Count, 0, g.IsActive, g.TenantId, g.Tenant?.Name))
+            // Role composition, not an audited list: the counts are placeholders here and the audit *By
+            // names are left unresolved rather than paying for a lookup this surface never shows.
+            .Select(g => new PermissionGroupSummaryResponse(
+                g.Id, g.Name, g.Description, g.Permissions.Count, 0, g.IsActive, g.TenantId, g.Tenant?.Name,
+                g.CapacityLimit, 0, false, null, g.CreatedOnUtc, null, g.UpdatedOnUtc))
             .ToList();
         return Ok(ApiResponseFactory.Success(new RoleGroupsResponse(roleId, summaries, preview.Permissions), "Groups assigned to role."));
     }

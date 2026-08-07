@@ -3,8 +3,8 @@ using EmsPortal.Domain.Enums;
 namespace EmsPortal.Domain.Entities;
 
 /// <summary>
-/// A named list of selectable input values scoped to an entity type and a tenant — e.g. the
-/// "Payment Terms" choices (NET 30, NET 60, …) shown on a Customer record. A row with a null
+/// A named list of selectable input values scoped to an entity type and a tenant — e.g. a
+/// "Category" or "Department" list shown on a record. A row with a null
 /// <see cref="TenantId"/> is a platform-standard list seeded in application code (visible to every
 /// tenant, see <see cref="IsSystem"/>); a row with a <see cref="TenantId"/> is that tenant's own list.
 /// <para>
@@ -22,13 +22,13 @@ public class OptionSet : AuditableEntity
     /// <summary>Owning tenant, or null for a platform-standard (seeded) list.</summary>
     public Guid? TenantId { get; set; }
 
-    /// <summary>The entity type this list applies to (e.g. CustomerRequest).</summary>
+    /// <summary>The entity type this list applies to (e.g. User).</summary>
     public EntityType EntityType { get; set; }
 
-    /// <summary>Stable programmatic code, unique per (tenant, entity), e.g. <c>payment_terms</c>.</summary>
+    /// <summary>Stable programmatic code, unique per (tenant, entity), e.g. <c>department</c>.</summary>
     public string Key { get; set; } = string.Empty;
 
-    /// <summary>Human-friendly display name, e.g. "Payment Terms".</summary>
+    /// <summary>Human-friendly display name, e.g. "Department".</summary>
     public string Name { get; set; } = string.Empty;
 
     /// <summary>

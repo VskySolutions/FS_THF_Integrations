@@ -57,7 +57,9 @@ public static class BootstrapSeeder
             await tenants.AddAsync(tenant, cancellationToken);
         }
 
-        var superAdminRole = await roles.GetByNameAsync(Roles.SuperAdmin, cancellationToken);
+        // Seeded just above; required for the bootstrap admin's assignment (RoleId is non-nullable).
+        var superAdminRole = await roles.GetByNameAsync(Roles.SuperAdmin, cancellationToken)
+            ?? throw new InvalidOperationException("The SuperAdmin system role was not seeded.");
 
         var password = GetValue(configuration, "Password", "ChangeMe123!");
         var (hash, salt) = hasher.Hash(password);
@@ -92,7 +94,7 @@ public static class BootstrapSeeder
             CreatedDate = DateTime.UtcNow,
             TenantRoles =
             {
-                new UserTenantRole { Id = Guid.NewGuid(), TenantId = tenant.Id, Role = UserRole.SuperAdmin, RoleId = superAdminRole?.Id },
+                new UserTenantRole { Id = Guid.NewGuid(), TenantId = tenant.Id, Role = UserRole.SuperAdmin, RoleId = superAdminRole.Id },
             },
         };
         await users.AddAsync(admin, cancellationToken);
@@ -104,8 +106,11 @@ public static class BootstrapSeeder
         var definitions = new (string Name, string Description, IReadOnlyList<string> Permissions)[]
         {
             (Roles.SuperAdmin, "Full platform access.", Permissions.ForSuperAdmin()),
-            (Roles.TenantAdmin, "Manage a tenant's users, mappings and integrations.", Permissions.ForTenantAdmin()),
-            (Roles.Operator, "Trigger and monitor integrations.", Permissions.ForOperator()),
+            (Roles.TenantAdmin, "Manage a tenant's users and configuration.", Permissions.ForTenantAdmin()),
+            // REMS operational roles (WO-122). Assigned per (user, tenant), stackable with other roles.
+            (Roles.Partner, "REMS Partner: create and manage their own requests.", Permissions.ForPartner()),
+            (Roles.Admin, "REMS Admin: full request lifecycle, pool, forms, engagements, approvals routing and email log, plus deciding approval tasks assigned to them (as CSE or commission recipient).", Permissions.ForAdmin()),
+            (Roles.Approver, "REMS Approver: act on approval tasks assigned to them (record-scoped).", Permissions.ForApprover()),
         };
 
         foreach (var (name, description, permissions) in definitions)

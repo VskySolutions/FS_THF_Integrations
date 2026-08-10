@@ -31,6 +31,8 @@ namespace EmsPortal.Api.Controllers;
 public sealed class RemsRequestsController : ControllerBase
 {
     private const string CodeNotDeletable = "REMS_REQUEST_NOT_DELETABLE";
+    private const string CodeDuplicateTitle = "REMS_DUPLICATE_CLIENT_TITLE";
+    private const string CodeDuplicateEmail = "REMS_DUPLICATE_CLIENT_EMAIL";
 
     private readonly IRemsRepository _rems;
     private readonly IRemsNumberGenerator _numberGenerator;
@@ -73,7 +75,6 @@ public sealed class RemsRequestsController : ControllerBase
         [FromQuery] string? contact = null,
         [FromQuery] string? status = null,
         [FromQuery] string? type = null,
-        [FromQuery] string? priority = null,
         [FromQuery] Guid? assignedAdminUserId = null,
         [FromQuery] DateTime? createdFrom = null,
         [FromQuery] DateTime? createdTo = null,
@@ -91,7 +92,7 @@ public sealed class RemsRequestsController : ControllerBase
         var privileged = IsPrivileged();
 
         var options = new RemsRequestListOptions(
-            me, privileged, clientName, contact, status, type, priority, assignedAdminUserId,
+            me, privileged, clientName, contact, status, type, assignedAdminUserId,
             createdFrom, createdTo, ParseScope(scope), ParsePoolFilter(poolScope), page, limit);
         var (items, total) = await _rems.ListRequestsAsync(options, cancellationToken);
 
@@ -119,7 +120,6 @@ public sealed class RemsRequestsController : ControllerBase
         [FromQuery] string? contact = null,
         [FromQuery] string? status = null,
         [FromQuery] string? type = null,
-        [FromQuery] string? priority = null,
         [FromQuery] Guid? assignedAdminUserId = null,
         [FromQuery] DateTime? createdFrom = null,
         [FromQuery] DateTime? createdTo = null,
@@ -132,7 +132,7 @@ public sealed class RemsRequestsController : ControllerBase
 
         // Paging is irrelevant to an aggregate; PoolFilter is what is being counted, so neither is read.
         var options = new RemsRequestListOptions(
-            me, IsPrivileged(), clientName, contact, status, type, priority, assignedAdminUserId,
+            me, IsPrivileged(), clientName, contact, status, type, assignedAdminUserId,
             createdFrom, createdTo, RemsListScope.Pool, RemsPoolFilter.All, 1, 1);
         var counts = await _rems.CountPoolScopesAsync(options, cancellationToken);
         return Ok(ApiResponseFactory.Success(counts, "REMS pool counts retrieved."));
@@ -196,6 +196,19 @@ public sealed class RemsRequestsController : ControllerBase
             if (type == RemsRequestTypes.BrandNewClient) type = RemsRequestTypes.ExistingClient;
         }
 
+        // Only a client we already have can have a request already. Where the reference is still null the
+        // client is new to us by definition, so there is nothing for the title to collide with.
+        if (await RejectDuplicateTitleAsync(request.ExistingClientReferenceId, request.Title, null, cancellationToken) is { } titleClash)
+        {
+            return titleClash;
+        }
+
+        if (await RejectDuplicateClientEmailAsync(
+                request.ExistingClientReferenceId, request.CustomerEmail, null, cancellationToken) is { } emailClash)
+        {
+            return emailClash;
+        }
+
         var submit = request.Submit;
         var rems = new REMS
         {
@@ -203,7 +216,6 @@ public sealed class RemsRequestsController : ControllerBase
             Title = request.Title,
             Description = request.Description,
             Type = type,
-            Priority = request.Priority,
             Status = submit ? RemsRequestStatuses.Submitted : RemsRequestStatuses.Draft,
             RequestedClientName = request.ClientName,
             CustomerEmail = Normalize(request.CustomerEmail),
@@ -213,10 +225,12 @@ public sealed class RemsRequestsController : ControllerBase
             AdminAssignedToId = request.AssignAdminUserId,
         };
 
-        // Allocate the REMS number and stage the row + activity + assignment + attachment atomically.
+        // Allocate the REMS number and stage the row + client person + activity + assignment + attachment
+        // atomically. The person is staged first: the request's FK points at them.
         await _unitOfWork.ExecuteInTransactionAsync(async ct =>
         {
             rems.REMSNumber = await _numberGenerator.GenerateAsync(tenantId, ct);
+            rems.ClientPersonId = await ResolveClientPersonAsync(rems, tenantId, ct);
             await _rems.AddAsync(rems, ct);
             await _activity.WriteAsync(new CreateActivityEventDto(EntityType.Rems, rems.Id, ActivityEventTypes.RemsCreated), ct);
             if (submit)
@@ -302,15 +316,35 @@ public sealed class RemsRequestsController : ControllerBase
             }
         }
 
+        // Checked against the client the request will end up with, and against the title it will end up
+        // with — an edit that renames only the client still has to land somewhere free.
+        var titleClient = request.ExistingClientReferenceId ?? rems.ExistingClientReferenceId ?? rems.ClientPersonId;
+        if (await RejectDuplicateTitleAsync(titleClient, request.Title ?? rems.Title, rems.Id, cancellationToken) is { } titleClash)
+        {
+            return titleClash;
+        }
+
+        // The client this request already minted is not a duplicate of itself, so it is excluded.
+        if (await RejectDuplicateClientEmailAsync(
+                request.ExistingClientReferenceId ?? rems.ExistingClientReferenceId,
+                request.CustomerEmail ?? rems.CustomerEmail,
+                rems.ClientPersonId,
+                cancellationToken) is { } emailClash)
+        {
+            return emailClash;
+        }
+
         if (request.Title is not null) rems.Title = request.Title;
         if (request.Description is not null) rems.Description = request.Description;
         if (request.Type is not null) rems.Type = request.Type;
-        if (request.Priority is not null) rems.Priority = request.Priority;
         if (request.ClientName is not null) rems.RequestedClientName = request.ClientName;
         if (request.CustomerEmail is not null) rems.CustomerEmail = Normalize(request.CustomerEmail);
         if (request.CustomerMobileNumber is not null) rems.CustomerMobileNumber = Normalize(request.CustomerMobileNumber);
         if (request.CSEId.HasValue) rems.CSEId = request.CSEId;
         if (request.ExistingClientReferenceId.HasValue) rems.ExistingClientReferenceId = request.ExistingClientReferenceId;
+
+        // After the client fields land, so the person record follows what the request now says.
+        rems.ClientPersonId = await ResolveClientPersonAsync(rems, rems.TenantId, cancellationToken);
 
         // Applied before the submission notice below, which stays silent on an already-owned request —
         // submitting and assigning in one save must not also ring the whole pool.
@@ -421,15 +455,19 @@ public sealed class RemsRequestsController : ControllerBase
         var copy = new REMS
         {
             Id = Guid.NewGuid(),
-            Title = source.Title,
+            // Not the source's title: it is the same client, and a client's titles are unique.
+            Title = await UniqueCopyTitleAsync(source, cancellationToken),
             Description = source.Description,
             Type = source.Type,
-            Priority = source.Priority,
             Status = RemsRequestStatuses.Draft,
             RequestedClientName = source.RequestedClientName,
             CustomerEmail = source.CustomerEmail,
             CustomerMobileNumber = source.CustomerMobileNumber,
             ExistingClientReferenceId = source.ExistingClientReferenceId,
+            // Same client, so the same person — a duplicate is a second request for them, not a second
+            // client. Null only when the source predates the column and has not been saved since; the
+            // next save of the copy resolves it.
+            ClientPersonId = source.ClientPersonId,
             CSEId = source.CSEId,
         };
 
@@ -505,8 +543,13 @@ public sealed class RemsRequestsController : ControllerBase
                 Array.Empty<RemsClientLookupItem>(), "Enter at least two characters to search."));
         }
 
-        // The ambient tenant filter pins the search to the caller's active tenant.
-        var (items, _) = await _persons.ListAsync(term, tenantId: null, isUser: null, isActive: true, page: 1, limit: 20, cancellationToken);
+        // The ambient tenant filter pins the search to the caller's active tenant. Clients only: a
+        // colleague and a role contact captured off an EMS form sit in the same table, and neither is
+        // somebody to open an engagement for. A name nobody matches is not an error — the caller files it
+        // as a brand-new client, which is what the empty result offers them.
+        var (items, _) = await _persons.ListAsync(
+            term, tenantId: null, isUser: null, isActive: true, page: 1, limit: 20,
+            sourceEntityType: EntityType.Client, cancellationToken: cancellationToken);
         var results = items.Select(p => new RemsClientLookupItem(p.Id, p.FullName, p.PrimaryEmail, p.MobileNumber, null, null));
         return Ok(ApiResponseFactory.Success(results, "Clients retrieved."));
     }
@@ -596,13 +639,220 @@ public sealed class RemsRequestsController : ControllerBase
         }
 
         var (candidates, _) = await _persons.ListAsync(
-            name, tenantId: null, isUser: null, isActive: true, page: 1, limit: 20, cancellationToken);
+            name, tenantId: null, isUser: null, isActive: true, page: 1, limit: 20,
+            sourceEntityType: EntityType.Client, cancellationToken: cancellationToken);
         var matches = candidates
             .Where(p => string.Equals(p.FullName.Trim(), name, StringComparison.OrdinalIgnoreCase))
             .Select(p => p.Id)
             .Distinct()
             .ToList();
         return matches.Count == 1 ? matches[0] : null;
+    }
+
+    /// <summary>
+    /// Puts the request's client into the Persons table and returns who they are, so a client entered once
+    /// is a record the platform holds rather than three columns on one request: the picker finds them on
+    /// the next request, and a User can later be pointed at them (<c>User.PersonId</c>).
+    ///
+    /// Three cases, in order:
+    /// <list type="bullet">
+    /// <item>Intake matched a client already on file — that person IS the client. The record is THF's, not
+    /// this request's, so only blank contact fields are filled; whatever is already there stands even
+    /// where the request disagrees. A partner giving a different email for one referral is describing that
+    /// referral, not correcting the client's master record.</item>
+    /// <item>This request minted the person on an earlier save and is still the only request referring to
+    /// them — it owns the record, so the edited name and contact details are written straight through.
+    /// Once a second request points at them the name is no longer this request's to change, and the
+    /// resolution falls through to the case below.</item>
+    /// <item>Nobody on file — mint one, stamped with this request as its source.</item>
+    /// </list>
+    ///
+    /// Runs inside the caller's unit of work: a new person is staged, not saved, so a request that fails
+    /// to save leaves no client behind.
+    /// </summary>
+    private async Task<Guid> ResolveClientPersonAsync(REMS rems, Guid tenantId, CancellationToken cancellationToken)
+    {
+        var name = rems.RequestedClientName?.Trim() ?? string.Empty;
+        var email = Normalize(rems.CustomerEmail);
+        var phone = Normalize(rems.CustomerMobileNumber);
+
+        // Matched an existing client. A reference that no longer resolves (person deleted, or another
+        // tenant's) falls through and is treated as a client we do not have.
+        if (rems.ExistingClientReferenceId is { } referenceId
+            && await _persons.GetByIdAsync(referenceId, cancellationToken) is { } matched)
+        {
+            var filled = false;
+            if (email is not null && string.IsNullOrWhiteSpace(matched.PrimaryEmail))
+            {
+                matched.PrimaryEmail = email;
+                filled = true;
+            }
+            if (phone is not null && string.IsNullOrWhiteSpace(matched.MobileNumber))
+            {
+                matched.MobileNumber = phone;
+                filled = true;
+            }
+            if (filled)
+            {
+                matched.LastProfileUpdatedOn = DateTime.UtcNow;
+                _persons.Update(matched);
+            }
+            return matched.Id;
+        }
+
+        // A person this request minted, still referred to by nobody else. Excludes one who has since become
+        // a user — their profile is theirs from that point on, not a by-product of the request.
+        if (rems.ClientPersonId is { } ownedId
+            && await _persons.GetByIdAsync(ownedId, cancellationToken) is { UserId: null } owned
+            && owned.SourceEntityType == EntityType.Client
+            && owned.SourceEntityId == rems.Id
+            && !await _rems.IsClientPersonSharedAsync(ownedId, rems.Id, cancellationToken))
+        {
+            var (first, last) = SplitName(name);
+            owned.FirstName = first;
+            owned.LastName = last;
+            owned.DisplayName = name;
+            owned.PrimaryEmail = email;
+            owned.MobileNumber = phone;
+            owned.LastProfileUpdatedOn = DateTime.UtcNow;
+            _persons.Update(owned);
+            return owned.Id;
+        }
+
+        var (newFirst, newLast) = SplitName(name);
+        var person = new Person
+        {
+            Id = Guid.NewGuid(),
+            // Globally unique by construction (the filtered unique index on PersonCode), so no pre-check.
+            PersonCode = "PER-" + Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(),
+            // Set explicitly rather than left to ambient stamping: on create the request itself has no
+            // tenant yet (it is stamped on save), so the caller's tenant is the only one that is known.
+            TenantId = tenantId,
+            // Client, not Rems: this person IS the client, and the picker offers only those. The id still
+            // points back at the request that first named them, so the provenance pair reads "the client,
+            // as captured on REMS-123".
+            SourceEntityType = EntityType.Client,
+            SourceEntityId = rems.Id,
+            FirstName = newFirst,
+            LastName = newLast,
+            DisplayName = name,
+            PrimaryEmail = email,
+            MobileNumber = phone,
+            IsActive = true,
+            LastProfileUpdatedOn = DateTime.UtcNow,
+        };
+        await _persons.AddAsync(person, cancellationToken);
+        return person.Id;
+    }
+
+    /// <summary>
+    /// First word is the given name, the rest the family name. A client name is one free-text box at
+    /// intake, and Person splits it in two — this is the same split the public form applies to its role
+    /// contacts, so a client and a contact captured from the same name land the same way.
+    /// </summary>
+    private static (string First, string Last) SplitName(string? name)
+    {
+        var trimmed = name?.Trim() ?? string.Empty;
+        if (trimmed.Length == 0)
+        {
+            return (string.Empty, string.Empty);
+        }
+
+        var space = trimmed.IndexOf(' ');
+        return space < 0 ? (trimmed, string.Empty) : (trimmed[..space], trimmed[(space + 1)..].Trim());
+    }
+
+    /// <summary>
+    /// The 409 for filing a brand-new client under an email another client already holds, or null to carry
+    /// on. One address reaches one inbox, so a second record under it is the same client entered twice —
+    /// and once there are two, neither the picker nor anybody reading a request can tell which is which.
+    /// <para>
+    /// Only asked of a client we are about to file as new. Naming an existing client's email on their own
+    /// request is the ordinary case, not a duplicate, and the check is skipped there.
+    /// </para>
+    /// </summary>
+    private async Task<IActionResult?> RejectDuplicateClientEmailAsync(
+        Guid? existingClientReferenceId, string? email, Guid? excludingPersonId, CancellationToken cancellationToken)
+    {
+        var trimmed = Normalize(email);
+        if (existingClientReferenceId is not null || trimmed is null)
+        {
+            return null;
+        }
+
+        if (await _persons.FindClientByEmailAsync(trimmed, excludingPersonId, cancellationToken) is not { } holder)
+        {
+            return null;
+        }
+
+        return StatusCode(StatusCodes.Status409Conflict, ApiResponseFactory.Error(
+            CodeDuplicateEmail,
+            "A client is already on file with that email address.",
+            $"“{holder.FullName}” is already on file with the email {trimmed}. Search for them in the "
+                + "Client box and pick them, rather than filing a second record for the same client."));
+    }
+
+    /// <summary>
+    /// The 409 for a title this client already has, or null to carry on. A client's requests are told
+    /// apart by their titles — on their history, in the pool, in every notification naming one — so two
+    /// under a single title is an ambiguity nobody downstream can resolve.
+    /// <para>
+    /// Nothing to check when the client is not one we already have: a client with no record has no
+    /// earlier request to clash with.
+    /// </para>
+    /// </summary>
+    private async Task<IActionResult?> RejectDuplicateTitleAsync(
+        Guid? clientPersonId, string? title, Guid? excludingRemsId, CancellationToken cancellationToken)
+    {
+        var trimmed = title?.Trim();
+        if (clientPersonId is not { } clientId
+            || string.IsNullOrEmpty(trimmed)
+            || !await _rems.TitleExistsForClientAsync(clientId, trimmed, excludingRemsId, cancellationToken))
+        {
+            return null;
+        }
+
+        // The details line is what the UI puts in front of the user, so it has to stand on its own rather
+        // than read as a footnote to the message above it.
+        return StatusCode(StatusCodes.Status409Conflict, ApiResponseFactory.Error(
+            CodeDuplicateTitle,
+            "This client already has a request with that title.",
+            $"This client already has a request titled “{trimmed}”. Titles are unique per client — "
+                + "give this one a title that says how it differs."));
+    }
+
+    /// <summary>
+    /// A title for the duplicate that this client does not already have. Copying one verbatim would clash
+    /// with the request it came from, so the copy says it is one — numbered if that is taken too. Kept
+    /// inside the column's 200 characters by trimming the title rather than the suffix, which is the part
+    /// carrying the distinction.
+    /// </summary>
+    private async Task<string> UniqueCopyTitleAsync(REMS source, CancellationToken cancellationToken)
+    {
+        if ((source.ClientPersonId ?? source.ExistingClientReferenceId) is not { } clientId)
+        {
+            return source.Title;
+        }
+
+        for (var attempt = 1; attempt <= 50; attempt++)
+        {
+            var candidate = WithSuffix(source.Title, attempt == 1 ? " (copy)" : $" (copy {attempt})");
+            if (!await _rems.TitleExistsForClientAsync(clientId, candidate, null, cancellationToken))
+            {
+                return candidate;
+            }
+        }
+
+        // Fifty copies deep the numbering is no longer telling anybody anything; take a unique marker
+        // over a title that would be rejected on the way in.
+        return WithSuffix(source.Title, $" (copy {Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()})");
+    }
+
+    private static string WithSuffix(string title, string suffix)
+    {
+        const int max = 200;
+        var stem = title.Length + suffix.Length <= max ? title : title[..(max - suffix.Length)].TrimEnd();
+        return stem + suffix;
     }
 
     /// <summary>A Partner-role caller. Duplicating a request is their workflow, not the pool's.</summary>
@@ -636,7 +886,7 @@ public sealed class RemsRequestsController : ControllerBase
         forms.TryGetValue(r.Id, out var form);
         var (ems, submission) = MapFormState(form);
         return new RemsRequestRow(
-            r.Id, r.REMSNumber, r.Title, r.RequestedClientName, r.Type, r.Priority, r.CreatedOnUtc, r.Status,
+            r.Id, r.REMSNumber, r.Title, r.RequestedClientName, r.Type, r.CreatedOnUtc, r.Status,
             r.CustomerEmail, r.CustomerMobileNumber,
             UserRefOf(r.AdminAssignedToId, names), UserRefOf(r.CSEId, names),
             form?.IndustryGroup, ems, submission,
@@ -660,8 +910,8 @@ public sealed class RemsRequestsController : ControllerBase
 
         return new RemsRequestDetail(
             rems.Id, rems.REMSNumber, rems.Title, rems.Description, rems.RequestedClientName,
-            rems.Type, rems.Priority, rems.Status, rems.CustomerEmail, rems.CustomerMobileNumber,
-            rems.ExistingClientReferenceId,
+            rems.Type, rems.Status, rems.CustomerEmail, rems.CustomerMobileNumber,
+            rems.ExistingClientReferenceId, rems.ClientPersonId,
             UserRefOf(rems.AdminAssignedToId, names), UserRefOf(rems.CSEId, names),
             form?.IndustryGroup, ems, submission, files,
             NameOf(names, rems.CreatedById), rems.CreatedOnUtc, NameOf(names, rems.UpdatedById), rems.UpdatedOnUtc,

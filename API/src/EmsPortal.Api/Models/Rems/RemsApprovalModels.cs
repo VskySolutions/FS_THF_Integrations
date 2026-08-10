@@ -108,7 +108,6 @@ public sealed record RemsApprovalRequestView(
     string? Description,
     string RequestedClientName,
     string Type,
-    string Priority,
     string Status,
     string? CustomerEmail,
     string? CustomerMobileNumber,

@@ -19,7 +19,6 @@ internal sealed class RemsConfiguration : IEntityTypeConfiguration<REMS>
         builder.Property(r => r.Title).IsRequired().HasMaxLength(200);
         builder.Property(r => r.Description).HasMaxLength(500);
         builder.Property(r => r.Type).IsRequired().HasMaxLength(64);
-        builder.Property(r => r.Priority).IsRequired().HasMaxLength(64);
         builder.Property(r => r.Status).IsRequired().HasMaxLength(64);
         builder.Property(r => r.RequestedClientName).IsRequired().HasMaxLength(200);
         builder.Property(r => r.CustomerEmail).HasMaxLength(256);
@@ -30,6 +29,16 @@ internal sealed class RemsConfiguration : IEntityTypeConfiguration<REMS>
 
         builder.HasOne<User>().WithMany().HasForeignKey(r => r.AdminAssignedToId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<User>().WithMany().HasForeignKey(r => r.CSEId).OnDelete(DeleteBehavior.Restrict);
+
+        // The client's Person master record. A real FK, unlike the loose ExistingClientReferenceId beside
+        // it: a person may be shared by many requests and may later become a User, so the link has to hold.
+        // Restrict, like every other FK here — purging a REMS request leaves the person standing, and a
+        // person cannot be purged out from under the requests that name them as the client.
+        builder.HasOne(r => r.ClientPerson).WithMany().HasForeignKey(r => r.ClientPersonId).OnDelete(DeleteBehavior.Restrict);
+
+        // "Every request for this client" — the read behind a client's history, and behind converting one
+        // into a user.
+        builder.HasIndex(r => new { r.TenantId, r.ClientPersonId });
 
         // One active request number per tenant.
         builder.HasIndex(r => new { r.TenantId, r.REMSNumber }).IsUnique().HasFilter("[Deleted] = 0");

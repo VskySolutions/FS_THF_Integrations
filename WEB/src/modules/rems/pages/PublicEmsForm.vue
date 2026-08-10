@@ -87,14 +87,36 @@
               <div class="col-12 col-sm-6">
                 <app-phone-input v-model="payload.mobileNumber" label="Mobile Number" />
               </div>
+              <!-- Each option's description is its own tooltip, maintained by staff in Administration →
+                   Option Sets and delivered with the form (this page is anonymous and cannot resolve an
+                   option set itself). Choosing one opens a follow-up box for the specifics. -->
+              <app-select
+                v-model="payload.referralSource" :options="referralOptions" label="Referral Source"
+                class="col-12 col-sm-6" clearable
+                hint="How did you hear about us?"
+              >
+                <template #option="scope">
+                  <q-item v-bind="scope.itemProps">
+                    <q-item-section>
+                      <q-item-label>{{ scope.opt.label }}</q-item-label>
+                      <q-item-label v-if="scope.opt.description" caption>{{ scope.opt.description }}</q-item-label>
+                    </q-item-section>
+                  </q-item>
+                </template>
+              </app-select>
               <app-text-field
-                v-model="payload.referralSource" label="Referral Source" class="col-12 col-sm-6"
-                placeholder="How did you hear about us?"
+                v-if="payload.referralSource"
+                v-model="payload.referralSourceDetail" label="Tell us more" class="col-12 col-sm-6"
+                :placeholder="referralDetailPlaceholder"
               />
 
-              <!-- Individual: spouse -->
+              <!-- Individual: spouse. All optional — captured when known, never a reason to block. -->
               <template v-if="isIndividual">
                 <app-text-field v-model="payload.spouseName" label="Spouse Name" class="col-12 col-sm-6" />
+                <app-text-field
+                  v-model="payload.spouseEmail" label="Spouse Email Address" type="email"
+                  class="col-12 col-sm-6" :error="!!errors.spouseEmail" :error-message="errors.spouseEmail"
+                />
                 <div class="col-12 col-sm-6">
                   <app-phone-input v-model="payload.spousePhone" label="Spouse Phone" />
                 </div>
@@ -293,7 +315,10 @@
           </q-card-section>
           <q-separator />
           <q-card-section>
-            <rems-review-summary :payload="reviewPayload" :industry-group="industryGroup" :locked-email="payload.email" />
+            <rems-review-summary
+              :payload="reviewPayload" :industry-group="industryGroup" :locked-email="payload.email"
+              :referral-sources="referralSources"
+            />
           </q-card-section>
         </q-card>
 
@@ -327,8 +352,11 @@ import { useConfirm } from "composables/useConfirm";
 import {
   blankAddress, toAddress, fromAddress, addressErrors, addressHasAny, addressComplete
 } from "modules/rems/remsAddress";
+import { REMS_OPTION_SEED } from "modules/rems/useRemsOptionCatalog";
+import { isBusinessIndustryGroup } from "modules/rems/useRemsMeta";
 
 import AppTextField from "components/common/AppTextField.vue";
+import AppSelect from "components/common/AppSelect.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
 import AppDateField from "components/common/AppDateField.vue";
 import AppAddressFields from "components/common/AppAddressFields.vue";
@@ -342,12 +370,32 @@ const GROUP_ROLES = {
   government: ["financeDirector", "accountsPayable"]
 };
 const ROLE_KEYS = ["self", "spouse", "ceo", "cfo", "accountsPayable", "banker", "lawyer", "financeDirector"];
-const INDUSTRY_LABELS = { individual: "Individual", business: "Business", government: "Government" };
+// The chip above the form. `business` is kept for forms sent before it was split into the three below.
+const INDUSTRY_LABELS = {
+  individual: "Individual",
+  not_for_profit: "Not-for-Profit",
+  insurance: "Insurance",
+  commercial: "Commercial",
+  business: "Business",
+  government: "Government"
+};
 
 const route = useRoute();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const inviteCode = route.params.inviteCode;
+
+// The referral-source list. Seeded from the shared catalogue so the picker is never empty on first
+// paint, then replaced by whatever the server sends with the form — the tenant's own wording and
+// descriptions. Each option carries `description`, which is the tooltip / caption for that value.
+const referralSources = ref([...REMS_OPTION_SEED.referralSource]);
+const referralOptions = computed(() => referralSources.value);
+const referralDetailPlaceholder = computed(() => {
+  const chosen = referralSources.value.find((o) => o.value === payload.referralSource);
+  // The option's own description is the best prompt for the follow-up — "Friend, Family, or Colleague"
+  // says what to type far better than a generic "Please provide details".
+  return chosen?.description || "Please provide details";
+});
 
 // ---- Screen state ----
 const loading = ref(true);
@@ -379,6 +427,7 @@ const payload = reactive({
   email: "",            // LOCKED (from prefill; ignored on submit)
   mobileNumber: "",
   referralSource: "",
+  referralSourceDetail: "",
   physicalAddress: blankAddress(),
   mailingDiffers: false,
   mailingAddress: blankAddress(),
@@ -387,6 +436,7 @@ const payload = reactive({
   billingAddress: blankAddress(),
   spouseName: "",
   spousePhone: "",
+  spouseEmail: "",
   ein: "",
   contractStartDate: "",
   contractEndDate: "",
@@ -409,7 +459,7 @@ const payload = reactive({
 
 // ---- Derived ----
 const isIndividual = computed(() => industryGroup.value === "individual");
-const isBusiness = computed(() => industryGroup.value === "business");
+const isBusiness = computed(() => isBusinessIndustryGroup(industryGroup.value));
 const isGovernment = computed(() => industryGroup.value === "government");
 const industryLabel = computed(() => INDUSTRY_LABELS[industryGroup.value] || "Onboarding");
 const showUnavailable = computed(() => loadFailed.value || state.value === "Invalid" || state.value === "Unavailable");
@@ -534,7 +584,8 @@ const dateOrNull = (v) => (filled(v) ? v : null);
 const outRole = (r) => ({ name: s(r.name), email: s(r.email), phone: s(r.phone) });
 
 function buildRoles () {
-  const keys = GROUP_ROLES[industryGroup.value] || ROLE_KEYS;
+  // The three business groups share one role set, so they all look up under "business".
+  const keys = GROUP_ROLES[isBusinessIndustryGroup(industryGroup.value) ? "business" : industryGroup.value] || ROLE_KEYS;
   const out = {};
   keys.forEach((k) => { out[k] = outRole(payload.roles[k]); });
   return out;
@@ -547,6 +598,7 @@ function buildPayload () {
     email: s(payload.email),
     mobileNumber: s(payload.mobileNumber),
     referralSource: s(payload.referralSource),
+    referralSourceDetail: s(payload.referralSourceDetail),
     physicalAddress: fromAddress(payload.physicalAddress),
     mailingDiffers: payload.mailingDiffers,
     mailingAddress: payload.mailingDiffers ? fromAddress(payload.mailingAddress) : null,
@@ -555,6 +607,7 @@ function buildPayload () {
     billingAddress: fromAddress(payload.billingAddress),
     spouseName: s(payload.spouseName),
     spousePhone: s(payload.spousePhone),
+    spouseEmail: s(payload.spouseEmail),
     ein: s(payload.ein),
     contractStartDate: dateOrNull(payload.contractStartDate),
     contractEndDate: dateOrNull(payload.contractEndDate),
@@ -602,6 +655,7 @@ function seed (prefill, draft) {
   payload.email = prefill?.email ?? d.email ?? "";   // LOCKED to the request's customer email.
   payload.mobileNumber = d.mobileNumber ?? prefill?.mobileNumber ?? "";
   payload.referralSource = d.referralSource ?? "";
+  payload.referralSourceDetail = d.referralSourceDetail ?? "";
   payload.billingContactName = d.billingContactName ?? "";
   payload.billingEmail = d.billingEmail ?? "";
   payload.spouseName = d.spouseName ?? "";
@@ -645,6 +699,9 @@ async function load () {
       thankYouName.value = res.clientName || "";
     } else if (res?.state === "Editable") {
       industryGroup.value = String(res.industryGroup || "").toLowerCase();
+      // The tenant's own REMS.ReferralSource list, resolved server-side because this page has no
+      // session to resolve it with. Absent (an emptied or missing list) leaves the built-in copy.
+      if (res.referralSources?.length) referralSources.value = res.referralSources;
       seed(res.prefill, res.draftPayload);
     }
   } catch {

@@ -27,9 +27,6 @@ public sealed class CreateRemsRequestRequestValidator : AbstractValidator<Create
         RuleFor(x => x.Type)
             .Must(RemsRequestOptionCodes.IsKnownType)
             .WithMessage($"type must be one of: {string.Join(", ", RemsRequestOptionCodes.Types)}.");
-        RuleFor(x => x.Priority)
-            .Must(RemsRequestOptionCodes.IsKnownPriority)
-            .WithMessage($"priority must be one of: {string.Join(", ", RemsRequestOptionCodes.Priorities)}.");
     }
 }
 
@@ -46,9 +43,6 @@ public sealed class UpdateRemsRequestRequestValidator : AbstractValidator<Update
         RuleFor(x => x.Type).Must(RemsRequestOptionCodes.IsKnownType)
             .WithMessage($"type must be one of: {string.Join(", ", RemsRequestOptionCodes.Types)}.")
             .When(x => x.Type is not null);
-        RuleFor(x => x.Priority).Must(RemsRequestOptionCodes.IsKnownPriority)
-            .WithMessage($"priority must be one of: {string.Join(", ", RemsRequestOptionCodes.Priorities)}.")
-            .When(x => x.Priority is not null);
 
         // Naming an admin and handing the request back to the pool are opposite instructions; sending
         // both leaves the endpoint to guess which one was meant.
@@ -68,9 +62,9 @@ public sealed class AssignRemsRequestRequestValidator : AbstractValidator<Assign
 }
 
 /// <summary>
-/// The seeded <c>REMS.Type</c> / <c>REMS.Priority</c> option-set codes (see <c>DefaultOptionSets</c>).
-/// Type/priority are trivially closed so they are validated against the known codes; status transitions
-/// are driven by the endpoints, not the client.
+/// The seeded <c>REMS.Type</c> option-set codes (see <c>DefaultOptionSets</c>). Type is trivially closed
+/// so it is validated against the known codes; status transitions are driven by the endpoints, not the
+/// client.
 /// </summary>
 internal static class RemsRequestOptionCodes
 {
@@ -79,9 +73,5 @@ internal static class RemsRequestOptionCodes
     // accepted: the migration re-pointed every row that held it, so nothing can still be carrying it.
     public static readonly IReadOnlyList<string> Types = RemsRequestTypes.All;
 
-    public static readonly IReadOnlyList<string> Priorities = new[] { "urgent", "high", "medium", "low" };
-
     public static bool IsKnownType(string? value) => value is not null && Types.Contains(value);
-
-    public static bool IsKnownPriority(string? value) => value is not null && Priorities.Contains(value);
 }

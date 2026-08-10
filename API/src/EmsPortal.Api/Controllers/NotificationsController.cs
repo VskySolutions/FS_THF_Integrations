@@ -37,6 +37,9 @@ public sealed class NotificationsController : ControllerBase
     public async Task<IActionResult> List(
         [FromQuery] bool? isRead = null,
         [FromQuery] NotificationType? type = null,
+        [FromQuery] string? search = null,
+        [FromQuery] DateTime? createdFrom = null,
+        [FromQuery] DateTime? createdTo = null,
         [FromQuery] int page = 1,
         [FromQuery] int limit = 20,
         CancellationToken cancellationToken = default)
@@ -46,7 +49,11 @@ public sealed class NotificationsController : ControllerBase
             return Unauthorized(ApiResponseFactory.Unauthorized("No user context."));
         }
 
-        var (items, total) = await _notifications.ListAsync(userId, isRead, type, page, limit, cancellationToken);
+        page = Math.Max(1, page);
+        limit = Math.Clamp(limit, 1, 100);
+
+        var (items, total) = await _notifications.ListAsync(
+            userId, isRead, type, search, createdFrom, createdTo, page, limit, cancellationToken);
         return Ok(ApiResponseFactory.Paginated(items.Select(ToResponse), "Notifications retrieved.", page, limit, total));
     }
 

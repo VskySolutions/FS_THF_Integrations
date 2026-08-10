@@ -17,16 +17,49 @@ import { optionSetApi, EntityType } from "services/api";
 const SEED = {
   // "New Engagement" and "Existing Client" were merged into one value — every new engagement for a
   // client we already have is both — keeping the `existing_client` code (MergeRemsExistingClientTypes).
+  // `description` mirrors the option item's own Description column — it is what the tooltip renders
+  // wherever the value is offered or displayed, so the seed carries it too and a resolve failure does
+  // not silently strip the explanation.
   type: [
-    { label: "Brand-New Client", value: "brand_new_client" },
-    { label: "New Engagement, Existing Client", value: "existing_client" },
-    { label: "Subsidiary / Child of Existing Client", value: "subsidiary_child_of_existing_client" }
+    {
+      label: "Brand-New Client",
+      value: "brand_new_client",
+      description: "The client/company is working with THF for the first time. No prior record exists in the system."
+    },
+    {
+      label: "New Engagement, Existing Client",
+      value: "existing_client",
+      description: "The person or company already has an active client record with THF, and this request " +
+        "creates an additional engagement under that same client."
+    },
+    {
+      label: "Subsidiary / Child of Existing Client",
+      value: "subsidiary_child_of_existing_client",
+      description: "When the client is a child of an already present parent client. All the billing goes " +
+        "to the parent client in this situation."
+    }
   ],
-  priority: [
-    { label: "Urgent", value: "urgent" },
-    { label: "High", value: "high" },
-    { label: "Medium", value: "medium" },
-    { label: "Low", value: "low" }
+  // How the client heard about THF, asked on the public EMS form.
+  referralSource: [
+    { label: "Referral", value: "referral", description: "Friend, Family, or Colleague." },
+    { label: "Search Engine", value: "search_engine", description: "Google, Bing, Yahoo." },
+    { label: "Digital Ad / Social Media", value: "digital_ad_social", description: "Facebook, Instagram, LinkedIn." },
+    {
+      label: "Event or Conference",
+      value: "event_conference",
+      description: "Trade shows, webinars, or local community events."
+    },
+    {
+      label: "Print or Broadcast",
+      value: "print_broadcast",
+      description: "Direct mailers, billboards, TV, or radio ads."
+    },
+    {
+      label: "Website or Blog",
+      value: "website_blog",
+      description: "Mentioned in an article, forum (e.g., Reddit), or guest post."
+    },
+    { label: "Other", value: "other", description: "Anything not covered above." }
   ],
   // Stage order, matching the backend RemsRequestStatuses lifecycle.
   status: [
@@ -38,9 +71,14 @@ const SEED = {
     { label: "Changes Requested", value: "changes_requested" },
     { label: "Approved", value: "approved" }
   ],
+  // "Business" was split into the three kinds THF onboards; all three ask the same questions the single
+  // group did (see REMS_BUSINESS_INDUSTRY_GROUPS in useRemsMeta). `business` is still recognised there
+  // for forms sent before the split, it is just no longer offered.
   industryGroup: [
     { label: "Individual", value: "individual" },
-    { label: "Business", value: "business" },
+    { label: "Not-for-Profit", value: "not_for_profit" },
+    { label: "Insurance", value: "insurance" },
+    { label: "Commercial", value: "commercial" },
     { label: "Government", value: "government" }
   ],
   department: [
@@ -59,7 +97,7 @@ const SEED = {
 
 const SET_KEYS = {
   type: "REMS.Type",
-  priority: "REMS.Priority",
+  referralSource: "REMS.ReferralSource",
   status: "REMS.Status",
   industryGroup: "REMS.IndustryGroup",
   department: "REMS.Department",
@@ -78,7 +116,9 @@ const resolveOne = async (name) => {
     // An empty set means the tenant emptied the list, not that resolution failed — but rendering nothing
     // would leave every badge blank, so the seed stands in.
     if (items?.length) {
-      catalog[name] = items.map((i) => ({ label: i.label, value: i.value }));
+      // `description` is the tenant's own explanation of the value, rendered as its tooltip. Null when
+      // they have not written one — callers skip the tooltip rather than showing an empty box.
+      catalog[name] = items.map((i) => ({ label: i.label, value: i.value, description: i.description || "" }));
     }
   } catch {
     // Keep the seed. A caller without optionSets.read still sees correct default labels.

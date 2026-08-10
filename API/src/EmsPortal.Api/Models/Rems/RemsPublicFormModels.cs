@@ -28,6 +28,9 @@ public sealed class RemsFormPayloadV1
     public string? MobileNumber { get; set; }
     public string? ReferralSource { get; set; }
 
+    /// <summary>Free-text follow-up for the chosen referral source, e.g. who referred them.</summary>
+    public string? ReferralSourceDetail { get; set; }
+
     // ---- Address (main entity) ----
     public RemsAddressPayload? PhysicalAddress { get; set; }
     public bool MailingDiffers { get; set; }
@@ -41,6 +44,7 @@ public sealed class RemsFormPayloadV1
     // ---- Individual ----
     public string? SpouseName { get; set; }
     public string? SpousePhone { get; set; }
+    public string? SpouseEmail { get; set; }
 
     // ---- Business ----
     public string? Ein { get; set; }
@@ -172,7 +176,18 @@ public sealed record RemsPublicFormResponse(
     string? ClientName = null,
     string? IndustryGroup = null,
     RemsPublicPrefill? Prefill = null,
-    RemsFormPayloadV1? DraftPayload = null);
+    RemsFormPayloadV1? DraftPayload = null,
+    // The tenant's REMS.ReferralSource list, delivered WITH the form. This page is anonymous — the
+    // client holds an invite code, not a session — so it cannot call the authenticated option-set
+    // resolve endpoint the staff screens use. Sending the resolved list here is what lets the picker
+    // honour a tenant's own wording and descriptions instead of falling back to a hardcoded copy.
+    IReadOnlyList<RemsPublicOption>? ReferralSources = null);
+
+/// <summary>
+/// One selectable value for a public-form picker. <see cref="Description"/> is the option item's own
+/// description, rendered as the value's tooltip; null when the tenant has not written one.
+/// </summary>
+public sealed record RemsPublicOption(string Value, string Label, string? Description);
 
 /// <summary>Prefill for the editable form. <see cref="Email"/> is display-locked (from the request, not editable).</summary>
 public sealed record RemsPublicPrefill(string? ClientName, string Email, string? MobileNumber);

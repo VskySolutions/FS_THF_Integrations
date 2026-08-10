@@ -65,6 +65,9 @@ internal sealed class OptionSetItemConfiguration : IEntityTypeConfiguration<Opti
             .IsRequired()
             .HasMaxLength(200);
 
+        // Long enough for a sentence or two of explanation — it is a tooltip, not documentation.
+        builder.Property(i => i.Description).HasMaxLength(512);
+
         builder.Property(i => i.SortOrder).IsRequired();
         builder.Property(i => i.IsDefault).IsRequired();
         builder.Property(i => i.IsActive).IsRequired();

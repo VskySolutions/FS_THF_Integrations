@@ -24,7 +24,10 @@ public sealed class SaveRemsFormRequestValidator : AbstractValidator<SaveRemsFor
 /// </summary>
 internal static class RemsFormOptionCodes
 {
-    public static readonly IReadOnlyList<string> IndustryGroups = new[] { "individual", "business", "government" };
+    // "business" stays accepted though it is no longer offered: forms sent before it was split into
+    // not-for-profit / insurance / commercial still carry it, and those must remain completable.
+    public static readonly IReadOnlyList<string> IndustryGroups =
+        new[] { "individual", "not_for_profit", "insurance", "commercial", "government", "business" };
 
     public static bool IsKnownIndustryGroup(string? value) => value is not null && IndustryGroups.Contains(value);
 }

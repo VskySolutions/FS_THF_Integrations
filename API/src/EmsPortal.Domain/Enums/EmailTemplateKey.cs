@@ -44,4 +44,12 @@ public enum EmailTemplateKey
 
     /// <summary>Self-service "forgot password": carries the one-time reset link, never a password.</summary>
     PasswordResetLink = 15,
+
+    /// <summary>
+    /// REMS external email nudging a client who has been sent their EMS form link but has not submitted
+    /// it yet (REMS). Its own template rather than a second send of <see cref="RemsFormLink"/>: the third
+    /// copy of "You have been asked to complete a form" reads as a system fault, not a reminder. On the
+    /// email allowlist. Rendered/dispatched via <c>IRemsEmailNotifier</c>.
+    /// </summary>
+    RemsFormReminder = 16,
 }

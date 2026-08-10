@@ -16,4 +16,19 @@ public interface IEmailDispatcher
     /// when supplied; leave it null (the default) for every other email.
     /// </summary>
     void Enqueue(Guid tenantId, EmailTemplateKey key, string? toEmail, IReadOnlyDictionary<string, string?> model, string? messageId = null);
+
+    /// <summary>
+    /// As <see cref="Enqueue"/>, but sends a subject / body the caller already composed — what an admin
+    /// edited in a send dialog before confirming. Either may be null to keep the template's version of
+    /// that part. The template is still resolved at send time: it supplies whatever is not overridden,
+    /// and a tenant with no effective template still sends nothing.
+    /// </summary>
+    void EnqueueComposed(
+        Guid tenantId,
+        EmailTemplateKey key,
+        string? toEmail,
+        IReadOnlyDictionary<string, string?> model,
+        string? subject,
+        string? body,
+        string? messageId = null);
 }

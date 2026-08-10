@@ -17,9 +17,6 @@ public sealed class CreateRemsRequestRequest
     /// <summary>Request type (option-set <c>REMS.Type</c> code, e.g. <c>brand_new_client</c>).</summary>
     public string Type { get; set; } = string.Empty;
 
-    /// <summary>Request priority (option-set <c>REMS.Priority</c> code, e.g. <c>medium</c>).</summary>
-    public string Priority { get; set; } = string.Empty;
-
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
 
@@ -45,7 +42,6 @@ public sealed class UpdateRemsRequestRequest
     public string? Title { get; set; }
     public string? Description { get; set; }
     public string? Type { get; set; }
-    public string? Priority { get; set; }
     public string? ClientName { get; set; }
     public string? CustomerEmail { get; set; }
     public string? CustomerMobileNumber { get; set; }
@@ -94,7 +90,6 @@ public sealed record RemsRequestRow(
     string Title,
     string ClientName,
     string Type,
-    string Priority,
     DateTime CreatedOnUtc,
     string Status,
     // The Admin Pool renders these under the client name and lets you filter on them (its `contact`
@@ -130,11 +125,14 @@ public sealed record RemsRequestDetail(
     string? Description,
     string ClientName,
     string Type,
-    string Priority,
     string Status,
     string? CustomerEmail,
     string? CustomerMobileNumber,
     Guid? ExistingClientReferenceId,
+    // The Person master record this request's client is. Set on every save, whether or not intake matched
+    // somebody already on file — unlike ExistingClientReferenceId, which stays null for a brand-new
+    // client. Null only on requests not saved since the column was added.
+    Guid? ClientPersonId,
     RemsUserRef? AssignedAdmin,
     RemsUserRef? Cse,
     string? IndustryGroup,

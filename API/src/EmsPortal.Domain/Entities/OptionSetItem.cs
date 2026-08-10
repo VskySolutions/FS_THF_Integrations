@@ -29,6 +29,14 @@ public class OptionSetItem : AuditableEntity
     /// <summary>Human-friendly display label, e.g. "NET 30".</summary>
     public string Label { get; set; } = string.Empty;
 
+    /// <summary>
+    /// What this value actually means, e.g. "Payment is due 30 days from the invoice date." Surfaced as
+    /// the tooltip wherever the value is offered or displayed, so a list whose labels look alike can
+    /// explain itself where it is used rather than in a manual nobody opens. Optional — a self-evident
+    /// value needs none, and an empty description simply renders no tooltip.
+    /// </summary>
+    public string? Description { get; set; }
+
     /// <summary>Explicit position, honoured only when the set's sort mode is Custom.</summary>
     public int SortOrder { get; set; }
 

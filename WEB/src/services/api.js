@@ -363,6 +363,10 @@ export const ufReminderApi = {
 
 // Notification centre + preferences.
 export const ufNotificationApi = {
+  // params: { page?, limit?, isRead?, type?, search?, createdFrom?, createdTo? } — always the caller's
+  // own notifications. `type` is a NotificationType id, `search` matches the title or body, and
+  // createdFrom/To are UTC instants (a date-only picker converts its own day boundaries — see
+  // zonedDayBoundaryUtc). Filtering is server-side, so the pager reports the filtered total.
   list: (params) => api.get("/api/notifications", { params }).then(envelope),
   unreadCount: () => api.get("/api/notifications/unread-count").then(unwrap),
   markRead: (id) => api.put(`/api/notifications/${id}/read`).then(envelope),
@@ -467,9 +471,9 @@ export const dashboardApi = {
 // The conversation thread / activity / attachments reuse the Universal Features endpoints keyed on
 // EntityType.Rems (see ufNotesApi) — this object deliberately does not duplicate them.
 export const remsApi = {
-  // params: { scope?, poolScope?, clientName?, contact?, status?, type?, priority?,
+  // params: { scope?, poolScope?, clientName?, contact?, status?, type?,
   //           assignedAdminUserId?, createdFrom?, createdTo?, page?, limit? }
-  // scope: "partner" | "pool"; poolScope: "unassigned" | "mine" | "all". type/priority/status are
+  // scope: "partner" | "pool"; poolScope: "unassigned" | "mine" | "all". type/status are
   // option-set CODES, matched exactly; clientName/contact are "contains"; createdFrom/To are UTC
   // instants (a date-only picker must convert its own day boundaries — see zonedDayBoundaryUtc).
   // Returns the standard envelope.
@@ -480,10 +484,10 @@ export const remsApi = {
   // assigned to someone else is in neither.
   poolCounts: (params) => api.get("/api/rems/requests/pool-counts", { params }).then(unwrap),
   get: (id) => api.get(`/api/rems/requests/${id}`).then(unwrap),
-  // payload: { existingClientReferenceId?, clientName, type, priority, title, description?,
+  // payload: { existingClientReferenceId?, clientName, type, title, description?,
   //            customerEmail?, customerMobileNumber?, mediaId?, submit, assignAdminUserId? }
   create: (payload) => api.post("/api/rems/requests", payload).then(unwrap),
-  // payload: any subset of { title, description, type, priority, clientName, customerEmail,
+  // payload: any subset of { title, description, type, clientName, customerEmail,
   //            customerMobileNumber, existingClientReferenceId, submit } — null fields are unchanged.
   // Assignment travels here too: `assignAdminUserId` sets the owner, `unassignAdmin: true` hands the
   // request back to the pool (the two are mutually exclusive), and omitting both leaves it alone.
@@ -512,7 +516,15 @@ export const remsApi = {
   // Pre-send preview: { destinationEmail, formLink } (AC-REMS-008.1).
   previewForm: (remsId) => api.get(`/api/rems/requests/${remsId}/form/preview`).then(unwrap),
   // Sends the form-link email; returns the refreshed (now Sent/locked) build screen.
-  sendForm: (remsId) => api.post(`/api/rems/requests/${remsId}/form/send`).then(unwrap),
+  // payload: { subject?, body? } — the email as the admin left it in the send dialog. Either omitted
+  // keeps the template's own version of that part; the template is still resolved server-side.
+  sendForm: (remsId, payload) => api.post(`/api/rems/requests/${remsId}/form/send`, payload || {}).then(unwrap),
+  // Reminder to a client who has the link but has not submitted. Same shapes as preview/send — the send
+  // dialog drives both — but repeatable, and it changes no state on the form: the invite code, the Sent
+  // timestamp and the request status all stay put. Each call adds a `Reminder` row to the email log.
+  previewReminder: (remsId) => api.get(`/api/rems/requests/${remsId}/form/reminder/preview`).then(unwrap),
+  sendReminder: (remsId, payload) =>
+    api.post(`/api/rems/requests/${remsId}/form/reminder`, payload || {}).then(unwrap),
   // Provider email events, newest first: [{ id, eventType, recipientEmail, occurredOnUtc, providerMessageId }].
   emailLog: (remsId) => api.get(`/api/rems/requests/${remsId}/email-log`).then(unwrap),
   // EMS Inbox (paginated envelope). params: { page?, limit?, formState?, search?, requestStatus? } —
@@ -598,7 +610,7 @@ export const remsApi = {
   // material as the staff engagement workspace, since that is what is being signed off. Shape:
   //   { taskId, roundId, roundNumber, role, status, decidedOnUtc, rejectionReason, canDecide,
   //     checklist:[{ id, displayOrder, label, isCompleted, completedOnUtc }],
-  //     request:{ remsId, remsNumber, title, description, requestedClientName, type, priority, status,
+  //     request:{ remsId, remsNumber, title, description, requestedClientName, type, status,
   //       customerEmail, customerMobileNumber, industryGroup, emsFormState, clientSubmissionState,
   //       assignedAdmin, cse, requestedBy, createdOnUtc, files:[{ id, mediaId, fileName, mimeType, fileSize, url }] },
   //     engagement:{ engagementId, status, department, serviceLine,

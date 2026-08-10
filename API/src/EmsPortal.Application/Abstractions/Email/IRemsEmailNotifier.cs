@@ -22,6 +22,23 @@ public interface IRemsEmailNotifier
     /// </summary>
     void SendFormLink(Guid tenantId, string toEmail, RemsFormLinkEmail model, string? messageId = null);
 
+    /// <summary>
+    /// As <see cref="SendFormLink"/>, but delivering a subject / body the sending admin composed in the
+    /// send dialog rather than the template's own. Either may be null to keep the template's version.
+    /// The placeholder model is still supplied: it is what renders whatever was not overridden.
+    /// </summary>
+    void SendComposedFormLink(
+        Guid tenantId, string toEmail, RemsFormLinkEmail model, string? subject, string? body, string? messageId = null);
+
+    /// <summary>
+    /// Queues a reminder to a client who has their form link but has not submitted yet. Same placeholders
+    /// as the original send — it is the same request and the same link — but its own template, so the
+    /// nudge reads as one. <paramref name="subject"/> / <paramref name="body"/> carry what the admin
+    /// composed in the send dialog; either null keeps the template's version of that part.
+    /// </summary>
+    void SendComposedFormReminder(
+        Guid tenantId, string toEmail, RemsFormLinkEmail model, string? subject, string? body, string? messageId = null);
+
     /// <summary>Queues the "form submitted" email to the assigned Admin + CSE for a REMS request.</summary>
     void SendFormSubmitted(Guid tenantId, string toEmail, RemsFormSubmittedEmail model);
 }

@@ -45,7 +45,12 @@
       </template>
 
       <template #body-cell-engagementType="cell">
-        <q-td :props="cell">{{ typeLabel(cell.row.engagementType) }}</q-td>
+        <q-td :props="cell">
+          {{ typeLabel(cell.row.engagementType) }}
+          <q-tooltip v-if="typeHint(cell.row.engagementType)" max-width="320px" :delay="300">
+            {{ typeHint(cell.row.engagementType) }}
+          </q-tooltip>
+        </q-td>
       </template>
 
       <template #body-cell-requestStatus="cell">
@@ -97,6 +102,13 @@
           >
             <q-tooltip>Preview &amp; Send</q-tooltip>
           </q-btn>
+          <!-- Only while the client has the form and has not returned it. Repeatable by design. -->
+          <q-btn
+            v-if="canRemindRow(cell.row)" flat round dense color="amber-8" icon="o_notifications_active"
+            @click="openReminder(cell.row)"
+          >
+            <q-tooltip>Send Reminder</q-tooltip>
+          </q-btn>
           <q-btn
             v-if="showEngagement" flat round dense color="primary" icon="o_work"
             :disable="!!engagementBlocked(cell.row)" @click="openEngagement(cell.row)"
@@ -126,6 +138,11 @@
 
     <send-ems-dialog
       v-model="sendOpen" :rems-id="actionRemsId" :subtitle="actionSubtitle"
+      :can-view-email-log="canViewEmailLog" @sent="onSent" @view-log="viewLogFromSend"
+    />
+    <!-- Same dialog, reminder template and endpoint. -->
+    <send-ems-dialog
+      v-model="reminderOpen" mode="reminder" :rems-id="actionRemsId" :subtitle="actionSubtitle"
       :can-view-email-log="canViewEmailLog" @sent="onSent" @view-log="viewLogFromSend"
     />
     <email-log-dialog v-model="logOpen" :rems-id="actionRemsId" :subtitle="actionSubtitle" />
@@ -160,7 +177,7 @@ const fmt = useDateFormat();
 const auditColumns = useAuditColumns();
 const { has } = usePermissions();
 const {
-  typeLabel, statusLabel, statusColor, emsStateLabel, emsStateColor, emailEventLabel, emailEventColor,
+  typeLabel, typeHint, statusLabel, statusColor, emsStateLabel, emsStateColor, emailEventLabel, emailEventColor,
   engagementOwnerDenial,
   statusFilterOptions
 } = useRemsMeta();
@@ -212,6 +229,8 @@ const openBuild = (row) => router.push({ name: "rems_build_ems", params: { id: r
 const openEngagement = (row) => router.push(`/rems/engagements/${row.remsId}`);
 
 const canSendRow = (row) => has(Permissions.RemsFormsSend) && row.formStatus === "Saved";
+// The window where the ball is with the client: sent, not yet back. Repeatable while it lasts.
+const canRemindRow = (row) => has(Permissions.RemsFormsSend) && row.formStatus === "Sent";
 const showEmailLog = (row) =>
   has(Permissions.RemsEmailLogRead) &&
   (!!row.formSentOnUtc || !!row.latestEmailEventType || ["Sent", "Submitted"].includes(row.formStatus));
@@ -249,6 +268,7 @@ const openHint = (row) => primaryAction(row)?.hint || "View request";
 const actionRemsId = ref(null);
 const actionSubtitle = ref("");
 const sendOpen = ref(false);
+const reminderOpen = ref(false);
 const logOpen = ref(false);
 
 const setAction = (row) => {
@@ -256,6 +276,7 @@ const setAction = (row) => {
   actionSubtitle.value = `${row.remsNumber} — ${row.clientName || ""}`.trim();
 };
 const openSend = (row) => { setAction(row); sendOpen.value = true; };
+const openReminder = (row) => { setAction(row); reminderOpen.value = true; };
 const openEmailLog = (row) => { setAction(row); logOpen.value = true; };
 const viewLogFromSend = () => { logOpen.value = true; };
 const onSent = () => load();

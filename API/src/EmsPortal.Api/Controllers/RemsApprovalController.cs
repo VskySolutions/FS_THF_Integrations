@@ -858,7 +858,7 @@ public sealed class RemsApprovalController : ControllerBase
         var (emsFormState, clientSubmissionState) = RemsWorkspaceMapper.FormState(formState);
         var requestView = new RemsApprovalRequestView(
             rems.Id, rems.REMSNumber, rems.Title, rems.Description, rems.RequestedClientName,
-            rems.Type, rems.Priority, rems.Status, rems.CustomerEmail, rems.CustomerMobileNumber,
+            rems.Type, rems.Status, rems.CustomerEmail, rems.CustomerMobileNumber,
             formState?.IndustryGroup, emsFormState, clientSubmissionState,
             RemsWorkspaceMapper.UserRef(rems.AdminAssignedToId, names),
             RemsWorkspaceMapper.UserRef(rems.CSEId, names),

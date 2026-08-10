@@ -92,6 +92,11 @@ public class Person : AuditableEntity
     /// What kind of record created this person, e.g. <c>Rems</c> for a contact captured during an
     /// engagement or from a client's EMS form, <c>Person</c> for one entered on the Person screen.
     /// Null on rows written before provenance was tracked — unknown, not "created by nothing".
+    /// <para>
+    /// <c>Client</c> is the one value that says what the person IS rather than where they came from: a
+    /// client of the firm, captured at REMS intake. It is what the client picker filters on, so a
+    /// colleague or a role contact is never offered as somebody to open an engagement for.
+    /// </para>
     /// </summary>
     public EntityType? SourceEntityType { get; set; }
 

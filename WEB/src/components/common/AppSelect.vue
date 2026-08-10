@@ -133,10 +133,30 @@ const search = ref("");
 const optionText = (opt) =>
   String((opt !== null && typeof opt === "object" ? opt[props.optionLabel] : opt) ?? "");
 
+// The key QSelect matches the model against, for options of either shape — an object, or a bare string.
+const optionKey = (opt) => (opt !== null && typeof opt === "object" ? opt[props.optionValue] : opt);
+
+const selectedKeys = computed(() => {
+  const val = props.modelValue;
+  if (val === null || val === undefined) return [];
+  return (Array.isArray(val) ? val : [val]).map(optionKey);
+});
+
+// Whatever is selected stays in the list however the search narrows it. QSelect resolves the model
+// against exactly the array handed to it (`props.options.find(...) || cache.find(...) || value`), so an
+// option filtered out of that array stops reading as a selection and falls back to rendering the bare
+// model value — "US" in place of "United States (+1)". Search text outlives the selection it was filled
+// from, so this bites whenever the model is set from code rather than from the dropdown.
+const isSelectedOption = (opt) => {
+  const key = optionKey(opt);
+  return key !== undefined && selectedKeys.value.includes(key);
+};
+
 const visibleOptions = computed(() => {
   const needle = searchable.value ? search.value.trim().toLowerCase() : "";
   if (needle === "") return props.options;
-  return props.options.filter((opt) => optionText(opt).toLowerCase().includes(needle));
+  return props.options.filter((opt) =>
+    optionText(opt).toLowerCase().includes(needle) || isSelectedOption(opt));
 });
 
 // Keep the control accessible now that the visible label is external.

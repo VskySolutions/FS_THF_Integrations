@@ -15,6 +15,7 @@ public static class EmailSendPolicy
         EmailTemplateKey.PasswordChanged,   // account security — password-change confirmation
         EmailTemplateKey.Welcome,           // account security — account activated
         EmailTemplateKey.RemsFormLink,      // REMS external — client form link
+        EmailTemplateKey.RemsFormReminder,  // REMS external — nudge a client who has not submitted yet
         EmailTemplateKey.RemsFormSubmitted, // REMS external — form submitted to Admin + CSE
     };
 

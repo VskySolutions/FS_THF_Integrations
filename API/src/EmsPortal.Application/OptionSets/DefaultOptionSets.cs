@@ -11,7 +11,17 @@ namespace EmsPortal.Application.OptionSets;
 /// </summary>
 public static class DefaultOptionSets
 {
-    public sealed record ItemDefinition(string Value, string Label, int SortOrder, string? MetadataJson = null);
+    /// <summary>
+    /// <paramref name="Description"/> is what the value MEANS, surfaced as its tooltip wherever the value
+    /// is offered or displayed. Worth filling in wherever the labels alone could be mistaken for one
+    /// another; left null where the label speaks for itself.
+    /// </summary>
+    public sealed record ItemDefinition(
+        string Value,
+        string Label,
+        int SortOrder,
+        string? MetadataJson = null,
+        string? Description = null);
 
     public sealed record Definition(
         EntityType EntityType,
@@ -21,8 +31,8 @@ public static class DefaultOptionSets
         IReadOnlyList<ItemDefinition> Items);
 
     /// <summary>
-    /// The platform-standard option lists to seed. The REMS feature (WO-110) ships five standard lists
-    /// keyed to <see cref="EntityType.Rems"/>: request type, priority, status and industry group (whose
+    /// The platform-standard option lists to seed. The REMS feature (WO-110) ships four standard lists
+    /// keyed to <see cref="EntityType.Rems"/>: request type, status and industry group (whose
     /// codes are stored on the REMS/REMSForm rows), plus the grouped marketing-methods list whose items
     /// are referenced by foreign key from <c>REMSEngagementMarketingMethod</c>. Each marketing item
     /// carries its group and behaviour flags in <see cref="ItemDefinition.MetadataJson"/>.
@@ -36,17 +46,35 @@ public static class DefaultOptionSets
             // new engagement for a client we already have is both. They are one value now — the code
             // `existing_client` survived the merge (see MergeRemsExistingClientTypes), so the rows and
             // the REMS_EXISTING_CLIENT_TYPES marking rule that read it need no translation.
-            new ItemDefinition("brand_new_client", "Brand-New Client", 1),
-            new ItemDefinition("existing_client", "New Engagement, Existing Client", 2),
-            new ItemDefinition("subsidiary_child_of_existing_client", "Subsidiary / Child of Existing Client", 3),
+            new ItemDefinition("brand_new_client", "Brand-New Client", 1, Description:
+                "The client/company is working with THF for the first time. No prior record exists in the system."),
+            new ItemDefinition("existing_client", "New Engagement, Existing Client", 2, Description:
+                "The person or company already has an active client record with THF, and this request " +
+                "creates an additional engagement under that same client."),
+            new ItemDefinition("subsidiary_child_of_existing_client", "Subsidiary / Child of Existing Client", 3, Description:
+                "When the client is a child of an already present parent client. All the billing goes to " +
+                "the parent client in this situation."),
         }),
-        new Definition(EntityType.Rems, "REMS.Priority", "REMS Priority", OptionItemSortMode.Custom, new[]
+        // How the client heard about THF, asked on the public EMS form. The descriptions double as the
+        // examples the client needs to place themselves, so they carry the "Friend, Family, or Colleague"
+        // detail rather than crowding it into the label.
+        new Definition(EntityType.Rems, "REMS.ReferralSource", "REMS Referral Source", OptionItemSortMode.Custom, new[]
         {
-            new ItemDefinition("urgent", "Urgent", 1),
-            new ItemDefinition("high", "High", 2),
-            new ItemDefinition("medium", "Medium", 3),
-            new ItemDefinition("low", "Low", 4),
+            new ItemDefinition("referral", "Referral", 1, Description: "Friend, Family, or Colleague."),
+            new ItemDefinition("search_engine", "Search Engine", 2, Description: "Google, Bing, Yahoo."),
+            new ItemDefinition("digital_ad_social", "Digital Ad / Social Media", 3, Description:
+                "Facebook, Instagram, LinkedIn."),
+            new ItemDefinition("event_conference", "Event or Conference", 4, Description:
+                "Trade shows, webinars, or local community events."),
+            new ItemDefinition("print_broadcast", "Print or Broadcast", 5, Description:
+                "Direct mailers, billboards, TV, or radio ads."),
+            new ItemDefinition("website_blog", "Website or Blog", 6, Description:
+                "Mentioned in an article, forum (e.g., Reddit), or guest post."),
+            new ItemDefinition("other", "Other", 7, Description: "Anything not covered above."),
         }),
+        // REMS.Priority is gone: the field it configured was dropped from the request (see
+        // DropRemsRequestPriority). A list nobody reads is worse than no list — it invites a tenant to
+        // configure something that has no effect anywhere.
         new Definition(EntityType.Rems, "REMS.Status", "REMS Status", OptionItemSortMode.Custom, new[]
         {
             // The request lifecycle, in stage order — each value names who the request is waiting on.
@@ -61,9 +89,14 @@ public static class DefaultOptionSets
         }),
         new Definition(EntityType.Rems, "REMS.IndustryGroup", "REMS Industry Group", OptionItemSortMode.Custom, new[]
         {
+            // "Business" was split into the three kinds THF actually onboards. All three ask the client
+            // exactly the same questions the old single group did (EIN, CEO/CFO/AP, banker, lawyer) — see
+            // RemsFormPayloadValidator.IsBusinessGroup, which is what keeps them one family on the form.
             new ItemDefinition("individual", "Individual", 1),
-            new ItemDefinition("business", "Business", 2),
-            new ItemDefinition("government", "Government", 3),
+            new ItemDefinition("not_for_profit", "Not-for-Profit", 2),
+            new ItemDefinition("insurance", "Insurance", 3),
+            new ItemDefinition("commercial", "Commercial", 4),
+            new ItemDefinition("government", "Government", 5),
         }),
         new Definition(EntityType.Rems, "REMSMarketing_MarketingMethods.MarketingMethodId", "REMS Marketing Methods", OptionItemSortMode.Custom, new[]
         {

@@ -24,6 +24,8 @@ public sealed class CreateOptionItemRequest
 {
     public string Value { get; set; } = string.Empty;
     public string Label { get; set; } = string.Empty;
+    /// <summary>What this value means; shown as its tooltip wherever the value is offered or displayed.</summary>
+    public string? Description { get; set; }
     public Guid? ParentItemId { get; set; }
     public bool IsDefault { get; set; }
     public string? BackgroundColor { get; set; }
@@ -35,6 +37,7 @@ public sealed class UpdateOptionItemRequest
 {
     public string Value { get; set; } = string.Empty;
     public string Label { get; set; } = string.Empty;
+    public string? Description { get; set; }
     public Guid? ParentItemId { get; set; }
     public bool IsDefault { get; set; }
     public bool IsActive { get; set; } = true;
@@ -74,6 +77,7 @@ public sealed record OptionSetItemResponse(
     Guid? ParentItemId,
     string Value,
     string Label,
+    string? Description,
     int SortOrder,
     bool IsDefault,
     bool IsActive,

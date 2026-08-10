@@ -20,8 +20,25 @@ namespace EmsPortal.Api.Validators.Rems;
 public sealed class RemsFormPayloadValidator
 {
     public const string Individual = "individual";
-    public const string Business = "business";
     public const string Government = "government";
+
+    // The business FAMILY. "business" was one group until it was split into the three kinds of business
+    // THF actually onboards; they ask for exactly the same things (EIN, CEO/CFO/AP, banker, lawyer), so
+    // the split is about naming what the client is, not about changing the form.
+    //
+    // `Business` itself is retired from the picker but STILL RECOGNISED here: forms sent before the split
+    // carry it, and a client part-way through one must be able to finish.
+    public const string Business = "business";
+    public const string NotForProfit = "not_for_profit";
+    public const string Insurance = "insurance";
+    public const string Commercial = "commercial";
+
+    private static readonly HashSet<string> BusinessGroups =
+        new(StringComparer.Ordinal) { Business, NotForProfit, Insurance, Commercial };
+
+    /// <summary>True for any industry group that asks the business questions.</summary>
+    public static bool IsBusinessGroup(string? industryGroup)
+        => industryGroup is not null && BusinessGroups.Contains(industryGroup);
 
     public ValidationResult Validate(RemsFormPayloadV1? payload, string industryGroup)
     {
@@ -53,36 +70,42 @@ public sealed class RemsFormPayloadValidator
             failures.Add(new ValidationFailure("billingEmail", "Billing email is not a valid email address."));
         }
 
+        // Optional like the rest of the spouse block, but checked when given — a mistyped address is
+        // worse than a blank one, since nobody finds out until someone tries to use it.
+        if (!string.IsNullOrWhiteSpace(payload.SpouseEmail) && !IsEmail(payload.SpouseEmail))
+        {
+            failures.Add(new ValidationFailure("spouseEmail", "Spouse email is not a valid email address."));
+        }
+
         // ---- Industry-group role rules ----
         var roles = payload.Roles ?? new RemsRolesPayload();
-        switch (industryGroup)
+        // if/else rather than a switch: the business branch matches a FAMILY of codes, not one literal.
+        if (industryGroup == Individual)
         {
-            case Individual:
-                RequireRole(failures, "roles.self", roles.Self);
-                OptionalRole(failures, "roles.spouse", roles.Spouse);
-                break;
+            RequireRole(failures, "roles.self", roles.Self);
+            OptionalRole(failures, "roles.spouse", roles.Spouse);
+        }
+        else if (IsBusinessGroup(industryGroup))
+        {
+            if (string.IsNullOrWhiteSpace(payload.Ein))
+            {
+                failures.Add(new ValidationFailure("ein", "EIN is required for a business."));
+            }
 
-            case Business:
-                if (string.IsNullOrWhiteSpace(payload.Ein))
-                {
-                    failures.Add(new ValidationFailure("ein", "EIN is required for a business."));
-                }
-
-                RequireRole(failures, "roles.ceo", roles.Ceo);
-                RequireRole(failures, "roles.cfo", roles.Cfo);
-                RequireRole(failures, "roles.accountsPayable", roles.AccountsPayable);
-                OptionalRole(failures, "roles.banker", roles.Banker);
-                OptionalRole(failures, "roles.lawyer", roles.Lawyer);
-                break;
-
-            case Government:
-                RequireRole(failures, "roles.financeDirector", roles.FinanceDirector);
-                OptionalRole(failures, "roles.accountsPayable", roles.AccountsPayable);
-                break;
-
-            default:
-                failures.Add(new ValidationFailure("industryGroup", $"Unsupported industry group '{industryGroup}'."));
-                break;
+            RequireRole(failures, "roles.ceo", roles.Ceo);
+            RequireRole(failures, "roles.cfo", roles.Cfo);
+            RequireRole(failures, "roles.accountsPayable", roles.AccountsPayable);
+            OptionalRole(failures, "roles.banker", roles.Banker);
+            OptionalRole(failures, "roles.lawyer", roles.Lawyer);
+        }
+        else if (industryGroup == Government)
+        {
+            RequireRole(failures, "roles.financeDirector", roles.FinanceDirector);
+            OptionalRole(failures, "roles.accountsPayable", roles.AccountsPayable);
+        }
+        else
+        {
+            failures.Add(new ValidationFailure("industryGroup", $"Unsupported industry group '{industryGroup}'."));
         }
 
         // ---- Related entities ----

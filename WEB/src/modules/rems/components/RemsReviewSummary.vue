@@ -12,7 +12,16 @@
       <div v-if="g.kind === 'fields'" class="review-group__body">
         <div v-for="r in g.rows" :key="r.label" class="field-row">
           <div class="rems-label">{{ r.label }}</div>
-          <div class="rems-value">{{ r.value }}</div>
+          <div class="rems-value">
+            {{ r.value }}
+            <!-- The option item's own description, where the value came from a list that has one. -->
+            <template v-if="r.hint">
+              <q-icon name="o_info" size="14px" class="rems-value__info" />
+              <q-tooltip anchor="top middle" self="bottom middle" max-width="320px" :delay="300">
+                {{ r.hint }}
+              </q-tooltip>
+            </template>
+          </div>
         </div>
       </div>
 
@@ -46,17 +55,27 @@
 <script setup>
 import { computed } from "vue";
 import { hasAddress, addressText } from "modules/rems/remsAddress";
+import { isBusinessIndustryGroup } from "modules/rems/useRemsMeta";
 
 const props = defineProps({
   payload: { type: Object, required: true },
   industryGroup: { type: String, default: "" },
   // The locked request email, shown on the Contact row (the payload email is a courtesy echo only).
-  lockedEmail: { type: String, default: "" }
+  lockedEmail: { type: String, default: "" },
+  // The referral-source list, passed down rather than resolved here. This component renders on the
+  // PUBLIC form, which is anonymous — reaching for useRemsMeta would fire authenticated option-set
+  // requests from a page with no session and hand the 401 to the auth interceptor.
+  referralSources: { type: Array, default: () => [] }
 });
 
 const isIndividual = computed(() => props.industryGroup === "individual");
-const isBusiness = computed(() => props.industryGroup === "business");
+const isBusiness = computed(() => isBusinessIndustryGroup(props.industryGroup));
 const isGovernment = computed(() => props.industryGroup === "government");
+
+const referralOption = (v) => props.referralSources.find((o) => o.value === v);
+// Falls back to the raw value: drafts saved before this was a picker hold free text the client typed.
+const referralSourceLabel = (v) => (v ? (referralOption(v)?.label || v) : "—");
+const referralSourceHint = (v) => (v ? (referralOption(v)?.description || "") : "");
 
 const val = (v) => (v == null || String(v).trim() === "" ? "—" : v);
 
@@ -100,10 +119,12 @@ const groups = computed(() => {
     { label: "Client Name", value: val(p.clientName) },
     { label: "Email (locked)", value: val(props.lockedEmail || p.email) },
     { label: "Mobile Number", value: val(p.mobileNumber) },
-    { label: "Referral Source", value: val(p.referralSource) }
+    { label: "Referral Source", value: referralSourceLabel(p.referralSource), hint: referralSourceHint(p.referralSource) },
+    { label: "Referral Details", value: val(p.referralSourceDetail) }
   ];
   if (isIndividual.value) {
     contact.push({ label: "Spouse Name", value: val(p.spouseName) });
+    contact.push({ label: "Spouse Email Address", value: val(p.spouseEmail) });
     contact.push({ label: "Spouse Phone", value: val(p.spousePhone) });
   }
   if (isBusiness.value) contact.push({ label: "EIN", value: val(p.ein) });
@@ -150,8 +171,10 @@ const groups = computed(() => {
 
   // Additional Contacts (role contacts, in group order)
   const roles = p.roles || {};
-  const order = GROUP_ROLES[props.industryGroup] || [];
-  const required = REQUIRED_ROLES[props.industryGroup] || [];
+  // The three business groups share one role set, so they all look up under "business".
+  const key = isBusinessIndustryGroup(props.industryGroup) ? "business" : props.industryGroup;
+  const order = GROUP_ROLES[key] || [];
+  const required = REQUIRED_ROLES[key] || [];
   const contactRows = order
     .filter((k) => roleHasAny(roles[k]))
     .map((k) => ({ role: ROLE_LABELS[k], isRequired: required.includes(k), ...roles[k] }));

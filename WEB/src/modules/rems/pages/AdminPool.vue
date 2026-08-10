@@ -56,9 +56,13 @@
         </q-td>
       </template>
 
-      <template #body-cell-priority="cell">
+      <!-- A cell template rather than a `field` accessor, so the label can carry its explanation. -->
+      <template #body-cell-type="cell">
         <q-td :props="cell">
-          <q-badge :color="priorityColor(cell.row.priority)">{{ priorityLabel(cell.row.priority) }}</q-badge>
+          {{ typeLabel(cell.row.type) }}
+          <q-tooltip v-if="typeHint(cell.row.type)" max-width="320px" :delay="300">
+            {{ typeHint(cell.row.type) }}
+          </q-tooltip>
         </q-td>
       </template>
 
@@ -182,7 +186,7 @@ const { has } = usePermissions();
 // Date formatting now lives inside the shared audit columns; the pool has no other date cell of its own.
 const auditColumns = useAuditColumns();
 const {
-  typeLabel, priorityLabel, priorityColor, requestStatusLabel, requestStatusColor,
+  typeLabel, typeHint, requestStatusLabel, requestStatusColor,
   emsStateLabel, submissionStateLabel, emsDetailAvailable, emsFormActivity,
   engagementOwnerDenial,
   statusFilterOptions
@@ -219,9 +223,9 @@ const scopeOptions = computed(() => POOL_SCOPE_OPTIONS.map((option) => {
 const columns = computed(() => [
   { name: "remsNumber", label: "Request ID", field: "remsNumber", align: "left", sortable: true, default: true, filterable: false },
   { name: "client", label: "Client / Contact", field: "clientName", align: "left", sortable: true, default: true, filterable: false },
-  { name: "title", label: "Title", field: "title", align: "left", sortable: true, default: false, filterable: false },
-  { name: "type", label: "Type", field: (r) => typeLabel(r.type), align: "left", default: false, filterable: false },
-  { name: "priority", label: "Priority", field: "priority", align: "left", sortable: true, default: true, filterable: false },
+  // On by default, so client and title read as two columns here as well.
+  { name: "title", label: "Title", field: "title", align: "left", sortable: true, default: true, filterable: false },
+  { name: "type", label: "Type", field: "type", align: "left", default: false, filterable: false },
   { name: "assignedAdmin", label: "Assigned Admin", field: (r) => r.assignedAdmin?.name || "—", align: "left", default: true, filterable: false },
   { name: "cse", label: "CSE", field: (r) => r.cse?.name || "—", align: "left", default: true, filterable: false },
   { name: "industryGroup", label: "Industry Group", field: (r) => r.industryGroup || "—", align: "left", default: true, filterable: false },

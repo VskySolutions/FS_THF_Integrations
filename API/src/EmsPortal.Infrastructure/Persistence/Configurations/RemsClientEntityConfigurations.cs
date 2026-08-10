@@ -18,6 +18,7 @@ internal sealed class RemsClientConfiguration : IEntityTypeConfiguration<REMSCli
         builder.Property(c => c.Email).IsRequired().HasMaxLength(256);
         builder.Property(c => c.MobileNumber).HasMaxLength(32);
         builder.Property(c => c.ReferralSource).HasMaxLength(64);
+        builder.Property(c => c.ReferralSourceDetail).HasMaxLength(256);
         builder.Property(c => c.BillingContactName).HasMaxLength(200);
         builder.Property(c => c.BillingEmail).HasMaxLength(256);
 

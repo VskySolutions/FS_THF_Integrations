@@ -3,7 +3,7 @@
   <q-btn flat round dense color="grey-8" icon="o_notifications" aria-label="Notifications">
     <q-badge v-if="unread > 0" floating color="negative" :label="unread > 99 ? '99+' : unread" />
     <q-menu anchor="bottom right" self="top right" @show="loadLatest">
-      <q-card style="width: 360px; max-width: 90vw;">
+      <q-card style="width: 500px; max-width: 90vw;">
         <q-card-section class="row items-center q-py-sm">
           <div class="text-subtitle1 text-weight-medium">Notifications</div>
           <q-space />

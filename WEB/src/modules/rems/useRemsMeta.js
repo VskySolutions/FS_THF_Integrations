@@ -5,7 +5,7 @@ import {
   useRemsOptionCatalog, ensureRemsOptionsLoaded, REMS_OPTION_SEED
 } from "modules/rems/useRemsOptionCatalog";
 
-// Type / Priority / Status / Industry Group / Department / Service Line are TENANT-CONFIGURABLE option
+// Type / Status / Industry Group / Department / Service Line are TENANT-CONFIGURABLE option
 // sets, so their labels come from useRemsOptionCatalog — a tenant that renames a status in Administration
 // → Option Sets sees that everywhere, not just in the picker they edited it from. The arrays below are
 // the catalogue's seed, re-exported for the few callers that need the closed set itself (the marking
@@ -15,7 +15,6 @@ import {
 // status, email events — mirrors a C# ENUM the backend branches on. Those have no option set and must not
 // gain one; their maps stay here as code.
 export const REMS_TYPE_OPTIONS = REMS_OPTION_SEED.type;
-export const REMS_PRIORITY_OPTIONS = REMS_OPTION_SEED.priority;
 export const REMS_STATUS_OPTIONS = REMS_OPTION_SEED.status;
 
 // The two type codes the intake form picks on the partner's behalf: picking a client out of the lookup
@@ -24,13 +23,27 @@ export const REMS_STATUS_OPTIONS = REMS_OPTION_SEED.status;
 export const REMS_TYPE_BRAND_NEW_CLIENT = "brand_new_client";
 export const REMS_TYPE_EXISTING_CLIENT = "existing_client";
 
+export const REMS_TYPE_SUBSIDIARY = "subsidiary_child_of_existing_client";
+
 // Type codes that mean "an existing client is referenced" (drives the client-lookup type marking).
 // A subsidiary is one too, so picking a client never overrides a partner who already chose it.
-export const REMS_EXISTING_CLIENT_TYPES = [
-  REMS_TYPE_EXISTING_CLIENT, "subsidiary_child_of_existing_client"
-];
+export const REMS_EXISTING_CLIENT_TYPES = [REMS_TYPE_EXISTING_CLIENT, REMS_TYPE_SUBSIDIARY];
 
 export const REMS_INDUSTRY_GROUP_OPTIONS = REMS_OPTION_SEED.industryGroup;
+
+// The industry groups that ask the BUSINESS questions — EIN, and the CEO / CFO / Accounts Payable /
+// Banker / Lawyer contacts. "Business" was one group until it was split into the three kinds THF
+// actually onboards; they ask for exactly the same things, so the split named what the client is
+// without changing the form.
+//
+// `business` itself is retired from the picker but still in this family: forms sent before the split
+// carry it, and a client part-way through one has to be able to finish. Mirrors the server's
+// RemsFormPayloadValidator.IsBusinessGroup, which is what actually enforces it.
+export const REMS_BUSINESS_INDUSTRY_GROUPS = Object.freeze([
+  "not_for_profit", "insurance", "commercial", "business"
+]);
+
+export const isBusinessIndustryGroup = (group) => REMS_BUSINESS_INDUSTRY_GROUPS.includes(group);
 
 // EMS form-state codes (RemsFormStatus) used to filter the EMS Inbox by form state.
 export const REMS_FORM_STATE_OPTIONS = [
@@ -63,7 +76,6 @@ export const REMS_APPROVAL_STATUS_OPTIONS = [
   { label: "Rejected", value: "Rejected" }
 ];
 
-const PRIORITY_COLORS = { urgent: "red-8", high: "deep-orange-7", medium: "amber-8", low: "blue-grey-5" };
 // Awaiting Customer borrows the EMS "Sent" teal — it is the same moment seen from the request — and the
 // approval stages borrow ENGAGEMENT_STATUS_META's colours, so a request badge and the engagement badge
 // underneath it never disagree about what pending/approved looks like.
@@ -115,11 +127,15 @@ const ENGAGEMENT_STATUS_META = {
 
 // Provider email-delivery events (RemsFormEmailEventType). These are the ONLY events rendered — the UI
 // never synthesises delivery/open state; it shows exactly what the server's email log returns.
-const EMAIL_EVENT_LABELS = { Sent: "Sent", Delivered: "Delivered", Opened: "Opened", Failed: "Failed" };
-const EMAIL_EVENT_COLORS = { Sent: "teal-7", Delivered: "positive", Opened: "primary", Failed: "negative" };
-const EMAIL_EVENT_ICONS = { Sent: "o_send", Delivered: "o_mark_email_read", Opened: "o_drafts", Failed: "o_error" };
+const EMAIL_EVENT_LABELS = { Sent: "Sent", Reminder: "Reminder sent", Delivered: "Delivered", Opened: "Opened", Failed: "Failed" };
+const EMAIL_EVENT_COLORS = { Sent: "teal-7", Reminder: "amber-8", Delivered: "positive", Opened: "primary", Failed: "negative" };
+const EMAIL_EVENT_ICONS = { Sent: "o_send", Reminder: "o_notifications_active", Delivered: "o_mark_email_read", Opened: "o_drafts", Failed: "o_error" };
 
 const labelFrom = (options, value) => options.find((o) => o.value === value)?.label || value || "—";
+
+// The option item's own Description, or "" when it has none — the caller's cue to render no tooltip.
+// Unlike labelFrom there is no falling back to the raw value: a code is not an explanation.
+const hintFrom = (options, value) => (value ? (options.find((o) => o.value === value)?.description || "") : "");
 
 // "Submitted" is the status of every request sitting in the Admin Pool, which on its own says nothing
 // about the one thing anyone wants to know at that stage: has somebody taken it? The backend already draws
@@ -135,15 +151,20 @@ export function useRemsMeta () {
   const auth = useAuthStore();
 
   const typeLabel = (v) => labelFrom(options.type, v);
-  const priorityLabel = (v) => labelFrom(options.priority, v);
   const statusLabel = (v) => labelFrom(options.status, v);
+  const referralSourceLabel = (v) => labelFrom(options.referralSource, v);
+
+  // Tooltips come from the option ITEM's Description, maintained in Administration → Option Sets, so a
+  // tenant who rewords a value rewords its explanation in the same place. "" when they have written
+  // none, which is the caller's cue to render no tooltip rather than an empty box.
+  const typeHint = (v) => hintFrom(options.type, v);
+  const referralSourceHint = (v) => hintFrom(options.referralSource, v);
   const industryGroupLabel = (v) => labelFrom(options.industryGroup, v);
   const departmentLabel = (v) => labelFrom(options.department, v);
   const serviceLineLabel = (v) => labelFrom(options.serviceLine, v);
 
   // Colours stay in code: they key off the CODE, which is closed and validated server-side, so a rename
   // never strands a badge on grey. Only the wording is the tenant's to change.
-  const priorityColor = (v) => PRIORITY_COLORS[v] || "grey-6";
   const statusColor = (v) => STATUS_COLORS[v] || "grey-6";
   const emsStateLabel = (v) => EMS_STATE_LABELS[v] || v || "—";
   const emsStateColor = (v) => EMS_STATE_COLORS[v] || "grey-6";
@@ -193,7 +214,7 @@ export function useRemsMeta () {
   // extra wording: it still filters on the `submitted` code, so its label names both of the states that
   // one code shows up as in a row rather than just the waiting one.
   const typeOptions = computed(() => options.type);
-  const priorityOptions = computed(() => options.priority);
+  const referralSourceOptions = computed(() => options.referralSource);
   const statusOptions = computed(() => options.status);
   const industryGroupOptions = computed(() => options.industryGroup);
   const departmentOptions = computed(() => options.department);
@@ -203,18 +224,19 @@ export function useRemsMeta () {
 
   return {
     typeLabel,
-    priorityLabel,
+    typeHint,
+    referralSourceLabel,
+    referralSourceHint,
     statusLabel,
     departmentLabel,
     serviceLineLabel,
-    priorityColor,
     statusColor,
     emsStateLabel,
     emsStateColor,
     submissionStateLabel,
     industryGroupLabel,
     typeOptions,
-    priorityOptions,
+    referralSourceOptions,
     statusOptions,
     industryGroupOptions,
     departmentOptions,
@@ -236,21 +258,20 @@ export function useRemsMeta () {
   };
 }
 
-// The Type / Priority pickers. Delegates to the shared catalogue rather than resolving its own copy, so
+// The Type picker. Delegates to the shared catalogue rather than resolving its own copy, so
 // a screen that shows both a picker and a badge cannot end up with two different labels for one code.
 // `load` is kept so existing callers need no change; it just awaits the catalogue.
 export function useRemsOptionSets () {
   const catalog = useRemsOptionCatalog();
   return {
     typeOptions: computed(() => catalog.type),
-    priorityOptions: computed(() => catalog.priority),
     load: ensureRemsOptionsLoaded
   };
 }
 
 // ---- Engagement workspace (WO-117) option sets + conditional logic ----
 
-// Department + Service Line are stored as string codes, so — like Type/Priority/IndustryGroup — the closed
+// Department + Service Line are stored as string codes, so — like Type/IndustryGroup — the closed
 // seed lists are a safe fallback when the resolve endpoint 403s (the REMS Admin role lacks optionSets.read).
 export const REMS_DEPARTMENT_CODES = Object.freeze({ CAS: "cas", TAX: "tax", AUDIT: "audit", GCS: "gcs" });
 export const REMS_SERVICE_LINE_GOVERNMENT = "government";

@@ -27,6 +27,24 @@ internal sealed class RemsEmailNotifier : IRemsEmailNotifier
             ["RequestTitle"] = model.RequestTitle,
         }, messageId);
 
+    public void SendComposedFormLink(
+        Guid tenantId, string toEmail, RemsFormLinkEmail model, string? subject, string? body, string? messageId = null)
+        => _dispatcher.EnqueueComposed(tenantId, EmailTemplateKey.RemsFormLink, toEmail, FormLinkModel(model),
+            subject, body, messageId);
+
+    public void SendComposedFormReminder(
+        Guid tenantId, string toEmail, RemsFormLinkEmail model, string? subject, string? body, string? messageId = null)
+        => _dispatcher.EnqueueComposed(tenantId, EmailTemplateKey.RemsFormReminder, toEmail, FormLinkModel(model),
+            subject, body, messageId);
+
+    private static Dictionary<string, string?> FormLinkModel(RemsFormLinkEmail model) => new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["ClientName"] = model.ClientName,
+        ["FormLink"] = model.FormLink,
+        ["RemsNumber"] = model.RemsNumber,
+        ["RequestTitle"] = model.RequestTitle,
+    };
+
     public void SendFormSubmitted(Guid tenantId, string toEmail, RemsFormSubmittedEmail model)
         => _dispatcher.Enqueue(tenantId, EmailTemplateKey.RemsFormSubmitted, toEmail, new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
         {

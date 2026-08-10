@@ -111,6 +111,12 @@
                   v-if="canViewEmailLog" outline no-caps color="primary" icon="o_history" label="Email Log"
                   @click="emailLogOpen = true"
                 />
+                <!-- Chasing a client is repeatable, so this stays available for as long as they have not
+                     submitted — it changes nothing on the form. -->
+                <q-btn
+                  v-if="canRemind" unelevated no-caps color="amber-8" icon="o_notifications_active"
+                  label="Send Reminder" @click="reminderOpen = true"
+                />
               </template>
               <q-btn
                 v-else
@@ -130,6 +136,11 @@
     <!-- Preview → confirm → send; offers the Email Log afterwards. -->
     <send-ems-dialog
       v-model="sendOpen" :rems-id="requestId" :subtitle="sendSubtitle"
+      :can-view-email-log="canViewEmailLog" @sent="onSent" @view-log="emailLogOpen = true"
+    />
+    <!-- Same dialog, reminder template. Reloads the screen on send so the Email Log reflects it. -->
+    <send-ems-dialog
+      v-model="reminderOpen" mode="reminder" :rems-id="requestId" :subtitle="sendSubtitle"
       :can-view-email-log="canViewEmailLog" @sent="onSent" @view-log="emailLogOpen = true"
     />
     <email-log-dialog v-model="emailLogOpen" :rems-id="requestId" :subtitle="sendSubtitle" />
@@ -170,6 +181,7 @@ const csesLoading = ref(false);
 
 const editOpen = ref(false);
 const sendOpen = ref(false);
+const reminderOpen = ref(false);
 const emailLogOpen = ref(false);
 
 const canViewEmailLog = computed(() => has(Permissions.RemsEmailLogRead));
@@ -180,6 +192,11 @@ const form = computed(() => screen.value?.form || null);
 const clientFormLink = computed(() => webUrl(form.value?.formLink));
 const isLocked = computed(() => !!form.value?.isLocked);
 const alreadySent = computed(() => !!form.value?.sentOnUtc);
+
+// Chasing the client is available for exactly as long as the ball is in their court: the form has gone
+// out and has not come back. Repeatable — it changes nothing, so there is no once-only window here.
+const canRemind = computed(() =>
+  has(Permissions.RemsFormsSend) && form.value?.status === "Sent" && !!clientEmail.value);
 const clientEmail = computed(() => screen.value?.customerEmail || null);
 
 const infoRows = computed(() => {

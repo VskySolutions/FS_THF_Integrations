@@ -18,8 +18,8 @@
 
     <app-filter-drawer v-model="filterOpen" :chips="allChips" @remove="onRemoveFilter" @clear="onClearFilters">
       <app-column-filters v-model="filters" :columns="filterableColumns" />
-      <!-- Server filters with no column of their own: the contact line is captioned under the title
-           rather than shown as a column, and a created range is two controls, not one.
+      <!-- Server filters with no column of their own: contact matches email or mobile at once, which no
+           single column stands for, and a created range is two controls, not one.
            Each sits as its own full-width slot child, like every control above it — AppFilterDrawer
            already spaces and aligns what it is given, so no row wrapper or margin class is wanted here. -->
       <app-text-field v-model="extras.contact" label="Contact (email or mobile)" clearable :dense="false" />
@@ -46,20 +46,23 @@
       @request="onRequest"
       @refresh="load"
     >
+      <template #body-cell-clientName="cell">
+        <q-td :props="cell">{{ cell.row.clientName || "—" }}</q-td>
+      </template>
+
       <template #body-cell-title="cell">
         <q-td :props="cell">
           <div class="text-weight-medium">{{ cell.row.title }}</div>
-          <div class="text-caption text-grey-7">{{ cell.row.clientName || "—" }}</div>
         </q-td>
       </template>
 
+      <!-- No icon per row — a column of them is noise — but the explanation is still a hover away. -->
       <template #body-cell-type="cell">
-        <q-td :props="cell">{{ typeLabel(cell.row.type) }}</q-td>
-      </template>
-
-      <template #body-cell-priority="cell">
         <q-td :props="cell">
-          <q-badge :color="priorityColor(cell.row.priority)">{{ priorityLabel(cell.row.priority) }}</q-badge>
+          {{ typeLabel(cell.row.type) }}
+          <q-tooltip v-if="typeHint(cell.row.type)" max-width="320px" :delay="300">
+            {{ typeHint(cell.row.type) }}
+          </q-tooltip>
         </q-td>
       </template>
 
@@ -67,10 +70,6 @@
         <q-td :props="cell">
           <q-badge :color="requestStatusColor(cell.row)">{{ requestStatusLabel(cell.row) }}</q-badge>
         </q-td>
-      </template>
-
-      <template #body-cell-createdOnUtc="cell">
-        <q-td :props="cell">{{ fmt.formatDateTime(cell.row.createdOnUtc) }}</q-td>
       </template>
 
       <template #body-cell-emsFormState="cell">
@@ -164,9 +163,9 @@ const { has } = usePermissions();
 const fmt = useDateFormat();
 const auditColumns = useAuditColumns();
 const {
-  typeLabel, priorityLabel, priorityColor, requestStatusLabel, requestStatusColor,
+  typeLabel, typeHint, requestStatusLabel, requestStatusColor,
   emsStateLabel, submissionStateLabel,
-  statusFilterOptions, typeOptions, priorityOptions
+  statusFilterOptions, typeOptions
 } = useRemsMeta();
 
 const canCreate = computed(() => has(Permissions.RemsRequestsCreate));
@@ -185,14 +184,17 @@ onMounted(async () => {
   }
 });
 
+// Ordered as the list reads: what the request is, then who it is for, then where it has got to, then the
+// trail behind it. Everything between Created On and Actions is off by default, so the visible sequence is
+// Request ID → Type → Client → Title → Status → Assigned Admin → EMS State → Created By → Created On →
+// Actions, and switching a hidden column on slots it in before Actions rather than after.
 const columns = computed(() => [
   { name: "remsNumber", label: "Request ID", field: "remsNumber", align: "left", sortable: true, default: true, filterable: false },
-  { name: "title", label: "Title / Client", field: "title", align: "left", sortable: true, default: true, filterable: false },
   { name: "type", label: "Type", field: "type", align: "left", default: true, filterOptions: typeOptions.value },
-  { name: "priority", label: "Priority", field: "priority", align: "left", sortable: true, default: true, filterOptions: priorityOptions.value },
-  // Filtered through the Created From/To pair in the drawer — a single "contains" box over a formatted
-  // timestamp would match on the digits of a date rather than on the date.
-  { name: "createdOnUtc", label: "Created", field: "createdOnUtc", align: "left", sortable: true, default: true, filterable: false },
+  // Client and title are two facts about a request, and merging them made one of the pair unsortable and
+  // the column impossible to size. Both stand on their own, both on by default.
+  { name: "clientName", label: "Client", field: "clientName", align: "left", sortable: true, default: true, filterable: false },
+  { name: "title", label: "Title", field: "title", align: "left", sortable: true, default: true, filterable: false },
   { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true, filterOptions: statusFilterOptions.value },
   // Only offered to callers who may read the admin list; without it the picker would be empty, which
   // reads as "nobody is assigned" rather than "you cannot see who is".
@@ -205,17 +207,18 @@ const columns = computed(() => [
     ...(canSeeAdmins.value ? { filterOptions: adminFilterOptions.value } : { filterable: false })
   },
   { name: "emsFormState", label: "EMS State", field: "emsFormState", align: "left", default: true, filterable: false },
-  // Off by default (the title cell already captions the client), but every field the row carries is
-  // offered in the Columns menu rather than being unreachable.
-  { name: "clientName", label: "Client", field: "clientName", align: "left", sortable: true, default: false, filterable: false },
+  // Taken from the shared audit set rather than hand-rolled, so the pair is labelled and formatted like
+  // every other list's — only promoted to visible, which is the one thing this page wants differently.
+  // Neither is filterable: the created range is the From/To pair in the drawer, not a text box.
+  ...auditColumns({ only: ["createdBy", "createdOnUtc"] }).map((c) => ({ ...c, default: true })),
+  // Off by default, but every field the row carries is offered in the Columns menu rather than being
+  // unreachable.
   { name: "customerEmail", label: "Client Email", field: (r) => r.customerEmail || "—", align: "left", default: false, filterable: false },
   { name: "customerMobileNumber", label: "Client Mobile", field: (r) => r.customerMobileNumber || "—", align: "left", default: false, filterable: false },
   { name: "cse", label: "CSE", field: (r) => r.cse?.name || "—", align: "left", default: false, filterable: false },
   { name: "industryGroup", label: "Industry Group", field: (r) => r.industryGroup || "—", align: "left", default: false, filterable: false },
   { name: "clientSubmissionState", label: "Client Submission", field: (r) => submissionStateLabel(r.clientSubmissionState), align: "left", default: false, filterable: false },
-  // Created On is already a visible column here, so only the other three come from the shared set —
-  // two columns of the same name would collide in AppDataTable's visibility map.
-  ...auditColumns({ only: ["createdBy", "updatedBy", "updatedOnUtc"] }),
+  ...auditColumns({ only: ["updatedBy", "updatedOnUtc"] }),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ]);
 
@@ -235,7 +238,6 @@ const { rows, loading, totalRecords, search, filterOpen, pagination, load, onReq
       clientName: search.value || undefined,
       status: filters.status || undefined,
       type: filters.type || undefined,
-      priority: filters.priority || undefined,
       assignedAdminUserId: filters.assignedAdmin || undefined,
       contact: extras.contact || undefined,
       // The pickers are date-only and read in the tenant's zone; the column they filter is a UTC

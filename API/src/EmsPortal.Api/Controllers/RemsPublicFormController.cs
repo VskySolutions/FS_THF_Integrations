@@ -57,6 +57,7 @@ public sealed class RemsPublicFormController : ControllerBase
     private readonly INotificationDispatcher _notifications;
     private readonly IRemsEmailNotifier _emailNotifier;
     private readonly string _baseUrl;
+    private readonly IOptionSetRepository _optionSets;
     private readonly ILogger<RemsPublicFormController> _logger;
 
     public RemsPublicFormController(
@@ -72,6 +73,7 @@ public sealed class RemsPublicFormController : ControllerBase
         INotificationDispatcher notifications,
         IRemsEmailNotifier emailNotifier,
         IOptions<AppOptions> appOptions,
+        IOptionSetRepository optionSets,
         ILogger<RemsPublicFormController> logger)
     {
         _forms = forms;
@@ -86,6 +88,7 @@ public sealed class RemsPublicFormController : ControllerBase
         _notifications = notifications;
         _emailNotifier = emailNotifier;
         _baseUrl = appOptions.Value.BaseUrl;
+        _optionSets = optionSets;
         _logger = logger;
     }
 
@@ -124,12 +127,44 @@ public sealed class RemsPublicFormController : ControllerBase
                     RemsPublicFormStates.Editable,
                     IndustryGroup: form.IndustryGroup,
                     Prefill: new RemsPublicPrefill(rems.RequestedClientName, rems.CustomerEmail ?? string.Empty, rems.CustomerMobileNumber),
-                    DraftPayload: RemsFormPayloadJson.TryDeserialize(CurrentDraft(form)?.DraftPayload)),
+                    DraftPayload: RemsFormPayloadJson.TryDeserialize(CurrentDraft(form)?.DraftPayload),
+                    ReferralSources: await ResolvePublicOptionsAsync(rems.TenantId, "REMS.ReferralSource", cancellationToken)),
                 "REMS form resolved.")),
 
             // Draft / Saved: built but not yet sent — the link is not active until the Admin sends it.
             _ => Ok(ApiResponseFactory.Success(new RemsPublicFormResponse(RemsPublicFormStates.Unavailable), "REMS form resolved.")),
         };
+    }
+
+    /// <summary>
+    /// Resolves an option list for the anonymous form, scoped to the REQUEST's tenant rather than to an
+    /// ambient one — this caller holds an invite code, not a session, so there is no tenant context to
+    /// read. Falls back to the tenant's effective list (their own copy, else the platform standard),
+    /// exactly as the staff resolve endpoint does, so the client sees the same wording staff maintain.
+    /// An absent list yields null and the form falls back to its built-in copy rather than showing an
+    /// empty picker.
+    /// </summary>
+    private async Task<IReadOnlyList<RemsPublicOption>?> ResolvePublicOptionsAsync(
+        Guid tenantId, string key, CancellationToken cancellationToken)
+    {
+        var set = await _optionSets.GetEffectiveSetAsync(tenantId, EntityType.Rems, key, cancellationToken);
+        if (set is null)
+        {
+            return null;
+        }
+
+        var ordered = set.ItemSortMode switch
+        {
+            OptionItemSortMode.AlphabeticalAsc => set.Items.OrderBy(i => i.Label),
+            OptionItemSortMode.AlphabeticalDesc => set.Items.OrderByDescending(i => i.Label),
+            _ => set.Items.OrderBy(i => i.SortOrder).ThenBy(i => i.Label),
+        };
+
+        var options = ordered
+            .Where(i => i.IsActive && !i.Deleted)
+            .Select(i => new RemsPublicOption(i.Value, i.Label, i.Description))
+            .ToList();
+        return options.Count > 0 ? options : null;
     }
 
     // -------------------- Draft (auto-save / explicit save) --------------------
@@ -360,7 +395,7 @@ public sealed class RemsPublicFormController : ControllerBase
     private SubmitGraph BuildSubmitGraph(REMSForm form, RemsFormPayloadV1 payload, DateTime now)
     {
         var tenantId = form.TenantId;
-        var isBusiness = string.Equals(form.IndustryGroup, RemsFormPayloadValidator.Business, StringComparison.Ordinal);
+        var isBusiness = RemsFormPayloadValidator.IsBusinessGroup(form.IndustryGroup);
         var isGovernment = string.Equals(form.IndustryGroup, RemsFormPayloadValidator.Government, StringComparison.Ordinal);
 
         var submissionId = Guid.NewGuid();
@@ -393,10 +428,14 @@ public sealed class RemsPublicFormController : ControllerBase
             TenantId = tenantId,
             REMSId = form.REMSId,
             SourceFormSubmissionId = submissionId,
+            // Points at the same Person the request's client resolved to at intake, so the client the
+            // form materialises and the client the picker knows are one record rather than two.
+            ExternalClientReferenceId = form.Rems!.ClientPersonId,
             Name = Clean(payload.ClientName) ?? string.Empty,
             Email = form.Rems!.CustomerEmail ?? string.Empty, // LOCKED to the request's customer email.
             MobileNumber = Clean(payload.MobileNumber),
             ReferralSource = Clean(payload.ReferralSource),
+            ReferralSourceDetail = Clean(payload.ReferralSourceDetail),
             BillingContactName = Clean(payload.BillingContactName),
             BillingEmail = Clean(payload.BillingEmail),
             BillingAddressId = billingAddressId,
@@ -694,25 +733,25 @@ public sealed class RemsPublicFormController : ControllerBase
     private static IEnumerable<(RemsRolePayload? Role, string RoleName, bool IsRequired)> EnumerateRoles(
         string industryGroup, RemsRolesPayload roles)
     {
-        switch (industryGroup)
+        // Mirrors RemsFormPayloadValidator's branches exactly — the roles staged here must be the roles it
+        // required. if/else rather than a switch because the business branch matches a family of codes.
+        if (industryGroup == RemsFormPayloadValidator.Individual)
         {
-            case RemsFormPayloadValidator.Individual:
-                yield return (roles.Self, nameof(RemsContactRole.Self), true);
-                yield return (roles.Spouse, nameof(RemsContactRole.Spouse), false);
-                break;
-
-            case RemsFormPayloadValidator.Business:
-                yield return (roles.Ceo, nameof(RemsContactRole.CEO), true);
-                yield return (roles.Cfo, nameof(RemsContactRole.CFO), true);
-                yield return (roles.AccountsPayable, nameof(RemsContactRole.AccountsPayable), true);
-                yield return (roles.Banker, nameof(RemsContactRole.Banker), false);
-                yield return (roles.Lawyer, nameof(RemsContactRole.Lawyer), false);
-                break;
-
-            case RemsFormPayloadValidator.Government:
-                yield return (roles.FinanceDirector, nameof(RemsContactRole.FinanceDirector), true);
-                yield return (roles.AccountsPayable, nameof(RemsContactRole.AccountsPayable), false);
-                break;
+            yield return (roles.Self, nameof(RemsContactRole.Self), true);
+            yield return (roles.Spouse, nameof(RemsContactRole.Spouse), false);
+        }
+        else if (RemsFormPayloadValidator.IsBusinessGroup(industryGroup))
+        {
+            yield return (roles.Ceo, nameof(RemsContactRole.CEO), true);
+            yield return (roles.Cfo, nameof(RemsContactRole.CFO), true);
+            yield return (roles.AccountsPayable, nameof(RemsContactRole.AccountsPayable), true);
+            yield return (roles.Banker, nameof(RemsContactRole.Banker), false);
+            yield return (roles.Lawyer, nameof(RemsContactRole.Lawyer), false);
+        }
+        else if (industryGroup == RemsFormPayloadValidator.Government)
+        {
+            yield return (roles.FinanceDirector, nameof(RemsContactRole.FinanceDirector), true);
+            yield return (roles.AccountsPayable, nameof(RemsContactRole.AccountsPayable), false);
         }
     }
 

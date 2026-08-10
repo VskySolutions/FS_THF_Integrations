@@ -27,11 +27,16 @@ export const countryNameFromIso = (isoCode) => all.find((c) => c.isoCode === iso
 /** Country option keyed by display name (e.g. for nationality fields). */
 export const countryNameOption = (c) => ({ label: c.name, value: c.name });
 
-/** ISO-2 code from a stored dial code ("+91" → "IN"). */
+/** ISO-2 code from a stored dial code ("+91" → "IN").
+ *  A dial code does not always name one country — +1 is the US and Canada both — so the answer is
+ *  whichever country this app puts first. Searching the pinned order rather than the alphabetical one
+ *  is what makes +1 come back as the US: alphabetically Canada gets there first, and every US number
+ *  in the system carries +1. Codes nobody pinned (+44, +7) still resolve alphabetically — the app has
+ *  no preference to apply there. */
 export const isoFromDial = (dial) => {
   if (!dial) return null;
   const normalized = String(dial).replace("+", "");
-  return all.find((c) => c.phonecode === normalized)?.isoCode || null;
+  return orderedCountries.find((c) => c.phonecode === normalized)?.isoCode || null;
 };
 
 /** Dial code from an ISO-2 code ("IN" → "+91"). */

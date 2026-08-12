@@ -58,6 +58,8 @@ internal sealed class EmailNotificationService : IEmailNotificationService
         string? toEmail,
         IReadOnlyDictionary<string, string?> model,
         string? messageId = null,
+        string? subjectOverride = null,
+        string? bodyOverride = null,
         CancellationToken cancellationToken = default)
     {
         // Central email allowlist (WO-124, AC-ETPL-005.5): only account-security + REMS external templates
@@ -119,7 +121,12 @@ internal sealed class EmailNotificationService : IEmailNotificationService
                 account.FromName,
                 account.FromEmail);
 
-            var message = new SmtpMessage(toEmail.Trim(), rendered.Subject, rendered.Body, IsHtml: true, MessageId: messageId);
+            // An admin who edited the email before sending gets exactly what they wrote. The template is
+            // still resolved and rendered above — it is what they were shown, and its absence is still a
+            // reason not to send at all — but their edits win over it.
+            var subject = string.IsNullOrWhiteSpace(subjectOverride) ? rendered.Subject : subjectOverride.Trim();
+            var body = string.IsNullOrWhiteSpace(bodyOverride) ? rendered.Body : bodyOverride;
+            var message = new SmtpMessage(toEmail.Trim(), subject, body, IsHtml: true, MessageId: messageId);
             var result = await _sender.SendAsync(credentials, message, cancellationToken);
             if (!result.Success)
             {

@@ -42,6 +42,7 @@ public sealed class RemsFormController : ControllerBase
     private const string CodeFormAlreadySent = "REMS_FORM_ALREADY_SENT";
     private const string CodeClientEmailMissing = "REMS_CLIENT_EMAIL_MISSING";
     private const string CodeIndustryGroupLocked = "REMS_INDUSTRY_GROUP_LOCKED";
+    private const string CodeFormAlreadySubmitted = "REMS_FORM_ALREADY_SUBMITTED";
 
     private readonly IRemsRepository _rems;
     private readonly IRemsFormRepository _forms;
@@ -50,6 +51,7 @@ public sealed class RemsFormController : ControllerBase
     private readonly IActivityEventWriter _activity;
     private readonly INotificationDispatcher _notifications;
     private readonly IRemsEmailNotifier _emailNotifier;
+    private readonly IEmailTemplateService _templates;
     private readonly string _baseUrl;
 
     public RemsFormController(
@@ -60,6 +62,7 @@ public sealed class RemsFormController : ControllerBase
         IActivityEventWriter activity,
         INotificationDispatcher notifications,
         IRemsEmailNotifier emailNotifier,
+        IEmailTemplateService templates,
         IOptions<AppOptions> appOptions)
     {
         _rems = rems;
@@ -69,6 +72,7 @@ public sealed class RemsFormController : ControllerBase
         _activity = activity;
         _notifications = notifications;
         _emailNotifier = emailNotifier;
+        _templates = templates;
         _baseUrl = appOptions.Value.BaseUrl;
     }
 
@@ -199,7 +203,21 @@ public sealed class RemsFormController : ControllerBase
             return FormConflict(CodeFormNotBuilt, "The form has not been built yet.");
         }
 
-        var preview = new RemsFormPreview(Normalize(rems.CustomerEmail), BuildFormLink(form.InviteCode));
+        // Render the effective template with the values this send would use, so the dialog shows the real
+        // email rather than a description of one — and so what the admin edits starts from what would
+        // otherwise go out. Rendered here, not in the browser: the template is per-tenant and its
+        // placeholders are the server's to substitute.
+        var formLink = BuildFormLink(form.InviteCode);
+        var rendered = User.GetActiveTenantId() is { } previewTenantId
+            ? await _templates.RenderEffectiveAsync(
+                previewTenantId,
+                EmailTemplateKey.RemsFormLink,
+                FormLinkModel(rems, formLink),
+                cancellationToken)
+            : null;
+
+        var preview = new RemsFormPreview(
+            Normalize(rems.CustomerEmail), formLink, rendered?.Subject, rendered?.Body);
         return Ok(ApiResponseFactory.Success(preview, "REMS form preview retrieved."));
     }
 
@@ -212,7 +230,7 @@ public sealed class RemsFormController : ControllerBase
     [HttpPost("{remsId:guid}/form/send")]
     [RequirePermission(Permissions.RemsFormsSend)]
     [ProducesResponseType<ApiResponse<RemsFormBuildScreen>>(StatusCodes.Status200OK)]
-    public async Task<IActionResult> Send(Guid remsId, CancellationToken cancellationToken)
+    public async Task<IActionResult> Send(Guid remsId, [FromBody] SendRemsFormRequest? request, CancellationToken cancellationToken)
     {
         if (User.GetUserId() is not { } me || User.GetActiveTenantId() is not { } tenantId)
         {
@@ -295,12 +313,146 @@ public sealed class RemsFormController : ControllerBase
 
         // Enqueue the email only after the Sent state is durably persisted. Delivery is best-effort on a
         // Hangfire worker and never throws — a send failure must not roll the request back.
-        _emailNotifier.SendFormLink(
-            tenantId, email, new RemsFormLinkEmail(rems.RequestedClientName, formLink, rems.REMSNumber, rems.Title), messageId);
+        // Whatever the admin left in the dialog wins over the template; leaving both untouched sends the
+        // template exactly as the preview showed it.
+        _emailNotifier.SendComposedFormLink(
+            tenantId, email, new RemsFormLinkEmail(rems.RequestedClientName, formLink, rems.REMSNumber, rems.Title),
+            request?.Subject, request?.Body, messageId);
 
         var refreshed = await _forms.GetByRemsIdAsync(remsId, cancellationToken) ?? form;
         var screen = await BuildScreenAsync(rems, refreshed, cancellationToken);
         return Ok(ApiResponseFactory.Success(screen, "REMS form sent."));
+    }
+
+    // -------------------- Reminder --------------------
+
+    /// <summary>
+    /// The pre-send preview for a REMINDER, rendered from the <c>RemsFormReminder</c> template. Same shape
+    /// as <see cref="Preview"/> so the send dialog can drive both.
+    /// </summary>
+    [HttpGet("{remsId:guid}/form/reminder/preview")]
+    [RequirePermission(Permissions.RemsFormsSend)]
+    [ProducesResponseType<ApiResponse<RemsFormPreview>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> ReminderPreview(Guid remsId, CancellationToken cancellationToken)
+    {
+        var context = await LoadRemindableAsync(remsId, cancellationToken);
+        if (context.Failure is not null)
+        {
+            return context.Failure;
+        }
+
+        var (rems, form) = (context.Rems!, context.Form!);
+        var formLink = BuildFormLink(form.InviteCode);
+        var rendered = User.GetActiveTenantId() is { } tenantId
+            ? await _templates.RenderEffectiveAsync(
+                tenantId, EmailTemplateKey.RemsFormReminder, FormLinkModel(rems, formLink), cancellationToken)
+            : null;
+
+        var preview = new RemsFormPreview(
+            Normalize(rems.CustomerEmail), formLink, rendered?.Subject, rendered?.Body);
+        return Ok(ApiResponseFactory.Success(preview, "REMS form reminder preview retrieved."));
+    }
+
+    /// <summary>
+    /// Re-send the form link to a client who has not submitted yet. Repeatable by design — chasing a
+    /// client is a thing you do more than once — so unlike <see cref="Send"/> this changes no state on the
+    /// form: the invite code, the Sent timestamp and the request status all stay exactly as they were.
+    /// What it leaves behind is a <see cref="RemsFormEmailEventType.Reminder"/> row, so the email log
+    /// answers "how many times have we chased them, and when".
+    /// </summary>
+    [HttpPost("{remsId:guid}/form/reminder")]
+    [RequirePermission(Permissions.RemsFormsSend)]
+    [ProducesResponseType<ApiResponse<RemsFormBuildScreen>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> SendReminder(
+        Guid remsId, [FromBody] SendRemsFormRequest? request, CancellationToken cancellationToken)
+    {
+        if (User.GetUserId() is not { } me || User.GetActiveTenantId() is not { } tenantId)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseFactory.Forbidden("No active tenant/user context."));
+        }
+
+        var context = await LoadRemindableAsync(remsId, cancellationToken);
+        if (context.Failure is not null)
+        {
+            return context.Failure;
+        }
+
+        var (rems, form) = (context.Rems!, context.Form!);
+        var email = Normalize(rems.CustomerEmail)!; // guaranteed by LoadRemindableAsync
+        var formLink = BuildFormLink(form.InviteCode);
+        var messageId = BuildOutboundMessageId();
+
+        await _forms.AddEmailEventAsync(new REMSFormEmailEvent
+        {
+            Id = Guid.NewGuid(),
+            REMSFormId = form.Id,
+            ProviderMessageId = messageId,
+            EventType = RemsFormEmailEventType.Reminder,
+            RecipientEmail = email,
+            OccurredOnUtc = DateTime.UtcNow,
+        }, cancellationToken);
+
+        await _activity.WriteAsync(
+            new CreateActivityEventDto(EntityType.Rems, remsId, ActivityEventTypes.RemsFormReminderSent), cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // Enqueued after the event row is durable, as the first send does. Best-effort on a Hangfire
+        // worker; a delivery failure must not roll back the record that we tried.
+        _emailNotifier.SendComposedFormReminder(
+            tenantId, email, new RemsFormLinkEmail(rems.RequestedClientName, formLink, rems.REMSNumber, rems.Title),
+            request?.Subject, request?.Body, messageId);
+
+        // Nobody in-app is notified: this is the admin chasing the client, and telling the team each time
+        // somebody clicks Remind would be noise about their own action.
+        _ = me;
+
+        var refreshed = await _forms.GetByRemsIdAsync(remsId, cancellationToken) ?? form;
+        var screen = await BuildScreenAsync(rems, refreshed, cancellationToken);
+        return Ok(ApiResponseFactory.Success(screen, "Reminder sent."));
+    }
+
+    /// <summary>
+    /// Resolves a request whose client can legitimately be reminded, or the error explaining why not.
+    /// A reminder makes sense in exactly one window: the form has been SENT and the client has not
+    /// submitted. Before that there is nothing to remind them about; after it, nothing to chase.
+    /// </summary>
+    private async Task<(REMS? Rems, REMSForm? Form, IActionResult? Failure)> LoadRemindableAsync(
+        Guid remsId, CancellationToken cancellationToken)
+    {
+        var rems = await _rems.GetByIdAsync(remsId, cancellationToken);
+        if (rems is null)
+        {
+            return (null, null, NotFound(ApiResponseFactory.NotFound("REMS request not found.")));
+        }
+
+        var form = await _forms.GetByRemsIdAsync(remsId, cancellationToken);
+        if (form is null)
+        {
+            return (null, null, FormConflict(CodeFormNotBuilt, "The form has not been built yet."));
+        }
+        if (form.SentOnUtc is null)
+        {
+            return (null, null, FormConflict(CodeFormNotSendable,
+                "The form has not been sent yet, so there is nothing to remind the client about."));
+        }
+        if (form.Status == RemsFormStatus.Submitted)
+        {
+            return (null, null, FormConflict(CodeFormAlreadySubmitted,
+                "The client has already submitted this form."));
+        }
+        if (form.Status == RemsFormStatus.Cancelled)
+        {
+            return (null, null, FormConflict(CodeFormNotSendable, "This form has been cancelled."));
+        }
+
+        if (Normalize(rems.CustomerEmail) is null)
+        {
+            return (null, null, FormConflict(CodeClientEmailMissing,
+                "The client has no email address on file; add one before sending."));
+        }
+
+        return (rems, form, null);
     }
 
     // -------------------- Email log --------------------
@@ -416,6 +568,18 @@ public sealed class RemsFormController : ControllerBase
     /// provider's delivery/open/failed callbacks correlate back to this request. Host derives from
     /// <c>App:BaseUrl</c>, falling back to a placeholder when it is not an absolute URL.
     /// </summary>
+    /// <summary>
+    /// The placeholder values the <c>RemsFormLink</c> template renders with. One definition, so the preview
+    /// the admin edits is rendered from exactly what the send would have used.
+    /// </summary>
+    private static Dictionary<string, string?> FormLinkModel(REMS rems, string formLink) => new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["ClientName"] = rems.RequestedClientName,
+        ["FormLink"] = formLink,
+        ["RemsNumber"] = rems.REMSNumber,
+        ["RequestTitle"] = rems.Title,
+    };
+
     private string BuildOutboundMessageId()
     {
         var host = Uri.TryCreate(_baseUrl, UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.Host)

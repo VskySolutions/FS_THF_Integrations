@@ -16,6 +16,11 @@ public interface IEmailNotificationService
         string? toEmail,
         IReadOnlyDictionary<string, string?> model,
         string? messageId = null,
+        // An already-composed subject / body that REPLACE the rendered template's — what an admin edited
+        // in a send dialog before confirming. The template is still resolved (it is what they were shown,
+        // and its absence is still a reason not to send); these just win over it. Null = render as normal.
+        string? subjectOverride = null,
+        string? bodyOverride = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

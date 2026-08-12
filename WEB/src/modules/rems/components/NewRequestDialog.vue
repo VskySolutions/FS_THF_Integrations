@@ -119,6 +119,16 @@
           @click="chooseType(opt.value)"
         >
           {{ opt.label }}
+          <!-- The three read alike until you have onboarded a client, and the difference decides who
+               gets billed. The icon is what advertises the tooltip — hover alone is invisible until you
+               happen to land on it. Both are rendered only where there is something to say: a tenant's
+               own type has no explanation, and an empty tooltip is worse than none. -->
+          <template v-if="typeHint(opt.value)">
+            <q-icon name="o_info" size="15px" class="rems-chip__info" />
+            <q-tooltip anchor="top middle" self="bottom middle" max-width="320px" :delay="300">
+              {{ typeHint(opt.value) }}
+            </q-tooltip>
+          </template>
         </button>
       </div>
       <div v-if="attempted && !form.type" class="rems-hint rems-hint--error">
@@ -131,17 +141,11 @@
       <!-- ─── 2. Describe the referral ────────────────────────────────────────────────────────────── -->
       <div class="rems-step"><span class="rems-step__num">2</span>Describe the referral</div>
 
-      <div class="row q-col-gutter-md">
-        <app-text-field
-          v-model="form.title" label="Title" required class="col-12 col-sm-8"
-          placeholder="e.g. Meridian Retail Group — new store buildout audit"
-          :rules="[(v) => !!(v && v.trim()) || 'Title is required']"
-        />
-        <app-select
-          v-model="form.priority" :options="priorityOptions" label="Priority" required
-          class="col-12 col-sm-4" :clearable="false"
-        />
-      </div>
+      <app-text-field
+        v-model="form.title" label="Title" required
+        placeholder="e.g. Meridian Retail Group — new store buildout audit"
+        :rules="[(v) => !!(v && v.trim()) || 'Title is required']"
+      />
 
       <app-rich-text-field
         v-model="form.description" label="Message to Admin" class="q-mt-md"
@@ -193,6 +197,7 @@ import {
   REMS_TYPE_BRAND_NEW_CLIENT, REMS_TYPE_EXISTING_CLIENT
 } from "modules/rems/useRemsMeta";
 import { usePermissions, Permissions } from "composables/usePermissions";
+import { dialFromIso, DEFAULT_COUNTRY_ISO } from "composables/useCountries";
 
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppTextField from "components/common/AppTextField.vue";
@@ -210,8 +215,8 @@ const props = defineProps({
 const emit = defineEmits(["update:modelValue", "saved"]);
 
 const notify = useNotify();
-const { typeOptions, priorityOptions, load: loadOptionSets } = useRemsOptionSets();
-const { typeLabel } = useRemsMeta();
+const { typeOptions, load: loadOptionSets } = useRemsOptionSets();
+const { typeLabel, typeHint } = useRemsMeta();
 // Choosing who owns a request is its own right. Without it the picker is not offered and the request
 // reaches the pool the way it always did — the server enforces the same split on the way in.
 const { has } = usePermissions();
@@ -226,7 +231,6 @@ const blankForm = () => ({
   title: "",
   description: "",
   type: "",
-  priority: "medium",
   clientName: "",
   customerEmail: "",
   customerMobileNumber: "",
@@ -235,7 +239,12 @@ const blankForm = () => ({
 });
 
 const form = reactive(blankForm());
-const mobileCountry = ref(null);
+// The phone field works out a linked client's country from their number, but only while no dial code is
+// set on it, and it mirrors whatever it settles on back here. That mirror outlives the client it was
+// read from — the drawer is never unmounted — so every path that changes which client this is about
+// says what the country is now: back to the default, or blank so the next number can speak for itself.
+const DEFAULT_DIAL_CODE = dialFromIso(DEFAULT_COUNTRY_ISO);
+const mobileCountry = ref(DEFAULT_DIAL_CODE);
 const attachment = ref(null);
 const loadedStatus = ref(null);
 const formRef = ref(null);
@@ -396,7 +405,12 @@ const samePhone = (a, b) => {
 // untouched. Anything the partner typed or corrected since is theirs and stays.
 const releaseAutofill = () => {
   if (autofilled.email && sameEmail(form.customerEmail, autofilled.email)) form.customerEmail = "";
-  if (autofilled.phone && samePhone(form.customerMobileNumber, autofilled.phone)) form.customerMobileNumber = "";
+  if (autofilled.phone && samePhone(form.customerMobileNumber, autofilled.phone)) {
+    form.customerMobileNumber = "";
+    // The number brought the country with it, so it goes back too. Only on this branch: a partner who
+    // typed their own number picked the country that goes with it, and that one is not ours to reset.
+    mobileCountry.value = DEFAULT_DIAL_CODE;
+  }
   autofilled.email = "";
   autofilled.phone = "";
 };
@@ -418,6 +432,9 @@ const pickClient = (client) => {
     autofilled.email = client.email;
   }
   if (client.phone && !form.customerMobileNumber?.trim()) {
+    // Blanked first so this client's number decides the country. Left set, it would still read as the
+    // last client's — or as the default this one is about to be measured against.
+    mobileCountry.value = null;
     form.customerMobileNumber = client.phone;
     autofilled.phone = client.phone;
   }
@@ -544,13 +561,12 @@ const descriptionNotice = computed(() => {
   return `${descriptionLength.value} / ${DESCRIPTION_MAX} characters (formatting included)`;
 });
 
-// Save is enabled once the required intake fields are present: title, client, type, priority, and at
+// Save is enabled once the required intake fields are present: title, client, type, and at
 // least one contact channel (AC-REMS-004.7).
 const canSave = computed(() =>
   !!form.title?.trim() &&
   !!form.clientName?.trim() &&
   !!form.type &&
-  !!form.priority &&
   hasContact.value &&
   !descriptionTooLong.value &&
   !duplicateClientWarning.value);
@@ -558,7 +574,7 @@ const canSave = computed(() =>
 // ---- Reset / prefill ----
 const resetForm = () => {
   Object.assign(form, blankForm());
-  mobileCountry.value = null;
+  mobileCountry.value = DEFAULT_DIAL_CODE;
   attachment.value = null;
   loadedStatus.value = null;
   attempted.value = false;
@@ -582,9 +598,11 @@ const prefillFrom = (detail) => {
   form.title = detail.title || "";
   form.description = detail.description || "";
   form.type = detail.type || "";
-  form.priority = detail.priority || "medium";
   form.clientName = detail.clientName || "";
   form.customerEmail = detail.customerEmail || "";
+  // Same reason as picking a client: the saved number is the only record of its country, so the default
+  // this drawer opened on has to get out of the way before the number lands.
+  mobileCountry.value = null;
   form.customerMobileNumber = detail.customerMobileNumber || "";
   form.existingClientReferenceId = detail.existingClientReferenceId || null;
   loadedStatus.value = detail.status || null;
@@ -641,7 +659,7 @@ const doSave = async (submit) => {
   if (!canSave.value) {
     if (duplicateClientWarning.value) notify.warning(duplicateClientWarning.value);
     else if (descriptionTooLong.value) notify.warning("Shorten the message to admin — it is over the 500-character limit.");
-    else notify.warning("Complete the required fields: client, type, title, priority, and an email or phone number.");
+    else notify.warning("Complete the required fields: client, type, title, and an email or phone number.");
     return;
   }
   saving.value = true;
@@ -651,7 +669,6 @@ const doSave = async (submit) => {
         title: form.title,
         description: form.description || null,
         type: form.type,
-        priority: form.priority,
         clientName: form.clientName,
         customerEmail: form.customerEmail || null,
         customerMobileNumber: form.customerMobileNumber || null,
@@ -672,7 +689,6 @@ const doSave = async (submit) => {
         existingClientReferenceId: form.existingClientReferenceId || undefined,
         clientName: form.clientName,
         type: form.type,
-        priority: form.priority,
         title: form.title,
         description: form.description || undefined,
         customerEmail: form.customerEmail || undefined,
@@ -773,6 +789,9 @@ const doSave = async (submit) => {
   gap: 10px;
 }
 .rems-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 9px 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -783,6 +802,16 @@ const doSave = async (submit) => {
   line-height: 1.2;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+/* Inherits the chip's colour (currentColor), so it stays legible on both the plain and the selected
+   chip; held back a little so it reads as a hint rather than competing with the label. */
+.rems-chip__info {
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+.rems-chip:hover .rems-chip__info,
+.rems-chip--on .rems-chip__info {
+  opacity: 0.9;
 }
 .rems-chip:hover {
   border-color: var(--teal-300);

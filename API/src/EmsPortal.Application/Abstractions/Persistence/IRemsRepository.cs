@@ -40,10 +40,9 @@ public sealed record RemsRequestListOptions(
     string? ClientName,
     string? Contact,
     string? Status,
-    // Option-set CODES (REMS.Type / REMS.Priority), matched exactly — the label is the tenant's to
+    // Option-set CODE (REMS.Type), matched exactly — the label is the tenant's to
     // rename, the code is what the row stores.
     string? Type,
-    string? Priority,
     /// <summary>A specific owning admin. Distinct from <see cref="PoolFilter"/>, which asks
     /// unassigned/mine/any rather than naming somebody.</summary>
     Guid? AssignedAdminUserId,
@@ -131,4 +130,27 @@ public interface IRemsRepository
     /// unique index <c>(TenantId, REMSNumber) WHERE [Deleted] = 0</c> is the definitive guard.
     /// </summary>
     Task<bool> NumberExistsAsync(Guid tenantId, string number, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Whether any request other than <paramref name="excludingRemsId"/> names this person as its client —
+    /// either as the client person or as the existing-client it matched at intake. A person only one
+    /// request has ever referred to is that request's to keep in step with; once a second request points
+    /// at them they are a shared client record, and editing one request must not rename them underneath
+    /// the others.
+    /// </summary>
+    Task<bool> IsClientPersonSharedAsync(Guid personId, Guid excludingRemsId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Whether this client already has a request under this title. A client's requests are told apart by
+    /// their titles — on their engagement history, in the pool, in every notification — so two under one
+    /// title is a genuine ambiguity rather than a tidiness matter. Matched case-insensitively against the
+    /// tenant's active requests, and against both the client person and the intake reference so a request
+    /// that predates <c>ClientPersonId</c> still counts.
+    /// <para>
+    /// <c>excludingRemsId</c> is the request being edited, so a save that leaves the title alone is not a
+    /// clash with itself.
+    /// </para>
+    /// </summary>
+    Task<bool> TitleExistsForClientAsync(
+        Guid clientPersonId, string title, Guid? excludingRemsId, CancellationToken cancellationToken = default);
 }

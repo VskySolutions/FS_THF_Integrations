@@ -38,6 +38,7 @@ public sealed record CreateOptionItemInput(
     Guid OptionSetId,
     string Value,
     string Label,
+    string? Description,
     Guid? ParentItemId,
     bool IsDefault,
     string? BackgroundColor,
@@ -47,6 +48,7 @@ public sealed record CreateOptionItemInput(
 public sealed record UpdateOptionItemInput(
     string Value,
     string Label,
+    string? Description,
     Guid? ParentItemId,
     bool IsDefault,
     bool IsActive,

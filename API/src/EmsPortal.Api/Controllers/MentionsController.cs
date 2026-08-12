@@ -92,7 +92,8 @@ public sealed class MentionsController : ControllerBase
     public async Task<IActionResult> Candidates([FromQuery] string? search = null, CancellationToken cancellationToken = default)
     {
         // Tenant people who hold a login account are valid @mention targets.
-        var (people, _) = await _persons.ListAsync(search, null, isUser: true, isActive: true, page: 1, limit: 20, cancellationToken);
+        var (people, _) = await _persons.ListAsync(
+            search, null, isUser: true, isActive: true, page: 1, limit: 20, cancellationToken: cancellationToken);
         var data = people
             .Where(p => p.UserId.HasValue)
             .Select(p => new MentionCandidateResponse(

@@ -19,5 +19,18 @@ public sealed class EmailSendJob
     /// <paramref name="messageId"/> pins the outbound Message-ID when supplied (WO-121), else null.
     /// </summary>
     public Task SendAsync(Guid tenantId, EmailTemplateKey key, string? toEmail, Dictionary<string, string?> model, string? messageId, CancellationToken cancellationToken)
-        => _email.SendAsync(tenantId, key, toEmail, model, messageId, cancellationToken);
+        => _email.SendAsync(tenantId, key, toEmail, model, messageId, null, null, cancellationToken);
+
+    /// <summary>
+    /// As <see cref="SendAsync(Guid, EmailTemplateKey, string?, Dictionary{string, string?}, string?, CancellationToken)"/>,
+    /// but with a subject / body an admin composed themselves, which replace the rendered template's.
+    /// <para>
+    /// A SEPARATE method rather than two more optional parameters: Hangfire serialises the method call it
+    /// is given, so jobs already queued under the old signature must keep resolving after a deploy.
+    /// </para>
+    /// </summary>
+    public Task SendComposedAsync(
+        Guid tenantId, EmailTemplateKey key, string? toEmail, Dictionary<string, string?> model,
+        string? messageId, string? subjectOverride, string? bodyOverride, CancellationToken cancellationToken)
+        => _email.SendAsync(tenantId, key, toEmail, model, messageId, subjectOverride, bodyOverride, cancellationToken);
 }

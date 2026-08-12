@@ -43,7 +43,21 @@ public sealed record RemsFormBuildScreen(
     RemsFormInfo? Form);
 
 /// <summary>The pre-send preview (WO-112, AC-REMS-008.1): where the form link will be emailed, and the link itself.</summary>
-public sealed record RemsFormPreview(string? DestinationEmail, string FormLink);
+public sealed record RemsFormPreview(
+    string? DestinationEmail,
+    string FormLink,
+    // The effective template rendered with this request's values — exactly what the client would receive
+    // if the admin sent without touching it. Null when the tenant has no effective RemsFormLink template,
+    // which is also why nothing would be sent.
+    string? Subject,
+    string? Body);
+
+/// <summary>Send payload: the subject / body as the admin left them in the send dialog.</summary>
+public sealed class SendRemsFormRequest
+{
+    public string? Subject { get; set; }
+    public string? Body { get; set; }
+}
 
 /// <summary>
 /// A single email-delivery event row in the form email log (WO-112, AC-REMS-008.6), newest first.

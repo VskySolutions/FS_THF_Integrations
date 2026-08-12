@@ -103,9 +103,21 @@ watch(() => props.modelValue, (v) => {
     if (derived && derived !== iso.value) iso.value = derived;
   }
   display.value = formatNational(v, iso.value);
+  // The guard above asks "is this value already on screen?", so it has to follow what the parent wrote
+  // just as much as what we emitted. A number written in from outside and never typed over leaves it
+  // stale, and the parent's later write of the old value — usually "", a form clearing the field —
+  // then reads as our own echo and is skipped, stranding that number in the box.
+  lastEmitted = v || "";
 });
 
-watch(() => props.country, (v) => { const next = isoFromDial(v); if (next && next !== iso.value) iso.value = next; });
+// A dial code that already matches the current pick names no new country, so it is left alone: +1 is
+// the US and Canada both, and deriving an ISO back out of our own emitted code would overrule whichever
+// of the two isoFromDial does not favour — the selection would snap back the moment it was made.
+watch(() => props.country, (v) => {
+  if (!v || v === dialFromIso(iso.value)) return;
+  const next = isoFromDial(v);
+  if (next && next !== iso.value) iso.value = next;
+});
 
 watch(iso, (region) => {
   emit("update:country", dialFromIso(region));

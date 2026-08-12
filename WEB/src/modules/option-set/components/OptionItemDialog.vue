@@ -17,6 +17,16 @@
           @update:model-value="valueError = ''"
         />
 
+        <!-- Surfaced as this value's tooltip wherever it is offered or displayed, so a list whose
+             labels look alike can explain itself at the point of use. -->
+        <app-text-field
+          v-model="form.description"
+          label="Description"
+          type="textarea"
+          autogrow
+          hint="Optional. Shown as this value's tooltip wherever it appears."
+        />
+
         <!-- Cascading lists: tie this value to a parent-list item. -->
         <app-select
           v-if="parentOptions.length"
@@ -95,7 +105,7 @@ const notify = useNotify();
 const saving = ref(false);
 const valueError = ref("");
 
-const blankForm = () => ({ label: "", value: "", parentItemId: null, isDefault: false, isActive: true, backgroundColor: null, textColor: null });
+const blankForm = () => ({ label: "", value: "", description: "", parentItemId: null, isDefault: false, isActive: true, backgroundColor: null, textColor: null });
 const form = reactive(blankForm());
 
 const open = computed({
@@ -112,6 +122,7 @@ watch(
       Object.assign(form, blankForm(), {
         label: props.item.label,
         value: props.item.value,
+        description: props.item.description || "",
         parentItemId: props.item.parentItemId,
         isDefault: props.item.isDefault,
         isActive: props.item.isActive,
@@ -130,6 +141,7 @@ const submit = async () => {
     const payload = {
       label: form.label.trim(),
       value: form.value.trim(),
+      description: form.description.trim() || null,
       parentItemId: form.parentItemId || null,
       isDefault: form.isDefault,
       backgroundColor: form.backgroundColor || null,

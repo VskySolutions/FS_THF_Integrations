@@ -140,11 +140,6 @@ internal sealed class RemsRepository : IRemsRepository
             var t = options.Type.Trim();
             query = query.Where(r => r.Type == t);
         }
-        if (!string.IsNullOrWhiteSpace(options.Priority))
-        {
-            var t = options.Priority.Trim();
-            query = query.Where(r => r.Priority == t);
-        }
         if (options.AssignedAdminUserId is { } adminId)
         {
             query = query.Where(r => r.AdminAssignedToId == adminId);
@@ -203,4 +198,24 @@ internal sealed class RemsRepository : IRemsRepository
         => _dbContext.Rems
             .IgnoreQueryFilters()
             .AnyAsync(r => r.TenantId == tenantId && !r.Deleted && r.REMSNumber == number, cancellationToken);
+
+    // Soft-deleted requests are excluded (ambient filter): a withdrawn request holding the last reference
+    // to a person should not freeze that person's name for good.
+    // Case-insensitivity comes from the column's collation, which is what the database compares on; doing
+    // it here with ToLower() would only stop the index being used.
+    public Task<bool> TitleExistsForClientAsync(
+        Guid clientPersonId, string title, Guid? excludingRemsId, CancellationToken cancellationToken = default)
+        => _dbContext.Rems
+            .AnyAsync(
+                r => (r.ClientPersonId == clientPersonId || r.ExistingClientReferenceId == clientPersonId)
+                    && r.Title == title
+                    && (excludingRemsId == null || r.Id != excludingRemsId),
+                cancellationToken);
+
+    public Task<bool> IsClientPersonSharedAsync(Guid personId, Guid excludingRemsId, CancellationToken cancellationToken = default)
+        => _dbContext.Rems
+            .AnyAsync(
+                r => r.Id != excludingRemsId
+                    && (r.ClientPersonId == personId || r.ExistingClientReferenceId == personId),
+                cancellationToken);
 }

@@ -20,7 +20,9 @@ internal sealed class NotificationRepository : INotificationRepository
         => _dbContext.Notifications.FirstOrDefaultAsync(n => n.Id == id && n.UserId == userId, cancellationToken);
 
     public async Task<(IReadOnlyList<Notification> Items, int Total)> ListAsync(
-        Guid userId, bool? isRead, NotificationType? type, int page, int limit, CancellationToken cancellationToken = default)
+        Guid userId, bool? isRead, NotificationType? type, string? search,
+        DateTime? createdFromUtc, DateTime? createdToUtc,
+        int page, int limit, CancellationToken cancellationToken = default)
     {
         var query = _dbContext.Notifications.Where(n => n.UserId == userId);
         if (isRead is { } read)
@@ -30,6 +32,21 @@ internal sealed class NotificationRepository : INotificationRepository
         if (type is { } t)
         {
             query = query.Where(n => n.Type == t);
+        }
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            // Title and body together: the headline names the thing, the body carries the record number
+            // people actually search for ("REMS-0042").
+            var term = search.Trim();
+            query = query.Where(n => n.Title.Contains(term) || n.Body.Contains(term));
+        }
+        if (createdFromUtc is { } from)
+        {
+            query = query.Where(n => n.CreatedOnUtc >= from);
+        }
+        if (createdToUtc is { } to)
+        {
+            query = query.Where(n => n.CreatedOnUtc <= to);
         }
 
         var ordered = query.OrderByDescending(n => n.CreatedOnUtc);

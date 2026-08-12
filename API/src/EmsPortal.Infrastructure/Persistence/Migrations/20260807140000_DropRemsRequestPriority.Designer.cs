@@ -4,6 +4,7 @@ using EmsPortal.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace EmsPortal.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(EmsPortalDbContext))]
-    partial class EmsPortalDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260807140000_DropRemsRequestPriority")]
+    partial class DropRemsRequestPriority
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1146,10 +1149,6 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("DeletedOnUtc")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("Description")
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
-
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
@@ -1646,9 +1645,6 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("CSEId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid?>("ClientPersonId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<Guid?>("CreatedById")
                         .HasColumnType("uniqueidentifier");
 
@@ -1716,11 +1712,7 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CSEId");
 
-                    b.HasIndex("ClientPersonId");
-
                     b.HasIndex("TenantId");
-
-                    b.HasIndex("TenantId", "ClientPersonId");
 
                     b.HasIndex("TenantId", "REMSNumber")
                         .IsUnique()
@@ -1974,10 +1966,6 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.Property<string>("ReferralSource")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("ReferralSourceDetail")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
 
                     b.Property<Guid>("SourceFormSubmissionId")
                         .HasColumnType("uniqueidentifier");
@@ -4093,18 +4081,11 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CSEId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("EmsPortal.Domain.Entities.Person", "ClientPerson")
-                        .WithMany()
-                        .HasForeignKey("ClientPersonId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("EmsPortal.Domain.Entities.Tenant", null)
                         .WithMany()
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
-
-                    b.Navigation("ClientPerson");
                 });
 
             modelBuilder.Entity("EmsPortal.Domain.Entities.REMSApprovalChecklistItem", b =>

@@ -85,7 +85,7 @@
 import { ref, computed, watch } from "vue";
 import { remsApi, getApiErrorMessage } from "services/api";
 import { useDateFormat } from "composables/useDateFormat";
-import { useRemsMeta } from "modules/rems/useRemsMeta";
+import { useRemsMeta, isBusinessIndustryGroup } from "modules/rems/useRemsMeta";
 import { hasAddress, addressText } from "modules/rems/remsAddress";
 
 const props = defineProps({
@@ -95,7 +95,7 @@ const props = defineProps({
 const emit = defineEmits(["update:modelValue"]);
 
 const fmt = useDateFormat();
-const { industryGroupLabel, statusColor } = useRemsMeta();
+const { industryGroupLabel, statusColor, referralSourceLabel, referralSourceHint } = useRemsMeta();
 
 const open = computed({
   get: () => props.modelValue,
@@ -108,7 +108,7 @@ const errorMsg = ref("");
 
 const payload = computed(() => view.value?.payload || {});
 const isIndividual = computed(() => view.value?.industryGroup === "individual");
-const isBusiness = computed(() => view.value?.industryGroup === "business");
+const isBusiness = computed(() => isBusinessIndustryGroup(view.value?.industryGroup));
 const isGovernment = computed(() => view.value?.industryGroup === "government");
 
 const val = (v) => (v == null || v === "" ? "—" : v);
@@ -142,10 +142,12 @@ const groups = computed(() => {
     { label: "Client Name", value: val(p.clientName) },
     { label: "Email (locked)", value: val(view.value?.lockedEmail || p.email) },
     { label: "Mobile Number", value: val(p.mobileNumber) },
-    { label: "Referral Source", value: val(p.referralSource) }
+    { label: "Referral Source", value: referralSourceLabel(p.referralSource), hint: referralSourceHint(p.referralSource) },
+    { label: "Referral Details", value: val(p.referralSourceDetail) }
   ];
   if (isIndividual.value) {
     contact.push({ label: "Spouse Name", value: val(p.spouseName) });
+    contact.push({ label: "Spouse Email Address", value: val(p.spouseEmail) });
     contact.push({ label: "Spouse Phone", value: val(p.spousePhone) });
   }
   if (isBusiness.value) contact.push({ label: "EIN", value: val(p.ein) });

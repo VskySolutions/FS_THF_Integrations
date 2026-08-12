@@ -168,6 +168,9 @@ const sections = [
       { label: "My Account", icon: "o_manage_accounts", to: "/account", permissions: null },
       { label: "Profile", icon: "o_person", to: { name: "profile" }, permissions: null },
       { label: "Change Password", icon: "o_lock", to: { name: "change_password" }, permissions: null },
+      // The full list behind the bell's "View all". Named and ordered as the avatar menu has it, since
+      // both lead to the same four pages and reading differently in each is what makes one look missing.
+      { label: "My Notifications", icon: "o_notifications", to: { name: "uf_notifications" }, permissions: null },
       { label: "My Mentions", icon: "o_alternate_email", to: { name: "uf_mentions" }, permissions: null },
       { label: "My Pinned", icon: "o_push_pin", to: { name: "uf_pinned" }, permissions: null },
       { label: "Notification Preferences", icon: "o_tune", to: { name: "uf_notification_preferences" }, permissions: null },

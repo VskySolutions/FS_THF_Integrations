@@ -1,5 +1,6 @@
 using EmsPortal.Application.Abstractions.Persistence;
 using EmsPortal.Domain.Entities;
+using EmsPortal.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace EmsPortal.Infrastructure.Persistence.Repositories;
@@ -42,7 +43,8 @@ internal sealed class PersonRepository : IPersonRepository
         => _dbContext.Persons.AnyAsync(p => p.PersonCode == personCode, cancellationToken);
 
     public async Task<(IReadOnlyList<Person> Items, int Total)> ListAsync(
-        string? search, Guid? tenantId, bool? isUser, bool? isActive, int page, int limit, CancellationToken cancellationToken = default)
+        string? search, Guid? tenantId, bool? isUser, bool? isActive, int page, int limit,
+        EntityType? sourceEntityType = null, CancellationToken cancellationToken = default)
     {
         // Cross-tenant (Super Admin) reads pass an explicit tenant id and bypass the ambient filter;
         // everyone else gets the ambient-filtered set, pinned to their active tenant.
@@ -72,6 +74,10 @@ internal sealed class PersonRepository : IPersonRepository
         {
             query = query.Where(p => p.IsActive == active);
         }
+        if (sourceEntityType is { } source)
+        {
+            query = query.Where(p => p.SourceEntityType == source);
+        }
 
         var total = await query.CountAsync(cancellationToken);
         var items = await query
@@ -82,6 +88,17 @@ internal sealed class PersonRepository : IPersonRepository
 
         return (items, total);
     }
+
+    // Tenant-scoped and soft-delete-filtered by the ambient query filter. Equality (not ToLower) so the
+    // column's case-insensitive collation does the comparing and the index stays usable.
+    public Task<Person?> FindClientByEmailAsync(
+        string email, Guid? excludingPersonId, CancellationToken cancellationToken = default)
+        => _dbContext.Persons
+            .FirstOrDefaultAsync(
+                p => p.SourceEntityType == EntityType.Client
+                    && p.PrimaryEmail == email
+                    && (excludingPersonId == null || p.Id != excludingPersonId),
+                cancellationToken);
 
     public async Task<IReadOnlyList<(Person Person, bool IsUser)>> ListSelectableAsync(CancellationToken cancellationToken = default)
     {

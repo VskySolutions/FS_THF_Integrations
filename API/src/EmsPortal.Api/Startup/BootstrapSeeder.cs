@@ -202,6 +202,7 @@ public static class BootstrapSeeder
                     TenantId = null,
                     Value = i.Value,
                     Label = i.Label,
+                    Description = i.Description,
                     SortOrder = i.SortOrder,
                     IsActive = true,
                     MetadataJson = i.MetadataJson,

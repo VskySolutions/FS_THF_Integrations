@@ -58,6 +58,9 @@ public static class ActivityEventTypes
     public const string RemsFormBuilt = "RemsFormBuilt";
     public const string RemsFormSent = "RemsFormSent";
 
+    /// <summary>A client who had not submitted yet was chased. Repeatable — one row per reminder.</summary>
+    public const string RemsFormReminderSent = "RemsFormReminderSent";
+
     // ---- REMS public client form (WO-113) ----
     public const string RemsFormSubmitted = "RemsFormSubmitted";
 

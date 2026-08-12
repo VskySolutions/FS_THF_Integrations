@@ -49,6 +49,7 @@ public static class TenantOptionSetSeeder
                     TenantId = tenantId,
                     Value = i.Value,
                     Label = i.Label,
+                    Description = i.Description,
                     SortOrder = i.SortOrder,
                     IsActive = true,
                     MetadataJson = i.MetadataJson,

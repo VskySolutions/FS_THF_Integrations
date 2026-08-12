@@ -34,6 +34,9 @@ public class REMSClient : AuditableEntity
     /// <summary>How the client was referred (option-set code).</summary>
     public string? ReferralSource { get; set; }
 
+    /// <summary>The client's own follow-up detail for that referral source (who referred them, which event).</summary>
+    public string? ReferralSourceDetail { get; set; }
+
     /// <summary>Billing contact name.</summary>
     public string? BillingContactName { get; set; }
 

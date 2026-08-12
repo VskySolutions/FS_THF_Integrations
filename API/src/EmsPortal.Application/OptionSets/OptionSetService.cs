@@ -116,6 +116,7 @@ public sealed class OptionSetService : IOptionSetService
             ParentItemId = input.ParentItemId,
             Value = value,
             Label = input.Label.Trim(),
+            Description = NullIfBlank(input.Description),
             SortOrder = nextOrder,
             IsDefault = input.IsDefault,
             IsActive = true,
@@ -152,6 +153,7 @@ public sealed class OptionSetService : IOptionSetService
 
         item.Value = value;
         item.Label = input.Label.Trim();
+        item.Description = NullIfBlank(input.Description);
         item.ParentItemId = input.ParentItemId;
         item.IsDefault = input.IsDefault;
         item.IsActive = input.IsActive;

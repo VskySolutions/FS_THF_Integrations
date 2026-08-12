@@ -131,7 +131,8 @@ public sealed class PersonsController : ControllerBase
         // Super Admins may scope to any tenant; everyone else is pinned to their active tenant by the
         // ambient query filter (a client-supplied tenantId is ignored for non-Super-Admins).
         Guid? scopeTenant = User.IsSuperAdmin() && tenantId is { } tid ? tid : null;
-        var (items, total) = await _persons.ListAsync(search, scopeTenant, isUser, isActive, page, limit, cancellationToken);
+        var (items, total) = await _persons.ListAsync(
+            search, scopeTenant, isUser, isActive, page, limit, cancellationToken: cancellationToken);
         var names = await ResolveActorNamesAsync(items.SelectMany(p => new[] { p.CreatedById, p.UpdatedById }), cancellationToken);
         var summaries = items.Select(p => new PersonSummary(
             p.Id, p.PersonCode, p.FullName, p.PrimaryEmail, p.MobileNumber, p.JobTitle,

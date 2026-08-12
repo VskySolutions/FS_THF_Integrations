@@ -1,4 +1,5 @@
 using EmsPortal.Domain.Entities;
+using EmsPortal.Domain.Enums;
 
 namespace EmsPortal.Application.Abstractions.Persistence;
 
@@ -17,11 +18,30 @@ public interface IPersonRepository
 
     /// <summary>
     /// Paginated list with optional free-text search (name, email, person code) and optional
-    /// structured filters (owning tenant, whether the person is a user, active state) — all applied
-    /// server-side so pagination/totals reflect the filtered set.
+    /// structured filters (owning tenant, whether the person is a user, active state, provenance) — all
+    /// applied server-side so pagination/totals reflect the filtered set.
+    /// <para>
+    /// <c>sourceEntityType</c> narrows to persons of one provenance, e.g. <see cref="EntityType.Client"/>
+    /// for the REMS client picker. Null lists every person whatever their source, including the rows that
+    /// predate provenance tracking.
+    /// </para>
     /// </summary>
     Task<(IReadOnlyList<Person> Items, int Total)> ListAsync(
-        string? search, Guid? tenantId, bool? isUser, bool? isActive, int page, int limit, CancellationToken cancellationToken = default);
+        string? search, Guid? tenantId, bool? isUser, bool? isActive, int page, int limit,
+        EntityType? sourceEntityType = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The client already holding this email address, if any. An email reaches one inbox, so two client
+    /// records under one address are the same client entered twice — the second is refused rather than
+    /// filed. Scoped to clients (<see cref="EntityType.Client"/>): a colleague and a client may share an
+    /// address without either being a duplicate of the other.
+    /// <para>
+    /// <c>excludingPersonId</c> names a client to disregard — the one the calling request already minted,
+    /// so re-saving it is not a clash with itself.
+    /// </para>
+    /// </summary>
+    Task<Person?> FindClientByEmailAsync(
+        string email, Guid? excludingPersonId, CancellationToken cancellationToken = default);
 
     /// <summary>Lightweight projection for the user-create Person dropdown (id, name, email, user-link flag).</summary>
     Task<IReadOnlyList<(Person Person, bool IsUser)>> ListSelectableAsync(CancellationToken cancellationToken = default);

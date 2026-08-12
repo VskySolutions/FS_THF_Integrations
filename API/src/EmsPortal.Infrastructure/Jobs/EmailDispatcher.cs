@@ -20,6 +20,26 @@ internal sealed class EmailDispatcher : IEmailDispatcher
         _logger = logger;
     }
 
+    public void EnqueueComposed(
+        Guid tenantId,
+        EmailTemplateKey key,
+        string? toEmail,
+        IReadOnlyDictionary<string, string?> model,
+        string? subject,
+        string? body,
+        string? messageId = null)
+    {
+        if (!EmailSendPolicy.IsEmailAllowed(key))
+        {
+            _logger.LogWarning("Dropped email for template {TemplateKey} (tenant {TenantId}): not on the email allowlist; this type is in-app only.", key, tenantId);
+            return;
+        }
+
+        var payload = new Dictionary<string, string?>(model, StringComparer.OrdinalIgnoreCase);
+        _backgroundJobs.Enqueue<EmailSendJob>(job =>
+            job.SendComposedAsync(tenantId, key, toEmail, payload, messageId, subject, body, CancellationToken.None));
+    }
+
     public void Enqueue(Guid tenantId, EmailTemplateKey key, string? toEmail, IReadOnlyDictionary<string, string?> model, string? messageId = null)
     {
         // Central email allowlist (WO-124, AC-ETPL-005.5): never queue a job for an in-app-only type.

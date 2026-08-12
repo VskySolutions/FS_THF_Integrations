@@ -46,8 +46,16 @@
               <div class="row q-col-gutter-md">
                 <div v-for="item in infoRows" :key="item.label" class="col-12 col-sm-6">
                   <div class="rems-label">{{ item.label }}</div>
-                  <div v-if="item.type === 'priority'"><q-badge :color="priorityColor(detail.priority)">{{ priorityLabel(detail.priority) }}</q-badge></div>
-                  <div v-else class="rems-value">{{ item.value }}</div>
+                  <div class="rems-value">
+                    {{ item.value }}
+                    <!-- One value, not a column of them, so the icon can advertise the tooltip here. -->
+                    <template v-if="item.hint">
+                      <q-icon name="o_info" size="14px" class="rems-value__info" />
+                      <q-tooltip anchor="top middle" self="bottom middle" max-width="320px" :delay="300">
+                        {{ item.hint }}
+                      </q-tooltip>
+                    </template>
+                  </div>
                 </div>
               </div>
               <template v-if="detail.description">
@@ -131,7 +139,7 @@ const { confirm } = useConfirm();
 const { has } = usePermissions();
 const fmt = useDateFormat();
 const {
-  typeLabel, priorityLabel, priorityColor, requestStatusLabel, requestStatusColor,
+  typeLabel, typeHint, requestStatusLabel, requestStatusColor,
   emsStateLabel, submissionStateLabel
 } = useRemsMeta();
 
@@ -153,8 +161,7 @@ const infoRows = computed(() => {
   return [
     { label: "Request ID", value: d.remsNumber },
     { label: "Client", value: d.clientName || "—" },
-    { label: "Type", value: typeLabel(d.type) },
-    { label: "Priority", type: "priority" },
+    { label: "Type", value: typeLabel(d.type), hint: typeHint(d.type) },
     { label: "Status", value: requestStatusLabel(d) },
     { label: "Customer Email", value: d.customerEmail || "—" },
     { label: "Customer Mobile", value: d.customerMobileNumber || "—" },
@@ -251,6 +258,13 @@ onMounted(load);
   font-size: 14px;
   color: #2c3540;
   word-break: break-word;
+}
+/* Marks a value that carries an explanation on hover; muted so it hints rather than competes. */
+.rems-value__info {
+  margin-left: 4px;
+  color: var(--ink-300);
+  cursor: help;
+  vertical-align: text-bottom;
 }
 /* Rich-text description: keep the editor's paragraphs and lists readable inside the detail card. */
 .rems-value--rich :deep(p) {

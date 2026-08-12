@@ -70,13 +70,19 @@
                 <div class="row q-col-gutter-md">
                   <div v-for="item in requestRows" :key="item.label" class="col-12 col-sm-6">
                     <div class="rems-label">{{ item.label }}</div>
-                    <div v-if="item.type === 'priority'">
-                      <q-badge :color="priorityColor(request.priority)">{{ priorityLabel(request.priority) }}</q-badge>
-                    </div>
-                    <div v-else-if="item.type === 'status'">
+                    <div v-if="item.type === 'status'">
                       <q-badge :color="requestStatusColor(request)">{{ requestStatusLabel(request) }}</q-badge>
                     </div>
-                    <div v-else class="rems-value">{{ item.value }}</div>
+                    <div v-else class="rems-value">
+                      {{ item.value }}
+                      <!-- One value, not a column of them, so the icon can advertise the tooltip here. -->
+                      <template v-if="item.hint">
+                        <q-icon name="o_info" size="14px" class="rems-value__info" />
+                        <q-tooltip anchor="top middle" self="bottom middle" max-width="320px" :delay="300">
+                          {{ item.hint }}
+                        </q-tooltip>
+                      </template>
+                    </div>
                   </div>
                 </div>
 
@@ -455,7 +461,7 @@ const notify = useNotify();
 const { confirm } = useConfirm();
 const fmt = useDateFormat();
 const {
-  typeLabel, priorityLabel, priorityColor, requestStatusLabel, requestStatusColor,
+  typeLabel, typeHint, requestStatusLabel, requestStatusColor,
   industryGroupLabel, emsStateLabel, submissionStateLabel, departmentLabel, serviceLineLabel,
   approverRoleLabel, approverRoleIcon, approvalStatusLabel, approvalStatusColor, engagementStatusMeta
 } = useRemsMeta();
@@ -521,8 +527,7 @@ const requestRows = computed(() => {
     { label: "Request ID", value: r.remsNumber },
     { label: "Title", value: text(r.title) },
     { label: "Requested Client", value: text(r.requestedClientName) },
-    { label: "Type", value: typeLabel(r.type) },
-    { label: "Priority", type: "priority" },
+    { label: "Type", value: typeLabel(r.type), hint: typeHint(r.type) },
     { label: "Request Status", type: "status" },
     { label: "Customer Email", value: text(r.customerEmail) },
     { label: "Customer Mobile", value: text(r.customerMobileNumber) },
@@ -723,6 +728,8 @@ onMounted(load);
   margin-bottom: 2px;
 }
 .rems-value { font-size: 14px; color: #2c3540; word-break: break-word; }
+/* Marks a value that carries an explanation on hover; muted so it hints rather than competes. */
+.rems-value__info { margin-left: 4px; color: var(--ink-300); cursor: help; vertical-align: text-bottom; }
 /* Rich-text description: keep the request editor's paragraphs and lists readable inside the panel. */
 .rems-value--rich :deep(p) { margin: 0 0 0.5em; }
 .rems-value--rich :deep(p:last-child) { margin-bottom: 0; }

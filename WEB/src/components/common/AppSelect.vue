@@ -76,6 +76,9 @@ const props = defineProps({
   // Explains what this list is scoped to (a user group, a role, an option list). Use it whenever the
   // options are a filtered set — otherwise an empty or short dropdown just looks broken.
   info: { type: String, default: "" },
+  // Accessible name for a select with no visible label of its own — the dial-code picker inside
+  // AppPhoneInput, which sits under the phone field's single label. Ignored when `label` is set.
+  ariaLabel: { type: String, default: "" },
   loading: { type: Boolean, default: false },
   clearable: { type: Boolean, default: true },
   multiple: { type: Boolean, default: false },
@@ -159,8 +162,10 @@ const visibleOptions = computed(() => {
     optionText(opt).toLowerCase().includes(needle) || isSelectedOption(opt));
 });
 
-// Keep the control accessible now that the visible label is external.
-const { text: ariaLabel } = useFieldLabel(toRef(props, "label"), toRef(props, "required"));
+// Keep the control accessible now that the visible label is external — and still named when there is no
+// visible label at all.
+const { text: labelText } = useFieldLabel(toRef(props, "label"), toRef(props, "required"));
+const ariaLabel = computed(() => labelText.value || props.ariaLabel);
 </script>
 
 <style scoped>

@@ -114,11 +114,12 @@ const sections = [
     key: "rems",
     label: "REMS",
     icon: "o_business_center",
+    // Three lists, one per role. The Admin Pool and EMS Inbox are gone: the initiator now fills the whole
+    // request and sends the intake link themselves, so nothing ever waits in a pool to be picked up, and
+    // what used to be two admin queues is one review queue.
     items: [
-      { label: "Partner Dashboard", icon: "o_space_dashboard", to: "/rems/partner", permissions: [Permissions.RemsRequestsRead] },
-      { label: "Admin Pool", icon: "o_inbox", to: "/rems/admin-pool", permissions: [Permissions.RemsPoolRead] },
-      { label: "EMS Inbox", icon: "o_move_to_inbox", to: "/rems/ems-inbox", permissions: [Permissions.RemsFormsManage] },
-      { label: "Client Forms", icon: "o_dynamic_form", to: "/rems/client-forms", permissions: [Permissions.RemsEngagementsManage] },
+      { label: "My Requests", icon: "o_space_dashboard", to: "/rems/partner", permissions: [Permissions.RemsRequestsRead] },
+      { label: "EMS Review", icon: "o_fact_check", to: "/rems/ems-review", permissions: [Permissions.RemsEngagementsManage] },
       { label: "Approvals", icon: "o_approval", to: "/rems/approvals", permissions: null }
     ]
   },
@@ -154,7 +155,6 @@ const sections = [
       // but the lists are configuration and only Super Admin / Tenant Admin maintain them.
       { label: "Option Sets", icon: "o_list_alt", to: "/option-sets", permissions: [Permissions.OptionSetsManage] },
       { label: "Tag Management", icon: "o_label", to: "/settings/tags", permissions: [Permissions.SettingsManage] },
-      { label: "Saved Views", icon: "o_view_list", to: "/settings/saved-views", permissions: [Permissions.SettingsManage] },
       { label: "Sticky Notes", icon: "o_sticky_note_2", to: "/settings/sticky-notes", permissions: [Permissions.SettingsManage] },
       { label: "Modified Log", icon: "o_manage_history", to: "/settings/modified-log-config", permissions: [Permissions.SettingsManage] },
       { label: "Deleted Records", icon: "o_restore_from_trash", to: "/settings/retention", permissions: [Permissions.RecordsAdminDelete] }

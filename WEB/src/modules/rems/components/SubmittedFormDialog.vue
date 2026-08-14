@@ -32,8 +32,9 @@
             <div class="col-auto text-caption text-grey-7">Submitted {{ fmt.formatDateTime(view.submittedOnUtc) }}</div>
           </div>
 
-          <!-- Grouped exactly per AC-REMS-012.1 / 024.7: Contact · Contract Details · Other Entities ·
-               Address · Additional Contacts · Billing. Rendered as plain read-only text (AC-REMS-013.2). -->
+          <!-- Grouped exactly per AC-REMS-012.1 / 024.7: Contact · Addresses · Contract Details ·
+               Additional Contacts · Other Entities · Billing — the order the client was asked, so the
+               admin reads the answers as they were given. Plain read-only text (AC-REMS-013.2). -->
           <div v-for="g in groups" :key="g.title" class="submitted-group">
             <div class="submitted-group__title">
               <q-icon :name="g.icon" size="18px" class="q-mr-xs" />{{ g.title }}
@@ -60,7 +61,7 @@
             <div v-else-if="g.kind === 'entities'">
               <div v-if="g.rows.length" class="column q-gutter-sm">
                 <q-card v-for="(e, i) in g.rows" :key="e.key || i" flat bordered class="q-pa-sm entity-card">
-                  <div class="rems-value text-weight-medium">{{ e.businessName || "Unnamed entity" }}</div>
+                  <div class="rems-value text-weight-medium">{{ e.name || "Unnamed entity" }}</div>
                   <div v-for="r in e.rows" :key="r.label" class="field-row field-row--dense">
                     <div class="rems-label">{{ r.label }}</div>
                     <div class="rems-value">{{ r.value }}</div>
@@ -86,7 +87,7 @@ import { ref, computed, watch } from "vue";
 import { remsApi, getApiErrorMessage } from "services/api";
 import { useDateFormat } from "composables/useDateFormat";
 import { useRemsMeta, isBusinessIndustryGroup } from "modules/rems/useRemsMeta";
-import { hasAddress, addressText } from "modules/rems/remsAddress";
+import { addressText } from "modules/rems/remsAddress";
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -141,17 +142,35 @@ const groups = computed(() => {
   const contact = [
     { label: "Client Name", value: val(p.clientName) },
     { label: "Email (locked)", value: val(view.value?.lockedEmail || p.email) },
-    { label: "Mobile Number", value: val(p.mobileNumber) },
+    { label: "Phone Number", value: val(p.mobileNumber) },
     { label: "Referral Source", value: referralSourceLabel(p.referralSource), hint: referralSourceHint(p.referralSource) },
     { label: "Referral Details", value: val(p.referralSourceDetail) }
   ];
   if (isIndividual.value) {
-    contact.push({ label: "Spouse Name", value: val(p.spouseName) });
-    contact.push({ label: "Spouse Email Address", value: val(p.spouseEmail) });
-    contact.push({ label: "Spouse Phone", value: val(p.spousePhone) });
+    // Retired from the form — the spouse is a contact now, and shows under Additional Contacts. Still
+    // rendered when a snapshot carries them: this dialog is the record of what that client actually
+    // submitted, so it shows what was in the envelope.
+    if (p.spouseName) contact.push({ label: "Spouse Name", value: p.spouseName });
+    if (p.spouseEmail) contact.push({ label: "Spouse Email Address", value: p.spouseEmail });
+    if (p.spousePhone) contact.push({ label: "Spouse Phone", value: p.spousePhone });
   }
   if (isBusiness.value) contact.push({ label: "EIN", value: val(p.ein) });
   result.push({ title: "Contact", icon: "o_person", kind: "fields", rows: contact });
+
+  // Addresses — three of them, each stored in its own right. This used to show one address and a
+  // "Mailing address differs?" answer, from a time when the form asked exactly that; it now asks for
+  // three and offers a copy button, and `mailingDiffers` is never written. Branching on it hid the
+  // mailing address the client actually gave behind a flag that is always false.
+  result.push({
+    title: "Addresses",
+    icon: "o_place",
+    kind: "fields",
+    rows: [
+      { label: "Physical Address", value: addressText(p.physicalAddress) },
+      { label: "Mailing Address", value: addressText(p.mailingAddress) },
+      { label: "Billing Address", value: addressText(p.billingAddress) }
+    ]
+  });
 
   // Contract Details (Government / when any contract field present)
   const anyContract = [p.contractStartDate, p.contractEndDate, p.originalTerm, p.renewalTerms, p.poStartDate, p.poEndDate]
@@ -172,42 +191,33 @@ const groups = computed(() => {
     });
   }
 
-  // Other Entities (related businesses)
-  const entities = (p.relatedEntities || [])
-    .filter((e) => [e.businessName, e.ein, e.contactName].some((x) => x && String(x).trim()) ||
-      hasAddress(e.physicalAddress) || hasAddress(e.mailingAddress))
-    .map((e, i) => {
-      const rows = [];
-      if (e.ein) rows.push({ label: "EIN", value: e.ein });
-      if (e.contactName) rows.push({ label: "Contact", value: e.contactName });
-      if (hasAddress(e.physicalAddress)) rows.push({ label: "Physical Address", value: addressText(e.physicalAddress) });
-      if (hasAddress(e.mailingAddress)) rows.push({ label: "Mailing Address", value: addressText(e.mailingAddress) });
-      return { key: e.sourceKey || `entity-${i}`, businessName: e.businessName, rows };
-    });
-  result.push({ title: "Other Entities", icon: "o_apartment", kind: "entities", rows: entities });
-
-  // Address
-  const address = [
-    { label: "Physical Address", value: addressText(p.physicalAddress) },
-    { label: "Mailing address differs?", value: p.mailingDiffers ? "Yes" : "No" }
-  ];
-  if (p.mailingDiffers) address.push({ label: "Mailing Address", value: addressText(p.mailingAddress) });
-  result.push({ title: "Address", icon: "o_place", kind: "fields", rows: address });
-
   // Additional Contacts (role contacts)
   const roles = p.roles || {};
   const contactRows = ROLE_ORDER.filter((k) => roleHasAny(roles[k])).map((k) => ({ role: ROLE_LABELS[k], ...roles[k] }));
   result.push({ title: "Additional Contacts", icon: "o_groups", kind: "contacts", rows: contactRows });
 
-  // Billing
+  // Other Entities — a contact each, not a second set of business details. The payload node is
+  // { fullName, emailAddress, phoneNumber }: the business name, EIN and addresses went when an additional
+  // entity became a CONTACT to raise a separate request from. This read the retired shape, so the filter
+  // dropped every row and the dialog reported no entities over the ones the client had named.
+  const entities = (p.relatedEntities || [])
+    .filter((e) => [e.fullName, e.emailAddress, e.phoneNumber].some((x) => x && String(x).trim()))
+    .map((e, i) => {
+      const rows = [];
+      if (e.emailAddress) rows.push({ label: "Email Address", value: e.emailAddress });
+      if (e.phoneNumber) rows.push({ label: "Phone Number", value: e.phoneNumber });
+      return { key: e.sourceKey || `entity-${i}`, name: e.fullName, rows };
+    });
+  result.push({ title: "Other Entities", icon: "o_apartment", kind: "entities", rows: entities });
+
+  // Billing — the person to bill. The billing address is shown once, up in Addresses with the other two.
   result.push({
     title: "Billing",
     icon: "o_receipt_long",
     kind: "fields",
     rows: [
       { label: "Billing Contact", value: val(p.billingContactName) },
-      { label: "Billing Email", value: val(p.billingEmail) },
-      { label: "Billing Address", value: addressText(p.billingAddress) }
+      { label: "Billing Email", value: val(p.billingEmail) }
     ]
   });
 

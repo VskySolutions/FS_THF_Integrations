@@ -13,8 +13,9 @@ namespace EmsPortal.Api.Validators.Rems;
 /// <c>ApiResponseFactory.ValidationError</c>.
 /// <para>
 /// Required per group: Individual → <c>self</c>; Business → <c>ein</c> + <c>ceo</c>/<c>cfo</c>/
-/// <c>accountsPayable</c>; Government → <c>financeDirector</c>. Every entity's physical address and each
-/// related entity's business name are required; a required role must carry name, email and phone.
+/// <c>accountsPayable</c>; Government → <c>financeDirector</c>. Every entity's physical address is
+/// required, as are each related entity's name and email address; a required role must carry name and a
+/// valid email.
 /// </para>
 /// </summary>
 public sealed class RemsFormPayloadValidator
@@ -108,14 +109,27 @@ public sealed class RemsFormPayloadValidator
             failures.Add(new ValidationFailure("industryGroup", $"Unsupported industry group '{industryGroup}'."));
         }
 
-        // ---- Related entities ----
+        // ---- Additional entities ----
+        // Each row is another of the client's businesses for the firm to set up separately, so it needs a
+        // name to file it under and an address to reach it on. The email is not one of two ways to make the
+        // row reachable any more: the request this row exists to prompt is opened by emailing an intake
+        // form, so a row without an address becomes nothing. The phone stays optional, as on every contact.
         for (var i = 0; i < payload.RelatedEntities.Count; i++)
         {
             var related = payload.RelatedEntities[i];
-            if (string.IsNullOrWhiteSpace(related.BusinessName))
+            RequireField(
+                failures, $"relatedEntities[{i}].fullName", related.FullName,
+                "A client / entity name is required for each additional entity.");
+
+            if (string.IsNullOrWhiteSpace(related.EmailAddress))
             {
                 failures.Add(new ValidationFailure(
-                    $"relatedEntities[{i}].businessName", "Business name is required for each related entity."));
+                    $"relatedEntities[{i}].emailAddress", "An email address is required for each additional entity."));
+            }
+            else if (!IsEmail(related.EmailAddress))
+            {
+                failures.Add(new ValidationFailure(
+                    $"relatedEntities[{i}].emailAddress", "Email is not a valid email address."));
             }
         }
 

@@ -30,7 +30,8 @@ export const Permissions = Object.freeze({
   RemsRequestsUpdate: "rems.requests.update",
   RemsRequestsDelete: "rems.requests.delete",
   RemsRequestsAssign: "rems.requests.assign",
-  RemsPoolRead: "rems.pool.read",
+  // rems.pool.read is gone with the Admin Pool — nothing waits in a shared pool to be picked up now that
+  // the initiator fills the whole request and sends the intake link themselves.
   RemsFormsManage: "rems.forms.manage",
   RemsFormsSend: "rems.forms.send",
   RemsEmailLogRead: "rems.emailLog.read",

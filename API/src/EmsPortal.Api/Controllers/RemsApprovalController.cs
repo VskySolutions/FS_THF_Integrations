@@ -295,6 +295,58 @@ public sealed class RemsApprovalController : ControllerBase
     /// approved/rejected/total counts so the inbox can show its progress — the row is still the caller's own
     /// task, and no other approver's identity is exposed here.
     /// </summary>
+    /// <summary>
+    /// Every approval round on an engagement, oldest first — who sent it, what each approver decided, why
+    /// they declined, how far their checklist got, and how the declines stood against the threshold.
+    /// <para>
+    /// Gated on reading REMS requests rather than on managing engagements: the initiator has to be able to
+    /// see why a round came back, and reworking the setup is now their job.
+    /// </para>
+    /// </summary>
+    [HttpGet("engagements/{id:guid}/approval/history")]
+    [RequirePermission(Permissions.RemsRequestsRead)]
+    [ProducesResponseType<ApiResponse<IEnumerable<RemsApprovalRoundHistory>>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> History(Guid id, CancellationToken cancellationToken)
+    {
+        if (await _engagements.GetByIdAsync(id, cancellationToken) is null)
+        {
+            return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
+        }
+
+        var rounds = await _approvals.GetRoundsByEngagementAsync(id, cancellationToken);
+        var names = await _users.GetFullNamesAsync(
+            rounds.SelectMany(r => r.Tasks.Select(t => t.ApproverId)).Concat(rounds.Select(r => r.SentByUserId)),
+            cancellationToken);
+
+        string Name(Guid userId) => names.TryGetValue(userId, out var n) ? n : "Unknown user";
+
+        var history = rounds
+            .OrderBy(r => r.RoundNumber)
+            .Select(r =>
+            {
+                var tasks = r.Tasks.Where(t => !t.Deleted).ToList();
+                return new RemsApprovalRoundHistory(
+                    r.Id, r.RoundNumber, r.Status.ToString(), r.SentOnUtc, Name(r.SentByUserId), r.CompletedOnUtc,
+                    RemsApprovalThreshold.EffectiveFor(tasks.Count),
+                    tasks.Count(t => t.Status == RemsApprovalTaskStatus.Rejected),
+                    tasks
+                        .OrderBy(t => t.ApproverRole)
+                        .ThenBy(t => t.CreatedOnUtc)
+                        .Select(t =>
+                        {
+                            var items = t.ChecklistItems.Where(i => !i.Deleted).ToList();
+                            return new RemsApprovalRoundDecision(
+                                t.Id, Name(t.ApproverId), t.ApproverRole.ToString(), t.Status.ToString(),
+                                t.DecidedOnUtc, t.RejectionReason,
+                                items.Count(i => i.IsCompleted), items.Count);
+                        })
+                        .ToList());
+            })
+            .ToList();
+
+        return Ok(ApiResponseFactory.Success(history, "REMS approval history retrieved."));
+    }
+
     [HttpGet("approval-tasks")]
     [Authorize]
     [ProducesResponseType<ApiResponse<IEnumerable<RemsApprovalTaskRow>>>(StatusCodes.Status200OK)]
@@ -333,12 +385,14 @@ public sealed class RemsApprovalController : ControllerBase
         {
             var round = t.Round!;
             var engagement = round.Engagement!;
-            var client = engagement.Entity!.Client!;
-            var rems = client.Rems!;
+            var rems = engagement.Rems!;
+            var client = ClientOf(engagement);
             return new RemsApprovalTaskRow(
                 t.Id, round.Id, round.RoundNumber, t.ApproverRole.ToString(), t.Status.ToString(),
                 round.SentOnUtc, t.DecidedOnUtc, round.Status.ToString(),
-                engagement.Id, rems.Id, rems.REMSNumber, client.Name, engagement.Entity!.Name,
+                // The client's name as they gave it on intake, falling back to the name the request was
+                // raised under when the row is somehow reached before a submission exists.
+                engagement.Id, rems.Id, rems.REMSNumber, client?.Name ?? rems.RequestedClientName,
                 round.Tasks.Count(x => x.Status == RemsApprovalTaskStatus.Approved),
                 round.Tasks.Count(x => x.Status == RemsApprovalTaskStatus.Rejected),
                 round.Tasks.Count,
@@ -452,16 +506,21 @@ public sealed class RemsApprovalController : ControllerBase
 
         var now = DateTime.UtcNow;
         var engagement = round.Engagement!;
-        var rems = engagement.Entity!.Client!.Rems!;
+        var rems = engagement.Rems!;
 
         task.Status = RemsApprovalTaskStatus.Approved;
         task.DecidedOnUtc = now;
         _approvals.UpdateTask(task);
         await _activity.WriteAsync(new CreateActivityEventDto(EntityType.Rems, rems.Id, ActivityEventTypes.RemsApproved, null, task.ApproverRole.ToString()), cancellationToken);
 
-        // When this was the last pending task, the whole round is approved: flip the round + engagement and
-        // raise the full-approval notification EXACTLY ONCE to everyone involved (AC-REMS-019.1/12).
-        var fullyApproved = round.Tasks.All(t => t.Status == RemsApprovalTaskStatus.Approved);
+        // The round is settled once nobody is still deciding. It cannot require EVERY task to be approved
+        // any more: a single decline no longer closes the round, so a round holding one decline and
+        // otherwise approvals would never satisfy that test and would sit open forever with no pending task
+        // left to move it. Below the decline threshold the objection is outvoted and the round carries.
+        // (A round that REACHED the threshold was closed by Reject and is not Pending, so it cannot land
+        // here.) Flip the round + engagement and raise the full-approval notification EXACTLY ONCE to
+        // everyone involved (AC-REMS-019.1/12).
+        var fullyApproved = round.Tasks.All(t => t.Id == task.Id || t.Status != RemsApprovalTaskStatus.Pending);
         if (fullyApproved)
         {
             round.Status = RemsApprovalRoundStatus.Approved;
@@ -470,7 +529,7 @@ public sealed class RemsApprovalController : ControllerBase
 
             engagement.Status = RemsEngagementStatus.Approved;
             _engagements.Update(engagement);
-            await SyncRequestStatusAsync(rems, engagement, cancellationToken);
+            SyncRequestStatus(rems, engagement);
 
             var involved = new HashSet<Guid>(round.Tasks.Select(t => t.ApproverId)) { round.SentByUserId };
             if (rems.CSEId is { } cse)
@@ -488,7 +547,7 @@ public sealed class RemsApprovalController : ControllerBase
                 await _notifications.DispatchAsync(new CreateNotificationDto(
                     userId, NotificationType.RemsEngagementApproved,
                     "A REMS engagement was fully approved",
-                    $"{rems.REMSNumber} — {rems.Title}", EntityType.Rems, rems.Id), cancellationToken);
+                    $"{rems.REMSNumber} — {rems.RequestedClientName}", EntityType.Rems, rems.Id), cancellationToken);
             }
             await _activity.WriteAsync(new CreateActivityEventDto(EntityType.Rems, rems.Id, ActivityEventTypes.RemsFullyApproved), cancellationToken);
         }
@@ -500,9 +559,20 @@ public sealed class RemsApprovalController : ControllerBase
     }
 
     /// <summary>
-    /// Reject the caller's own task with a required reason (AC-REMS-020). Ends the round and sets the
-    /// engagement to Rejected; the reason is retained (visible to CSE + Admin) until resubmission, and the
-    /// sender and CSE are notified.
+    /// Decline the caller's own task with a required reason (AC-REMS-020).
+    /// <para>
+    /// One decline no longer ends a round. The round closes when
+    /// <see cref="RemsApprovalThreshold.Declines"/> approvers have declined, so a lone objector is outvoted
+    /// rather than decisive — with four approvals against one decline the engagement is approved over that
+    /// objection. Approvers still pending when the threshold is reached are marked
+    /// <see cref="RemsApprovalTaskStatus.Superseded"/> rather than left Pending on a closed round, which
+    /// would read as though they never responded.
+    /// </para>
+    /// <para>
+    /// A closed round sends the request back to its INITIATOR to rework the engagement setup, not to the
+    /// admin. Each decliner's own reason is the record of why — the round's single
+    /// <c>RejectionReason</c> cannot hold several, so it carries only the decline that closed the round.
+    /// </para>
     /// </summary>
     [HttpPost("approval-tasks/{taskId:guid}/reject")]
     [Authorize]
@@ -533,42 +603,81 @@ public sealed class RemsApprovalController : ControllerBase
         var now = DateTime.UtcNow;
         var reason = request.Reason.Trim();
         var engagement = round.Engagement!;
-        var rems = engagement.Entity!.Client!.Rems!;
+        var rems = engagement.Rems!;
 
         task.Status = RemsApprovalTaskStatus.Rejected;
         task.DecidedOnUtc = now;
         task.RejectionReason = reason;
         _approvals.UpdateTask(task);
+        await _activity.WriteAsync(new CreateActivityEventDto(EntityType.Rems, rems.Id, ActivityEventTypes.RemsRejected, null, reason), cancellationToken);
 
-        // A single rejection ends the round and returns the engagement for rework.
+        // Counted over the round's own tasks, with this one substituted: it is not committed yet, so the
+        // stored copy still reads Pending.
+        var declines = round.Tasks.Count(t => t.Id == task.Id || t.Status == RemsApprovalTaskStatus.Rejected);
+        var threshold = RemsApprovalThreshold.EffectiveFor(round.Tasks.Count);
+        var closesRound = declines >= threshold;
+
+        if (!closesRound)
+        {
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            var openView = await BuildTaskViewAsync(task, cancellationToken);
+            return Ok(ApiResponseFactory.Success(
+                openView,
+                $"Declined. {declines} of {threshold} declines needed to send this back — the round is still open."));
+        }
+
         round.Status = RemsApprovalRoundStatus.Rejected;
         round.CompletedOnUtc = now;
         round.RejectionReason = reason;
         _approvals.UpdateRound(round);
 
+        // Everyone who had not decided by the time the round closed. Their task is over, but they did not
+        // decline it — Superseded is the difference.
+        foreach (var pending in round.Tasks.Where(t => t.Id != task.Id && t.Status == RemsApprovalTaskStatus.Pending))
+        {
+            pending.Status = RemsApprovalTaskStatus.Superseded;
+            pending.DecidedOnUtc = now;
+            _approvals.UpdateTask(pending);
+        }
+
         engagement.Status = RemsEngagementStatus.Rejected;
         _engagements.Update(engagement);
-        await SyncRequestStatusAsync(rems, engagement, cancellationToken);
+        SyncRequestStatus(rems, engagement);
 
-        // Notify the sender and CSE (the reason is retained on the round/task, visible to CSE + Admin).
+        // Every decline's own reason, so the notice explains the round rather than only its last vote.
+        var reasons = round.Tasks
+            .Where(t => t.Id == task.Id || t.Status == RemsApprovalTaskStatus.Rejected)
+            .Select(t => t.Id == task.Id ? reason : t.RejectionReason)
+            .Where(r => !string.IsNullOrWhiteSpace(r))
+            .ToList();
+
+        // The initiator owns the rework now, so they are told first; the sender and CSE still need to know
+        // the round is over.
         var recipients = new HashSet<Guid> { round.SentByUserId };
         if (rems.CSEId is { } cse)
         {
             recipients.Add(cse);
         }
+        if (rems.CreatedById is { } initiator)
+        {
+            recipients.Add(initiator);
+        }
+        if (rems.AdminAssignedToId is { } admin)
+        {
+            recipients.Add(admin);
+        }
         foreach (var userId in recipients)
         {
             await _notifications.DispatchAsync(new CreateNotificationDto(
                 userId, NotificationType.RemsEngagementRejected,
-                "A REMS engagement approval was rejected",
-                $"{rems.REMSNumber} — {rems.Title}: {reason}", EntityType.Rems, rems.Id), cancellationToken);
+                "A REMS engagement approval round was declined",
+                $"{rems.REMSNumber} — {rems.RequestedClientName}: {string.Join(" | ", reasons)}", EntityType.Rems, rems.Id), cancellationToken);
         }
-        await _activity.WriteAsync(new CreateActivityEventDto(EntityType.Rems, rems.Id, ActivityEventTypes.RemsRejected, null, reason), cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var view = await BuildTaskViewAsync(task, cancellationToken);
-        return Ok(ApiResponseFactory.Success(view, "Task rejected."));
+        return Ok(ApiResponseFactory.Success(view, "Declined. The round is closed and the request is back with its initiator."));
     }
 
     // -------------------- Request-status roll-up --------------------
@@ -578,28 +687,28 @@ public sealed class RemsApprovalController : ControllerBase
     /// the work is actually at instead of staying on "Engagement Setup" for the whole approval cycle — which
     /// is what left a requester with no way to tell that their request was sitting with the approvers.
     /// <para>
-    /// A request carries one engagement per entity, so the status is a roll-up. Rework outranks in-flight
-    /// approval: with one engagement rejected and another still pending, "Changes Requested" is the state
-    /// that someone has to act on. <paramref name="current"/> is the engagement whose status this request
-    /// just changed — it is not committed yet, so its in-memory status is substituted for the stored one.
+    /// This used to be a roll-up across one engagement per entity. A request now carries exactly one, so it
+    /// is a straight translation — <paramref name="current"/> is that engagement, not yet committed, so its
+    /// in-memory status is what the request follows.
+    /// </para>
+    /// <para>
+    /// A rejected engagement sends the request to the INITIATOR rather than back to the admin: enough
+    /// approvers declined to close the round, and reworking the setup is the initiator's job. The admin
+    /// sees it again when they hand it back for confirmation.
     /// </para>
     /// The REMS row is loaded tracked (via the task/engagement context include), so mutating its status is
     /// picked up by change tracking and committed with the rest of the operation.
     /// </summary>
-    private async Task SyncRequestStatusAsync(REMS rems, REMSEngagement current, CancellationToken cancellationToken)
-    {
-        var rows = await _engagements.ListStatusesByRemsIdAsync(rems.Id, cancellationToken);
-        var statuses = rows.Select(r => r.Id == current.Id ? current.Status : r.Status).ToList();
-        if (statuses.Count == 0)
+    private static void SyncRequestStatus(REMS rems, REMSEngagement current)
+        => rems.Status = current.Status switch
         {
-            return; // No engagements yet — the request has not reached the setup stage at all.
-        }
-
-        rems.Status = statuses.All(s => s == RemsEngagementStatus.Approved) ? RemsRequestStatuses.Approved
-            : statuses.Any(s => s == RemsEngagementStatus.Rejected) ? RemsRequestStatuses.ChangesRequested
-            : statuses.Any(s => s == RemsEngagementStatus.PendingApproval) ? RemsRequestStatuses.PendingApproval
-            : RemsRequestStatuses.EngagementSetup;
-    }
+            RemsEngagementStatus.Approved => RemsRequestStatuses.Approved,
+            RemsEngagementStatus.Rejected => RemsRequestStatuses.ChangesRequested,
+            RemsEngagementStatus.PendingApproval => RemsRequestStatuses.PendingApproval,
+            // Back to Draft only happens if an engagement is reset, which nothing does today. Admin Review
+            // is where such a request belongs: the client's answers are in and somebody has to look at it.
+            _ => RemsRequestStatuses.AdminReview,
+        };
 
     // -------------------- Approver-list generation --------------------
 
@@ -646,10 +755,18 @@ public sealed class RemsApprovalController : ControllerBase
     /// recipient. The department director and the managing shareholder are not automatic — they are added
     /// on the Approval tab like anyone else.
     /// </summary>
+    /// <summary>
+    /// The client materialised from the request's intake, or null before the client has submitted. Clients
+    /// is a collection at the EF level — one active row, enforced by a filtered unique index — because the
+    /// engagement now hangs off the request rather than off the client's entity.
+    /// </summary>
+    private static REMSClient? ClientOf(REMSEngagement engagement)
+        => engagement.Rems?.Clients.FirstOrDefault(c => !c.Deleted);
+
     private static List<Guid> AutomaticApproverIds(REMSEngagement engagement)
     {
         var ids = new List<Guid>();
-        if (engagement.Entity?.Client?.Rems?.CSEId is { } cse)
+        if (engagement.Rems?.CSEId is { } cse)
         {
             ids.Add(cse);
         }
@@ -664,7 +781,7 @@ public sealed class RemsApprovalController : ControllerBase
     /// </summary>
     private static RemsApproverRole RoleFor(REMSEngagement engagement, Guid? managingShareholderId, Guid userId)
     {
-        if (engagement.Entity?.Client?.Rems?.CSEId == userId)
+        if (engagement.Rems?.CSEId == userId)
         {
             return RemsApproverRole.CSE;
         }
@@ -756,7 +873,7 @@ public sealed class RemsApprovalController : ControllerBase
         Guid actorId, bool isResubmission, CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
-        var rems = engagement.Entity!.Client!.Rems!;
+        var rems = engagement.Rems!;
 
         var roundNumber = await _approvals.GetNextRoundNumberAsync(engagement.Id, cancellationToken);
         var round = new REMSApprovalRound
@@ -798,7 +915,7 @@ public sealed class RemsApprovalController : ControllerBase
 
         engagement.Status = RemsEngagementStatus.PendingApproval;
         _engagements.Update(engagement);
-        await SyncRequestStatusAsync(rems, engagement, cancellationToken);
+        SyncRequestStatus(rems, engagement);
 
         // Notify every approver (once per user, even if they hold multiple role tasks).
         foreach (var userId in approvers.Select(a => a.UserId).Distinct())
@@ -806,7 +923,7 @@ public sealed class RemsApprovalController : ControllerBase
             await _notifications.DispatchAsync(new CreateNotificationDto(
                 userId, NotificationType.RemsApprovalRequested,
                 isResubmission ? "A REMS engagement was resubmitted for your approval" : "A REMS engagement needs your approval",
-                $"{rems.REMSNumber} — {rems.Title}", EntityType.Rems, rems.Id), cancellationToken);
+                $"{rems.REMSNumber} — {rems.RequestedClientName}", EntityType.Rems, rems.Id), cancellationToken);
         }
 
         var listText = string.Join(", ", approvers.Select(a => $"{a.UserId}:{a.Role}"));
@@ -836,12 +953,17 @@ public sealed class RemsApprovalController : ControllerBase
     {
         var round = task.Round!;
         var engagement = round.Engagement!;
-        var client = engagement.Entity!.Client!;
+        var client = ClientOf(engagement)!;
 
-        // The task-context graph stops at the entity: its addresses/contacts, the conditional engagement
-        // detail and the request's files each need their own load.
-        var entity = await _clients.GetEntityAsync(engagement.REMSEntityId, cancellationToken) ?? engagement.Entity!;
-        var rems = await _rems.GetByIdAsync(client.REMSId, cancellationToken) ?? client.Rems!;
+        // The task-context graph stops at the client's entities: their addresses/contacts, the conditional
+        // engagement detail and the request's files each need their own load. The engagement no longer
+        // names an entity, so the packet reviews the client's MAIN one — the business being engaged.
+        var mainEntity = client.Entities.FirstOrDefault(e => !e.Deleted && e.IsMainEntity)
+            ?? client.Entities.FirstOrDefault(e => !e.Deleted);
+        var entity = mainEntity is null
+            ? null
+            : await _clients.GetEntityAsync(mainEntity.Id, cancellationToken) ?? mainEntity;
+        var rems = await _rems.GetByIdAsync(client.REMSId, cancellationToken) ?? engagement.Rems!;
         var audit = await _engagements.GetAuditDetailAsync(engagement.Id, cancellationToken);
         var government = await _engagements.GetGovernmentDetailAsync(engagement.Id, cancellationToken);
         var tax = await _engagements.GetTaxDetailAsync(engagement.Id, cancellationToken);
@@ -857,7 +979,7 @@ public sealed class RemsApprovalController : ControllerBase
 
         var (emsFormState, clientSubmissionState) = RemsWorkspaceMapper.FormState(formState);
         var requestView = new RemsApprovalRequestView(
-            rems.Id, rems.REMSNumber, rems.Title, rems.Description, rems.RequestedClientName,
+            rems.Id, rems.REMSNumber, rems.Description, rems.RequestedClientName,
             rems.Type, rems.Status, rems.CustomerEmail, rems.CustomerMobileNumber,
             formState?.IndustryGroup, emsFormState, clientSubmissionState,
             RemsWorkspaceMapper.UserRef(rems.AdminAssignedToId, names),
@@ -941,7 +1063,7 @@ public sealed class RemsApprovalController : ControllerBase
 
         var clientView = new RemsApprovalClientView(
             client.Id, client.Name, client.Email, client.MobileNumber, client.ReferralSource,
-            client.BillingContactName, client.BillingEmail, RemsWorkspaceMapper.Address(client.BillingAddress),
+            client.BillingContactName, client.BillingEmail,
             client.Entities
                 .Where(e => !e.Deleted)
                 .OrderByDescending(e => e.IsMainEntity)
@@ -964,6 +1086,8 @@ public sealed class RemsApprovalController : ControllerBase
             engagement.Status.ToString(),
             engagement.Department,
             engagement.ServiceLine,
+            engagement.SubServiceLine,
+            engagement.SubIndustry,
             clientView,
             entityView,
             RemsWorkspaceMapper.UserRef(engagement.DepartmentDirectorId, names),

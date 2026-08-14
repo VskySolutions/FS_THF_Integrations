@@ -57,7 +57,8 @@ public sealed record RemsApprovalTaskRow(
     Guid RemsId,
     string RemsNumber,
     string ClientName,
-    string EntityName,
+    // No EntityName: an approval is about a request and its single engagement now, so the entity's name
+    // only ever repeated the client's.
     int ApprovedCount,
     int RejectedCount,
     int ApproverCount,
@@ -104,7 +105,6 @@ public sealed record RemsApprovalTaskView(
 public sealed record RemsApprovalRequestView(
     Guid RemsId,
     string RemsNumber,
-    string Title,
     string? Description,
     string RequestedClientName,
     string Type,
@@ -131,6 +131,8 @@ public sealed record RemsApprovalEngagementView(
     string Status,
     string? Department,
     string? ServiceLine,
+    string? SubServiceLine,
+    string? SubIndustry,
     RemsApprovalClientView Client,
     RemsApprovalEntityView Entity,
     RemsUserRef? DepartmentDirector,
@@ -145,6 +147,35 @@ public sealed record RemsApprovalEngagementView(
     IReadOnlyList<RemsApprovalOptionRef> MarketingMethods,
     IReadOnlyList<RemsCommissionSplitView> CommissionSplits);
 
+/// <summary>
+/// One approval round as history. Rounds are immutable and numbered from 1: a resubmission creates a new
+/// one rather than resetting the last, so the list is the whole record of what the approvers did.
+/// </summary>
+public sealed record RemsApprovalRoundHistory(
+    Guid RoundId,
+    int RoundNumber,
+    string Status,
+    DateTime SentOnUtc,
+    string? SentBy,
+    DateTime? CompletedOnUtc,
+    // What it would have taken to close this round, and how close it got — a round that carried with one
+    // decline against it reads very differently from a unanimous one.
+    int DeclineThreshold,
+    int DeclineCount,
+    IReadOnlyList<RemsApprovalRoundDecision> Decisions);
+
+/// <summary>One approver's decision within a round, with the checklist they worked through.</summary>
+public sealed record RemsApprovalRoundDecision(
+    Guid TaskId,
+    string Approver,
+    string Role,
+    string Status,
+    DateTime? DecidedOnUtc,
+    /// <summary>Their own reason for declining. The round-level reason cannot hold several.</summary>
+    string? Reason,
+    int ChecklistCompleted,
+    int ChecklistTotal);
+
 /// <summary>The client on the engagement, including the billing block the workspace's client card carries.</summary>
 public sealed record RemsApprovalClientView(
     Guid Id,
@@ -154,7 +185,8 @@ public sealed record RemsApprovalClientView(
     string? ReferralSource,
     string? BillingContactName,
     string? BillingEmail,
-    RemsAddressView? BillingAddress,
+    // The billing ADDRESS moved onto the entity, so it arrives with that entity's addresses rather than
+    // separately here.
     IReadOnlyList<RemsApprovalEntitySummary> Entities);
 
 /// <summary>A sibling entity of the same client, listed for context.</summary>

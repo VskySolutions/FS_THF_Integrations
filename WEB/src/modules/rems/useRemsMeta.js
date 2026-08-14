@@ -162,6 +162,8 @@ export function useRemsMeta () {
   const industryGroupLabel = (v) => labelFrom(options.industryGroup, v);
   const departmentLabel = (v) => labelFrom(options.department, v);
   const serviceLineLabel = (v) => labelFrom(options.serviceLine, v);
+  const subServiceLineLabel = (v) => labelFrom(options.subServiceLine, v);
+  const subIndustryLabel = (v) => labelFrom(options.subIndustry, v);
 
   // Colours stay in code: they key off the CODE, which is closed and validated server-side, so a rename
   // never strands a badge on grey. Only the wording is the tenant's to change.
@@ -219,6 +221,8 @@ export function useRemsMeta () {
   const industryGroupOptions = computed(() => options.industryGroup);
   const departmentOptions = computed(() => options.department);
   const serviceLineOptions = computed(() => options.serviceLine);
+  const subServiceLineOptions = computed(() => options.subServiceLine);
+  const subIndustryOptions = computed(() => options.subIndustry);
   const statusFilterOptions = computed(() => options.status.map((option) =>
     (option.value === "submitted" ? { ...option, label: "Submitted/Waiting For Pickup" } : option)));
 
@@ -230,6 +234,8 @@ export function useRemsMeta () {
     statusLabel,
     departmentLabel,
     serviceLineLabel,
+    subServiceLineLabel,
+    subIndustryLabel,
     statusColor,
     emsStateLabel,
     emsStateColor,
@@ -241,6 +247,8 @@ export function useRemsMeta () {
     industryGroupOptions,
     departmentOptions,
     serviceLineOptions,
+    subServiceLineOptions,
+    subIndustryOptions,
     statusFilterOptions,
     emailEventLabel,
     emailEventColor,
@@ -293,12 +301,13 @@ export const isTaxDepartment = (department) => department === REMS_DEPARTMENT_CO
 export const isGovernmentAudit = (department, serviceLine) =>
   isAuditDepartment(department) && serviceLine === REMS_SERVICE_LINE_GOVERNMENT;
 
-// Loads the engagement Department / Service Line / Marketing / Tax-Form option sets for the workspace.
-// Department + Service Line degrade to the closed code lists above. Marketing + Tax Form are keyed by
-// OptionSetItem *id* (the REMSEngagementMarketingMethod / REMSEngagementTaxForm FKs), so there is no closed
-// fallback for their ids — the pickers are simply empty (flagged `*Unavailable`) when resolve is denied.
+// Loads the engagement's code-valued option sets (Department, Service Line and the two sub-classifications)
+// plus Marketing / Tax Form for the workspace. The code-valued ones degrade to the closed lists in the
+// catalogue's seed. Marketing + Tax Form are keyed by OptionSetItem *id* (the
+// REMSEngagementMarketingMethod / REMSEngagementTaxForm FKs), so there is no closed fallback for their ids
+// — those pickers are simply empty (flagged `*Unavailable`) when resolve is denied.
 export function useRemsEngagementOptionSets () {
-  // Department + Service Line come from the shared catalogue (same lists the labels read); Marketing and
+  // The code-valued lists come from the shared catalogue (the same ones the labels read); Marketing and
   // Tax Form are resolved here because they are keyed by OptionSetItem *id* rather than by code, which is
   // a different shape and only this workspace needs it.
   const catalog = useRemsOptionCatalog();
@@ -363,6 +372,13 @@ export function useRemsEngagementOptionSets () {
   return {
     departmentOptions,
     serviceLineOptions,
+    // The two sub-classifications, one level below the service line and the industry group. Code-valued
+    // like their parents, so they come from the shared catalogue too.
+    subServiceLineOptions: computed(() => catalog.subServiceLine),
+    subIndustryOptions: computed(() => catalog.subIndustry),
+    // How often the client is billed (REMS.BillingPeriod). Code-valued like Department and Service Line,
+    // so it comes from the shared catalogue rather than being resolved by id.
+    billingPeriodOptions: computed(() => catalog.billingPeriod),
     marketingGroups,
     marketingUnavailable,
     taxFormOptions,

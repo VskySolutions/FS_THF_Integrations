@@ -26,7 +26,8 @@ public enum EntityType
     SmtpAccount = 11,
     EmailTemplate = 12,
     Tag = 13,
-    SavedView = 14,
+    // 14 was SavedView, retired with the feature. The number is NOT reused: it may still be stamped on
+    // UF rows written while saved views existed, and handing it to a new entity type would re-point them.
     StickyNote = 15,
     // A client of the firm, held as a Person. Used as a Person's SourceEntityType to say what that
     // person IS, rather than which screen created them: a client, a role contact captured off an EMS

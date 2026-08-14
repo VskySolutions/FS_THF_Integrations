@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace EmsPortal.Infrastructure.Persistence.Configurations;
 
 // EF Core configurations for the REMS engagement and its detail, marketing and commission children
-// (WO-110). The engagement-per-entity link and the 0..1 detail tables are modelled as one-to-many at
+// (WO-110). The engagement-per-request link and the 0..1 detail tables are modelled as one-to-many at
 // the EF level so a filtered unique index (WHERE [Deleted] = 0) enforces the "one active per parent"
 // rule. Two DB CHECK constraints guard the percentage columns.
 
@@ -13,13 +13,23 @@ internal sealed class RemsEngagementConfiguration : IEntityTypeConfiguration<REM
 {
     public void Configure(EntityTypeBuilder<REMSEngagement> builder)
     {
-        builder.ToTable("REMSEngagement", t => t.HasCheckConstraint(
-            "CK_REMSEngagement_Realization",
-            "[RealizationPercentage] IS NULL OR ([RealizationPercentage] >= 0 AND [RealizationPercentage] <= 100)"));
+        builder.ToTable("REMSEngagement", t =>
+        {
+            t.HasCheckConstraint(
+                "CK_REMSEngagement_Realization",
+                "[RealizationPercentage] IS NULL OR ([RealizationPercentage] >= 0 AND [RealizationPercentage] <= 100)");
+            // A schedule of zero or negative bills is not a schedule.
+            t.HasCheckConstraint(
+                "CK_REMSEngagement_NumberOfBills",
+                "[NumberOfBills] IS NULL OR [NumberOfBills] > 0");
+        });
         builder.HasKey(e => e.Id);
 
         builder.Property(e => e.Department).HasMaxLength(64);
         builder.Property(e => e.ServiceLine).HasMaxLength(64);
+        builder.Property(e => e.SubServiceLine).HasMaxLength(64);
+        builder.Property(e => e.SubIndustry).HasMaxLength(64);
+        builder.Property(e => e.BillingPeriod).HasMaxLength(64);
         builder.Property(e => e.FirstYearFeeEstimate).HasPrecision(18, 2);
         builder.Property(e => e.RealizationPercentage).HasPrecision(5, 2);
         builder.Property(e => e.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
@@ -27,13 +37,13 @@ internal sealed class RemsEngagementConfiguration : IEntityTypeConfiguration<REM
         builder.HasOne<Tenant>().WithMany().HasForeignKey(e => e.TenantId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(e => e.TenantId);
 
-        builder.HasOne(e => e.Entity).WithMany().HasForeignKey(e => e.REMSEntityId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(e => e.Rems).WithMany().HasForeignKey(e => e.REMSId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<User>().WithMany().HasForeignKey(e => e.DepartmentDirectorId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<User>().WithMany().HasForeignKey(e => e.EngagementExecutiveId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<User>().WithMany().HasForeignKey(e => e.BillingManagerId).OnDelete(DeleteBehavior.Restrict);
 
-        // One active engagement per entity.
-        builder.HasIndex(e => new { e.TenantId, e.REMSEntityId }).IsUnique().HasFilter("[Deleted] = 0");
+        // One active engagement per request.
+        builder.HasIndex(e => new { e.TenantId, e.REMSId }).IsUnique().HasFilter("[Deleted] = 0");
 
         // Approval work queue by status.
         builder.HasIndex(e => new { e.TenantId, e.Status });

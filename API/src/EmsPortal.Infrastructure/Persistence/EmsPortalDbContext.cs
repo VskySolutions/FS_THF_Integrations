@@ -90,7 +90,6 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
     public DbSet<Pin> Pins => Set<Pin>();
     public DbSet<ColourCode> ColourCodes => Set<ColourCode>();
-    public DbSet<SavedView> SavedViews => Set<SavedView>();
     public DbSet<Checklist> Checklists => Set<Checklist>();
     public DbSet<ChecklistItem> ChecklistItems => Set<ChecklistItem>();
     public DbSet<StickyNote> StickyNotes => Set<StickyNote>();
@@ -103,6 +102,9 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
     // ---- REMS (WO-110) ----
     public DbSet<REMS> Rems => Set<REMS>();
     public DbSet<REMSFiles> RemsFiles => Set<REMSFiles>();
+    public DbSet<REMSAdditionalEntity> RemsAdditionalEntities => Set<REMSAdditionalEntity>();
+    public DbSet<REMSSendBack> RemsSendBacks => Set<REMSSendBack>();
+    public DbSet<REMSDelegation> RemsDelegations => Set<REMSDelegation>();
     public DbSet<REMSForm> RemsForms => Set<REMSForm>();
     public DbSet<REMSFormDraft> RemsFormDrafts => Set<REMSFormDraft>();
     public DbSet<REMSFormSubmission> RemsFormSubmissions => Set<REMSFormSubmission>();
@@ -162,7 +164,6 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
         modelBuilder.Entity<NotificationPreference>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<Pin>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<ColourCode>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
-        modelBuilder.Entity<SavedView>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<Checklist>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<ChecklistItem>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<StickyNote>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
@@ -347,9 +348,6 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
                     break;
                 case ColourCode colourCode when colourCode.TenantId == Guid.Empty:
                     colourCode.TenantId = _tenantContext.TenantId;
-                    break;
-                case SavedView savedView when savedView.TenantId == Guid.Empty:
-                    savedView.TenantId = _tenantContext.TenantId;
                     break;
                 case Checklist checklist when checklist.TenantId == Guid.Empty:
                     checklist.TenantId = _tenantContext.TenantId;

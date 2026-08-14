@@ -47,7 +47,7 @@ public interface IRemsEmailNotifier
 /// Placeholder values for <see cref="EmailTemplateKey.RemsFormLink"/>. <paramref name="FormLink"/> is the
 /// full EMS form URL the caller builds from <c>App:BaseUrl</c> (AC-ETPL-006.3).
 /// </summary>
-public sealed record RemsFormLinkEmail(string ClientName, string FormLink, string RemsNumber, string RequestTitle);
+public sealed record RemsFormLinkEmail(string ClientName, string FormLink, string RemsNumber);
 
 /// <summary>
 /// Placeholder values for <see cref="EmailTemplateKey.RemsFormSubmitted"/>. <paramref name="RequestLink"/>

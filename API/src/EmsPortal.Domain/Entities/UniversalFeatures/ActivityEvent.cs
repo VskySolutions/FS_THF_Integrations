@@ -49,10 +49,18 @@ public static class ActivityEventTypes
 
     // ---- REMS request lifecycle (WO-111) ----
     public const string RemsCreated = "RemsCreated";
-    public const string RemsSubmitted = "RemsSubmitted";
     public const string RemsAssigned = "RemsAssigned";
     public const string RemsDuplicated = "RemsDuplicated";
     public const string RemsDeleted = "RemsDeleted";
+
+    // RemsSubmitted is gone with the Admin Pool it recorded entry into. What takes a request out of draft
+    // now is the initiator sending the intake link, which RemsFormSent already records.
+
+    /// <summary>The Admin returned a request to its initiator for engagement-setup rework, with a reason.</summary>
+    public const string RemsSentBack = "RemsSentBack";
+
+    /// <summary>The initiator handed the revised setup back to the Admin to confirm.</summary>
+    public const string RemsReturnedToAdmin = "RemsReturnedToAdmin";
 
     // ---- REMS EMS form lifecycle (WO-112) ----
     public const string RemsFormBuilt = "RemsFormBuilt";

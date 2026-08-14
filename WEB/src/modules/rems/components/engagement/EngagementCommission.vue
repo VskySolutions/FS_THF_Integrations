@@ -21,9 +21,11 @@
     <q-list v-else bordered separator class="rounded-borders">
       <q-item v-for="(s, i) in splits" :key="s.employeeId">
         <q-item-section>
-          <q-item-label class="text-weight-medium">{{ s.name }}</q-item-label>
+          <!-- Truncated rather than allowed to set the row's width: the percentage box and the remove
+               button are fixed, so on a narrow screen a long name would push them off the card. -->
+          <q-item-label class="text-weight-medium ellipsis">{{ s.name }}</q-item-label>
         </q-item-section>
-        <q-item-section side style="min-width: 150px;">
+        <q-item-section side style="min-width: 120px;">
           <app-text-field
             v-model="s.percentage" label="" type="number" :readonly="!editable" :rules="percentRules"
           >
@@ -45,24 +47,19 @@
       </div>
     </div>
 
-    <!-- Into the card's title row, alongside every other tab's primary save. `defer` because the
-         target is rendered by the same tree (see EngagementSetupForm). -->
-    <teleport v-if="isVisibleTab && editable" defer to="#engagement-header-actions">
-      <q-btn
-        unelevated no-caps color="primary" icon-right="o_arrow_forward" label="Save & Next"
-        :loading="saving" @click="save"
-      />
-    </teleport>
   </div>
 </template>
 
 <script setup>
 // The engagement commission splits (AC-REMS-016): up to ten recipients from the CSE user group, each with
 // an editable percentage (> 0 and ≤ 100), individually removable.
-import { ref, computed, watch } from "vue";
-import { remsApi, getApiErrorMessage } from "services/api";
+//
+// Controlled by the page: it holds the splits, announces every change (`change`), and the page's auto-save
+// writes them. Its own "Save & Next" button was teleported into the workspace card's title row — a target
+// that no longer exists, so the button rendered nowhere and the splits could not be saved at all.
+import { ref, computed, watch, nextTick } from "vue";
+import { remsApi } from "services/api";
 import { useNotify } from "composables/useNotify";
-import { useVisibleTab } from "composables/useVisibleTab";
 import AppSelect from "components/common/AppSelect.vue";
 import AppTextField from "components/common/AppTextField.vue";
 
@@ -72,10 +69,9 @@ const props = defineProps({
   recipientOptions: { type: Array, default: () => [] },
   editable: { type: Boolean, default: true }
 });
-const emit = defineEmits(["saved", "advance"]);
-
+// The page saves this section for the user, so every change to the splits is announced.
+const emit = defineEmits(["change"]);
 const notify = useNotify();
-const { isVisibleTab } = useVisibleTab();
 
 const buildSplits = (e) => (e.commissionSplits || []).map((s) => ({
   employeeId: s.employee.id,
@@ -83,7 +79,16 @@ const buildSplits = (e) => (e.commissionSplits || []).map((s) => ({
   percentage: s.percentage
 }));
 const splits = ref(buildSplits(props.engagement));
-watch(() => props.engagement, (e) => { splits.value = buildSplits(e); });
+// Set while the splits are being re-seeded from a fresh engagement view — the server catching this
+// component up, not a change to announce.
+let syncing = false;
+watch(() => props.engagement, (e) => {
+  syncing = true;
+  splits.value = buildSplits(e);
+  nextTick(() => { syncing = false; });
+});
+// Deep: a percentage is edited in place on an existing row, which is not a new array.
+watch(splits, () => { if (!syncing) emit("change"); }, { deep: true });
 
 const pick = ref(null);
 const availableRecipients = computed(() =>
@@ -127,37 +132,32 @@ watch(totalOver, (over) => {
   }
 });
 
-const saving = ref(false);
-const save = async () => {
+// Called by the page's Save. Sent whenever the engagement has splits or had them a moment ago — an empty
+// list is how a recipient is removed, so "nothing to send" is only true when there was nothing before.
+const saveCommission = async (engagementId) => {
+  const had = (props.engagement.commissionSplits || []).length > 0;
+  if (!splits.value.length && !had) return null;
+
   // Every recipient must carry a valid percentage (> 0 and ≤ 100).
   const invalid = splits.value.some((s) => {
     const n = Number(s.percentage);
     return s.percentage === "" || s.percentage === null || !(n > 0 && n <= 100);
   });
   if (invalid) {
-    notify.warning("Every recipient needs a percentage between 0 and 100.");
-    return;
+    throw new Error("Every commission recipient needs a percentage between 0 and 100.");
   }
   // The splits divide one commission, so they can never add up to more than the whole of it. The API
   // enforces the same ceiling — this is the readable version of that rejection.
   if (totalOver.value) {
-    notify.warning(
+    throw new Error(
       `Commission totals ${totalPercent.value}% — that is ${overBy.value}% over. Reduce the splits to 100% or less.`);
-    return;
   }
-  saving.value = true;
-  try {
-    const view = await remsApi.updateCommission(
-      props.engagement.id,
-      splits.value.map((s) => ({ employeeId: s.employeeId, percentage: Number(s.percentage) }))
-    );
-    emit("saved", view);
-    notify.success("Commission splits saved.");
-    emit("advance");
-  } catch (err) {
-    notify.error(getApiErrorMessage(err));
-  } finally {
-    saving.value = false;
-  }
+
+  return remsApi.updateCommission(
+    engagementId,
+    splits.value.map((s) => ({ employeeId: s.employeeId, percentage: Number(s.percentage) }))
+  );
 };
+
+defineExpose({ saveCommission });
 </script>

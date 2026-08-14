@@ -20,38 +20,22 @@ internal sealed class RemsEngagementRepository : IRemsEngagementRepository
             .Include(e => e.CommissionSplits)
             .FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
 
+    // The client and its entities now hang off the REQUEST beside the engagement rather than above it, so
+    // the context is reached downwards through Rems instead of upwards through Entity → Client → Rems.
+    // Clients is a collection at the EF level (one active row, enforced by a filtered unique index), which
+    // is why this reads as a list rather than a reference.
     public Task<REMSEngagement?> GetWithContextAsync(Guid id, CancellationToken cancellationToken = default)
         => _dbContext.RemsEngagements
             .Include(e => e.MarketingMethods)
             .Include(e => e.CommissionSplits)
-            .Include(e => e.Entity).ThenInclude(en => en!.Client).ThenInclude(c => c!.Rems)
-            .Include(e => e.Entity).ThenInclude(en => en!.Client).ThenInclude(c => c!.Entities)
-            .Include(e => e.Entity).ThenInclude(en => en!.Addresses).ThenInclude(a => a.Address)
+            .Include(e => e.Rems).ThenInclude(r => r!.Clients).ThenInclude(c => c.Entities).ThenInclude(en => en.Addresses).ThenInclude(a => a.Address)
             .FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
 
-    public Task<REMSEngagement?> GetByEntityIdAsync(Guid remsEntityId, CancellationToken cancellationToken = default)
+    public Task<REMSEngagement?> GetByRemsIdAsync(Guid remsId, CancellationToken cancellationToken = default)
         => _dbContext.RemsEngagements
             .Include(e => e.MarketingMethods)
             .Include(e => e.CommissionSplits)
-            .FirstOrDefaultAsync(e => e.REMSEntityId == remsEntityId, cancellationToken);
-
-    public async Task<IReadOnlyList<REMSEngagement>> ListByEntityIdsAsync(IReadOnlyCollection<Guid> entityIds, CancellationToken cancellationToken = default)
-        => entityIds.Count == 0
-            ? Array.Empty<REMSEngagement>()
-            : await _dbContext.RemsEngagements
-                .Include(e => e.MarketingMethods)
-                .Include(e => e.CommissionSplits)
-                .Where(e => entityIds.Contains(e.REMSEntityId))
-                .ToListAsync(cancellationToken);
-
-    public async Task<IReadOnlyList<(Guid Id, RemsEngagementStatus Status)>> ListStatusesByRemsIdAsync(
-        Guid remsId, CancellationToken cancellationToken = default)
-        => (await _dbContext.RemsEngagements
-                .Where(e => e.Entity!.Client!.REMSId == remsId)
-                .Select(e => new { e.Id, e.Status })
-                .ToListAsync(cancellationToken))
-            .Select(e => (e.Id, e.Status))
-            .ToList();
+            .FirstOrDefaultAsync(e => e.REMSId == remsId, cancellationToken);
 
     public async Task<IReadOnlyList<REMSEngagementAuditDetail>> ListAuditDetailsAsync(IReadOnlyCollection<Guid> engagementIds, CancellationToken cancellationToken = default)
         => engagementIds.Count == 0

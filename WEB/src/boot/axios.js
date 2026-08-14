@@ -57,6 +57,15 @@ export default boot(({ app }) => {
         config.headers["X-Site-Id"] = siteId;
       }
 
+      // REMS acting-as. A delegate says whose hat they are wearing per request rather than the server
+      // inferring it — someone holding several delegations would otherwise have their work attributed by
+      // guesswork. It is a CLAIM, not a grant: the API checks it against a live delegation and ignores it
+      // otherwise, so a forged value buys nothing.
+      const actingFor = LocalStorage.getItem("remsActingForUserId");
+      if (actingFor) {
+        config.headers["X-Rems-On-Behalf-Of"] = actingFor;
+      }
+
       // Tenant Name
       if (user?.siteName) {
         config.headers["X-Site-Name"] = user.siteName;

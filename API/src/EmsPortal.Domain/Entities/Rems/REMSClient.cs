@@ -43,12 +43,13 @@ public class REMSClient : AuditableEntity
     /// <summary>Billing email.</summary>
     public string? BillingEmail { get; set; }
 
-    /// <summary>Billing address (Address).</summary>
-    public Guid? BillingAddressId { get; set; }
+    // Note: the billing ADDRESS is no longer here. It lives with the other two on the main entity, as a
+    // REMSEntityAddress of type Billing — the client's physical, mailing and billing addresses share one
+    // shape and one "at most one per (entity, type)" rule. Only the billing contact's name and email stay
+    // on the client, because they describe a person rather than a place.
 
     // ---- Navigations ----
     public REMS? Rems { get; set; }
     public REMSFormSubmission? SourceFormSubmission { get; set; }
-    public Address? BillingAddress { get; set; }
     public ICollection<REMSEntity> Entities { get; set; } = new List<REMSEntity>();
 }

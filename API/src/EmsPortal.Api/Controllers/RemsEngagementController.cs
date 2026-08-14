@@ -11,18 +11,23 @@ using Microsoft.AspNetCore.Mvc;
 namespace EmsPortal.Api.Controllers;
 
 /// <summary>
-/// REMS engagement workspace backend (WO-114 Part A + B). Staff/Admin operations
-/// (<see cref="Permissions.RemsEngagementsManage"/>) on a submitted request's engagement setup: the
-/// submitted-form view, the editable client/entity/engagement workspace, the audit/government/tax
-/// conditional details, cross-entity copy, and the marketing/commission steps that gate approval. Tenant
-/// isolation is ambient, so a request/engagement outside the caller's tenant is simply a 404. The approval
-/// workflow itself lives in <see cref="RemsApprovalController"/>.
+/// REMS engagement workspace backend (WO-114 Part A + B): the submitted-form view, the editable
+/// client/entity/engagement workspace, the audit/government/tax conditional details, and the
+/// marketing/commission steps that gate approval. Tenant isolation is ambient, so a request/engagement
+/// outside the caller's tenant is simply a 404. The approval workflow itself lives in
+/// <see cref="RemsApprovalController"/>.
+/// <para>
+/// NOT one permission for the whole controller any more. The client's own record and its entities stay
+/// Admin-only (<see cref="Permissions.RemsEngagementsManage"/>) — they are the intake the Admin reviews —
+/// but the ENGAGEMENT is filled by the initiator before the client is ever contacted, so its endpoints
+/// take <c>rems.requests.update</c> as well, and every one of them is additionally record-scoped by
+/// <see cref="RemsSetupAccess"/>: the setup belongs to whoever the request is with at this stage.
+/// </para>
 /// </summary>
 [ApiController]
 [Route("api/rems")]
 [Produces("application/json")]
 [Tags("REMS Engagement Workspace")]
-[RequirePermission(Permissions.RemsEngagementsManage)]
 [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
 [ProducesResponseType(StatusCodes.Status401Unauthorized)]
 [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -85,6 +90,7 @@ public sealed class RemsEngagementController : ControllerBase
     /// submitted/not-submitted, client name, submission date and the assigned Admin/CSE.
     /// </summary>
     [HttpGet("client-forms")]
+    [RequirePermission(Permissions.RemsEngagementsManage)]
     [ProducesResponseType<ApiResponse<IEnumerable<RemsClientFormRow>>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> ClientForms(
         [FromQuery] int page = 1,
@@ -118,7 +124,12 @@ public sealed class RemsEngagementController : ControllerBase
     /// The read-only submitted-form view (AC-REMS-013.2/3), rendered from the immutable
     /// <c>REMSFormSubmission</c> payload as plain fields — distinct from the editable workspace data.
     /// </summary>
+    /// <remarks>
+    /// Open to the initiator as well as the Admin: it is their client who filled this in, and after a
+    /// send-back it is the answers they have to work the setup against.
+    /// </remarks>
     [HttpGet("requests/{remsId:guid}/submission")]
+    [RequireAnyPermission(Permissions.RemsEngagementsManage, Permissions.RemsRequestsRead)]
     [ProducesResponseType<ApiResponse<RemsSubmissionView>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Submission(Guid remsId, CancellationToken cancellationToken)
     {
@@ -126,6 +137,11 @@ public sealed class RemsEngagementController : ControllerBase
         if (rems is null)
         {
             return NotFound(ApiResponseFactory.NotFound("REMS request not found."));
+        }
+
+        if (GuardCanRead(rems) is { } notAllowed)
+        {
+            return notAllowed;
         }
 
         var form = await _forms.GetWithSubmissionsByRemsIdAsync(remsId, cancellationToken);
@@ -142,10 +158,18 @@ public sealed class RemsEngagementController : ControllerBase
     }
 
     /// <summary>
-    /// The engagement workspace (AC-REMS-014): the client, all its entities, and each entity's engagement
-    /// with its audit/government/tax detail, addresses and contacts.
+    /// The engagement workspace (AC-REMS-014): the request's engagement with its audit/government/tax
+    /// detail, and — once the client has answered — the client record and its entities with their
+    /// addresses and contacts.
+    /// <para>
+    /// The client half is null until the intake form comes back, and that is a normal state rather than a
+    /// 404: the engagement exists from the moment the request does, because the initiator fills its setup
+    /// BEFORE the client is contacted. Refusing the whole workspace for want of a client is what used to
+    /// make the setup unreachable until after submission.
+    /// </para>
     /// </summary>
     [HttpGet("requests/{remsId:guid}/engagement")]
+    [RequireAnyPermission(Permissions.RemsEngagementsManage, Permissions.RemsRequestsRead)]
     [ProducesResponseType<ApiResponse<RemsEngagementWorkspace>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Workspace(Guid remsId, CancellationToken cancellationToken)
     {
@@ -155,25 +179,23 @@ public sealed class RemsEngagementController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("REMS request not found."));
         }
 
-        if (await GuardSetupOwnerAsync(remsId, cancellationToken) is { } denied)
+        if (GuardCanRead(rems) is { } notAllowed)
         {
-            return denied;
+            return notAllowed;
         }
 
+        // Null until the client submits their intake form. Everything below tolerates that.
         var client = await _clients.GetByRemsIdAsync(remsId, cancellationToken);
-        if (client is null)
-        {
-            return NotFound(ApiResponseFactory.NotFound("This request has no client yet; the form has not been submitted."));
-        }
 
-        var entityIds = client.Entities.Where(e => !e.Deleted).Select(e => e.Id).ToList();
-        var engagements = await _engagements.ListByEntityIdsAsync(entityIds, cancellationToken);
+        // One engagement, belonging to the request. The workspace used to load one per entity and index them
+        // by entity id so each tab could find its own; there are no tabs and no second engagement now.
+        var engagement = await _engagements.GetByRemsIdAsync(remsId, cancellationToken);
+        var engagements = engagement is null ? Array.Empty<REMSEngagement>() : new[] { engagement };
         var engagementIds = engagements.Select(e => e.Id).ToList();
 
         var audit = (await _engagements.ListAuditDetailsAsync(engagementIds, cancellationToken)).ToDictionary(d => d.REMSEngagementId);
         var government = (await _engagements.ListGovernmentDetailsAsync(engagementIds, cancellationToken)).ToDictionary(d => d.REMSEngagementId);
         var tax = (await _engagements.ListTaxDetailsAsync(engagementIds, cancellationToken)).ToDictionary(d => d.REMSEngagementId);
-        var engagementsByEntity = engagements.ToDictionary(e => e.REMSEntityId);
 
         // The department → director map travels with the workspace so the setup form can name the director
         // a department maps to as soon as it is picked, instead of waiting for the save to come back.
@@ -190,8 +212,23 @@ public sealed class RemsEngagementController : ControllerBase
                 new RemsUserRef(d.DirectorUserId, names.TryGetValue(d.DirectorUserId, out var n) ? n : string.Empty)))
             .ToList();
 
+        // The other businesses this client named, with the request each has produced. Resolved to REMS
+        // numbers in one lookup so a row can link to what it created rather than just claiming it exists.
+        var additionalRows = await _rems.ListAdditionalEntitiesAsync(remsId, cancellationToken);
+        var createdNumbers = await _rems.GetNumbersAsync(
+            additionalRows.Where(a => a.CreatedREMSId.HasValue).Select(a => a.CreatedREMSId!.Value).ToList(),
+            cancellationToken);
+        var additionalEntities = additionalRows
+            .Select(a => new RemsAdditionalEntityView(
+                a.Id, a.FullName, a.EmailAddress, a.PhoneNumber, a.CreatedREMSId,
+                a.CreatedREMSId is { } createdId && createdNumbers.TryGetValue(createdId, out var n) ? n : null))
+            .ToList();
+
+        var formState = (await _rems.GetFormStatesAsync(new[] { remsId }, cancellationToken)).FirstOrDefault();
+
         var workspace = RemsWorkspaceMapper.Workspace(
-            rems, client, engagementsByEntity, audit, government, tax, names, departmentDirectors);
+            rems, client, engagement, audit, government, tax, names,
+            formState?.IndustryGroup, additionalEntities, departmentDirectors);
         return Ok(ApiResponseFactory.Success(workspace, "REMS engagement workspace retrieved."));
     }
 
@@ -199,6 +236,7 @@ public sealed class RemsEngagementController : ControllerBase
 
     /// <summary>Update the client record (AC-REMS-014). The client email is locked and never changes.</summary>
     [HttpPut("requests/{remsId:guid}/client")]
+    [RequirePermission(Permissions.RemsEngagementsManage)]
     [ProducesResponseType<ApiResponse<RemsClientView>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateClient(Guid remsId, [FromBody] UpdateRemsClientRequest request, CancellationToken cancellationToken)
     {
@@ -219,11 +257,8 @@ public sealed class RemsEngagementController : ControllerBase
         if (request.BillingContactName is not null) client.BillingContactName = Normalize(request.BillingContactName);
         if (request.BillingEmail is not null) client.BillingEmail = Normalize(request.BillingEmail);
 
-        if (request.BillingAddress is { } billing)
-        {
-            client.BillingAddressId = await UpsertAddressAsync(client.BillingAddressId, billing, AddressType.Billing, cancellationToken);
-        }
-
+        // The billing ADDRESS is edited with the entity's other two (see UpdateEntityAddresses) rather than
+        // here — it is one of the main entity's three addresses now, not a field on the client.
         _clients.Update(client);
         await _activity.WriteAsync(new CreateActivityEventDto(EntityType.Rems, remsId, ActivityEventTypes.RemsEngagementUpdated), cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -231,12 +266,13 @@ public sealed class RemsEngagementController : ControllerBase
         var refreshed = await _clients.GetByRemsIdAsync(remsId, cancellationToken) ?? client;
         var view = new RemsClientView(
             refreshed.Id, refreshed.Name, refreshed.Email, refreshed.MobileNumber, refreshed.ReferralSource,
-            refreshed.BillingContactName, refreshed.BillingEmail, RemsWorkspaceMapper.Address(refreshed.BillingAddress));
+            refreshed.BillingContactName, refreshed.BillingEmail);
         return Ok(ApiResponseFactory.Success(view, "REMS client updated."));
     }
 
     /// <summary>Replace an entity's physical/mailing addresses (AC-REMS-014). Each null =&gt; remove that type.</summary>
     [HttpPut("entities/{entityId:guid}/addresses")]
+    [RequirePermission(Permissions.RemsEngagementsManage)]
     [ProducesResponseType<ApiResponse<IEnumerable<RemsEntityAddressView>>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateEntityAddresses(
         Guid entityId, [FromBody] UpdateRemsEntityAddressesRequest request, CancellationToken cancellationToken)
@@ -267,6 +303,7 @@ public sealed class RemsEngagementController : ControllerBase
 
     /// <summary>Replace an entity's contacts (AC-REMS-014). Each contact is upserted by its role; absent roles are removed.</summary>
     [HttpPut("entities/{entityId:guid}/contacts")]
+    [RequirePermission(Permissions.RemsEngagementsManage)]
     [ProducesResponseType<ApiResponse<IEnumerable<RemsEntityContactView>>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateEntityContacts(
         Guid entityId, [FromBody] UpdateRemsEntityContactsRequest request, CancellationToken cancellationToken)
@@ -338,6 +375,7 @@ public sealed class RemsEngagementController : ControllerBase
     /// director the chosen department maps to (prefill hint).
     /// </summary>
     [HttpPut("engagements/{id:guid}")]
+    [RequireAnyPermission(Permissions.RemsEngagementsManage, Permissions.RemsRequestsUpdate)]
     [ProducesResponseType<ApiResponse<RemsEngagementUpdateResult>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateEngagement(Guid id, [FromBody] UpdateRemsEngagementRequest request, CancellationToken cancellationToken)
     {
@@ -347,7 +385,7 @@ public sealed class RemsEngagementController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
         }
 
-        if (await GuardSetupOwnerAsync(engagement.Entity!.Client!.REMSId, cancellationToken) is { } denied)
+        if (await GuardSetupOwnerAsync(engagement.REMSId, cancellationToken) is { } denied)
         {
             return denied;
         }
@@ -370,6 +408,10 @@ public sealed class RemsEngagementController : ControllerBase
             && !string.Equals(Normalize(request.Department), engagement.Department, StringComparison.Ordinal);
         if (request.Department is not null) engagement.Department = Normalize(request.Department);
         if (request.ServiceLine is not null) engagement.ServiceLine = Normalize(request.ServiceLine);
+        // The two sub-classifications. Nothing branches on either — they narrow the line and the industry
+        // group for reporting — so they are stored as given, normalized like every other option-set code.
+        if (request.SubServiceLine is not null) engagement.SubServiceLine = Normalize(request.SubServiceLine);
+        if (request.SubIndustry is not null) engagement.SubIndustry = Normalize(request.SubIndustry);
 
         var mappedDirector = await MappedDirectorAsync(engagement.Department, cancellationToken);
         if (request.DepartmentDirectorId.HasValue)
@@ -389,6 +431,10 @@ public sealed class RemsEngagementController : ControllerBase
         if (request.BillingManagerId.HasValue) engagement.BillingManagerId = request.BillingManagerId;
         if (request.FirstYearFeeEstimate.HasValue) engagement.FirstYearFeeEstimate = request.FirstYearFeeEstimate;
         if (request.RealizationPercentage.HasValue) engagement.RealizationPercentage = request.RealizationPercentage;
+        // The billing schedule. Normalized like the other two option-set codes on this record; the count
+        // is entered rather than derived, so a quarterly engagement is not automatically four bills.
+        if (request.BillingPeriod is not null) engagement.BillingPeriod = Normalize(request.BillingPeriod);
+        if (request.NumberOfBills.HasValue) engagement.NumberOfBills = request.NumberOfBills;
 
         _engagements.Update(engagement);
         await LogEngagementUpdatedAsync(engagement, cancellationToken);
@@ -403,6 +449,7 @@ public sealed class RemsEngagementController : ControllerBase
     /// (AC-REMS-014.12). The audit detail is created on first link.
     /// </summary>
     [HttpPost("engagements/{id:guid}/audit/client-acceptance-form")]
+    [RequireAnyPermission(Permissions.RemsEngagementsManage, Permissions.RemsRequestsUpdate)]
     [ProducesResponseType<ApiResponse<RemsEngagementView>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> LinkClientAcceptanceForm(Guid id, [FromBody] LinkClientAcceptanceFormRequest request, CancellationToken cancellationToken)
     {
@@ -412,7 +459,7 @@ public sealed class RemsEngagementController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
         }
 
-        if (await GuardSetupOwnerAsync(engagement.Entity!.Client!.REMSId, cancellationToken) is { } denied)
+        if (await GuardSetupOwnerAsync(engagement.REMSId, cancellationToken) is { } denied)
         {
             return denied;
         }
@@ -449,6 +496,7 @@ public sealed class RemsEngagementController : ControllerBase
 
     /// <summary>Set the government-audit contract detail: contract number + Florida 1% flag and contract/PO dates (AC-REMS-014.13).</summary>
     [HttpPut("engagements/{id:guid}/government")]
+    [RequireAnyPermission(Permissions.RemsEngagementsManage, Permissions.RemsRequestsUpdate)]
     [ProducesResponseType<ApiResponse<RemsEngagementView>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateGovernmentDetail(Guid id, [FromBody] UpdateRemsGovernmentDetailRequest request, CancellationToken cancellationToken)
     {
@@ -458,7 +506,7 @@ public sealed class RemsEngagementController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
         }
 
-        if (await GuardSetupOwnerAsync(engagement.Entity!.Client!.REMSId, cancellationToken) is { } denied)
+        if (await GuardSetupOwnerAsync(engagement.REMSId, cancellationToken) is { } denied)
         {
             return denied;
         }
@@ -495,6 +543,7 @@ public sealed class RemsEngagementController : ControllerBase
     /// schedule) and the tax-form checklist. Requires a Tax engagement.
     /// </summary>
     [HttpPut("engagements/{id:guid}/tax")]
+    [RequireAnyPermission(Permissions.RemsEngagementsManage, Permissions.RemsRequestsUpdate)]
     [ProducesResponseType<ApiResponse<RemsEngagementView>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateTaxDetail(Guid id, [FromBody] UpdateRemsTaxDetailRequest request, CancellationToken cancellationToken)
     {
@@ -504,7 +553,7 @@ public sealed class RemsEngagementController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
         }
 
-        if (await GuardSetupOwnerAsync(engagement.Entity!.Client!.REMSId, cancellationToken) is { } denied)
+        if (await GuardSetupOwnerAsync(engagement.REMSId, cancellationToken) is { } denied)
         {
             return denied;
         }
@@ -559,80 +608,19 @@ public sealed class RemsEngagementController : ControllerBase
         return Ok(ApiResponseFactory.Success(view!, "Tax engagement detail updated."));
     }
 
-    // -------------------- Part B: copy, marketing, commission --------------------
+    // -------------------- Part B: marketing, commission --------------------
 
-    /// <summary>
-    /// One-time copy of another entity's engagement setup into this one (AC-REMS-015): copies EXACTLY the
-    /// address, department, service line, engagement executive and billing manager — never fee/realization,
-    /// tax/audit/government, marketing or approval. Rejects copy-from-self and when no other entity exists.
-    /// </summary>
-    [HttpPost("engagements/{id:guid}/copy-from/{sourceId:guid}")]
-    [ProducesResponseType<ApiResponse<RemsEngagementView>>(StatusCodes.Status200OK)]
-    public async Task<IActionResult> CopyFrom(Guid id, Guid sourceId, CancellationToken cancellationToken)
-    {
-        if (id == sourceId)
-        {
-            return CopyInvalid("An engagement cannot be copied from itself.");
-        }
-
-        var target = await _engagements.GetWithContextAsync(id, cancellationToken);
-        if (target is null)
-        {
-            return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
-        }
-
-        if (await GuardSetupOwnerAsync(target.Entity!.Client!.REMSId, cancellationToken) is { } denied)
-        {
-            return denied;
-        }
-        if (!IsEditable(target))
-        {
-            return EngagementLocked();
-        }
-
-        // A copy source must exist under the SAME client, and the client must have another entity at all.
-        var otherEntities = target.Entity!.Client!.Entities.Count(e => !e.Deleted && e.Id != target.REMSEntityId);
-        if (otherEntities == 0)
-        {
-            return CopyInvalid("There is no other entity to copy from.");
-        }
-
-        var source = await _engagements.GetWithContextAsync(sourceId, cancellationToken);
-        if (source is null || source.Entity!.REMSClientId != target.Entity!.REMSClientId)
-        {
-            return CopyInvalid("The source engagement must belong to another entity of the same client.");
-        }
-
-        // Copy EXACTLY the five fields (015.3); nothing else (015.4).
-        target.Department = source.Department;
-        target.ServiceLine = source.ServiceLine;
-        target.EngagementExecutiveId = source.EngagementExecutiveId;
-        target.BillingManagerId = source.BillingManagerId;
-        _engagements.Update(target);
-
-        // Copy the source entity's addresses onto the target entity (upsert by type, cloning the Address rows).
-        var targetEntity = await _clients.GetEntityAsync(target.REMSEntityId, cancellationToken);
-        foreach (var sourceAddress in source.Entity!.Addresses.Where(a => !a.Deleted))
-        {
-            if (sourceAddress.Address is null)
-            {
-                continue;
-            }
-            await UpsertEntityAddressFromAsync(targetEntity!, sourceAddress.AddressType, sourceAddress.Address, cancellationToken);
-        }
-
-        await LogEngagementUpdatedAsync(target, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        var view = await BuildEngagementViewAsync(id, cancellationToken);
-        return Ok(ApiResponseFactory.Success(view!, "REMS engagement copied."));
-    }
+    // Copy-From is gone (was AC-REMS-015). It existed so a client's second and third entities did not have
+    // to have their engagement setup retyped — and there are no second and third entities to set up any
+    // more. A request carries one engagement, and another business of the same client becomes its own
+    // request with its own setup, so there is never a sibling engagement to copy from.
 
     /// <summary>
     /// Set the engagement marketing tags (AC-REMS-017): a list of REMS marketing option ids, at least one
     /// required to save. Saving makes the approval step reachable.
     /// </summary>
     [HttpPut("engagements/{id:guid}/marketing")]
+    [RequireAnyPermission(Permissions.RemsEngagementsManage, Permissions.RemsRequestsUpdate)]
     [ProducesResponseType<ApiResponse<RemsEngagementView>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> SetMarketing(Guid id, [FromBody] SetRemsMarketingRequest request, CancellationToken cancellationToken)
     {
@@ -642,7 +630,7 @@ public sealed class RemsEngagementController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
         }
 
-        if (await GuardSetupOwnerAsync(engagement.Entity!.Client!.REMSId, cancellationToken) is { } denied)
+        if (await GuardSetupOwnerAsync(engagement.REMSId, cancellationToken) is { } denied)
         {
             return denied;
         }
@@ -688,6 +676,7 @@ public sealed class RemsEngagementController : ControllerBase
     /// before approval is sent (enforced by the editable guard).
     /// </summary>
     [HttpPut("engagements/{id:guid}/commission")]
+    [RequireAnyPermission(Permissions.RemsEngagementsManage, Permissions.RemsRequestsUpdate)]
     [ProducesResponseType<ApiResponse<RemsEngagementView>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> SetCommission(Guid id, [FromBody] SetRemsCommissionRequest request, CancellationToken cancellationToken)
     {
@@ -697,7 +686,7 @@ public sealed class RemsEngagementController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
         }
 
-        if (await GuardSetupOwnerAsync(engagement.Entity!.Client!.REMSId, cancellationToken) is { } denied)
+        if (await GuardSetupOwnerAsync(engagement.REMSId, cancellationToken) is { } denied)
         {
             return denied;
         }
@@ -756,22 +745,40 @@ public sealed class RemsEngagementController : ControllerBase
         => engagement.Status is RemsEngagementStatus.Draft or RemsEngagementStatus.Rejected;
 
     /// <summary>
-    /// Engagement setup belongs to whoever picked the request up. Until an Admin is assigned there is no
-    /// owner and the setup cannot be started; once there is, it is theirs to do.
+    /// The refusal for reading a request's setup, or null to carry on. Everyone named on the request may
+    /// read it in every stage — the initiator does not stop being able to see their own request once the
+    /// Admin picks the review up.
+    /// </summary>
+    private IActionResult? GuardCanRead(REMS rems)
+    {
+        if (User.GetUserId() is not { } me)
+        {
+            return Unauthorized(ApiResponseFactory.Unauthorized("No user context."));
+        }
+
+        return RemsSetupAccess.CanRead(User, rems, me)
+            ? null
+            : StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseFactory.Forbidden("Not permitted to view this request's engagement."));
+    }
+
+    /// <summary>
+    /// The refusal for WRITING a request's setup, or null to carry on. The setup belongs to whoever the
+    /// request is with at this stage (see <see cref="RemsSetupAccess"/>): the initiator fills it before the
+    /// client is ever contacted, the named Admin takes it over once the client has answered, and a
+    /// send-back hands it straight back.
     /// <para>
-    /// <c>rems.engagements.manage</c> alone is not enough, because every REMS Admin holds it — without
-    /// this any of them could work a request another had claimed, which is the thing picking one up is
-    /// supposed to prevent. Enforced on the server rather than by hiding the button: the workspace is a
-    /// URL, reachable from the pool, the EMS Inbox, the client-forms list or a pasted link.
+    /// A permission cannot express that, which is why this is here on top of one: every REMS Admin holds
+    /// <c>rems.engagements.manage</c>, so without the record rule any of them could work a request another
+    /// was reviewing. Enforced on the server rather than by hiding fields — the form is a URL, reachable
+    /// from either list or a pasted link.
     /// </para>
-    /// A Super Admin or Tenant Admin is exempt so an assignment can be worked around in an emergency;
-    /// the ordinary remedy is to reassign the request, which the pool already offers.
     /// </summary>
     private async Task<IActionResult?> GuardSetupOwnerAsync(Guid remsId, CancellationToken cancellationToken)
     {
-        if (User.IsSuperAdmin() || User.GetRoles().Any(r => string.Equals(r, Roles.TenantAdmin, StringComparison.Ordinal)))
+        if (User.GetUserId() is not { } me)
         {
-            return null;
+            return Unauthorized(ApiResponseFactory.Unauthorized("No user context."));
         }
 
         var rems = await _rems.GetByIdAsync(remsId, cancellationToken);
@@ -780,19 +787,10 @@ public sealed class RemsEngagementController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("REMS request not found."));
         }
 
-        if (rems.AdminAssignedToId is null)
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden(
-                "This request has not been picked up yet. Assign it to an Admin before starting the engagement setup."));
-        }
-
-        if (rems.AdminAssignedToId != User.GetUserId())
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden(
-                "This request was picked up by another Admin; only they can work its engagement setup."));
-        }
-
-        return null;
+        return RemsSetupAccess.CanWork(User, rems, me)
+            ? null
+            : StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseFactory.Forbidden(RemsSetupAccess.WorkDeniedReason(rems)));
     }
 
 
@@ -812,7 +810,7 @@ public sealed class RemsEngagementController : ControllerBase
 
     private Task LogEngagementUpdatedAsync(REMSEngagement engagement, CancellationToken cancellationToken)
         => _activity.WriteAsync(
-            new CreateActivityEventDto(EntityType.Rems, engagement.Entity!.Client!.REMSId, ActivityEventTypes.RemsEngagementUpdated),
+            new CreateActivityEventDto(EntityType.Rems, engagement.REMSId, ActivityEventTypes.RemsEngagementUpdated),
             cancellationToken);
 
     private async Task<RemsEngagementView?> BuildEngagementViewAsync(Guid engagementId, CancellationToken cancellationToken)

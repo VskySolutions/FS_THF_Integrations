@@ -90,23 +90,6 @@ public sealed class UpsertColourCodeRequestValidator : AbstractValidator<UpsertC
     }
 }
 
-public sealed class CreateSavedViewRequestValidator : AbstractValidator<CreateSavedViewRequest>
-{
-    public CreateSavedViewRequestValidator()
-    {
-        RuleFor(x => x.Name).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.ListPage).NotEmpty().MaximumLength(100);
-    }
-}
-
-public sealed class UpdateSavedViewRequestValidator : AbstractValidator<UpdateSavedViewRequest>
-{
-    public UpdateSavedViewRequestValidator()
-    {
-        RuleFor(x => x.Name).NotEmpty().MaximumLength(150);
-    }
-}
-
 public sealed class CreateChecklistRequestValidator : AbstractValidator<CreateChecklistRequest>
 {
     public CreateChecklistRequestValidator()

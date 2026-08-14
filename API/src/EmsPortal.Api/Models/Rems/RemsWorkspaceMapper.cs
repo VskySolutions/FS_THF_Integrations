@@ -68,11 +68,15 @@ internal static class RemsWorkspaceMapper
             engagement.Id,
             engagement.Department,
             engagement.ServiceLine,
+            engagement.SubServiceLine,
+            engagement.SubIndustry,
             UserRef(engagement.DepartmentDirectorId, names),
             UserRef(engagement.EngagementExecutiveId, names),
             UserRef(engagement.BillingManagerId, names),
             engagement.FirstYearFeeEstimate,
             engagement.RealizationPercentage,
+            engagement.BillingPeriod,
+            engagement.NumberOfBills,
             engagement.Status.ToString(),
             marketing,
             commission,
@@ -81,36 +85,51 @@ internal static class RemsWorkspaceMapper
             taxView);
     }
 
+    /// <summary>
+    /// The workspace for a request: its client, that client's entities, and the ONE engagement the request
+    /// carries. The engagement used to be indexed per entity so each entity tab could find its own — the
+    /// entities are still listed, because the client's business details belong to them, but the engagement
+    /// now belongs to the request and is reported once alongside them.
+    /// <para>
+    /// <paramref name="client"/> is null until the intake form comes back. The engagement is filled before
+    /// that, so the workspace has to describe a request that has one and no client yet.
+    /// </para>
+    /// </summary>
     public static RemsEngagementWorkspace Workspace(
         REMS rems,
-        REMSClient client,
-        IReadOnlyDictionary<Guid, REMSEngagement> engagementsByEntity,
+        REMSClient? client,
+        REMSEngagement? engagement,
         IReadOnlyDictionary<Guid, REMSEngagementAuditDetail> auditByEngagement,
         IReadOnlyDictionary<Guid, REMSEngagementGovernmentDetail> governmentByEngagement,
         IReadOnlyDictionary<Guid, REMSEngagementTaxDetail> taxByEngagement,
         IReadOnlyDictionary<Guid, string> names,
+        string? industryGroup,
+        IReadOnlyList<RemsAdditionalEntityView> additionalEntities,
         IReadOnlyList<RemsDepartmentDirectorView> departmentDirectors)
     {
-        var clientView = new RemsClientView(
-            client.Id, client.Name, client.Email, client.MobileNumber, client.ReferralSource,
-            client.BillingContactName, client.BillingEmail, Address(client.BillingAddress));
+        // The billing ADDRESS is one of the main entity's three now, so it rides along with that entity's
+        // addresses below rather than being read off the client.
+        var clientView = client is null
+            ? null
+            : new RemsClientView(
+                client.Id, client.Name, client.Email, client.MobileNumber, client.ReferralSource,
+                client.BillingContactName, client.BillingEmail);
 
-        var entities = client.Entities
+        RemsEngagementView? engagementView = null;
+        if (engagement is not null)
+        {
+            auditByEngagement.TryGetValue(engagement.Id, out var audit);
+            governmentByEngagement.TryGetValue(engagement.Id, out var gov);
+            taxByEngagement.TryGetValue(engagement.Id, out var tax);
+            engagementView = Engagement(engagement, audit, gov, tax, names);
+        }
+
+        var entities = (client?.Entities ?? Enumerable.Empty<REMSEntity>())
             .Where(e => !e.Deleted)
             .OrderByDescending(e => e.IsMainEntity)
             .ThenBy(e => e.Name)
             .Select(e =>
             {
-                engagementsByEntity.TryGetValue(e.Id, out var engagement);
-                RemsEngagementView? engagementView = null;
-                if (engagement is not null)
-                {
-                    auditByEngagement.TryGetValue(engagement.Id, out var audit);
-                    governmentByEngagement.TryGetValue(engagement.Id, out var gov);
-                    taxByEngagement.TryGetValue(engagement.Id, out var tax);
-                    engagementView = Engagement(engagement, audit, gov, tax, names);
-                }
-
                 var addresses = e.Addresses
                     .Where(a => !a.Deleted)
                     .Select(a => new RemsEntityAddressView(a.Id, a.AddressType.ToString(), Address(a.Address)!))
@@ -123,11 +142,12 @@ internal static class RemsWorkspaceMapper
                         c.Person?.DisplayName, c.Person?.PrimaryEmail, c.Person?.MobileNumber))
                     .ToList();
 
-                return new RemsEntityView(e.Id, e.Name, e.EIN, e.IsMainEntity, addresses, contacts, engagementView);
+                return new RemsEntityView(e.Id, e.Name, e.EIN, e.IsMainEntity, addresses, contacts);
             })
             .ToList();
 
         return new RemsEngagementWorkspace(
-            rems.Id, rems.REMSNumber, rems.Status, clientView, entities, departmentDirectors);
+            rems.Id, rems.REMSNumber, rems.Status, clientView, entities, engagementView,
+            industryGroup, additionalEntities, departmentDirectors);
     }
 }

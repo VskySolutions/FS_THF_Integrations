@@ -39,7 +39,7 @@
       />
       <app-phone-input
         v-model="form.mobileNumber" v-model:country="form.countryCode"
-        label="Mobile Number" class="col-12" :disable="disable"
+        label="Phone Number" class="col-12" :disable="disable"
       />
     </div>
 

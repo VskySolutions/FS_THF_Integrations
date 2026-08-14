@@ -164,22 +164,6 @@ internal sealed class ColourCodeConfiguration : IEntityTypeConfiguration<ColourC
     }
 }
 
-internal sealed class SavedViewConfiguration : IEntityTypeConfiguration<SavedView>
-{
-    public void Configure(EntityTypeBuilder<SavedView> builder)
-    {
-        builder.ToTable("SavedViews");
-        builder.HasKey(v => v.Id);
-        builder.Property(v => v.Name).IsRequired().HasMaxLength(150);
-        builder.Property(v => v.ListPage).IsRequired().HasMaxLength(100);
-        builder.Property(v => v.FiltersJson).HasColumnType("nvarchar(max)");
-        builder.Property(v => v.SortJson).HasColumnType("nvarchar(max)");
-        builder.Property(v => v.ColumnsJson).HasColumnType("nvarchar(max)");
-        builder.HasIndex(v => new { v.TenantId, v.ListPage });
-        builder.HasIndex(v => v.UserId);
-    }
-}
-
 internal sealed class ChecklistConfiguration : IEntityTypeConfiguration<Checklist>
 {
     public void Configure(EntityTypeBuilder<Checklist> builder)

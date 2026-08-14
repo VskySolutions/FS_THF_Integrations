@@ -8,7 +8,7 @@
              titles, so naming it here is the difference between confident and hoping. -->
         <div v-if="requestNumber || requestTitle" class="assign-target q-mb-md">
           <div class="assign-target__number">{{ requestNumber }}</div>
-          <div class="assign-target__title">{{ requestTitle }}</div>
+          <div class="assign-target__title">{{ requestNumber }}</div>
         </div>
         <div class="text-body2 text-grey-7 q-mb-md">{{ explanation }}</div>
         <app-select

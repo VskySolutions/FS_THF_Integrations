@@ -1,8 +1,8 @@
 <template>
   <div>
     <div class="text-body2 text-grey-8 q-mb-sm">
-      Tag how this engagement was won. At least one marketing method is required; saving unlocks the Approval step
-      (AC-REMS-017).
+      Tag how this engagement was won. At least one marketing method is required before it can be sent for
+      approval (AC-REMS-017).
     </div>
 
     <q-banner v-if="marketingUnavailable" dense class="bg-orange-1 text-orange-9 rounded-borders">
@@ -45,29 +45,20 @@
         </div>
       </div>
       <div v-if="!filteredGroups.length" class="text-grey-6 q-pa-sm">No matching marketing methods.</div>
-
-      <!-- Into the card's title row, alongside every other tab's primary save. `defer` because the
-           target is rendered by the same tree (see EngagementSetupForm). -->
-      <teleport v-if="isVisibleTab && editable" defer to="#engagement-header-actions">
-        <q-btn
-          unelevated no-caps color="primary" icon-right="o_arrow_forward" label="Save & Next"
-          :loading="saving" :disable="selected.length === 0" @click="save"
-        >
-          <q-tooltip v-if="selected.length === 0">Select at least one marketing method</q-tooltip>
-        </q-btn>
-      </teleport>
     </template>
   </div>
 </template>
 
 <script setup>
 // The engagement marketing tags (AC-REMS-017): a searchable, grouped multi-select shown as removable chips.
-// Values are OptionSetItem ids. At least one is required to save; a successful save is what makes the
-// Approval step reachable (the parent watches the saved marketing count).
-import { ref, computed, watch } from "vue";
-import { remsApi, getApiErrorMessage } from "services/api";
-import { useNotify } from "composables/useNotify";
-import { useVisibleTab } from "composables/useVisibleTab";
+// Values are OptionSetItem ids.
+//
+// Controlled by the page (like the setup form beside it): it holds the selection, announces every change
+// (`change`), and the page's auto-save writes it. It had its own "Save & Next" button teleported into the
+// workspace card's title row — a target that no longer exists, so the button rendered nowhere and
+// marketing could not be saved at all.
+import { ref, computed, watch, nextTick } from "vue";
+import { remsApi } from "services/api";
 import AppTextField from "components/common/AppTextField.vue";
 
 const props = defineProps({
@@ -77,12 +68,19 @@ const props = defineProps({
   marketingUnavailable: { type: Boolean, default: false },
   editable: { type: Boolean, default: true }
 });
-const emit = defineEmits(["saved", "advance"]);
+// The page saves this section for the user, so every change to the selection is announced.
+const emit = defineEmits(["change"]);
 
-const notify = useNotify();
-const { isVisibleTab } = useVisibleTab();
 const selected = ref([...(props.engagement.marketingMethodIds || [])]);
-watch(() => props.engagement, (e) => { selected.value = [...(e.marketingMethodIds || [])]; });
+// Set while the selection is being re-seeded from a fresh engagement view — the server catching this
+// component up, not a change to announce.
+let syncing = false;
+watch(() => props.engagement, (e) => {
+  syncing = true;
+  selected.value = [...(e.marketingMethodIds || [])];
+  nextTick(() => { syncing = false; });
+});
+watch(selected, () => { if (!syncing) emit("change"); }, { deep: true });
 
 const search = ref("");
 
@@ -107,21 +105,20 @@ const filteredGroups = computed(() => {
     .filter((g) => g.items.length);
 });
 
-const saving = ref(false);
-const save = async () => {
-  if (selected.value.length === 0) return;
-  saving.value = true;
-  try {
-    const view = await remsApi.updateMarketing(props.engagement.id, selected.value);
-    emit("saved", view);
-    notify.success("Marketing methods saved.");
-    emit("advance");
-  } catch (err) {
-    notify.error(getApiErrorMessage(err));
-  } finally {
-    saving.value = false;
+// Called by the page's save. The API requires at least one tag, so an empty selection cannot be written:
+// on an engagement that never had any that is a normal half-filled request, but on one that HAS tags it
+// is a removal the endpoint will not accept — and saying so beats reporting a save that did not happen.
+const saveMarketing = async (engagementId) => {
+  if (selected.value.length === 0) {
+    return (props.engagement.marketingMethodIds || []).length
+      ? "Marketing needs at least one tag — the saved tags are unchanged."
+      : null;
   }
+  await remsApi.updateMarketing(engagementId, selected.value);
+  return null;
 };
+
+defineExpose({ saveMarketing });
 </script>
 
 <style scoped>

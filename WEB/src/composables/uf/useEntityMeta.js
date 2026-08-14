@@ -18,12 +18,13 @@ const META = {
     icon: "o_groups",
     route: () => ({ name: "user_groups" })
   },
-  // REMS request/approval (Phase 15). REMS notifications carry the REMS request id, so they deep-link to
-  // the shared request detail (/rems/requests/:id) — clicking the notification navigates there + marks read.
+  // REMS request/approval. REMS notifications carry the REMS request id, so they deep-link to the request
+  // (/rems/requests/:id) — clicking the notification navigates there + marks read. That route is the form
+  // in its read-only mode, which IS the request detail now; there is no separate detail page.
   [EntityType.Rems]: {
     label: "REMS",
     icon: "o_assignment",
-    route: (id) => ({ name: "rems_request_detail", params: { id } })
+    route: (id) => ({ name: "rems_request", params: { id } })
   }
 };
 

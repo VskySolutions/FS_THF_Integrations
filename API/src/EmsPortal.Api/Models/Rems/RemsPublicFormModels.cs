@@ -139,11 +139,16 @@ public sealed class RemsRelatedEntityPayload
 {
     /// <summary>Stable client-supplied key that ties this entity to its payload node (never trusted as an id).</summary>
     public string? SourceKey { get; set; }
-    public string? BusinessName { get; set; }
-    public string? Ein { get; set; }
-    public string? ContactName { get; set; }
-    public RemsAddressPayload? PhysicalAddress { get; set; }
-    public RemsAddressPayload? MailingAddress { get; set; }
+
+    /// <summary>Who to speak to about this other business.</summary>
+    public string? FullName { get; set; }
+    public string? EmailAddress { get; set; }
+    public string? PhoneNumber { get; set; }
+
+    // The business name, EIN and addresses are gone. An additional entity is now captured as a CONTACT,
+    // not as a second legal entity: it produces no REMSEntity, no engagement and no approval round of its
+    // own. It becomes its own REMS request instead, raised by hand from the Partner/CSE list — which is
+    // where the business details get asked for, through that request's own intake.
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -224,17 +229,18 @@ public sealed record RemsReviewContractDetails(
     DateOnly? PurchaseOrderStartDate,
     DateOnly? PurchaseOrderEndDate);
 
-/// <summary>A related entity as shown on review.</summary>
+/// <summary>Another business the client named, as shown on review — a contact, not a second entity.</summary>
 public sealed record RemsReviewOtherEntity(
     string? SourceKey,
-    string? BusinessName,
-    string? Ein,
-    string? ContactName,
-    RemsAddressPayload? PhysicalAddress,
-    RemsAddressPayload? MailingAddress);
+    string? FullName,
+    string? EmailAddress,
+    string? PhoneNumber);
 
-/// <summary>The main entity's physical + (optional) mailing address.</summary>
-public sealed record RemsReviewAddressGroup(RemsAddressPayload? Physical, bool MailingDiffers, RemsAddressPayload? Mailing);
+/// <summary>The main entity's three addresses. Each is stored in its own right, so none is conditional.</summary>
+public sealed record RemsReviewAddressGroup(
+    RemsAddressPayload? Physical,
+    RemsAddressPayload? Mailing,
+    RemsAddressPayload? Billing);
 
 /// <summary>A role contact row on review.</summary>
 public sealed record RemsReviewContactRow(string Role, bool IsRequired, string? Name, string? Email, string? Phone);

@@ -1,8 +1,9 @@
 <template>
   <!-- Read-only, grouped presentation of the in-progress payload for the public form's Review step
-       (AC-REMS-024.7): Contact · Contract Details (Government only) · Other Entities · Address ·
-       Additional Contacts · Billing. Rendered as plain text — no inputs. Mirrors the admin
-       SubmittedFormDialog grouping so the client sees exactly what the admin will. -->
+       (AC-REMS-024.7): Contact · Addresses · Contract Details (Government only) · Additional Contacts ·
+       Other Entities · Billing. That is the order the form asks the questions in, card for card, so
+       checking an answer here means looking where it was typed. Rendered as plain text — no inputs.
+       Mirrors the admin SubmittedFormDialog grouping so the client sees exactly what the admin will. -->
   <div>
     <div v-for="g in groups" :key="g.title" class="review-group">
       <div class="review-group__title">
@@ -39,14 +40,14 @@
       <div v-else-if="g.kind === 'entities'">
         <div v-if="g.rows.length" class="column q-gutter-sm">
           <q-card v-for="(e, i) in g.rows" :key="e.key || i" flat bordered class="q-pa-sm entity-card">
-            <div class="rems-value text-weight-medium">{{ e.businessName || "Unnamed entity" }}</div>
+            <div class="rems-value text-weight-medium">{{ e.name || "Unnamed entity" }}</div>
             <div v-for="r in e.rows" :key="r.label" class="field-row field-row--dense">
               <div class="rems-label">{{ r.label }}</div>
               <div class="rems-value">{{ r.value }}</div>
             </div>
           </q-card>
         </div>
-        <div v-else class="text-grey-6">No related entities provided.</div>
+        <div v-else class="text-grey-6">No other entities provided.</div>
       </div>
     </div>
   </div>
@@ -54,7 +55,7 @@
 
 <script setup>
 import { computed } from "vue";
-import { hasAddress, addressText } from "modules/rems/remsAddress";
+import { addressText } from "modules/rems/remsAddress";
 import { isBusinessIndustryGroup } from "modules/rems/useRemsMeta";
 
 const props = defineProps({
@@ -118,17 +119,32 @@ const groups = computed(() => {
   const contact = [
     { label: "Client Name", value: val(p.clientName) },
     { label: "Email (locked)", value: val(props.lockedEmail || p.email) },
-    { label: "Mobile Number", value: val(p.mobileNumber) },
+    { label: "Phone Number", value: val(p.mobileNumber) },
     { label: "Referral Source", value: referralSourceLabel(p.referralSource), hint: referralSourceHint(p.referralSource) },
     { label: "Referral Details", value: val(p.referralSourceDetail) }
   ];
   if (isIndividual.value) {
-    contact.push({ label: "Spouse Name", value: val(p.spouseName) });
-    contact.push({ label: "Spouse Email Address", value: val(p.spouseEmail) });
-    contact.push({ label: "Spouse Phone", value: val(p.spousePhone) });
+    // The spouse is asked for once, in the Contacts card, and is reviewed there under "Spouse". These
+    // three are retired, and appear only when a draft started before the change still carries one —
+    // this step reviews what will actually be submitted, and is silent about what will not.
+    if (p.spouseName) contact.push({ label: "Spouse Name", value: p.spouseName });
+    if (p.spouseEmail) contact.push({ label: "Spouse Email Address", value: p.spouseEmail });
+    if (p.spousePhone) contact.push({ label: "Spouse Phone", value: p.spousePhone });
   }
   if (isBusiness.value) contact.push({ label: "EIN", value: val(p.ein) });
   result.push({ title: "Contact", icon: "o_person", kind: "fields", rows: contact });
+
+  // Addresses — all three are stored in their own right, so each is simply shown.
+  result.push({
+    title: "Addresses",
+    icon: "o_place",
+    kind: "fields",
+    rows: [
+      { label: "Physical Address", value: addressText(p.physicalAddress) },
+      { label: "Mailing Address", value: addressText(p.mailingAddress) },
+      { label: "Billing Address", value: addressText(p.billingAddress) }
+    ]
+  });
 
   // Contract Details (Government)
   if (isGovernment.value) {
@@ -147,28 +163,6 @@ const groups = computed(() => {
     });
   }
 
-  // Other Entities (related businesses)
-  const entities = (p.relatedEntities || [])
-    .filter((e) => [e.businessName, e.ein, e.contactName].some((x) => x && String(x).trim()) ||
-      hasAddress(e.physicalAddress) || hasAddress(e.mailingAddress))
-    .map((e, i) => {
-      const rows = [];
-      if (e.ein) rows.push({ label: "EIN", value: e.ein });
-      if (e.contactName) rows.push({ label: "Contact", value: e.contactName });
-      if (hasAddress(e.physicalAddress)) rows.push({ label: "Physical Address", value: addressText(e.physicalAddress) });
-      if (hasAddress(e.mailingAddress)) rows.push({ label: "Mailing Address", value: addressText(e.mailingAddress) });
-      return { key: e.sourceKey || `entity-${i}`, businessName: e.businessName, rows };
-    });
-  result.push({ title: "Other Entities", icon: "o_apartment", kind: "entities", rows: entities });
-
-  // Address
-  const address = [
-    { label: "Physical Address", value: addressText(p.physicalAddress) },
-    { label: "Mailing address differs?", value: p.mailingDiffers ? "Yes" : "No" }
-  ];
-  if (p.mailingDiffers) address.push({ label: "Mailing Address", value: addressText(p.mailingAddress) });
-  result.push({ title: "Address", icon: "o_place", kind: "fields", rows: address });
-
   // Additional Contacts (role contacts, in group order)
   const roles = p.roles || {};
   // The three business groups share one role set, so they all look up under "business".
@@ -180,15 +174,26 @@ const groups = computed(() => {
     .map((k) => ({ role: ROLE_LABELS[k], isRequired: required.includes(k), ...roles[k] }));
   result.push({ title: "Additional Contacts", icon: "o_groups", kind: "contacts", rows: contactRows });
 
-  // Billing
+  // Other Entities — a contact each, not a second set of business details. Each becomes its own EMS.
+  const entities = (p.relatedEntities || [])
+    .filter((e) => [e.fullName, e.emailAddress, e.phoneNumber].some((x) => x && String(x).trim()))
+    .map((e, i) => {
+      const rows = [];
+      if (e.emailAddress) rows.push({ label: "Email Address", value: e.emailAddress });
+      if (e.phoneNumber) rows.push({ label: "Phone Number", value: e.phoneNumber });
+      return { key: e.sourceKey || `entity-${i}`, name: e.fullName, rows };
+    });
+  result.push({ title: "Other Entities", icon: "o_apartment", kind: "entities", rows: entities });
+
+  // Billing — the person to bill, and nothing else. The billing ADDRESS lives with the other two in
+  // Addresses, which is where the form asks for it; repeating it here showed one answer in two places.
   result.push({
     title: "Billing",
     icon: "o_receipt_long",
     kind: "fields",
     rows: [
       { label: "Billing Contact", value: val(p.billingContactName) },
-      { label: "Billing Email", value: val(p.billingEmail) },
-      { label: "Billing Address", value: addressText(p.billingAddress) }
+      { label: "Billing Email", value: val(p.billingEmail) }
     ]
   });
 

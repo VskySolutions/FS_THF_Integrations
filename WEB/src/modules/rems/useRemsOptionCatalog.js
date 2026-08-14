@@ -87,11 +87,82 @@ const SEED = {
     { label: "Audit", value: "audit" },
     { label: "GCS", value: "gcs" }
   ],
+  // Pairs with the engagement's No. of Bills, which is a plain count rather than anything derived from
+  // the period. There is deliberately no "Custom".
+  billingPeriod: [
+    { label: "Monthly", value: "monthly" },
+    { label: "Quarterly", value: "quarterly" },
+    { label: "Annual", value: "annual" }
+  ],
   serviceLine: [
     { label: "Commercial", value: "commercial" },
     { label: "Non-Profit", value: "non_profit" },
     { label: "Government", value: "government" },
     { label: "Individual", value: "individual" }
+  ],
+  // One level below the service line: the service actually being sold. Nothing branches on it — the
+  // Government Audit rule keys off the LINE — so this is classification only. The Internal-* values are
+  // the firm's own work, booked as engagements so the same setup and approval route covers them.
+  subServiceLine: [
+    { label: "Attest Services", value: "attest_services" },
+    { label: "Tax Compliance", value: "tax_compliance" },
+    { label: "Client Accounting Services", value: "client_accounting_services" },
+    { label: "Outsourced CFO", value: "outsourced_cfo" },
+    { label: "Consulting", value: "consulting" },
+    { label: "Business Valuation", value: "business_valuation" },
+    { label: "IT Services", value: "it_services" },
+    { label: "Plan Administration", value: "plan_administration" },
+    { label: "Mergers & Acquisitions", value: "mergers_acquisitions" },
+    { label: "Payroll Services", value: "payroll_services" },
+    { label: "Peer Review", value: "peer_review" },
+    {
+      label: "SOC",
+      value: "soc",
+      description: "System and Organization Controls reporting (SOC 1 / SOC 2)."
+    },
+    { label: "Employee Benefits", value: "employee_benefits" },
+    { label: "Estate Planning", value: "estate_planning" },
+    { label: "Litigation Support", value: "litigation_support" },
+    { label: "Forensic Accounting", value: "forensic_accounting" },
+    { label: "Internal-Accounting", value: "internal_accounting" },
+    { label: "Internal-Billing", value: "internal_billing" },
+    { label: "Internal-Operations", value: "internal_operations" },
+    { label: "Internal-Marketing", value: "internal_marketing" },
+    { label: "Internal-IT", value: "internal_it" },
+    { label: "Internal-Miscellaneous", value: "internal_miscellaneous" }
+  ],
+  // One level below the industry group: the client's trade. Deliberately NOT filtered by the chosen group
+  // — the groups do not partition cleanly (a hospital is Health Care whether it is Commercial or
+  // Not-for-Profit), so the whole list is offered and the pairing is the user's to make.
+  subIndustry: [
+    { label: "Affordable Housing", value: "affordable_housing" },
+    { label: "Agribusiness", value: "agribusiness" },
+    { label: "Auto Dealers", value: "auto_dealers" },
+    { label: "Construction", value: "construction" },
+    { label: "Entertainment", value: "entertainment" },
+    { label: "Financial Institutions/Banking", value: "financial_institutions_banking" },
+    { label: "Hospitality", value: "hospitality" },
+    { label: "Manufacturing", value: "manufacturing" },
+    { label: "Professional Service Firms", value: "professional_service_firms" },
+    { label: "Real Estate", value: "real_estate" },
+    { label: "Retail", value: "retail" },
+    { label: "Health Care", value: "health_care" },
+    { label: "Oil & Gas Distribution", value: "oil_gas_distribution" },
+    { label: "Wholesale", value: "wholesale" },
+    { label: "Technology", value: "technology" },
+    { label: "State Government", value: "state_government" },
+    { label: "Local Government", value: "local_government" },
+    { label: "Federal Government", value: "federal_government" },
+    { label: "Educational Institutions", value: "educational_institutions" },
+    { label: "Insurance - Property and Casualty", value: "insurance_property_casualty" },
+    { label: "Insurance - Life", value: "insurance_life" },
+    { label: "Insurance - Other", value: "insurance_other" },
+    { label: "Trade Associations", value: "trade_associations" },
+    { label: "Charitable Organizations or Foundations", value: "charitable_organizations_foundations" },
+    { label: "Other Not-for-Profit", value: "other_not_for_profit" },
+    { label: "Government", value: "government" },
+    { label: "Individual", value: "individual" },
+    { label: "Distribution", value: "distribution" }
   ]
 };
 
@@ -101,7 +172,10 @@ const SET_KEYS = {
   status: "REMS.Status",
   industryGroup: "REMS.IndustryGroup",
   department: "REMS.Department",
-  serviceLine: "REMS.ServiceLine"
+  serviceLine: "REMS.ServiceLine",
+  subServiceLine: "REMS.SubServiceLine",
+  subIndustry: "REMS.SubIndustry",
+  billingPeriod: "REMS.BillingPeriod"
 };
 
 // Module-level and shared: these lists are per-tenant and change rarely, so resolving them once beats

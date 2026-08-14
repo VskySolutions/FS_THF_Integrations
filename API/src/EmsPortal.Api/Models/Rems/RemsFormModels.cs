@@ -34,7 +34,6 @@ public sealed record RemsFormInfo(
 public sealed record RemsFormBuildScreen(
     Guid RemsId,
     string RemsNumber,
-    string RequestTitle,
     string ClientName,
     string RequestStatus,
     string? CustomerEmail,

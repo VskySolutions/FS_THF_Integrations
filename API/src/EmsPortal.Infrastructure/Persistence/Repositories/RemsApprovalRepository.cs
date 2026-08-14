@@ -47,10 +47,8 @@ internal sealed class RemsApprovalRepository : IRemsApprovalRepository
             .Include(t => t.Round).ThenInclude(r => r!.Tasks)
             .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.CommissionSplits)
             .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.MarketingMethods)
-            .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.Entity)
-                .ThenInclude(en => en!.Client).ThenInclude(c => c!.Rems)
-            .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.Entity)
-                .ThenInclude(en => en!.Client).ThenInclude(c => c!.Entities)
+            .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.Rems)
+                .ThenInclude(r => r!.Clients).ThenInclude(c => c.Entities)
             .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
 
     // The round's sibling tasks come along so the inbox can show how far the round has got (n of m
@@ -64,10 +62,11 @@ internal sealed class RemsApprovalRepository : IRemsApprovalRepository
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
             var t = query.Search.Trim();
+            // The entity's own name is gone from the search: an approval is now about a request and its
+            // one engagement, and the request already carries the client name it was raised under.
             tasks = tasks.Where(x =>
-                x.Round!.Engagement!.Entity!.Client!.Rems!.REMSNumber.Contains(t) ||
-                x.Round!.Engagement!.Entity!.Client!.Name.Contains(t) ||
-                x.Round!.Engagement!.Entity!.Name.Contains(t));
+                x.Round!.Engagement!.Rems!.REMSNumber.Contains(t) ||
+                x.Round!.Engagement!.Rems!.RequestedClientName.Contains(t));
         }
         if (query.Role is { } role)
         {
@@ -82,8 +81,7 @@ internal sealed class RemsApprovalRepository : IRemsApprovalRepository
         var total = await tasks.CountAsync(cancellationToken);
         var items = await tasks
             .Include(t => t.Round).ThenInclude(r => r!.Tasks)
-            .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.Entity)
-                .ThenInclude(en => en!.Client).ThenInclude(c => c!.Rems)
+            .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.Rems)
             // The task's own last touch leads — a checklist tick or a decision floats it up — with the
             // round's send date as the tie-break for tasks created together and never since touched.
             .OrderByDescending(t => t.UpdatedOnUtc)

@@ -70,11 +70,6 @@
       <q-separator />
       <q-card-actions align="right">
         <template v-if="phase === 'sent'">
-          <q-btn
-            v-if="canViewEmailLog"
-            outline no-caps color="primary" icon="o_history" label="View Email Log"
-            @click="viewLog"
-          />
           <q-btn unelevated no-caps color="primary" label="Done" @click="open = false" />
         </template>
         <template v-else>
@@ -104,13 +99,13 @@ const props = defineProps({
   modelValue: { type: Boolean, default: false },
   remsId: { type: String, default: null },
   subtitle: { type: String, default: "" },
-  // Whether to offer the "View Email Log" hand-off after sending (gated on rems.emailLog.read by the parent).
-  canViewEmailLog: { type: Boolean, default: false },
   // "send" is the first delivery of the form link; "reminder" nudges a client who already has it but has
   // not submitted. Same dialog and same shapes — a different template, endpoint and wording.
   mode: { type: String, default: "send" }
 });
-const emit = defineEmits(["update:modelValue", "sent", "view-log"]);
+// The "View Email Log" hand-off went with the dialog it opened: the email log had no screen left once the
+// EMS Inbox and the engagement workspace were replaced by the request page.
+const emit = defineEmits(["update:modelValue", "sent"]);
 
 const notify = useNotify();
 
@@ -200,11 +195,6 @@ const copyLink = () => {
   copyToClipboard(formLink.value)
     .then(() => notify.success("Link copied."))
     .catch(() => notify.error("Could not copy the link."));
-};
-
-const viewLog = () => {
-  emit("view-log");
-  open.value = false;
 };
 
 watch(() => props.modelValue, (isOpen) => {

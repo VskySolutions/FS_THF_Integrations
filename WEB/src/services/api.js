@@ -199,19 +199,17 @@ export const permissionGroupApi = {
   setStatus: (id, isActive) => api.put(`/api/admin/permission-groups/${id}/status`, { isActive }).then(unwrap),
   remove: (id) => api.delete(`/api/admin/permission-groups/${id}`).then(envelope),
   // ---- Templates ----
+  // Read only: nothing in the app creates a template (POST .../templates is served, unwrapped).
   templates: () => api.get("/api/admin/permission-groups/templates").then(unwrap),
-  createTemplate: (payload) => api.post("/api/admin/permission-groups/templates", payload).then(unwrap),
   // Full permission key catalogue (string[]) — drives the key picker.
   permissionCatalog: () => api.get("/api/admin/permissions").then(unwrap)
 };
 
 export const profileApi = {
-  // Current user's person profile.
+  // Current user's person profile. The admin-side pair (GET/PUT /api/admin/users/{id}/profile) has no
+  // caller — a user's person is edited on the People screen — so only the self endpoints are wrapped.
   getMine: () => api.get("/api/users/me/profile").then(unwrap),
-  updateMine: (payload) => api.put("/api/users/me/profile", payload).then(unwrap),
-  // Admin: any user's profile.
-  getForUser: (userId) => api.get(`/api/admin/users/${userId}/profile`).then(unwrap),
-  updateForUser: (userId, payload) => api.put(`/api/admin/users/${userId}/profile`, payload).then(unwrap)
+  updateMine: (payload) => api.put("/api/users/me/profile", payload).then(unwrap)
 };
 
 export const mediaApi = {
@@ -307,7 +305,7 @@ export const EntityType = Object.freeze({
   SmtpAccount: 11,
   EmailTemplate: 12,
   Tag: 13,
-  SavedView: 14,
+  // 14 was SavedView, retired with the feature — the number stays reserved (see EntityType.cs).
   StickyNote: 15
 });
 
@@ -396,15 +394,6 @@ export const ufPdfApi = {
   export: (payload) => api.post("/api/uf/pdf-export", payload, { responseType: "blob" }).then((r) => r?.data)
 };
 
-// Saved views.
-export const ufSavedViewApi = {
-  list: (listPage) => api.get("/api/uf/saved-views", { params: { listPage } }).then(unwrap),
-  shared: () => api.get("/api/uf/saved-views/shared").then(unwrap),
-  create: (payload) => api.post("/api/uf/saved-views", payload).then(unwrap),
-  update: (id, payload) => api.put(`/api/uf/saved-views/${id}`, payload).then(unwrap),
-  remove: (id) => api.delete(`/api/uf/saved-views/${id}`).then(envelope)
-};
-
 // Checklists.
 export const ufChecklistApi = {
   list: (entityType, entityId) => api.get("/api/uf/checklists", { params: { entityType, entityId } }).then(unwrap),
@@ -478,21 +467,46 @@ export const remsApi = {
   // instants (a date-only picker must convert its own day boundaries — see zonedDayBoundaryUtc).
   // Returns the standard envelope.
   list: (params) => api.get("/api/rems/requests", { params }).then(envelope),
-  // Admin Pool view sizes: { unassigned, mine, all }. Takes the SAME filter params as list() (minus
-  // paging and poolScope) and applies the same visibility rules, so each count matches the rows that
-  // view would return. `all` is the total the other two are drawn from, not their sum — a request
-  // assigned to someone else is in neither.
-  poolCounts: (params) => api.get("/api/rems/requests/pool-counts", { params }).then(unwrap),
+  // poolCounts is gone with the Admin Pool. Every request names its reviewing admin at intake, so there
+  // is no unassigned bucket to size and nothing waiting to be picked up.
   get: (id) => api.get(`/api/rems/requests/${id}`).then(unwrap),
-  // payload: { existingClientReferenceId?, clientName, type, title, description?,
-  //            customerEmail?, customerMobileNumber?, mediaId?, submit, assignAdminUserId? }
+  // payload: { existingClientReferenceId?, clientName, type, description?,
+  //            customerEmail?, customerMobileNumber?, mediaId?, assignAdminUserId }
+  // assignAdminUserId is REQUIRED — every request names the admin who will review it once the client
+  // answers. There is no `submit`: a request is always created as a draft, and what moves it on is the
+  // initiator sending the intake link (sendForm below).
   create: (payload) => api.post("/api/rems/requests", payload).then(unwrap),
-  // payload: any subset of { title, description, type, clientName, customerEmail,
-  //            customerMobileNumber, existingClientReferenceId, submit } — null fields are unchanged.
-  // Assignment travels here too: `assignAdminUserId` sets the owner, `unassignAdmin: true` hands the
-  // request back to the pool (the two are mutually exclusive), and omitting both leaves it alone.
-  // Changing it needs rems.requests.assign on top of rems.requests.update.
+  // payload: any subset of { description, type, clientName, customerEmail,
+  //            customerMobileNumber, existingClientReferenceId } — null fields are unchanged.
+  // Assignment travels here too: `assignAdminUserId` re-points the reviewer (open to both the initiator
+  // and the admin), `unassignAdmin: true` clears it, and omitting both leaves it alone. Changing it needs
+  // rems.requests.assign on top of rems.requests.update.
   update: (id, payload) => api.put(`/api/rems/requests/${id}`, payload).then(unwrap),
+  // Attach already-uploaded media (POST /api/media first) to an existing request. Media the request
+  // already carries is ignored, so a retried save cannot file the same document twice. Returns the detail.
+  addFiles: (id, mediaIds) => api.post(`/api/rems/requests/${id}/files`, { mediaIds }).then(unwrap),
+
+  // ---- The admin ↔ initiator rework loop ----
+  // The admin returns a request for engagement-setup rework. `reason` is required and is shown to the
+  // initiator. Only valid while the request is with the admin (Admin Review / Awaiting Confirmation).
+  sendBack: (id, reason) => api.post(`/api/rems/requests/${id}/send-back`, { reason }).then(unwrap),
+  // The initiator hands the revised setup back. Valid from BOTH rework states — the admin's send-back and
+  // a round the approvers declined leave the setup with the initiator the same way.
+  returnToAdmin: (id) => api.post(`/api/rems/requests/${id}/return-to-admin`).then(unwrap),
+  // Every return, oldest first: [{ id, reason, returnedBy, returnedOnUtc, resolvedOnUtc }].
+  sendBacks: (id) => api.get(`/api/rems/requests/${id}/send-backs`).then(unwrap),
+
+  // ---- Delegation (Concur-style) ----
+  // Self-service: every call here reads or writes the CALLER's own delegations, so nothing is gated on an
+  // admin permission — their identity is the whole boundary.
+  // The delegates I have named: [{ id, delegateUserId, delegateName, canPrepare, canSend, startsOn,
+  //   endsOn, isActive }]. A dated grant stays listed outside its window with isActive false.
+  myDelegates: () => api.get("/api/rems/delegations/mine").then(unwrap),
+  // Who I may act for TODAY: [{ principalUserId, principalName, canPrepare, canSend }].
+  actingFor: () => api.get("/api/rems/delegations/acting-for").then(unwrap),
+  // payload: { delegateUserId, canPrepare, canSend, startsOn?, endsOn? } — upserts on the pair.
+  saveDelegate: (payload) => api.put("/api/rems/delegations", payload).then(unwrap),
+  removeDelegate: (id) => api.delete(`/api/rems/delegations/${id}`).then(envelope),
   assign: (id, adminUserId) => api.post(`/api/rems/requests/${id}/assign`, { adminUserId }).then(unwrap),
   duplicate: (id) => api.post(`/api/rems/requests/${id}/duplicate`).then(unwrap),
   remove: (id) => api.delete(`/api/rems/requests/${id}`).then(envelope),
@@ -506,11 +520,10 @@ export const remsApi = {
   // unknown or empty group returns [] rather than falling back to every admin.
   admins: (group) => api.get("/api/rems/admins", { params: group ? { group } : undefined }).then(unwrap),
 
-  // ---- EMS form build / send / email-log (WO-112, WO-116) ----
-  // Build screen: { remsId, remsNumber, requestTitle, clientName, requestStatus, customerEmail,
-  //   customerMobileNumber, cse:{id,name}|null, form:{id,industryGroup,inviteCode,formLink,status,
-  //   sentOnUtc,submittedOnUtc,inviteLockedOnUtc,isLocked}|null }.
-  getForm: (remsId) => api.get(`/api/rems/requests/${remsId}/form`).then(unwrap),
+  // ---- EMS form build / send (WO-112, WO-116) ----
+  // The build screen read (`getForm`), the EMS Inbox list (`inbox`) and the provider email log
+  // (`emailLog`) are gone with the screens that called them — the Build EMS page, the Inbox and the
+  // email-log dialog. All three endpoints are still served; nothing in the app asks for them.
   // payload: { cseUserId, industryGroup } — both required (AC-REMS-007.7). Returns the build screen.
   saveForm: (remsId, payload) => api.post(`/api/rems/requests/${remsId}/form`, payload).then(unwrap),
   // Pre-send preview: { destinationEmail, formLink } (AC-REMS-008.1).
@@ -525,13 +538,6 @@ export const remsApi = {
   previewReminder: (remsId) => api.get(`/api/rems/requests/${remsId}/form/reminder/preview`).then(unwrap),
   sendReminder: (remsId, payload) =>
     api.post(`/api/rems/requests/${remsId}/form/reminder`, payload || {}).then(unwrap),
-  // Provider email events, newest first: [{ id, eventType, recipientEmail, occurredOnUtc, providerMessageId }].
-  emailLog: (remsId) => api.get(`/api/rems/requests/${remsId}/email-log`).then(unwrap),
-  // EMS Inbox (paginated envelope). params: { page?, limit?, formState?, search?, requestStatus? } —
-  // search covers the REMS number and client name. Filtering is server-side, so the pager reports the
-  // filtered total. Rows: { remsId, remsNumber, clientName, engagementType, requestStatus,
-  //   formStatus, formCreatedBy:{id,name}|null, formSentOnUtc, latestEmailEventType, latestEmailEventOnUtc }.
-  inbox: (params) => api.get("/api/rems/inbox", { params }).then(envelope),
 
   // ---- Client forms + submitted-form review (WO-114, WO-116) ----
   // Client Forms list (paginated envelope). params: { page?, limit?, search?, submitted?, requestStatus? } —
@@ -548,23 +554,28 @@ export const remsApi = {
   // countryCode, countryName } (street is address line 1) — mapped to/from the AppAddressFields model by
   // modules/rems/remsAddress. Send the WHOLE shape: an update writes every line it is given.
   //
-  // The editable engagement workspace graph: { remsId, remsNumber, requestStatus, client, entities[] }.
-  // client: { id, name, email(locked), mobileNumber, referralSource, billingContactName, billingEmail,
-  //   billingAddress:{ id, ...address }|null }. entities[]: { id, name, ein, isMainEntity,
-  //   addresses:[{ id, addressType, address }], contacts:[{ id, role, isRequired, name, email, phone }],
-  //   engagement:{ id, department, serviceLine, departmentDirector, engagementExecutive, billingManager,
-  //     firstYearFeeEstimate, realizationPercentage, status, marketingMethodIds[], commissionSplits[],
-  //     audit, government, tax }|null }.
+  // The editable engagement workspace graph:
+  //   { remsId, remsNumber, requestStatus, client, entities[], engagement, industryGroup,
+  //     additionalEntities[], departmentDirectors[] }.
+  // client: { id, name, email(locked), mobileNumber, referralSource, billingContactName, billingEmail } —
+  // NULL until the client submits their intake form. The engagement is there from the moment the request
+  // is created, because the initiator fills its setup before the client is ever contacted, so a workspace
+  // with no client is the ordinary state of an unanswered request rather than an error.
+  // entities[]: { id, name, ein, isMainEntity, addresses:[{ id, addressType, address }] — addressType is
+  //   Physical | Mailing | Billing — contacts:[{ id, role, isRequired, name, email, phone }] }.
+  // engagement is the request's ONE engagement (it used to hang off each entity):
+  //   { id, department, serviceLine, subServiceLine, subIndustry, departmentDirector, engagementExecutive,
+  //     billingManager, firstYearFeeEstimate, realizationPercentage, billingPeriod, numberOfBills, status,
+  //     marketingMethodIds[], commissionSplits[], audit, government, tax } | null.
   engagement: (remsId) => api.get(`/api/rems/requests/${remsId}/engagement`).then(unwrap),
-  // payload: { name?, mobileNumber?, referralSource?, billingContactName?, billingEmail?,
-  //   billingAddress? } — the client email is LOCKED (never sent/changed).
-  updateClient: (remsId, payload) => api.put(`/api/rems/requests/${remsId}/client`, payload).then(unwrap),
-  // payload: { physicalAddress?, mailingAddress? } — null/all-blank removes the address.
-  updateEntityAddresses: (entityId, payload) => api.put(`/api/rems/entities/${entityId}/addresses`, payload).then(unwrap),
-  // payload: { contacts: [{ role, name?, email?, phone?, isRequired }] } — upserted by role.
-  updateEntityContacts: (entityId, payload) => api.put(`/api/rems/entities/${entityId}/contacts`, payload).then(unwrap),
-  // payload: any subset of { department, serviceLine, departmentDirectorId, engagementExecutiveId,
-  //   billingManagerId, firstYearFeeEstimate, realizationPercentage } — null fields are left unchanged.
+  // Correcting the client's own answers — the client record (`updateClient`), the main entity's three
+  // addresses (`updateEntityAddresses`) and its role contacts (`updateEntityContacts`) — has no screen any
+  // more: what the client submitted is read from the immutable snapshot rather than edited. The three
+  // endpoints stand; add the wrapper back with whatever screen wants them.
+  // payload: any subset of { department, serviceLine, subServiceLine, subIndustry, departmentDirectorId,
+  //   engagementExecutiveId, billingManagerId, firstYearFeeEstimate, realizationPercentage, billingPeriod,
+  //   numberOfBills } — null fields are left unchanged. The two optional sub-classifications are therefore
+  //   CLEARED with an empty string, not with null.
   // Returns { engagement, mappedDepartmentDirectorId } — the director the chosen department maps to (hint).
   updateEngagement: (id, payload) => api.put(`/api/rems/engagements/${id}`, payload).then(unwrap),
   // Link a previously-uploaded media id as the signed client-acceptance form (audit engagements).
@@ -574,8 +585,14 @@ export const remsApi = {
   updateGovernment: (id, payload) => api.put(`/api/rems/engagements/${id}/government`, payload).then(unwrap),
   // payload: { fiscalYearEnd?, taxFormIds:[] } — the response tax detail carries the recomputed due dates.
   updateTax: (id, payload) => api.put(`/api/rems/engagements/${id}/tax`, payload).then(unwrap),
-  // One-time copy of another entity's engagement setup (address/department/service line/executive/billing).
-  copyEngagement: (id, sourceId) => api.post(`/api/rems/engagements/${id}/copy-from/${sourceId}`).then(unwrap),
+  // copyEngagement is gone. It existed so a client's second and third entities did not need their setup
+  // retyped, and a request carries exactly one engagement now — there is never a sibling to copy from.
+  // Every approval round on an engagement, oldest first:
+  //   [{ roundId, roundNumber, status, sentOnUtc, sentBy, completedOnUtc, declineThreshold, declineCount,
+  //      decisions:[{ taskId, approver, role, status, decidedOnUtc, reason, checklistCompleted,
+  //        checklistTotal }] }].
+  // status Superseded on a decision means the round closed before that approver decided.
+  approvalHistory: (engagementId) => api.get(`/api/rems/engagements/${engagementId}/approval/history`).then(unwrap),
   // Set the marketing tags (≥1 required to save; saving makes approval reachable). Returns the engagement.
   updateMarketing: (id, marketingMethodIds) => api.put(`/api/rems/engagements/${id}/marketing`, { marketingMethodIds }).then(unwrap),
   // Set the commission splits (≤10 recipients, each > 0 and ≤ 100). splits: [{ employeeId, percentage }].
@@ -613,7 +630,7 @@ export const remsApi = {
   //     request:{ remsId, remsNumber, title, description, requestedClientName, type, status,
   //       customerEmail, customerMobileNumber, industryGroup, emsFormState, clientSubmissionState,
   //       assignedAdmin, cse, requestedBy, createdOnUtc, files:[{ id, mediaId, fileName, mimeType, fileSize, url }] },
-  //     engagement:{ engagementId, status, department, serviceLine,
+  //     engagement:{ engagementId, status, department, serviceLine, subServiceLine, subIndustry,
   //       client:{ id, name, email, mobileNumber, referralSource, billingContactName, billingEmail,
   //         billingAddress, entities:[{ id, name, ein, isMainEntity }] },
   //       entity:{ id, name, ein, isMainEntity, addresses:[{ id, addressType, address }],

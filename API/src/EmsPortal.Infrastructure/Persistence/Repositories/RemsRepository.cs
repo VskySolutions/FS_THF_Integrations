@@ -81,12 +81,18 @@ internal sealed class RemsRepository : IRemsRepository
         var me = options.CallerUserId;
         const string draft = RemsRequestStatuses.Draft;
 
+        // A DRAFT is not private in general — it is private until its author has said who is to review it.
+        // Naming a reviewing admin at intake is what puts the request on that admin's desk, so from that
+        // moment they see it and can work it, rather than waiting for the client to answer before the
+        // request they are named on becomes visible to them at all. It stays invisible to every OTHER
+        // admin: an unfinished referral nobody has been pointed at is still its author's alone.
         return options.CallerIsPrivileged
-            // Admin / Super Admin: every non-draft tenant request, plus the caller's own drafts.
-            ? _dbContext.Rems.Where(r => r.Status != draft || r.CreatedById == me)
-            // Partner-only: own drafts; non-draft only when created or involved (creator/assignee/CSE).
+            // Admin / Super Admin: every non-draft tenant request, plus drafts they raised or are named on.
+            ? _dbContext.Rems.Where(r =>
+                r.Status != draft || r.CreatedById == me || r.AdminAssignedToId == me)
+            // Partner-only: own drafts and drafts naming them; non-draft when created or involved.
             : _dbContext.Rems.Where(r =>
-                (r.Status == draft && r.CreatedById == me) ||
+                (r.Status == draft && (r.CreatedById == me || r.AdminAssignedToId == me)) ||
                 (r.Status != draft && (r.CreatedById == me || r.AdminAssignedToId == me || r.CSEId == me)));
     }
 
@@ -173,7 +179,8 @@ internal sealed class RemsRepository : IRemsRepository
                 f.Status,
                 f.SentOnUtc,
                 f.SubmittedOnUtc,
-                f.Submissions.Any()))
+                f.Submissions.Any(),
+                f.InviteCode))
             .ToListAsync(cancellationToken);
     }
 

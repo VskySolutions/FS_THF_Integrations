@@ -4,9 +4,11 @@ using EmsPortal.Application.Abstractions.Persistence;
 using EmsPortal.Application.Abstractions.UniversalFeatures;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Domain.Enums;
+using EmsPortal.Shared.Configuration;
 using EmsPortal.Shared.Contracts;
 using EmsPortal.Shared.Security;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace EmsPortal.Api.Controllers;
 
@@ -43,6 +45,8 @@ public sealed class RemsRequestsController : ControllerBase
     private readonly IActivityEventWriter _activity;
     private readonly INotificationDispatcher _notifications;
     private readonly IUserGroupRepository _groups;
+    /// <summary>Where the SPA is served from — the front half of the client's public form link.</summary>
+    private readonly string _baseUrl;
 
     public RemsRequestsController(
         IRemsRepository rems,
@@ -54,7 +58,8 @@ public sealed class RemsRequestsController : ControllerBase
         IUnitOfWork unitOfWork,
         IActivityEventWriter activity,
         INotificationDispatcher notifications,
-        IUserGroupRepository groups)
+        IUserGroupRepository groups,
+        IOptions<AppOptions> appOptions)
     {
         _rems = rems;
         _engagements = engagements;
@@ -66,6 +71,7 @@ public sealed class RemsRequestsController : ControllerBase
         _activity = activity;
         _notifications = notifications;
         _groups = groups;
+        _baseUrl = appOptions.Value.BaseUrl;
     }
 
     // -------------------- Dashboard list --------------------
@@ -188,6 +194,16 @@ public sealed class RemsRequestsController : ControllerBase
             return emailClash;
         }
 
+        // The parent, on a subsidiary. Resolved from the type that was just settled above rather than the
+        // one the caller sent, so a request auto-promoted to "existing client" by the name match does not
+        // keep a parent it no longer claims to have.
+        var (parentId, parentName, badParent) = await ResolveParentClientAsync(
+            type, request.ParentClientReferenceId, cancellationToken);
+        if (badParent is not null)
+        {
+            return badParent;
+        }
+
         // Whose request this is. A delegate acting for a shareholder produces the shareholder's work, so it
         // is stamped with both: CreatedById (set automatically on save) keeps who did it, and
         // OnBehalfOfUserId keeps whose it is. Acting as yourself leaves the latter null.
@@ -212,6 +228,8 @@ public sealed class RemsRequestsController : ControllerBase
             CustomerMobileNumber = Normalize(request.CustomerMobileNumber),
             CSEId = request.CSEId,
             ExistingClientReferenceId = request.ExistingClientReferenceId,
+            ParentClientReferenceId = parentId,
+            ParentClientName = parentName,
             AdminAssignedToId = request.AssignAdminUserId,
             OnBehalfOfUserId = seat?.PrincipalUserId,
         };
@@ -348,6 +366,19 @@ public sealed class RemsRequestsController : ControllerBase
         if (request.CustomerMobileNumber is not null) rems.CustomerMobileNumber = Normalize(request.CustomerMobileNumber);
         if (request.CSEId.HasValue) rems.CSEId = request.CSEId;
         if (request.ExistingClientReferenceId.HasValue) rems.ExistingClientReferenceId = request.ExistingClientReferenceId;
+
+        // The parent, resolved against the type the request now holds — which is why it runs after Type has
+        // landed above. Assigned unconditionally rather than only-when-supplied: on any type but subsidiary
+        // this resolves to null, and that IS the clearing. `??` keeps a parent already on file when an edit
+        // simply does not mention it.
+        var (parentId, parentName, badParent) = await ResolveParentClientAsync(
+            rems.Type, request.ParentClientReferenceId ?? rems.ParentClientReferenceId, cancellationToken);
+        if (badParent is not null)
+        {
+            return badParent;
+        }
+        rems.ParentClientReferenceId = parentId;
+        rems.ParentClientName = parentName;
 
         // After the client fields land, so the person record follows what the request now says.
         rems.ClientPersonId = await ResolveClientPersonAsync(rems, rems.TenantId, cancellationToken);
@@ -506,6 +537,18 @@ public sealed class RemsRequestsController : ControllerBase
                 "Only a request under admin review can be sent back to its initiator."));
         }
 
+        // Who the admin is handing it to. Both the initiator and the CSE can already WORK a returned
+        // request, so this settles whose job it is rather than who is permitted — but it is still checked,
+        // because "send this to the CSE" on a request with no CSE named is an instruction to nobody.
+        var toCse = string.Equals(request.ReturnTo, RemsSendBackTargets.Cse, StringComparison.OrdinalIgnoreCase);
+        if (toCse && rems.CSEId is null)
+        {
+            return BadRequest(ApiResponseFactory.Error(
+                ApiErrorCodes.ValidationFailed, "Cannot send back.",
+                "This request has no CSE named on it, so there is nobody to hand the rework to. Send it to the initiator instead."));
+        }
+        var returnedTo = toCse ? rems.CSEId : rems.CreatedById;
+
         var reason = request.Reason.Trim();
         await _rems.AddSendBackAsync(new REMSSendBack
         {
@@ -513,6 +556,7 @@ public sealed class RemsRequestsController : ControllerBase
             TenantId = rems.TenantId,
             REMSId = rems.Id,
             Reason = reason,
+            ReturnedToUserId = returnedTo,
         }, cancellationToken);
 
         rems.Status = RemsRequestStatuses.ReturnedToInitiator;
@@ -520,11 +564,20 @@ public sealed class RemsRequestsController : ControllerBase
         await _activity.WriteAsync(new CreateActivityEventDto(
             EntityType.Rems, rems.Id, ActivityEventTypes.RemsSentBack, null, reason), cancellationToken);
 
-        // The initiator owns the rework, and the CSE named on the request works the setup with them.
+        // Both are told either way: the one being asked, and the other so they are not working a request
+        // that has moved under them. Only the wording differs, so nobody has to guess whose turn it is.
+        var ownerName = returnedTo is { } owner
+            ? (await _users.GetFullNamesAsync(new[] { owner }, cancellationToken))
+                .TryGetValue(owner, out var name) ? name : null
+            : null;
         foreach (var userId in Recipients(rems.CreatedById, rems.CSEId))
         {
+            var forMe = userId == returnedTo;
             await _notifications.DispatchAsync(new CreateNotificationDto(
-                userId, NotificationType.RemsRequestSubmitted,                "A REMS request was sent back for engagement setup",
+                userId, NotificationType.RemsRequestSubmitted,
+                forMe
+                    ? "A REMS request was sent back to you for engagement setup"
+                    : $"A REMS request was sent back for engagement setup{(ownerName is null ? "" : $" — to {ownerName}")}",
                 $"{rems.REMSNumber} — {rems.RequestedClientName}: {reason}", EntityType.Rems, rems.Id), cancellationToken);
         }
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -603,12 +656,17 @@ public sealed class RemsRequestsController : ControllerBase
         }
 
         var rows = await _rems.ListSendBacksAsync(id, cancellationToken);
-        var names = await _users.GetFullNamesAsync(rows.Select(r => r.CreatedById ?? Guid.Empty), cancellationToken);
+        // One lookup covering both who returned it and who it was handed to.
+        var names = await _users.GetFullNamesAsync(
+            rows.SelectMany(r => new[] { r.CreatedById, r.ReturnedToUserId })
+                .Where(x => x.HasValue).Select(x => x!.Value).Distinct(),
+            cancellationToken);
         var views = rows
             .Select(r => new RemsSendBackView(
                 r.Id, r.Reason,
                 r.CreatedById is { } by && names.TryGetValue(by, out var n) ? n : null,
-                r.CreatedOnUtc, r.ResolvedOnUtc))
+                r.CreatedOnUtc, r.ResolvedOnUtc,
+                r.ReturnedToUserId is { } to && names.TryGetValue(to, out var toName) ? toName : null))
             .ToList();
         return Ok(ApiResponseFactory.Success(views, "REMS send-backs retrieved."));
     }
@@ -656,6 +714,10 @@ public sealed class RemsRequestsController : ControllerBase
             // client. Null only when the source predates the column and has not been saved since; the
             // next save of the copy resolves it.
             ClientPersonId = source.ClientPersonId,
+            // The type comes across, so the parent has to as well — a duplicated subsidiary that lost its
+            // parent would read as a child of nobody.
+            ParentClientReferenceId = source.ParentClientReferenceId,
+            ParentClientName = source.ParentClientName,
             CSEId = source.CSEId,
         };
 
@@ -797,10 +859,20 @@ public sealed class RemsRequestsController : ControllerBase
     private bool IsPrivileged()
         => User.IsSuperAdmin() || User.GetRoles().Any(r => string.Equals(r, Roles.Admin, StringComparison.Ordinal));
 
-    /// <summary>Record-level VISIBILITY: drafts are creator-only; non-drafts are pool-wide for privileged callers, else created-or-involved.</summary>
+    /// <summary>
+    /// Record-level VISIBILITY: a draft is its author's and its named reviewing admin's; non-drafts are
+    /// pool-wide for privileged callers, else created-or-involved.
+    /// <para>
+    /// Naming the reviewing admin at intake is what puts a request on their desk, so it is also what makes
+    /// it visible to them — waiting for the client to answer would leave an admin unable to open a request
+    /// that already names them. It is not visible to any OTHER admin: a draft nobody has been pointed at
+    /// is still its author's alone. Mirrors <c>RemsRepository.ApplyVisibility</c>, which is the same rule
+    /// in SQL; the two must agree or a row appears in a list and 403s when opened.
+    /// </para>
+    /// </summary>
     private static bool CanSee(REMS r, Guid me, bool privileged)
         => r.Status == RemsRequestStatuses.Draft
-            ? IsMine(r, me)
+            ? IsMine(r, me) || r.AdminAssignedToId == me
             : privileged || IsMine(r, me) || r.AdminAssignedToId == me || r.CSEId == me;
 
     /// <summary>
@@ -1005,6 +1077,37 @@ public sealed class RemsRequestsController : ControllerBase
     /// thing that fails the save.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// The parent client to store, for a given request type: the named person and their name today, or
+    /// (null, null) on any type but subsidiary — which is what clears a parent left behind by a type
+    /// change. The third element is a 400 when the id names somebody who is not a client on file.
+    /// <para>
+    /// The name is copied rather than joined at read time, matching <c>RequestedClientName</c>: the lists
+    /// that show it are paged over hundreds of requests and would otherwise reach into Person for one
+    /// column. It is refreshed on every save, so an edit picks up a renamed parent.
+    /// </para>
+    /// </summary>
+    private async Task<(Guid? Id, string? Name, IActionResult? Failure)> ResolveParentClientAsync(
+        string? type, Guid? parentClientReferenceId, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(type, RemsRequestTypes.SubsidiaryChildOfExistingClient, StringComparison.Ordinal)
+            || parentClientReferenceId is not { } parentId)
+        {
+            return (null, null, null);
+        }
+
+        // Tenant-scoped and soft-delete-filtered by the ambient query filter, as the client reference is.
+        if (await _persons.GetByIdAsync(parentId, cancellationToken) is not { SourceEntityType: EntityType.Client } parent)
+        {
+            return (null, null, BadRequest(ApiResponseFactory.Error(
+                ApiErrorCodes.ValidationFailed, "Validation failed.",
+                "parentClientReferenceId must name a client on file. Search for the parent in the Parent "
+                    + "Client box and pick them from the results.")));
+        }
+
+        return (parentId, parent.FullName, null);
+    }
+
     private async Task<IActionResult?> RejectUnknownClientReferenceAsync(
         Guid? existingClientReferenceId, CancellationToken cancellationToken)
     {
@@ -1065,7 +1168,7 @@ public sealed class RemsRequestsController : ControllerBase
         var (ems, submission) = MapFormState(form);
         return new RemsRequestRow(
             r.Id, r.REMSNumber, r.RequestedClientName, r.Type, r.CreatedOnUtc, r.Status,
-            r.CustomerEmail, r.CustomerMobileNumber,
+            r.CustomerEmail, r.CustomerMobileNumber, r.ParentClientName,
             UserRefOf(r.AdminAssignedToId, names), UserRefOf(r.CSEId, names),
             form?.IndustryGroup, ems, submission,
             NameOf(names, r.CreatedById), NameOf(names, r.UpdatedById), r.UpdatedOnUtc,
@@ -1090,11 +1193,25 @@ public sealed class RemsRequestsController : ControllerBase
             rems.Id, rems.REMSNumber, rems.Description, rems.RequestedClientName,
             rems.Type, rems.Status, rems.CustomerEmail, rems.CustomerMobileNumber,
             rems.ExistingClientReferenceId, rems.ClientPersonId,
+            rems.ParentClientReferenceId, rems.ParentClientName,
             UserRefOf(rems.AdminAssignedToId, names), UserRefOf(rems.CSEId, names),
             form?.IndustryGroup, ems, submission, files,
             NameOf(names, rems.CreatedById), rems.CreatedOnUtc, NameOf(names, rems.UpdatedById), rems.UpdatedOnUtc,
-            ActionsFor(rems, me, privileged));
+            ActionsFor(rems, me, privileged),
+            ClientFormLink(form));
     }
+
+    /// <summary>
+    /// The client's intake link while the form is out with them, or null. One definition rather than a
+    /// second copy of the window rule: the same test the Email Log applies before offering the link there.
+    /// </summary>
+    private string? ClientFormLink(RemsFormStateInfo? form)
+        => form is not null
+            && !string.IsNullOrWhiteSpace(form.InviteCode)
+            && form.FormSentOnUtc is not null
+            && form.FormStatus is not (RemsFormStatus.Submitted or RemsFormStatus.Cancelled)
+                ? $"{_baseUrl.TrimEnd('/')}/rems/form/{form.InviteCode}"
+                : null;
 
     /// <summary>Projects the (optional) EMS form into dashboard state strings. No form => "NotStarted"/null.</summary>
     private static (string EmsFormState, string? ClientSubmissionState) MapFormState(RemsFormStateInfo? form)

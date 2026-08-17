@@ -495,9 +495,12 @@ export const remsApi = {
   addFiles: (id, mediaIds) => api.post(`/api/rems/requests/${id}/files`, { mediaIds }).then(unwrap),
 
   // ---- The admin ↔ initiator rework loop ----
-  // The admin returns a request for engagement-setup rework. `reason` is required and is shown to the
-  // initiator. Only valid while the request is with the admin (Admin Review / Awaiting Confirmation).
-  sendBack: (id, reason) => api.post(`/api/rems/requests/${id}/send-back`, { reason }).then(unwrap),
+  // The admin returns a request for engagement-setup rework. Only valid while the request is with the
+  // admin (Admin Review / Awaiting Confirmation).
+  // payload: { reason, returnTo? } — `reason` is required and is shown to whoever it goes to; `returnTo`
+  // is "initiator" (the default) or "cse", and names who OWNS the rework. Both of them can work a returned
+  // request either way, and both are notified; the choice decides which of them is being asked.
+  sendBack: (id, payload) => api.post(`/api/rems/requests/${id}/send-back`, payload).then(unwrap),
   // The initiator hands the revised setup back. Valid from BOTH rework states — the admin's send-back and
   // a round the approvers declined leave the setup with the initiator the same way.
   returnToAdmin: (id) => api.post(`/api/rems/requests/${id}/return-to-admin`).then(unwrap),
@@ -548,7 +551,11 @@ export const remsApi = {
     api.post(`/api/rems/requests/${remsId}/form/reminder`, payload || {}).then(unwrap),
   // The request's email history and whether THIS caller may chase the client from it:
   //   { canRemind, remindBlockedReason, events: [{ id, eventType, recipientEmail, occurredOnUtc,
-  //     providerMessageId, detail, sentBy }] } — newest first.
+  //     detail, sentBy, subject, body }] , clientFormLink } — newest first.
+  // `subject`/`body` are the message AS SENT and are present only on the rows this portal raised (Sent,
+  // Reminder) — a provider callback reports on a message rather than being one. The transport message id
+  // is deliberately not returned: it is how callbacks find the row, not something a reader can act on.
+  // `clientFormLink` is the client's intake link, non-null only while the form is sent and unanswered.
   // eventType is a RemsFormEmailEventType name (Sent | Reminder | Delivered | Opened | Failed);
   // `sentBy` names the person who pressed Send/Remind and is null on provider-reported events; `detail`
   // explains a Failed event this portal recorded itself. `canRemind` is the reminder endpoint's own

@@ -71,7 +71,14 @@ public sealed record RemsFormStateInfo(
     RemsFormStatus? FormStatus,
     DateTime? FormSentOnUtc,
     DateTime? FormSubmittedOnUtc,
-    bool HasSubmission);
+    bool HasSubmission,
+    /// <summary>
+    /// The code behind the client's public form link. Carried here so a caller holding the request can
+    /// build that link without a second read of the form — the request detail offers it for copying while
+    /// the form is out with the client. It is not a secret to anyone who can already read the request:
+    /// they can open the Email Log, which shows the same link.
+    /// </summary>
+    string? InviteCode);
 
 /// <summary>
 /// Data access for the REMS request aggregate root and its file links (WO-110). Tenant isolation is

@@ -29,6 +29,14 @@ public class REMSSendBack : AuditableEntity
     public string Reason { get; set; } = string.Empty;
 
     /// <summary>
+    /// Who the admin addressed the rework to — the initiator or the CSE named on the request. Both can
+    /// already WORK a returned request (see <c>RemsSetupAccess.CanWork</c>), so this does not grant access:
+    /// it records whose job the admin decided it was, which is what the returned request's banner says and
+    /// what the notification is worded around. Null on returns made before the admin was asked to choose.
+    /// </summary>
+    public Guid? ReturnedToUserId { get; set; }
+
+    /// <summary>
     /// When the initiator sent the revised setup back to the admin, or null while it is still with them.
     /// At most one unresolved row per request.
     /// </summary>

@@ -11,6 +11,14 @@ public sealed class CreateRemsRequestRequest
     /// <summary>Loose reference to an existing client (Person id) when the type is existing/subsidiary.</summary>
     public Guid? ExistingClientReferenceId { get; set; }
 
+    /// <summary>
+    /// The client this one is a subsidiary of (Person id, from the same lookup as the client itself).
+    /// Read only when <see cref="Type"/> is the subsidiary code; on any other type it is ignored and the
+    /// stored parent is cleared. Must name a person stamped as a client — the type says "child of an
+    /// EXISTING client", so a free-text parent would be a contradiction.
+    /// </summary>
+    public Guid? ParentClientReferenceId { get; set; }
+
     /// <summary>Client name at intake (required — filled from the selected person or free text).</summary>
     public string ClientName { get; set; } = string.Empty;
 
@@ -60,6 +68,14 @@ public sealed class UpdateRemsRequestRequest
     public Guid? ExistingClientReferenceId { get; set; }
 
     /// <summary>
+    /// The client this one is a subsidiary of. Unlike every other field here, it is not left alone when
+    /// null: it is derived from <see cref="Type"/>, so a request whose type is no longer the subsidiary
+    /// code has its parent cleared whatever this says. That is what stops a request switched from
+    /// "Subsidiary" to "Brand new client" keeping a parent nothing on the form still shows.
+    /// </summary>
+    public Guid? ParentClientReferenceId { get; set; }
+
+    /// <summary>
     /// The admin to own this request. A null on its own means "leave the assignment alone", exactly like
     /// every other field on this payload — handing a request back to the pool is said with
     /// <see cref="UnassignAdmin"/>. Changing the assignment additionally requires
@@ -85,21 +101,38 @@ public sealed class AddRemsFilesRequest
     public IReadOnlyList<Guid> MediaIds { get; set; } = Array.Empty<Guid>();
 }
 
-/// <summary>The Admin's reason for returning a request to its initiator (initiator-first rebuild).</summary>
+/// <summary>The Admin's reason for returning a request for rework, and who they are handing it to.</summary>
 public sealed class SendBackRemsRequestRequest
 {
     /// <summary>Why the setup needs work. Required — a return with no reason is not actionable.</summary>
     public string Reason { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Who owns the rework: <see cref="RemsSendBackTargets.Initiator"/> or
+    /// <see cref="RemsSendBackTargets.Cse"/>. Both can already work a returned request, so this decides
+    /// who is ASKED rather than who is allowed. Omitted means the initiator, which is where every return
+    /// went before the admin was offered the choice.
+    /// </summary>
+    public string? ReturnTo { get; set; }
 }
 
-/// <summary>One return of a request to its initiator, as history.</summary>
+/// <summary>The two people an admin may hand rework to. Matched case-insensitively on the wire.</summary>
+public static class RemsSendBackTargets
+{
+    public const string Initiator = "initiator";
+    public const string Cse = "cse";
+}
+
+/// <summary>One return of a request for rework, as history.</summary>
 public sealed record RemsSendBackView(
     Guid Id,
     string Reason,
     string? ReturnedBy,
     DateTime ReturnedOnUtc,
     /// <summary>When the initiator handed the revised setup back; null while it is still with them.</summary>
-    DateTime? ResolvedOnUtc);
+    DateTime? ResolvedOnUtc,
+    /// <summary>Who the admin addressed it to, or null on returns made before they were asked to choose.</summary>
+    string? ReturnedTo);
 
 /// <summary>Assign (or re-assign) a request to an admin (WO-111, AC-REMS-005).</summary>
 public sealed class AssignRemsRequestRequest
@@ -131,6 +164,9 @@ public sealed record RemsRequestRow(
     // them the contact line and the Client Email column could only ever render "—".
     string? CustomerEmail,
     string? CustomerMobileNumber,
+    // The client this one is a subsidiary of, for the list's Parent Client column. The name comes off the
+    // request row itself, so the column costs the list nothing.
+    string? ParentClientName,
     RemsUserRef? AssignedAdmin,
     RemsUserRef? Cse,
     string? IndustryGroup,
@@ -166,6 +202,10 @@ public sealed record RemsRequestDetail(
     // somebody already on file — unlike ExistingClientReferenceId, which stays null for a brand-new
     // client. Null only on requests not saved since the column was added.
     Guid? ClientPersonId,
+    // The client this one is a subsidiary of. Both null on every other type — see REMS.ParentClientName
+    // for why the name travels with the id instead of being joined at read time.
+    Guid? ParentClientReferenceId,
+    string? ParentClientName,
     RemsUserRef? AssignedAdmin,
     RemsUserRef? Cse,
     string? IndustryGroup,
@@ -176,7 +216,15 @@ public sealed record RemsRequestDetail(
     DateTime CreatedOnUtc,
     string? UpdatedBy,
     DateTime UpdatedOnUtc,
-    RemsRowActions Actions);
+    RemsRowActions Actions,
+    /// <summary>
+    /// The client's own intake link, for copying — non-null only while it is theirs to follow: the form
+    /// has been sent and they have not answered yet. Withheld before that because the public endpoint
+    /// reports the form unavailable until it is Sent, and because a staff member opening it first is how a
+    /// request ends up filled in by the wrong hand; withheld after, because there is nothing left to fill
+    /// in. Same window and same reasoning as the Email Log's copy of it.
+    /// </summary>
+    string? ClientFormLink);
 
 /// <summary>
 /// A client-lookup result (WO-111). <see cref="ParentCompany"/> and <see cref="PastWork"/> are always

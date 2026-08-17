@@ -62,17 +62,25 @@ public sealed class SendRemsFormRequest
 /// A single email-delivery event row in the form email log (WO-112, AC-REMS-008.6), newest first.
 /// <paramref name="Detail"/> explains a Failed event this portal recorded itself (no SMTP account,
 /// rejected credentials, …) and is null for everything else — raw provider payloads are never surfaced.
+/// <para>
+/// <paramref name="Subject"/> and <paramref name="Body"/> are the message as it was sent, present on the
+/// rows this portal raised (Sent, Reminder) and null on provider callbacks and on anything sent before
+/// they were recorded. The <c>ProviderMessageId</c> is deliberately NOT on this record: it is a transport
+/// identifier of the form <c>…@localhost</c>, meaningless to the reader, and the message itself is what
+/// they came to see.
+/// </para>
 /// </summary>
 public sealed record RemsEmailEventRow(
     Guid Id,
     string EventType,
     string RecipientEmail,
     DateTime OccurredOnUtc,
-    string? ProviderMessageId,
     string? Detail,
     // Who pressed Send or Remind. Null on the events a provider reported back (delivered / opened /
     // failed): nobody here caused those, and "the system" is not a person worth naming.
-    string? SentBy);
+    string? SentBy,
+    string? Subject,
+    string? Body);
 
 /// <summary>
 /// The email log as one screen: the delivery events, and whether THIS caller can nudge the client from
@@ -86,10 +94,17 @@ public sealed record RemsEmailEventRow(
 /// cannot send is not news to them.
 /// </para>
 /// </summary>
+/// <para>
+/// <paramref name="ClientFormLink"/> is the client's own intake link, offered for copying in exactly the
+/// window where it is theirs to follow: the form has been sent and they have not answered yet. Null before
+/// that (the link is dead until the form is Sent, and a staff member opening it first is how a request ends
+/// up filled in by the wrong hand) and null after (there is nothing left to fill in).
+/// </para>
 public sealed record RemsEmailLog(
     bool CanRemind,
     string? RemindBlockedReason,
-    IReadOnlyList<RemsEmailEventRow> Events);
+    IReadOnlyList<RemsEmailEventRow> Events,
+    string? ClientFormLink);
 
 /// <summary>
 /// One EMS-Inbox row (WO-112, AC-REMS-009): a request with a form, its request context, form state,

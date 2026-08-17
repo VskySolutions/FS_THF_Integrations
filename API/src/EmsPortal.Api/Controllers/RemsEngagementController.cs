@@ -113,7 +113,8 @@ public sealed class RemsEngagementController : ControllerBase
         string? NameOf(Guid? id) => id is { } uid && names.TryGetValue(uid, out var n) ? n : null;
 
         var rows = items.Select(i => new RemsClientFormRow(
-            i.RemsId, i.RemsNumber, i.ClientName, i.RequestStatus, HasForm: true, i.Submitted, i.SubmittedOnUtc,
+            i.RemsId, i.RemsNumber, i.ClientName, i.ParentClientName, i.RequestStatus,
+            HasForm: true, i.Submitted, i.SubmittedOnUtc,
             RemsWorkspaceMapper.UserRef(i.AdminAssignedToId, names), RemsWorkspaceMapper.UserRef(i.CSEId, names),
             NameOf(i.CreatedById), i.CreatedOnUtc, NameOf(i.UpdatedById), i.UpdatedOnUtc));
 

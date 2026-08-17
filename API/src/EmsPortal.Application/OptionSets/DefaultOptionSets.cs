@@ -165,6 +165,11 @@ public static class DefaultOptionSets
             new ItemDefinition("government", "Government", 26),
             new ItemDefinition("individual", "Individual", 27),
             new ItemDefinition("distribution", "Distribution", 28),
+            // Appended rather than slotted in beside the other three Insurance trades at 20-22. The
+            // backfill that adds this to each existing tenant's copy takes MAX(DisplayOrder) + 1, so
+            // renumbering here would put the item in one place for a new tenant and another for everybody
+            // already running. The list is not alphabetical in any case — Health Care sits at 12.
+            new ItemDefinition("insurance_health", "Insurance - Health", 29),
         }),
         new Definition(EntityType.Rems, "REMSMarketing_MarketingMethods.MarketingMethodId", "REMS Marketing Methods", OptionItemSortMode.Custom, new[]
         {
@@ -195,6 +200,11 @@ public static class DefaultOptionSets
             new ItemDefinition("tax", "Tax", 2),
             new ItemDefinition("audit", "Audit", 3),
             new ItemDefinition("gcs", "GCS", 4),
+            // The firm's own internal work, booked as an engagement so it routes through the same setup and
+            // approval as client work. Carries no conditional detail: the audit and tax cards key off the
+            // "audit" and "tax" codes specifically, so an Admin engagement asks for neither a signed CAF
+            // nor a fiscal year end.
+            new ItemDefinition("admin", "Admin", 5),
         }),
         // REMS.ServiceLine (Commercial / Non-Profit / Government / Individual) stood here. It was dropped:
         // it asked what KIND of client this is, which is what REMS.EntityType below already answers, so

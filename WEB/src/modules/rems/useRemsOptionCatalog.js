@@ -85,7 +85,10 @@ const SEED = {
     { label: "CAS", value: "cas" },
     { label: "Tax", value: "tax" },
     { label: "Audit", value: "audit" },
-    { label: "GCS", value: "gcs" }
+    { label: "GCS", value: "gcs" },
+    // The firm's own internal work. Carries no conditional detail — the audit and tax cards on the setup
+    // key off the "audit" and "tax" codes specifically.
+    { label: "Admin", value: "admin" }
   ],
   // Pairs with the engagement's No. of Bills, which is a plain count rather than anything derived from
   // the period. There is deliberately no "Custom".
@@ -162,7 +165,8 @@ const SEED = {
     { label: "Other Not-for-Profit", value: "other_not_for_profit" },
     { label: "Government", value: "government" },
     { label: "Individual", value: "individual" },
-    { label: "Distribution", value: "distribution" }
+    { label: "Distribution", value: "distribution" },
+    { label: "Insurance - Health", value: "insurance_health" }
   ]
 };
 

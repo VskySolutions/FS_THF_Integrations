@@ -529,6 +529,9 @@ const requestRows = computed(() => {
     // No Title row: a request has no title of its own any more — the client it is for is what names it.
     { label: "Requested Client", value: text(r.requestedClientName) },
     { label: "Type", value: typeLabel(r.type), hint: typeHint(r.type) },
+    // Directly under the Type that raises the question. Present only on a subsidiary, where the approver
+    // is signing off work for a client that belongs to another one already on THF's books.
+    ...(r.parentClientName ? [{ label: "Parent Client", value: r.parentClientName }] : []),
     { label: "Request Status", type: "status" },
     { label: "Customer Email", value: text(r.customerEmail) },
     { label: "Customer Phone Number", value: text(r.customerMobileNumber) },

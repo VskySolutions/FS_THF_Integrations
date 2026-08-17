@@ -69,13 +69,24 @@
             v-if="canRemind" unelevated no-caps color="amber-8" icon="o_notifications_active"
             label="Send reminder" @click="openReminder"
           />
+          <!-- The client's own form link, for chasing them by any means other than the portal — a call,
+               a message from somebody's own mailbox. Beside Send reminder because it answers the same
+               moment: the client has not come back yet. The server decides when there is a link to copy —
+               it withholds one until the form has been sent and again once the client has answered — so
+               this appears and disappears with it rather than reasoning about the state itself. -->
+          <q-btn
+            v-if="clientFormLink" outline no-caps color="primary" icon="o_content_copy"
+            label="Client Form" @click="copyClientFormLink"
+          >
+            <q-tooltip>Copy the client's intake form link</q-tooltip>
+          </q-btn>
           <q-btn
             v-if="canReturnToAdmin" unelevated no-caps color="primary" icon="o_assignment_turned_in"
             label="Return to admin" :loading="acting" @click="returnToAdmin"
           />
           <q-btn
             v-if="canSendBack" outline no-caps color="orange-9" icon="o_assignment_return"
-            label="Send back to initiator" @click="sendBackOpen = true"
+            label="Send back" @click="sendBackOpen = true"
           />
         </div>
       </template>
@@ -95,7 +106,13 @@
            is the instruction for the whole page. -->
       <q-banner v-if="openSendBack" dense class="rf-alert rf-alert--warn q-mb-md">
         <template #avatar><q-icon name="o_assignment_return" color="orange-9" /></template>
-        <div class="text-weight-medium">Sent back by {{ openSendBack.returnedBy || "an admin" }}</div>
+        <!-- Who it went to, on the returns that recorded a choice — the reader may be the CSE looking at
+             a request the admin handed to the partner, or the other way round, and the reason alone does
+             not say which of them is expected to act. -->
+        <div class="text-weight-medium">
+          Sent back by {{ openSendBack.returnedBy || "an admin" }}
+          <template v-if="openSendBack.returnedTo"> — for {{ openSendBack.returnedTo }} to action</template>
+        </div>
         <div>{{ openSendBack.reason }}</div>
       </q-banner>
 
@@ -306,7 +323,11 @@
 
     <!-- All five act on a saved request, so none of them exist while one is being composed. -->
     <template v-if="remsId">
-      <send-back-dialog v-model="sendBackOpen" :rems-number="request?.remsNumber" @confirm="sendBack" />
+      <send-back-dialog
+        v-model="sendBackOpen" :rems-number="request?.remsNumber"
+        :initiator-name="request?.createdBy || ''" :cse-name="request?.cse?.name || ''"
+        @confirm="sendBack"
+      />
       <send-ems-dialog v-model="sendOpen" :rems-id="remsId" :subtitle="subtitle" @sent="load" />
       <send-ems-dialog
         v-model="reminderOpen" mode="reminder" :rems-id="remsId" :subtitle="subtitle" @sent="load"
@@ -345,11 +366,12 @@
 // per-record locks could not express.
 import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } from "vue";
 import { useRoute, useRouter, onBeforeRouteLeave } from "vue-router";
-import { remsApi, getApiErrorMessage } from "services/api";
+import { remsApi, getApiErrorMessage, webUrl } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import {
-  useRemsMeta, useRemsOptionSets, useRemsEngagementOptionSets, useRemsIndustryGroups
+  useRemsMeta, useRemsOptionSets, useRemsEngagementOptionSets, useRemsIndustryGroups,
+  REMS_TYPE_SUBSIDIARY
 } from "modules/rems/useRemsMeta";
 import { useAutoSave } from "modules/rems/useAutoSave";
 import { REMS_STATUS } from "modules/rems/remsStatus";
@@ -431,9 +453,12 @@ const blankClient = () => ({
   clientName: "",
   customerEmail: "",
   customerMobileNumber: "",
-  description: "",
   type: "",
   existingClientReferenceId: null,
+  // The client a subsidiary hangs off. The name rides along with the id so the picker can show it back
+  // without a lookup, and so the read view has something to print.
+  parentClientReferenceId: null,
+  parentClientName: "",
   assignAdminUserId: null
 });
 const clientForm = reactive(blankClient());
@@ -560,6 +585,21 @@ const canRemind = computed(() =>
 // on nothing. The reminder inside it is gated separately, by the server.
 const canReadEmailLog = computed(() =>
   !isNew.value && has(Permissions.RemsEmailLogRead) && emsFormActivity(request.value));
+
+// The client's intake link, already resolved to an absolute URL. Non-empty only in the window the server
+// hands it over in — the form is out with the client and unanswered — so the button gates on it directly.
+const clientFormLink = computed(() => webUrl(request.value?.clientFormLink));
+
+const copyClientFormLink = async () => {
+  try {
+    await navigator.clipboard.writeText(clientFormLink.value);
+    notify.success("Client form link copied.");
+  } catch {
+    // Denied clipboard permission, or an insecure origin. Saying so beats a button that looks like it
+    // worked — the Send EMS dialog shows the same link on screen for copying by hand.
+    notify.warning("Could not copy the link. Your browser blocked clipboard access.");
+  }
+};
 const canReturnToAdmin = computed(() =>
   [REMS_STATUS.RETURNED_TO_INITIATOR, REMS_STATUS.CHANGES_REQUESTED].includes(status.value));
 const canSendBack = computed(() => isAdminStage.value && isAdmin.value);
@@ -716,10 +756,22 @@ const clientRows = computed(() => [
   { label: "Client Email Address", value: clientForm.customerEmail },
   { label: "Client Phone Number", value: clientForm.customerMobileNumber },
   { label: "Relationship to THF", value: labelOf(typeOptions.value, clientForm.type) },
+  // Only on a subsidiary — on any other type there is no parent, and a blank row would suggest one is
+  // missing rather than not applicable.
+  { label: "Parent Client", value: clientForm.parentClientName, hideWhenEmpty: true },
   { label: "Entity Type", value: labelOf(industryGroupOptions.value, setupForm.industryGroup) },
   { label: "Industry", value: labelOf(subIndustryOptions.value, setupForm.subIndustry) },
   { label: "Reviewing Admin", value: nameOf(adminOptions.value, clientForm.assignAdminUserId) },
-  { label: "Message from Partner", value: clientForm.description, wide: true, html: true },
+  // The retired "Message from Partner". Shown only where an older request actually carries one — the
+  // field is gone from the form, so this never appears on anything raised since, but deleting the row
+  // outright would hide text somebody wrote and nothing else displays.
+  {
+    label: "Message from Partner",
+    value: request.value?.description,
+    wide: true,
+    html: true,
+    hideWhenEmpty: true
+  },
   {
     label: "Attachments",
     value: (request.value?.files || []).map((f) => f.fileName).filter(Boolean),
@@ -794,9 +846,10 @@ const seedForms = (detail, ws) => {
   clientForm.clientName = detail.clientName || "";
   clientForm.customerEmail = detail.customerEmail || "";
   clientForm.customerMobileNumber = detail.customerMobileNumber || "";
-  clientForm.description = detail.description || "";
   clientForm.type = detail.type || "";
   clientForm.existingClientReferenceId = detail.existingClientReferenceId || null;
+  clientForm.parentClientReferenceId = detail.parentClientReferenceId || null;
+  clientForm.parentClientName = detail.parentClientName || "";
   clientForm.assignAdminUserId = detail.assignedAdmin?.id || null;
   setupForm.cseUserId = detail.cse?.id || null;
   setupForm.industryGroup =
@@ -837,17 +890,28 @@ const clientProblem = () => {
   if (!clientForm.customerEmail?.trim()) {
     return "Give the client's email address — the intake form is emailed to them.";
   }
+  // A subsidiary with no parent is the one answer the type does not finish. Required here rather than on
+  // the server, so a request raised before this field existed can still be saved by somebody editing it
+  // for an unrelated reason — but not left half-answered by anyone filling the form now.
+  if (clientForm.type === REMS_TYPE_SUBSIDIARY && !clientForm.parentClientReferenceId) {
+    return "Pick the client this one is a subsidiary of.";
+  }
   if (!clientForm.assignAdminUserId) return "Name the admin who will review this request.";
   return "";
 };
 
+// No `description`. "Message from Partner" is gone from the form, and leaving the field out of the payload
+// is also what preserves it — the endpoint reads an omitted field as "leave this alone", so whatever an
+// older request recorded stays recorded.
 const clientPayload = () => ({
-  description: clientForm.description || null,
   type: clientForm.type,
   clientName: clientForm.clientName,
   customerEmail: clientForm.customerEmail || null,
   customerMobileNumber: clientForm.customerMobileNumber || null,
-  existingClientReferenceId: clientForm.existingClientReferenceId || null
+  existingClientReferenceId: clientForm.existingClientReferenceId || null,
+  // Always sent, even as null — unlike the fields above, the server derives this from the TYPE, so a null
+  // here on a non-subsidiary is what clears a parent left behind by a change of answer.
+  parentClientReferenceId: clientForm.parentClientReferenceId || null
 });
 
 // ---- Auto-save ----
@@ -1106,12 +1170,17 @@ const openReminder = async () => {
   reminderOpen.value = true;
 };
 
-const sendBack = async (reason) => {
+// `payload` is { reason, returnTo } off the dialog — returnTo names which of the two people on the request
+// is being asked to do the work.
+const sendBack = async (payload) => {
   acting.value = true;
   try {
     await flushSaves();
-    await remsApi.sendBack(remsId.value, reason);
-    notify.success("Sent back to the initiator.");
+    await remsApi.sendBack(remsId.value, payload);
+    const to = payload.returnTo === "cse"
+      ? (request.value?.cse?.name || "the CSE")
+      : (request.value?.createdBy || "the initiator");
+    notify.success(`Sent back to ${to}.`);
     await load();
   } catch (err) {
     notify.error(getApiErrorMessage(err));

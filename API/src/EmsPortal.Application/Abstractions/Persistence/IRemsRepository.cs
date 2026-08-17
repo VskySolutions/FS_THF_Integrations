@@ -119,6 +119,37 @@ public interface IRemsRepository
 
     void RemoveFile(REMSFiles file);
 
+    /// <summary>Stage another business the client named at intake (WO-116, initiator-first rebuild).</summary>
+    Task AddAdditionalEntityAsync(REMSAdditionalEntity additionalEntity, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The other businesses declared on a request's intake, newest last. Backs the follow-up flag on the
+    /// Partner/CSE list — rows with no <c>CreatedREMSId</c> are the ones still needing an EMS.
+    /// </summary>
+    Task<IReadOnlyList<REMSAdditionalEntity>> ListAdditionalEntitiesAsync(Guid remsId, CancellationToken cancellationToken = default);
+
+    Task<REMSAdditionalEntity?> GetAdditionalEntityAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// REMS numbers for the given ids, keyed by id. Lets an additional-entity row link to the request it
+    /// produced by NAME rather than only claiming one exists.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, string>> GetNumbersAsync(
+        IReadOnlyCollection<Guid> remsIds, CancellationToken cancellationToken = default);
+
+    void UpdateAdditionalEntity(REMSAdditionalEntity additionalEntity);
+
+    /// <summary>Record an admin's return of a request to its initiator, with the reason they gave.</summary>
+    Task AddSendBackAsync(REMSSendBack sendBack, CancellationToken cancellationToken = default);
+
+    /// <summary>The still-open return for a request, or null when it is not currently back with its initiator.</summary>
+    Task<REMSSendBack?> GetOpenSendBackAsync(Guid remsId, CancellationToken cancellationToken = default);
+
+    /// <summary>Every return of a request, oldest first — the send-back half of its history.</summary>
+    Task<IReadOnlyList<REMSSendBack>> ListSendBacksAsync(Guid remsId, CancellationToken cancellationToken = default);
+
+    void UpdateSendBack(REMSSendBack sendBack);
+
     /// <summary>
     /// Count of active REMS requests for a tenant, ignoring the ambient query filter. Backs
     /// <c>REMS-{seq}</c> number generation (seq = count + 1).
@@ -140,17 +171,4 @@ public interface IRemsRepository
     /// </summary>
     Task<bool> IsClientPersonSharedAsync(Guid personId, Guid excludingRemsId, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Whether this client already has a request under this title. A client's requests are told apart by
-    /// their titles — on their engagement history, in the pool, in every notification — so two under one
-    /// title is a genuine ambiguity rather than a tidiness matter. Matched case-insensitively against the
-    /// tenant's active requests, and against both the client person and the intake reference so a request
-    /// that predates <c>ClientPersonId</c> still counts.
-    /// <para>
-    /// <c>excludingRemsId</c> is the request being edited, so a save that leaves the title alone is not a
-    /// clash with itself.
-    /// </para>
-    /// </summary>
-    Task<bool> TitleExistsForClientAsync(
-        Guid clientPersonId, string title, Guid? excludingRemsId, CancellationToken cancellationToken = default);
 }

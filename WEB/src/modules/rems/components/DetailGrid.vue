@@ -1,0 +1,73 @@
+<template>
+  <div class="dg">
+    <div v-for="row in visibleRows" :key="row.label" class="dg__item" :class="{ 'dg__item--wide': row.wide }">
+      <div class="dg__label">{{ row.label }}</div>
+      <!-- Rich text (the partner's message) arrives as markup and has to render as such. Passed through
+           the shared allowlist first — the API sanitizes on write, and this is the second pass that
+           covers anything stored before it did. Everything else is plain and the interpolation below
+           escapes it. -->
+      <!-- eslint-disable-next-line vue/no-v-html -->
+      <div v-if="row.html" class="dg__value dg__value--rich" v-html="renderRichText(row.value)" />
+      <div v-else class="dg__value">{{ display(row.value) }}</div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+// Read-only presentation for the REMS form's View mode: label above value, not a disabled input.
+//
+// A disabled control still looks like a control — it invites a click and reads as "you may not do this"
+// rather than "here is the record". View mode is for reading, so it drops the form furniture entirely.
+import { computed } from "vue";
+import { renderRichText } from "utils/richText";
+
+const props = defineProps({
+  // [{ label, value, wide?, html?, hideWhenEmpty? }]
+  rows: { type: Array, default: () => [] }
+});
+
+// A field nobody filled in still matters on a record — "no mobile number" is information — so an empty
+// value shows as a dash rather than vanishing. Rows opt out with hideWhenEmpty where their absence says
+// nothing (a conditional block that does not apply to this engagement).
+const visibleRows = computed(() =>
+  props.rows.filter((r) => !(r.hideWhenEmpty && !hasValue(r.value))));
+
+const hasValue = (v) => !(v === null || v === undefined || v === "" || (Array.isArray(v) && !v.length));
+
+const display = (v) => {
+  if (!hasValue(v)) return "—";
+  if (Array.isArray(v)) return v.join(", ");
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  return v;
+};
+</script>
+
+<style scoped>
+.dg {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px 28px;
+}
+.dg__item--wide {
+  grid-column: 1 / -1;
+}
+.dg__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-500);
+  margin-bottom: 3px;
+}
+.dg__value {
+  font-size: 14.5px;
+  color: var(--ink-900);
+  word-break: break-word;
+}
+.dg__value--rich :deep(p) {
+  margin: 0 0 6px;
+}
+.dg__value--rich :deep(p:last-child) {
+  margin-bottom: 0;
+}
+</style>

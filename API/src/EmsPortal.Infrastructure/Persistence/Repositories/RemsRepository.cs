@@ -189,6 +189,45 @@ internal sealed class RemsRepository : IRemsRepository
 
     public void RemoveFile(REMSFiles file) => _dbContext.RemsFiles.Remove(file);
 
+    public async Task AddAdditionalEntityAsync(REMSAdditionalEntity additionalEntity, CancellationToken cancellationToken = default)
+        => await _dbContext.RemsAdditionalEntities.AddAsync(additionalEntity, cancellationToken);
+
+    public async Task<IReadOnlyList<REMSAdditionalEntity>> ListAdditionalEntitiesAsync(Guid remsId, CancellationToken cancellationToken = default)
+        => await _dbContext.RemsAdditionalEntities
+            .Where(a => a.REMSId == remsId)
+            .OrderBy(a => a.CreatedOnUtc)
+            .ToListAsync(cancellationToken);
+
+    public Task<REMSAdditionalEntity?> GetAdditionalEntityAsync(Guid id, CancellationToken cancellationToken = default)
+        => _dbContext.RemsAdditionalEntities.FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
+
+    public async Task<IReadOnlyDictionary<Guid, string>> GetNumbersAsync(
+        IReadOnlyCollection<Guid> remsIds, CancellationToken cancellationToken = default)
+        => remsIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await _dbContext.Rems
+                .Where(r => remsIds.Contains(r.Id))
+                .Select(r => new { r.Id, r.REMSNumber })
+                .ToDictionaryAsync(r => r.Id, r => r.REMSNumber, cancellationToken);
+
+    public void UpdateAdditionalEntity(REMSAdditionalEntity additionalEntity)
+        => _dbContext.RemsAdditionalEntities.Update(additionalEntity);
+
+    public async Task AddSendBackAsync(REMSSendBack sendBack, CancellationToken cancellationToken = default)
+        => await _dbContext.RemsSendBacks.AddAsync(sendBack, cancellationToken);
+
+    public Task<REMSSendBack?> GetOpenSendBackAsync(Guid remsId, CancellationToken cancellationToken = default)
+        => _dbContext.RemsSendBacks
+            .FirstOrDefaultAsync(s => s.REMSId == remsId && s.ResolvedOnUtc == null, cancellationToken);
+
+    public async Task<IReadOnlyList<REMSSendBack>> ListSendBacksAsync(Guid remsId, CancellationToken cancellationToken = default)
+        => await _dbContext.RemsSendBacks
+            .Where(s => s.REMSId == remsId)
+            .OrderBy(s => s.CreatedOnUtc)
+            .ToListAsync(cancellationToken);
+
+    public void UpdateSendBack(REMSSendBack sendBack) => _dbContext.RemsSendBacks.Update(sendBack);
+
     public Task<int> CountActiveByTenantAsync(Guid tenantId, CancellationToken cancellationToken = default)
         => _dbContext.Rems
             .IgnoreQueryFilters()
@@ -198,19 +237,6 @@ internal sealed class RemsRepository : IRemsRepository
         => _dbContext.Rems
             .IgnoreQueryFilters()
             .AnyAsync(r => r.TenantId == tenantId && !r.Deleted && r.REMSNumber == number, cancellationToken);
-
-    // Soft-deleted requests are excluded (ambient filter): a withdrawn request holding the last reference
-    // to a person should not freeze that person's name for good.
-    // Case-insensitivity comes from the column's collation, which is what the database compares on; doing
-    // it here with ToLower() would only stop the index being used.
-    public Task<bool> TitleExistsForClientAsync(
-        Guid clientPersonId, string title, Guid? excludingRemsId, CancellationToken cancellationToken = default)
-        => _dbContext.Rems
-            .AnyAsync(
-                r => (r.ClientPersonId == clientPersonId || r.ExistingClientReferenceId == clientPersonId)
-                    && r.Title == title
-                    && (excludingRemsId == null || r.Id != excludingRemsId),
-                cancellationToken);
 
     public Task<bool> IsClientPersonSharedAsync(Guid personId, Guid excludingRemsId, CancellationToken cancellationToken = default)
         => _dbContext.Rems

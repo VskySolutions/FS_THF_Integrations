@@ -79,8 +79,8 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<OptionSetItem> OptionSetItems => Set<OptionSetItem>();
 
     // ---- Universal Features (Phase 14) ----
-    public DbSet<Note> Notes => Set<Note>();
-    public DbSet<NoteMention> NoteMentions => Set<NoteMention>();
+    public DbSet<ConversationMessage> ConversationMessages => Set<ConversationMessage>();
+    public DbSet<ConversationMessageMention> ConversationMessageMentions => Set<ConversationMessageMention>();
     public DbSet<Tag> Tags => Set<Tag>();
     public DbSet<EntityTag> EntityTags => Set<EntityTag>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
@@ -90,7 +90,6 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
     public DbSet<Pin> Pins => Set<Pin>();
     public DbSet<ColourCode> ColourCodes => Set<ColourCode>();
-    public DbSet<SavedView> SavedViews => Set<SavedView>();
     public DbSet<Checklist> Checklists => Set<Checklist>();
     public DbSet<ChecklistItem> ChecklistItems => Set<ChecklistItem>();
     public DbSet<StickyNote> StickyNotes => Set<StickyNote>();
@@ -103,6 +102,9 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
     // ---- REMS (WO-110) ----
     public DbSet<REMS> Rems => Set<REMS>();
     public DbSet<REMSFiles> RemsFiles => Set<REMSFiles>();
+    public DbSet<REMSAdditionalEntity> RemsAdditionalEntities => Set<REMSAdditionalEntity>();
+    public DbSet<REMSSendBack> RemsSendBacks => Set<REMSSendBack>();
+    public DbSet<REMSDelegation> RemsDelegations => Set<REMSDelegation>();
     public DbSet<REMSForm> RemsForms => Set<REMSForm>();
     public DbSet<REMSFormDraft> RemsFormDrafts => Set<REMSFormDraft>();
     public DbSet<REMSFormSubmission> RemsFormSubmissions => Set<REMSFormSubmission>();
@@ -151,8 +153,8 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
         // Universal Features (Phase 14): every UF table is tenant-scoped + soft-deletable, so it
         // carries the combined ambient-tenant + soft-delete filter. FieldModifiedLog is the lone
         // exception — it is append-only with no soft-delete column, so it uses a tenant-only filter.
-        modelBuilder.Entity<Note>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
-        modelBuilder.Entity<NoteMention>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<ConversationMessage>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<ConversationMessageMention>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<Tag>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<EntityTag>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<Attachment>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
@@ -162,7 +164,6 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
         modelBuilder.Entity<NotificationPreference>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<Pin>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<ColourCode>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
-        modelBuilder.Entity<SavedView>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<Checklist>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<ChecklistItem>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<StickyNote>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
@@ -315,11 +316,11 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
                     break;
 
                 // ---- Universal Features (Phase 14) ----
-                case Note note when note.TenantId == Guid.Empty:
-                    note.TenantId = _tenantContext.TenantId;
+                case ConversationMessage conversationMessage when conversationMessage.TenantId == Guid.Empty:
+                    conversationMessage.TenantId = _tenantContext.TenantId;
                     break;
-                case NoteMention noteMention when noteMention.TenantId == Guid.Empty:
-                    noteMention.TenantId = _tenantContext.TenantId;
+                case ConversationMessageMention conversationMessageMention when conversationMessageMention.TenantId == Guid.Empty:
+                    conversationMessageMention.TenantId = _tenantContext.TenantId;
                     break;
                 case Tag tag when tag.TenantId == Guid.Empty:
                     tag.TenantId = _tenantContext.TenantId;
@@ -347,9 +348,6 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
                     break;
                 case ColourCode colourCode when colourCode.TenantId == Guid.Empty:
                     colourCode.TenantId = _tenantContext.TenantId;
-                    break;
-                case SavedView savedView when savedView.TenantId == Guid.Empty:
-                    savedView.TenantId = _tenantContext.TenantId;
                     break;
                 case Checklist checklist when checklist.TenantId == Guid.Empty:
                     checklist.TenantId = _tenantContext.TenantId;

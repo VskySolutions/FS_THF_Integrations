@@ -180,7 +180,7 @@ This is the canonical "where do I put everything" list for a new CRUD-style modu
 
 ### Add a Universal Feature to a new entity type
 
-Universal Features (notes, tags, attachments, activity, reminders, pins, colour codes, checklists, sticky notes, deleted-records, modified-log) attach to any entity via the shared **`(EntityType, EntityId)`** key — no per-entity tables (Universal Features ADR-001). To onboard a new entity type:
+Universal Features (conversations, tags, attachments, activity, reminders, pins, colour codes, checklists, sticky notes, deleted-records, modified-log) attach to any entity via the shared **`(EntityType, EntityId)`** key — no per-entity tables (Universal Features ADR-001). To onboard a new entity type:
 
 1. Add the value to the `EntityType` enum (`Domain/Enums/EntityType.cs`) — **no migration**; all UF tables already serve it.
 2. Map it in `Api/Security/UniversalFeatureEntityAccess.cs` (its base read permission) so UF endpoints gate correctly.
@@ -189,6 +189,23 @@ Universal Features (notes, tags, attachments, activity, reminders, pins, colour 
 5. To field-track a property for **Modified Log**, decorate it with `[TrackedField(EntityType.X, "Label", isSystemTracked: …)]` and render a `<FieldLogIcon>` beside its input (with `useFieldLogCounts` on the detail page).
 6. Drop `<EntityUniversalPanel :entity-type :entity-id>` into the detail page and `<EntityHeaderActions>` into its header. `EntityUniversalPanel` is a configurable common component — props `tabs` (which sections + order), `show-tags`, `title`, `initial-tab`.
 7. To expose the per-record actions (pin, colour, reminder, copy link, export PDF) in a **list row's "more" menu**, drop `<EntityRowActionsMenu :entity-type :entity-id>` and inject the page's own View/Edit/Delete `q-item`s into its default slot. It floats colour as a left-edge accent and a pin badge per row (see any entity list page): load the user's colours (`ufColourApi.batch`) and pins (`ufPinApi.list`) for the page, pass `:pinned-row-keys` to `AppDataTable` (floats pinned to the top after sort) and handle its `@colour-change`/`@pin-change`. Pins are capped at **5 per entity type** server-side (`PersonalFeaturesController`); to keep pinned rows on page 1, have the list endpoint accept `pinnedFirstIds` and order them first. Icons must use the **outlined** set (`o_push_pin`, `o_palette`, `o_chevron_right`) — filled names render as ligature text.
+
+### Add a file upload to a module
+
+Every module's uploads share one tree under the host content root. **Never compose a storage path by hand** — build a `StorageLocation` and let `IFileStorage` place it, or the module's files end up somewhere nothing else knows to look:
+
+```
+media-uploads/{tenantId:N}/{EntityType}/{recordKey}/{purpose}/{slug}__{shortId}{ext}
+media-uploads/8f3a…/Rems/REMS-42/client-acceptance/caf-signed-2026__4a2e88c1.pdf
+media-uploads/8f3a…/Person/PER-A1B2C3D4E5/profile/avatar__9de10f4b.png
+media-uploads/8f3a…/_unassigned/2026/08/documents/…          ← no parent record; swept, not a home
+```
+
+- **`recordKey`** is the record's human number where it has one (`REMS-42`, `PER-A1B2C3D4E5`), else its id. `Api/Storage/UploadRecordKeyResolver.cs` decides — add a `case` there when a new entity type gains a number. Returning `null` means "no such record", which is what stops a file being filed against a made-up id.
+- **`purpose`** comes from the file's `MediaCategory` via `StoragePaths.PurposeFor` — the category is what the uploader declares the file to *be*, so two screens uploading the same kind of document land in the same folder. Add a `MediaCategory` member (persisted **as its name**, ≤20 chars, never renamed) rather than passing a folder string.
+- **Uploading:** `POST /api/media` with `entityType` + `entityId`; the SPA calls `mediaApi.upload(file, category, { type, id })`. Pass the parent id wherever it is known — every current caller has one in scope at the point of upload. Omitting it is legal but files to `_unassigned`.
+- **Serving/deleting:** always through `IFileStorage.OpenAsync`/`DeleteAsync`. It is the only thing that turns a stored relative path back into a disk path, and the only thing that checks the result has not escaped the root. Rows written before this structure (`media-uploads/{guid}.png`) still resolve through it unchanged — the stored path is per-row, so there was nothing to migrate.
+- `Attachment.StoredPath` is `nvarchar(500)`; a realistic worst-case path is ~160 chars. Uploaded names are slugged to ASCII for the on-disk name — the original is kept verbatim on the row and is what a download is named.
 
 ### Add or use an Option Set (tenant-configurable input value lists)
 

@@ -2,8 +2,9 @@
   <div>
     <div class="row items-center q-mb-md">
       <div class="text-body2 text-grey-8 col">
-        Who this engagement routes to (AC-REMS-018): the CSE and every commission recipient, plus any
-        approvers you add below. Sending for approval locks the list.
+        Who this engagement routes to (AC-REMS-018): the managing shareholder, the Department Director and
+        CSE from the setup, and every commission recipient — all four automatically — plus any approvers
+        you add below. Sending for approval locks the list.
       </div>
       <q-badge :color="statusMeta.color" class="q-pa-sm text-body2">{{ statusMeta.label }}</q-badge>
     </div>
@@ -32,14 +33,13 @@
     </q-banner>
 
     <template v-else>
-      <!-- Extra approvers only: the CSE and the commission recipients already route and are shown in the
-           list below, so offering them here would just invite picking someone who is on it either way.
+      <!-- Extra approvers only: the four automatic ones already route and are shown in the list below.
            Selecting saves immediately and the person appears in the list — then Send. -->
       <div v-if="canPick" class="q-mb-md">
         <app-select
           v-model="picked" :options="approverOptions" label="Add approvers" multiple use-input
           :loading="loadingOptions || savingPicks"
-          info="Lists users holding the Approver role in this tenant, shown as Full Name — Job Title. They are ADDED to the CSE and commission recipients below, who approve regardless."
+          info="Lists users holding the Approver role in this tenant, shown as Full Name — Job Title. They are ADDED to the four below — the managing shareholder, Department Director, CSE and commission recipients — who approve regardless."
           @update:model-value="savePicks"
         />
       </div>
@@ -56,7 +56,9 @@
         </q-item>
       </q-list>
       <div v-else class="text-grey-6 q-pa-sm">
-        No approvers yet. Pick them above, or assign a CSE / add commission recipients to populate the default list.
+        No approvers yet. The four automatic ones come from the engagement itself — name a CSE, pick a
+        department with a director, add commission recipients, or put somebody in the "Managing Shareholder"
+        user group. You can also add approvers above.
       </div>
 
       <div v-if="canShowSend" class="row justify-end q-mt-md">

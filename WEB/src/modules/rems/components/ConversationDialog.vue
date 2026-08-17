@@ -11,8 +11,8 @@
       </q-card-section>
       <q-separator />
       <q-card-section style="max-height: 70vh; overflow: auto;">
-        <!-- Reuses the Universal Features Notes thread keyed on the REMS request. -->
-        <entity-notes-panel v-if="requestId" :entity-type="EntityType.Rems" :entity-id="requestId" />
+        <!-- Reuses the Universal Features conversation thread keyed on the REMS request. -->
+        <entity-conversation-panel v-if="requestId" :entity-type="EntityType.Rems" :entity-id="requestId" />
       </q-card-section>
     </q-card>
   </q-dialog>
@@ -24,7 +24,7 @@ import { EntityType } from "services/api";
 // Must be imported explicitly: <script setup> resolves components from this scope, and only ZwDate /
 // ZwCurrency / ZwNumeric are registered globally (boot/components.js). Without this the tag silently
 // resolves to nothing and the dialog opens with an empty body.
-import EntityNotesPanel from "components/universal/EntityNotesPanel.vue";
+import EntityConversationPanel from "components/universal/EntityConversationPanel.vue";
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },

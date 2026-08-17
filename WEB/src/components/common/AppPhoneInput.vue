@@ -1,16 +1,22 @@
 <template>
-  <div class="row q-col-gutter-sm">
-    <app-select
-      v-model="iso"
-      :options="dialCodeOptions"
-      :label="countryLabel"
-      use-input
-      :clearable="false"
-      :dense="dense"
-      class="col-12 col-sm-5"
-    />
-    <div class="col-12 col-sm-7">
-      <app-field-label :label="label" :required="required" />
+  <!-- The dial code and the number are ONE answer, so they read as one field: a single label, and the two
+       controls flush beneath it with the seam between them collapsed to a single line. They used to carry
+       a label each — "Country" over a box nobody remembers being asked for, beside "Phone Number" — which
+       read as two separate questions and left the number looking optional next to it. -->
+  <div class="app-field app-phone">
+    <app-field-label :label="label" :required="required" />
+    <div class="app-phone__row">
+      <app-select
+        v-model="iso"
+        :options="dialCodeOptions"
+        :aria-label="countryLabel"
+        use-input
+        :clearable="false"
+        :dense="dense"
+        :disable="disable"
+        :readonly="readonly"
+        class="app-phone__code"
+      />
       <q-input
         :model-value="display"
         :placeholder="exampleNational"
@@ -18,11 +24,12 @@
         :error-message="localError"
         :disable="disable"
         :readonly="readonly"
-        :aria-label="label"
+        :aria-label="ariaLabel"
         autocomplete="off"
         outlined
         :dense="dense"
         hide-bottom-space
+        class="app-phone__number"
         @update:model-value="onInput"
         @blur="onBlur"
       />
@@ -35,10 +42,11 @@
 // as-you-type using the selected country's pattern (libphonenumber-js AsYouType — e.g. US shows
 // "(213) 373-4253") while the stored model value is normalised to E.164 once valid. Used on every
 // phone field across the app so behaviour, formatting and storage stay identical.
-import { ref, computed, watch } from "vue";
+import { ref, computed, toRef, watch } from "vue";
 import { AsYouType, isValidPhoneNumber, parsePhoneNumber, getExampleNumber } from "libphonenumber-js";
 import examples from "libphonenumber-js/mobile/examples";
 import { orderedCountries, dialCodeOption, isoFromDial, dialFromIso, DEFAULT_COUNTRY_ISO } from "composables/useCountries";
+import { useFieldLabel } from "composables/useFieldLabel";
 import AppSelect from "components/common/AppSelect.vue";
 import AppFieldLabel from "components/common/AppFieldLabel.vue";
 
@@ -60,6 +68,10 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["update:modelValue", "update:country", "blur", "update:valid"]);
+
+// The pair's one visible label names the number input too — the dial code is named separately for a
+// screen reader, since nothing on screen says what that box is.
+const { text: ariaLabel } = useFieldLabel(toRef(props, "label"), toRef(props, "required"));
 
 // US + India are pinned on top (see useCountries); US is the default selection. AppSelect narrows the
 // list as the user types, so the full set is handed over as-is.
@@ -167,3 +179,41 @@ const onBlur = (e) => {
 // Allow parents to force validation at submit time.
 defineExpose({ validate });
 </script>
+
+<style scoped>
+.app-phone__row {
+  display: flex;
+  align-items: flex-start;
+}
+/* The dial code takes a fixed share and the number the rest. min-width: 0 on both so a long country name
+   cannot push the number field out of the column the pair was given. */
+.app-phone__code {
+  flex: 0 0 42%;
+  max-width: 210px;
+  min-width: 0;
+}
+.app-phone__number {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Collapses the two adjoining borders into one line. */
+  margin-left: -1px;
+}
+/* One control, not two: only the outer corners stay rounded. An outlined Quasar field draws its border on
+   the control's ::before, which is what has to be squared off — the root element carries no border. */
+.app-phone__code :deep(.q-field__control:before),
+.app-phone__code :deep(.q-field__control:after) {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.app-phone__number :deep(.q-field__control:before),
+.app-phone__number :deep(.q-field__control:after) {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+/* Whichever half has focus draws its own edge over the other's. */
+.app-phone__code :deep(.q-field--focused),
+.app-phone__number:focus-within {
+  position: relative;
+  z-index: 1;
+}
+</style>

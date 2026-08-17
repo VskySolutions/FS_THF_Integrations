@@ -36,13 +36,6 @@
              the email as the client will read it rather than around its markup. -->
         <app-rich-text-field v-model="body" label="Message" />
 
-        <div class="row items-center no-wrap q-gutter-xs">
-          <div class="send-value send-link col">{{ formLink }}</div>
-          <q-btn flat round dense icon="o_content_copy" color="primary" @click="copyLink">
-            <q-tooltip>Copy link</q-tooltip>
-          </q-btn>
-        </div>
-
         <div class="text-caption text-grey-6">
           Pre-filled from your tenant's email template. Edit anything above and the client receives exactly
           that — the template itself is unchanged.
@@ -67,14 +60,25 @@
         </div>
       </q-card-section>
 
+      <!-- The client's own form link — shown once it is THEIRS, never before. A link that has not been
+           sent is not a link anybody here should be following: the client answers this form, and the
+           person preparing it opening it first is how a request ends up filled in by the wrong hand.
+           (The server says the same thing: /api/rems/public/forms/{code} reports Unavailable until the
+           form is Sent, so before that this would be a dead URL anyway.) On a reminder it is already
+           out with the client, so the copy is there for anyone re-sending it by other means. -->
+      <q-card-section v-if="showLink" class="q-pt-none">
+        <div class="send-label">Form link</div>
+        <div class="row items-center no-wrap q-gutter-xs">
+          <div class="send-value send-link col">{{ formLink }}</div>
+          <q-btn flat round dense icon="o_content_copy" color="primary" @click="copyLink">
+            <q-tooltip>Copy link</q-tooltip>
+          </q-btn>
+        </div>
+      </q-card-section>
+
       <q-separator />
       <q-card-actions align="right">
         <template v-if="phase === 'sent'">
-          <q-btn
-            v-if="canViewEmailLog"
-            outline no-caps color="primary" icon="o_history" label="View Email Log"
-            @click="viewLog"
-          />
           <q-btn unelevated no-caps color="primary" label="Done" @click="open = false" />
         </template>
         <template v-else>
@@ -104,13 +108,13 @@ const props = defineProps({
   modelValue: { type: Boolean, default: false },
   remsId: { type: String, default: null },
   subtitle: { type: String, default: "" },
-  // Whether to offer the "View Email Log" hand-off after sending (gated on rems.emailLog.read by the parent).
-  canViewEmailLog: { type: Boolean, default: false },
   // "send" is the first delivery of the form link; "reminder" nudges a client who already has it but has
   // not submitted. Same dialog and same shapes — a different template, endpoint and wording.
   mode: { type: String, default: "send" }
 });
-const emit = defineEmits(["update:modelValue", "sent", "view-log"]);
+// The "View Email Log" hand-off went with the dialog it opened: the email log had no screen left once the
+// EMS Inbox and the engagement workspace were replaced by the request page.
+const emit = defineEmits(["update:modelValue", "sent"]);
 
 const notify = useNotify();
 
@@ -136,6 +140,15 @@ const canConfirm = computed(() =>
 const formLink = computed(() => webUrl(preview.value.formLink));
 
 const isReminder = computed(() => props.mode === "reminder");
+
+// When the link may be looked at: after this send has gone out, or on a reminder, where it went out long
+// ago. Withheld while a FIRST send is still being composed — see the template. Never on the loading or
+// error phases, where the only link to hand would be a stale one from a previous open.
+const showLink = computed(() => {
+  if (!formLink.value) return false;
+  if (phase.value === "sent") return true;
+  return isReminder.value && (phase.value === "preview" || phase.value === "sending");
+});
 
 // Wording that has to differ between the two flows, in one place rather than five ternaries in the
 // template. The reminder is repeatable and changes nothing, so its copy never mentions locking.
@@ -200,11 +213,6 @@ const copyLink = () => {
   copyToClipboard(formLink.value)
     .then(() => notify.success("Link copied."))
     .catch(() => notify.error("Could not copy the link."));
-};
-
-const viewLog = () => {
-  emit("view-log");
-  open.value = false;
 };
 
 watch(() => props.modelValue, (isOpen) => {

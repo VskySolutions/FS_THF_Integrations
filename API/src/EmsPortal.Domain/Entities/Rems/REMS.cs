@@ -17,10 +17,14 @@ public class REMS : AuditableEntity
     /// <summary>Human-readable request number, unique per tenant (e.g. <c>REMS-1</c>).</summary>
     public string REMSNumber { get; set; } = string.Empty;
 
-    /// <summary>Short request title.</summary>
-    public string Title { get; set; } = string.Empty;
+    // Title is gone. It existed to tell one client's requests apart, but it asked the initiator to invent a
+    // name for something that already has two — the REMS number and the client — and neither the lists nor
+    // the notifications needed a third. A client's requests are now distinguished by number and date.
 
-    /// <summary>Optional free-text description.</summary>
+    /// <summary>
+    /// The initiator's message. Client-facing: it travels with the intake form as well as being what the
+    /// admin reads, which is why it is uncapped rather than the old nvarchar(500).
+    /// </summary>
     public string? Description { get; set; }
 
     /// <summary>Request type (option-set <c>REMS.Type</c> code).</summary>
@@ -59,9 +63,26 @@ public class REMS : AuditableEntity
     /// <summary>Customer mobile number; required together-or-with email at app level.</summary>
     public string? CustomerMobileNumber { get; set; }
 
+    /// <summary>
+    /// The shareholder or CSE this request was raised FOR, when a delegate raised it on their behalf.
+    /// Null when the creator was acting as themselves.
+    /// <para>
+    /// Dual attribution: <c>CreatedById</c> keeps the person who actually did it, and this keeps whose
+    /// work it is — "prepared by X on behalf of Y". It is also what puts the request in the principal's
+    /// list rather than only the delegate's.
+    /// </para>
+    /// </summary>
+    public Guid? OnBehalfOfUserId { get; set; }
+
     // ---- Navigations ----
     public Person? ClientPerson { get; set; }
     public ICollection<REMSFiles> Files { get; set; } = new List<REMSFiles>();
     public ICollection<REMSForm> Forms { get; set; } = new List<REMSForm>();
     public ICollection<REMSClient> Clients { get; set; } = new List<REMSClient>();
+
+    /// <summary>Other businesses the client declared at intake, each awaiting its own request.</summary>
+    public ICollection<REMSAdditionalEntity> AdditionalEntities { get; set; } = new List<REMSAdditionalEntity>();
+
+    /// <summary>Every time the admin returned this request to its initiator, newest last.</summary>
+    public ICollection<REMSSendBack> SendBacks { get; set; } = new List<REMSSendBack>();
 }

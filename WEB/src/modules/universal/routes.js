@@ -38,12 +38,6 @@ export default [
         meta: { requiresAuth: true, permissions: ["settings.manage"], title: "Tag Management" }
       },
       {
-        path: "settings/saved-views",
-        name: "uf_saved_views",
-        component: () => import("modules/universal/pages/SavedViewManagementPage.vue"),
-        meta: { requiresAuth: true, permissions: ["settings.manage"], title: "Saved Views" }
-      },
-      {
         path: "settings/sticky-notes",
         name: "uf_sticky_notes_admin",
         component: () => import("modules/universal/pages/StickyNotesAdminPage.vue"),

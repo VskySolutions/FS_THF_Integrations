@@ -24,7 +24,6 @@ internal sealed class RemsEmailNotifier : IRemsEmailNotifier
             ["ClientName"] = model.ClientName,
             ["FormLink"] = model.FormLink,
             ["RemsNumber"] = model.RemsNumber,
-            ["RequestTitle"] = model.RequestTitle,
         }, messageId);
 
     public void SendComposedFormLink(
@@ -42,7 +41,6 @@ internal sealed class RemsEmailNotifier : IRemsEmailNotifier
         ["ClientName"] = model.ClientName,
         ["FormLink"] = model.FormLink,
         ["RemsNumber"] = model.RemsNumber,
-        ["RequestTitle"] = model.RequestTitle,
     };
 
     public void SendFormSubmitted(Guid tenantId, string toEmail, RemsFormSubmittedEmail model)

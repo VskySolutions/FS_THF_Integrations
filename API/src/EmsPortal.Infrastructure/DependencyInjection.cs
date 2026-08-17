@@ -87,13 +87,12 @@ public static class DependencyInjection
         // Universal Features (Phase 14) repositories.
         services.AddScoped<IActivityEventRepository, ActivityEventRepository>();
         services.AddScoped<INotificationRepository, NotificationRepository>();
-        services.AddScoped<INoteRepository, NoteRepository>();
+        services.AddScoped<IConversationMessageRepository, ConversationMessageRepository>();
         services.AddScoped<ITagRepository, TagRepository>();
         services.AddScoped<IAttachmentRepository, AttachmentRepository>();
         services.AddScoped<IReminderRepository, ReminderRepository>();
         services.AddScoped<IPinRepository, PinRepository>();
         services.AddScoped<IColourCodeRepository, ColourCodeRepository>();
-        services.AddScoped<ISavedViewRepository, SavedViewRepository>();
         services.AddScoped<IChecklistRepository, ChecklistRepository>();
         services.AddScoped<IStickyNoteRepository, StickyNoteRepository>();
         services.AddScoped<IDeletedRecordsRepository, DeletedRecordsRepository>();
@@ -109,6 +108,7 @@ public static class DependencyInjection
         services.AddScoped<IRemsFormRepository, RemsFormRepository>();
         services.AddScoped<IRemsClientRepository, RemsClientRepository>();
         services.AddScoped<IRemsEngagementRepository, RemsEngagementRepository>();
+        services.AddScoped<IRemsDelegationRepository, RemsDelegationRepository>();
         services.AddScoped<IRemsApprovalRepository, RemsApprovalRepository>();
         services.AddScoped<IRemsSettingsRepository, RemsSettingsRepository>();
 

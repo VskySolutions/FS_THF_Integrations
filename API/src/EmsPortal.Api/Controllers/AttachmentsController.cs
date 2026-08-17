@@ -1,6 +1,8 @@
 using EmsPortal.Api.Models.UniversalFeatures;
 using EmsPortal.Api.Security;
+using EmsPortal.Api.Storage;
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Abstractions.Storage;
 using EmsPortal.Application.Abstractions.UniversalFeatures;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Domain.Enums;
@@ -28,7 +30,6 @@ namespace EmsPortal.Api.Controllers;
 public sealed class AttachmentsController : ControllerBase
 {
     private const long MaxFileSizeBytes = 10 * 1024 * 1024; // 10 MB default
-    private const string StorageFolder = "uf-attachments";
 
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -39,6 +40,7 @@ public sealed class AttachmentsController : ControllerBase
 
     private readonly IAttachmentRepository _attachments;
     private readonly IFileStorage _fileStorage;
+    private readonly IUploadRecordKeyResolver _recordKeys;
     private readonly IUserRepository _users;
     private readonly IActivityEventWriter _activity;
     private readonly IUnitOfWork _unitOfWork;
@@ -46,12 +48,14 @@ public sealed class AttachmentsController : ControllerBase
     public AttachmentsController(
         IAttachmentRepository attachments,
         IFileStorage fileStorage,
+        IUploadRecordKeyResolver recordKeys,
         IUserRepository users,
         IActivityEventWriter activity,
         IUnitOfWork unitOfWork)
     {
         _attachments = attachments;
         _fileStorage = fileStorage;
+        _recordKeys = recordKeys;
         _users = users;
         _activity = activity;
         _unitOfWork = unitOfWork;
@@ -101,19 +105,30 @@ public sealed class AttachmentsController : ControllerBase
             return BadRequest(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, "Validation failed.", $"File type '{extension}' is not allowed."));
         }
 
-        string storedPath;
+        // The same tree every other module uploads into: an attachment on REMS-42 sits beside the
+        // files the REMS screens put there, rather than in a bucket of its own.
+        var recordKey = await _recordKeys.ResolveAsync(entityType, entityId, cancellationToken);
+        if (recordKey is null)
+        {
+            return BadRequest(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, "Validation failed.", $"No {entityType} record was found for '{entityId}'."));
+        }
+
+        var location = StorageLocation.For(
+            User.GetActiveTenantId() ?? Guid.Empty, entityType, recordKey, StoragePaths.Purposes.Attachments);
+
+        StoredFile stored;
         await using (var stream = file.OpenReadStream())
         {
-            storedPath = await _fileStorage.SaveAsync(StorageFolder, file.FileName, stream, cancellationToken);
+            stored = await _fileStorage.SaveAsync(location, file.FileName, stream, cancellationToken);
         }
 
         var attachment = new Attachment
         {
-            Id = Guid.NewGuid(),
+            Id = stored.FileId,
             EntityType = entityType,
             EntityId = entityId,
             FileName = file.FileName,
-            StoredPath = storedPath,
+            StoredPath = stored.RelativePath,
             MimeType = file.ContentType,
             FileSize = file.Length,
             FileExtension = extension.ToLowerInvariant(),

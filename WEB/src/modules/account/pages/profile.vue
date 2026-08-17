@@ -69,9 +69,9 @@
           <div class="col-12 section-subhead">Phone</div>
           <app-phone-input
             v-model="form.mobileNumber" v-model:country="form.phoneCountryCode"
-            label="Mobile Number" country-label="Phone Country" :dense="true" class="col-12"
+            label="Phone Number" country-label="Phone Country" :dense="true" class="col-12"
           />
-          <app-text-field v-model="form.alternateMobileNumber" label="Alternate Mobile" class="col-12 col-sm-6" />
+          <app-text-field v-model="form.alternateMobileNumber" label="Alternate Phone Number" class="col-12 col-sm-6" />
         </q-card-section>
       </q-card>
 
@@ -171,6 +171,11 @@
       <change-password-form submit-label="Update password" />
     </q-card>
 
+    <!-- REMS delegation is self-service — the principal names their own delegates — so it belongs on
+         their own profile rather than in an admin screen. Shown only to people who work REMS requests;
+         for everyone else there is nothing to delegate. -->
+    <my-delegates-panel v-if="canUseRems" class="q-mt-md" />
+
   </q-page>
 </template>
 
@@ -181,8 +186,10 @@ import { authApi, profileApi, mediaApi, getApiErrorMessage } from "services/api"
 import { humanizeKey } from "composables/usePermissionCategories";
 import { useAuthStore } from "stores/auth";
 import { useNotify } from "composables/useNotify";
+import { usePermissions, Permissions } from "composables/usePermissions";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import AppSelect from "components/common/AppSelect.vue";
+import MyDelegatesPanel from "modules/rems/components/MyDelegatesPanel.vue";
 import AppTextField from "components/common/AppTextField.vue";
 import AppDateField from "components/common/AppDateField.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
@@ -192,6 +199,10 @@ import ChangePasswordForm from "components/account/ChangePasswordForm.vue";
 
 const authStore = useAuthStore();
 const notify = useNotify();
+const { has } = usePermissions();
+
+// Anyone who can raise a REMS request has work worth delegating; anyone who cannot, does not.
+const canUseRems = computed(() => has(Permissions.RemsRequestsCreate));
 
 const assignments = computed(() => authStore.user?.tenants || []);
 
@@ -308,7 +319,9 @@ const uploading = ref(false);
 const onCropUpload = async (file) => {
   uploading.value = true;
   try {
-    const media = await mediaApi.upload(file, "Profile");
+    // Filed under the person it pictures, so the server's copy is findable without a database lookup.
+    const media = await mediaApi.upload(
+      file, "Profile", profile.value?.id ? { type: "Person", id: profile.value.id } : null);
     form.profileMediaId = media.id;
     previewUrl.value = mediaApi.absoluteUrl(media.publicUrl);
     imageUpload.value?.closeCrop();

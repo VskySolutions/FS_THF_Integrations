@@ -54,8 +54,8 @@
           <q-card-section class="row q-col-gutter-md">
             <app-text-field v-model="form.primaryEmail" type="email" label="Primary Email" class="col-12 col-sm-6" :disable="!canWrite" :rules="emailRules" />
             <app-text-field v-model="form.secondaryEmail" type="email" label="Alternate Email" class="col-12 col-sm-6" :disable="!canWrite" />
-            <app-phone-input v-model="form.mobileNumber" v-model:country="form.countryCode" label="Mobile Number" class="col-12 col-sm-6" :disable="!canWrite" />
-            <app-text-field v-model="form.alternateMobileNumber" label="Alternate Mobile" class="col-12 col-sm-6" :disable="!canWrite" />
+            <app-phone-input v-model="form.mobileNumber" v-model:country="form.countryCode" label="Phone Number" class="col-12 col-sm-6" :disable="!canWrite" />
+            <app-text-field v-model="form.alternateMobileNumber" label="Alternate Phone Number" class="col-12 col-sm-6" :disable="!canWrite" />
           </q-card-section>
         </q-card>
 

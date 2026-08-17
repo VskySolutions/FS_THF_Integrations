@@ -21,8 +21,8 @@ public static class UniversalFeatureEntityAccess
         EntityType.Tenant => new[] { Permissions.TenantsRead },
         EntityType.User => new[] { Permissions.UsersRead },
         EntityType.UserGroup => new[] { Permissions.UsersRead },
-        // Notes/activity/attachments on a REMS record gate on the REMS read permission so the
-        // conversation thread (REQ-REMS-003) reuses the Notes feature without a bespoke controller.
+        // Conversation/activity/attachments on a REMS record gate on the REMS read permission, so the
+        // request thread (REQ-REMS-003) is the shared Conversations feature rather than a bespoke controller.
         EntityType.Rems => new[] { Permissions.RemsRequestsRead },
         _ => new[] { Permissions.UsersRead },
     };

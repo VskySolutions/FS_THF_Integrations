@@ -129,11 +129,10 @@ public static class DefaultEmailTemplates
             """
             <p>Hello {{ClientName}},</p>
             <p>You have been asked to complete a form for REMS request <strong>{{RemsNumber}}</strong>.</p>
-            <p><strong>Request:</strong> {{RequestTitle}}</p>
             <p><a href="{{FormLink}}">Open and complete the form</a></p>
             <p>If you were not expecting this, please contact your {{TenantName}} representative.</p>
             """,
-            new[] { "ClientName", "RemsNumber", "RequestTitle", "FormLink", "TenantName" }),
+            new[] { "ClientName", "RemsNumber", "FormLink", "TenantName" }),
 
         // Same placeholders as RemsFormLink so an admin can nudge without re-explaining, and so the two
         // stay interchangeable in the send dialog. The wording assumes the client has already had the
@@ -147,13 +146,12 @@ public static class DefaultEmailTemplates
             <p>Hello {{ClientName}},</p>
             <p>This is a friendly reminder that we are still waiting on your form for REMS request
                <strong>{{RemsNumber}}</strong>.</p>
-            <p><strong>Request:</strong> {{RequestTitle}}</p>
             <p><a href="{{FormLink}}">Open and complete the form</a></p>
             <p>Your progress is saved as you go, so you can finish it in more than one sitting. If you have
                already completed it, please ignore this message.</p>
             <p>If you were not expecting this, please contact your {{TenantName}} representative.</p>
             """,
-            new[] { "ClientName", "RemsNumber", "RequestTitle", "FormLink", "TenantName" }),
+            new[] { "ClientName", "RemsNumber", "FormLink", "TenantName" }),
 
         new Definition(
             EmailTemplateKey.RemsFormSubmitted,

@@ -14,4 +14,11 @@ public enum RemsApprovalTaskStatus
 
     /// <summary>The approver rejected.</summary>
     Rejected,
+
+    /// <summary>
+    /// The round closed before this approver decided — the decline threshold was reached by others while
+    /// their task was still pending. Distinct from <see cref="Pending"/> so a failed round's history does
+    /// not read as though they simply never responded.
+    /// </summary>
+    Superseded,
 }

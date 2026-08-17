@@ -27,7 +27,6 @@ internal sealed class RemsClientConfiguration : IEntityTypeConfiguration<REMSCli
 
         builder.HasOne(c => c.Rems).WithMany(r => r.Clients).HasForeignKey(c => c.REMSId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(c => c.SourceFormSubmission).WithMany().HasForeignKey(c => c.SourceFormSubmissionId).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne(c => c.BillingAddress).WithMany().HasForeignKey(c => c.BillingAddressId).OnDelete(DeleteBehavior.Restrict);
 
         // One active client per request.
         builder.HasIndex(c => new { c.TenantId, c.REMSId }).IsUnique().HasFilter("[Deleted] = 0");
@@ -78,7 +77,9 @@ internal sealed class RemsEntityAddressConfiguration : IEntityTypeConfiguration<
         builder.HasOne(a => a.Entity).WithMany(e => e.Addresses).HasForeignKey(a => a.REMSEntityId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(a => a.Address).WithMany().HasForeignKey(a => a.AddressId).OnDelete(DeleteBehavior.Restrict);
 
-        // One address per (entity, type).
+        // One address per (entity, type) — now Physical, Mailing AND Billing. The billing address used to
+        // sit on REMSClient with its own FK; it is an entity address like the other two, so the same rule
+        // covers it.
         builder.HasIndex(a => new { a.TenantId, a.REMSEntityId, a.AddressType }).IsUnique().HasFilter("[Deleted] = 0");
     }
 }

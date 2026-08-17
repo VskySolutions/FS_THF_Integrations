@@ -397,7 +397,7 @@
             <q-card-section class="text-subtitle1 text-weight-medium">Conversation</q-card-section>
             <q-separator />
             <q-card-section>
-              <entity-notes-panel :entity-type="EntityType.Rems" :entity-id="request.remsId" />
+              <entity-conversation-panel :entity-type="EntityType.Rems" :entity-id="request.remsId" />
             </q-card-section>
           </q-card>
         </div>
@@ -454,7 +454,7 @@ import { renderRichText } from "utils/richText";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
 // Explicit import: boot/components.js registers only the Zw* inputs globally, so without this the tag
 // resolves to nothing and the Conversation card renders empty — no error, just a blank panel.
-import EntityNotesPanel from "components/universal/EntityNotesPanel.vue";
+import EntityConversationPanel from "components/universal/EntityConversationPanel.vue";
 
 const route = useRoute();
 const notify = useNotify();
@@ -462,7 +462,8 @@ const { confirm } = useConfirm();
 const fmt = useDateFormat();
 const {
   typeLabel, typeHint, requestStatusLabel, requestStatusColor,
-  industryGroupLabel, emsStateLabel, submissionStateLabel, departmentLabel, serviceLineLabel,
+  industryGroupLabel, emsStateLabel, submissionStateLabel, departmentLabel,
+  subServiceLineLabel, subIndustryLabel,
   approverRoleLabel, approverRoleIcon, approvalStatusLabel, approvalStatusColor, engagementStatusMeta
 } = useRemsMeta();
 
@@ -525,13 +526,13 @@ const requestRows = computed(() => {
   const r = request.value;
   return [
     { label: "Request ID", value: r.remsNumber },
-    { label: "Title", value: text(r.title) },
+    // No Title row: a request has no title of its own any more — the client it is for is what names it.
     { label: "Requested Client", value: text(r.requestedClientName) },
     { label: "Type", value: typeLabel(r.type), hint: typeHint(r.type) },
     { label: "Request Status", type: "status" },
     { label: "Customer Email", value: text(r.customerEmail) },
-    { label: "Customer Mobile", value: text(r.customerMobileNumber) },
-    { label: "Industry Group", value: r.industryGroup ? industryGroupLabel(r.industryGroup) : "—" },
+    { label: "Customer Phone Number", value: text(r.customerMobileNumber) },
+    { label: "Entity Type", value: r.industryGroup ? industryGroupLabel(r.industryGroup) : "—" },
     { label: "EMS Form State", value: emsStateLabel(r.emsFormState) },
     { label: "Client Submission", value: submissionStateLabel(r.clientSubmissionState) },
     { label: "Assigned Admin", value: text(r.assignedAdmin?.name) },
@@ -545,7 +546,7 @@ const clientRows = computed(() => {
   return [
     { label: "Name", value: text(c.name) },
     { label: "Email", value: text(c.email) },
-    { label: "Mobile", value: text(c.mobileNumber) },
+    { label: "Phone Number", value: text(c.mobileNumber) },
     { label: "Referral Source", value: text(c.referralSource) },
     { label: "Billing Contact", value: text(c.billingContactName) },
     { label: "Billing Email", value: text(c.billingEmail) },
@@ -558,7 +559,10 @@ const setupRows = computed(() => {
   const rows = [
     { label: "Entity", value: `${e.entity?.name || "—"}${e.entity?.ein ? ` · EIN ${e.entity.ein}` : ""}` },
     { label: "Department", value: departmentLabel(e.department) },
-    { label: "Service Line", value: serviceLineLabel(e.serviceLine) },
+    // Same industry-then-service sequence the setup form is filled in (the Entity Type itself is a
+    // request field, so it sits in the request block above rather than here).
+    { label: "Industry", value: subIndustryLabel(e.subIndustry) },
+    { label: "Service Line", value: subServiceLineLabel(e.subServiceLine) },
     { label: "Department Director", value: text(e.departmentDirector?.name) },
     { label: "Engagement Executive", value: text(e.engagementExecutive?.name) },
     { label: "Billing Manager", value: text(e.billingManager?.name) }

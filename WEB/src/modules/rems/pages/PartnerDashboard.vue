@@ -1,7 +1,9 @@
 <template>
   <q-page padding>
+    <acting-as-banner />
+
     <app-list-header
-      :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'REMS Partner Dashboard' }]"
+      :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'My Requests' }]"
       :search="search"
       show-search
       search-placeholder="Search client name"
@@ -50,12 +52,6 @@
         <q-td :props="cell">{{ cell.row.clientName || "—" }}</q-td>
       </template>
 
-      <template #body-cell-title="cell">
-        <q-td :props="cell">
-          <div class="text-weight-medium">{{ cell.row.title }}</div>
-        </q-td>
-      </template>
-
       <!-- No icon per row — a column of them is noise — but the explanation is still a hover away. -->
       <template #body-cell-type="cell">
         <q-td :props="cell">
@@ -78,22 +74,16 @@
 
       <template #body-cell-actions="cell">
         <q-td :props="cell" class="text-right">
-          <q-btn flat round dense color="primary" icon="o_visibility" :to="detailRoute(cell.row)">
+          <!-- View and Edit are the same page in two modes. Separate actions because they are separate
+               intentions: reading a request should never put a form on screen. -->
+          <q-btn flat round dense color="primary" icon="o_visibility" :to="viewRoute(cell.row)">
             <q-tooltip>View</q-tooltip>
           </q-btn>
           <q-btn
-            v-if="cell.row.actions?.canEdit && cell.row.status === 'draft'"
-            flat round dense color="primary" icon="o_edit" @click="openEdit(cell.row)"
+            v-if="cell.row.actions?.canEdit"
+            flat round dense color="primary" icon="o_edit" :to="editRoute(cell.row)"
           >
             <q-tooltip>Edit</q-tooltip>
-          </q-btn>
-          <!-- Hand a draft straight to a named Admin instead of letting it go to the pool unclaimed.
-               Only offered on drafts: once submitted, re-assignment is the Admin Pool's job. -->
-          <q-btn
-            v-if="cell.row.actions?.canAssign && cell.row.status === 'draft'"
-            flat round dense color="primary" icon="o_person_add" @click="openAssign(cell.row)"
-          >
-            <q-tooltip>Assign to Admin</q-tooltip>
           </q-btn>
           <q-btn
             v-if="cell.row.actions?.canDuplicate"
@@ -101,8 +91,17 @@
           >
             <q-tooltip>Duplicate</q-tooltip>
           </q-btn>
+          <!-- What has been emailed to the client about this request, and the way to chase them again.
+               Only once something has actually gone out: before the intake link is sent there is no
+               history to read and nobody to remind. -->
+          <q-btn
+            v-if="canReadEmailLog && emsFormActivity(cell.row)"
+            flat round dense color="primary" icon="o_mark_email_read" @click="openEmailLog(cell.row)"
+          >
+            <q-tooltip>Email log</q-tooltip>
+          </q-btn>
           <q-btn flat round dense color="primary" icon="o_forum" @click="openConversation(cell.row)">
-            <q-tooltip>Notes</q-tooltip>
+            <q-tooltip>Conversation</q-tooltip>
           </q-btn>
         </q-td>
       </template>
@@ -121,19 +120,18 @@
       v-if="canManageDeleted" :entity-type="EntityType.Rems" :show="showDeleted" @restored="load"
     />
 
-    <new-request-dialog v-model="formOpen" :request-id="editingId" @saved="onSaved" />
-    <assign-admin-dialog
-      v-model="assignOpen" mode="draft" :request-id="assignTarget.id"
-      :request-number="assignTarget.number" :request-title="assignTarget.title"
-      @assigned="onAssigned"
-    />
     <conversation-dialog v-model="conversationOpen" :request-id="conversationId" :subtitle="conversationSubtitle" />
+
+    <!-- A sent reminder adds an email event and nothing else, but the row's EMS State and Updated On are
+         what the list shows of it, so it reloads on the way out. -->
+    <email-log-dialog v-model="emailLogOpen" :rems-id="emailLogId" :subtitle="emailLogSubtitle" @sent="load" />
   </q-page>
 </template>
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted } from "vue";
 import { debounce } from "quasar";
+import { useRouter } from "vue-router";
 import { remsApi, getApiErrorMessage, EntityType } from "services/api";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import { useNotify } from "composables/useNotify";
@@ -146,16 +144,17 @@ import { useAuditColumns } from "composables/useAuditColumns";
 import { useRemsMeta } from "modules/rems/useRemsMeta";
 
 import AppListHeader from "components/common/AppListHeader.vue";
+import ActingAsBanner from "modules/rems/components/ActingAsBanner.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppTextField from "components/common/AppTextField.vue";
 import AppDateField from "components/common/AppDateField.vue";
 import AppDataTable from "components/common/AppDataTable.vue";
 import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
-import NewRequestDialog from "modules/rems/components/NewRequestDialog.vue";
-import AssignAdminDialog from "modules/rems/components/AssignAdminDialog.vue";
 import ConversationDialog from "modules/rems/components/ConversationDialog.vue";
+import EmailLogDialog from "modules/rems/components/EmailLogDialog.vue";
 
+const router = useRouter();
 const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
 const { confirm } = useConfirm();
@@ -164,14 +163,17 @@ const fmt = useDateFormat();
 const auditColumns = useAuditColumns();
 const {
   typeLabel, typeHint, requestStatusLabel, requestStatusColor,
-  emsStateLabel, submissionStateLabel,
+  emsStateLabel, submissionStateLabel, emsFormActivity,
   statusFilterOptions, typeOptions
 } = useRemsMeta();
 
 const canCreate = computed(() => has(Permissions.RemsRequestsCreate));
+const canReadEmailLog = computed(() => has(Permissions.RemsEmailLogRead));
 
-// The Assigned Admin filter needs the admin list, which is gated the same way the assign action is.
-const canSeeAdmins = computed(() => has(Permissions.RemsRequestsAssign) || has(Permissions.RemsPoolRead));
+// The Assigned Admin filter needs the admin list, so it is offered only to callers who may read it.
+// Re-pointing the admin is no longer an action on this list — every request names one at intake, and
+// correcting that is done on the request form itself.
+const canSeeAdmins = computed(() => has(Permissions.RemsRequestsAssign));
 const adminFilterOptions = ref([]);
 onMounted(async () => {
   if (!canSeeAdmins.value) return;
@@ -186,15 +188,12 @@ onMounted(async () => {
 
 // Ordered as the list reads: what the request is, then who it is for, then where it has got to, then the
 // trail behind it. Everything between Created On and Actions is off by default, so the visible sequence is
-// Request ID → Type → Client → Title → Status → Assigned Admin → EMS State → Created By → Created On →
+// Request ID → Type → Client → Status → Assigned Admin → EMS State → Created By → Created On →
 // Actions, and switching a hidden column on slots it in before Actions rather than after.
 const columns = computed(() => [
   { name: "remsNumber", label: "Request ID", field: "remsNumber", align: "left", sortable: true, default: true, filterable: false },
   { name: "type", label: "Type", field: "type", align: "left", default: true, filterOptions: typeOptions.value },
-  // Client and title are two facts about a request, and merging them made one of the pair unsortable and
-  // the column impossible to size. Both stand on their own, both on by default.
   { name: "clientName", label: "Client", field: "clientName", align: "left", sortable: true, default: true, filterable: false },
-  { name: "title", label: "Title", field: "title", align: "left", sortable: true, default: true, filterable: false },
   { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true, filterOptions: statusFilterOptions.value },
   // Only offered to callers who may read the admin list; without it the picker would be empty, which
   // reads as "nobody is assigned" rather than "you cannot see who is".
@@ -214,9 +213,9 @@ const columns = computed(() => [
   // Off by default, but every field the row carries is offered in the Columns menu rather than being
   // unreachable.
   { name: "customerEmail", label: "Client Email", field: (r) => r.customerEmail || "—", align: "left", default: false, filterable: false },
-  { name: "customerMobileNumber", label: "Client Mobile", field: (r) => r.customerMobileNumber || "—", align: "left", default: false, filterable: false },
+  { name: "customerMobileNumber", label: "Client Phone Number", field: (r) => r.customerMobileNumber || "—", align: "left", default: false, filterable: false },
   { name: "cse", label: "CSE", field: (r) => r.cse?.name || "—", align: "left", default: false, filterable: false },
-  { name: "industryGroup", label: "Industry Group", field: (r) => r.industryGroup || "—", align: "left", default: false, filterable: false },
+  { name: "industryGroup", label: "Entity Type", field: (r) => r.industryGroup || "—", align: "left", default: false, filterable: false },
   { name: "clientSubmissionState", label: "Client Submission", field: (r) => submissionStateLabel(r.clientSubmissionState), align: "left", default: false, filterable: false },
   ...auditColumns({ only: ["updatedBy", "updatedOnUtc"] }),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
@@ -273,26 +272,19 @@ const onClearFilters = () => {
 const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);
 watch([search, filters, extras], reload, { deep: true });
 
-const detailRoute = (row) => ({ name: "rems_request_detail", params: { id: row.id } });
+// Straight to the form. A partner's request IS the form — there is no separate detail screen worth
+// landing on first now that client details and engagement setup live on one page. The mode decides
+// whether it opens as a record or as something you can type into.
+const viewRoute = (row) => ({ name: "rems_request", params: { id: row.id } });
+const editRoute = (row) => ({ name: "rems_request_edit", params: { id: row.id } });
 
-// ---- Create / Edit ----
-const formOpen = ref(false);
-const editingId = ref(null);
-const openCreate = () => { editingId.value = null; formOpen.value = true; };
-const openEdit = (row) => { editingId.value = row.id; formOpen.value = true; };
-const onSaved = () => { formOpen.value = false; load(); };
-
-// ---- Assign a draft straight to an Admin (submits it in the same step) ----
-const assignOpen = ref(false);
-const assignTarget = reactive({ id: null, number: "", title: "" });
-const openAssign = (row) => {
-  assignTarget.id = row.id;
-  assignTarget.number = row.remsNumber || "";
-  assignTarget.title = row.title || "";
-  assignOpen.value = true;
+// ---- Create ----
+// The same page as Edit, on its own path. There is no create drawer any more: it only ever held the intake
+// half, so a partner had to fill it, save, and then find the engagement setup on the page it dropped them
+// on — two steps for one referral. The form asks for all of it across its tabs.
+const openCreate = () => {
+  router.push({ name: "rems_request_new" });
 };
-// The row leaves draft on success, so the list has to be re-read rather than patched in place.
-const onAssigned = () => { assignOpen.value = false; load(); };
 
 // ---- Conversation ----
 const conversationOpen = ref(false);
@@ -300,15 +292,31 @@ const conversationId = ref(null);
 const conversationSubtitle = ref("");
 const openConversation = (row) => {
   conversationId.value = row.id;
-  conversationSubtitle.value = `${row.remsNumber} — ${row.title}`;
+  // The client, not a title: a request has no title of its own any more — it is identified by who it is for.
+  conversationSubtitle.value = rowLabel(row);
   conversationOpen.value = true;
 };
+
+// ---- Email log ----
+// The client's side of the correspondence: every intake-form email sent for this request and what the
+// provider reported back, with Send Reminder on it for a client who has not answered yet.
+const emailLogOpen = ref(false);
+const emailLogId = ref(null);
+const emailLogSubtitle = ref("");
+const openEmailLog = (row) => {
+  emailLogId.value = row.id;
+  emailLogSubtitle.value = rowLabel(row);
+  emailLogOpen.value = true;
+};
+
+// How a request names itself in a dialog title bar.
+const rowLabel = (row) => [row.remsNumber, row.clientName].filter(Boolean).join(" — ");
 
 // ---- Duplicate ----
 const duplicate = async (row) => {
   const ok = await confirm({
     title: "Duplicate request",
-    message: `Create a new draft copy of ${row.remsNumber} — "${row.title}"?`,
+    message: `Create a new draft copy of ${row.remsNumber} — ${row.clientName}?`,
     confirmLabel: "Duplicate"
   });
   if (!ok) return;

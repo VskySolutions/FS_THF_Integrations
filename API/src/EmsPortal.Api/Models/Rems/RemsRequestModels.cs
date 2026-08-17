@@ -3,7 +3,7 @@ namespace EmsPortal.Api.Models.Rems;
 /// <summary>
 /// Create payload for a REMS request (WO-111). Provide either an existing-client reference
 /// (<see cref="ExistingClientReferenceId"/>, resolved from the client lookup) or a brand-new client —
-/// either way <see cref="ClientName"/> is required, as is <see cref="Title"/> and one of
+/// either way <see cref="ClientName"/> is required, as is one of
 /// <see cref="CustomerEmail"/>/<see cref="CustomerMobileNumber"/> (AC-REMS-004.7).
 /// </summary>
 public sealed class CreateRemsRequestRequest
@@ -16,8 +16,6 @@ public sealed class CreateRemsRequestRequest
 
     /// <summary>Request type (option-set <c>REMS.Type</c> code, e.g. <c>brand_new_client</c>).</summary>
     public string Type { get; set; } = string.Empty;
-
-    public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
 
     public string? CustomerEmail { get; set; }
@@ -29,17 +27,30 @@ public sealed class CreateRemsRequestRequest
     /// <summary>Optional single attachment: a previously-uploaded media id (POST /api/media).</summary>
     public Guid? MediaId { get; set; }
 
-    /// <summary>When true the request is submitted to the Admin Pool; otherwise it is saved as a draft.</summary>
-    public bool Submit { get; set; }
+    // There is no Submit flag any more. A request is always created as a draft: the Admin Pool it used to
+    // be submitted into is gone, and what moves a request on is the initiator sending the intake link to
+    // the client (POST /api/rems/{id}/form/send).
 
-    /// <summary>Optional admin (User id) to assign the request to at creation.</summary>
-    public Guid? AssignAdminUserId { get; set; }
+    /// <summary>
+    /// The admin who will review this request once the client's intake comes back. REQUIRED — every
+    /// request names its reviewer up front, even though that admin has nothing to do until the client has
+    /// answered. Reassignment afterwards is open to both sides.
+    /// </summary>
+    public Guid AssignAdminUserId { get; set; }
+
+    /// <summary>
+    /// The <c>REMSAdditionalEntity</c> row this request was raised from, when the initiator used the
+    /// Create EMS action on another business the client named. Stamping the row is what stops the flag
+    /// nagging forever — and what stops the Partner and the CSE, who both watch the same list, each
+    /// raising a request for the same entity. The new request itself stands alone: this records where it
+    /// came FROM without making it a child of anything.
+    /// </summary>
+    public Guid? FromAdditionalEntityId { get; set; }
 }
 
 /// <summary>Edit payload for a REMS request (WO-111). Null fields are left unchanged.</summary>
 public sealed class UpdateRemsRequestRequest
 {
-    public string? Title { get; set; }
     public string? Description { get; set; }
     public string? Type { get; set; }
     public string? ClientName { get; set; }
@@ -57,14 +68,38 @@ public sealed class UpdateRemsRequestRequest
     public Guid? AssignAdminUserId { get; set; }
 
     /// <summary>
-    /// Clears the assignment, returning the request to the Admin Pool for any admin to pick up. Mutually
-    /// exclusive with <see cref="AssignAdminUserId"/>.
+    /// Clears the assignment. Retained for the rare correction, but a request with no admin has nobody to
+    /// review it when the client answers — reassigning to somebody else is almost always what is meant.
+    /// Mutually exclusive with <see cref="AssignAdminUserId"/>.
     /// </summary>
     public bool UnassignAdmin { get; set; }
-
-    /// <summary>When true a still-draft request is submitted to the Admin Pool as part of this edit.</summary>
-    public bool Submit { get; set; }
 }
+
+/// <summary>
+/// Attach already-uploaded media to an existing request (POST /api/media first). The request form holds
+/// several attachments and saves them alongside every other field, so they land after the request exists
+/// rather than riding in on the create payload.
+/// </summary>
+public sealed class AddRemsFilesRequest
+{
+    public IReadOnlyList<Guid> MediaIds { get; set; } = Array.Empty<Guid>();
+}
+
+/// <summary>The Admin's reason for returning a request to its initiator (initiator-first rebuild).</summary>
+public sealed class SendBackRemsRequestRequest
+{
+    /// <summary>Why the setup needs work. Required — a return with no reason is not actionable.</summary>
+    public string Reason { get; set; } = string.Empty;
+}
+
+/// <summary>One return of a request to its initiator, as history.</summary>
+public sealed record RemsSendBackView(
+    Guid Id,
+    string Reason,
+    string? ReturnedBy,
+    DateTime ReturnedOnUtc,
+    /// <summary>When the initiator handed the revised setup back; null while it is still with them.</summary>
+    DateTime? ResolvedOnUtc);
 
 /// <summary>Assign (or re-assign) a request to an admin (WO-111, AC-REMS-005).</summary>
 public sealed class AssignRemsRequestRequest
@@ -87,7 +122,6 @@ public sealed record RemsRowActions(
 public sealed record RemsRequestRow(
     Guid Id,
     string RemsNumber,
-    string Title,
     string ClientName,
     string Type,
     DateTime CreatedOnUtc,
@@ -121,7 +155,6 @@ public sealed record RemsFileRef(
 public sealed record RemsRequestDetail(
     Guid Id,
     string RemsNumber,
-    string Title,
     string? Description,
     string ClientName,
     string Type,

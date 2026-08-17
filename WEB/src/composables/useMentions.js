@@ -1,9 +1,9 @@
-import { ufNotesApi } from "services/api";
+import { ufConversationApi } from "services/api";
 import { escapeHtml } from "utils/richText";
 
 // The single definition of what an @mention IS, shared by every editor that supports them.
 //
-// Two different editors emit mentions — q-editor (the notes composer, contenteditable + insertHTML) and
+// Two different editors emit mentions — q-editor (the conversation composer, contenteditable + insertHTML) and
 // CKEditor (AppRichTextField, via its Mention plugin) — and both must produce byte-identical markup.
 // If they drift, a mention typed in one renders as plain text in the other and extractMentionIds() returns
 // nothing, so the notification is silently never sent. Hence one module rather than a copy per editor.
@@ -33,7 +33,7 @@ export const extractMentionIds = (html) => {
 /// worse than one that comes back empty.
 export const fetchMentionCandidates = async (term) => {
   try {
-    return (await ufNotesApi.mentionCandidates(term)) || [];
+    return (await ufConversationApi.mentionCandidates(term)) || [];
   } catch {
     return [];
   }

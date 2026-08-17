@@ -12,8 +12,11 @@
       />
     </div>
     <div class="row q-col-gutter-sm">
+      <!-- One box, and it says so: the payload node is a single `name` string. What the client types is
+           split on the first space when this contact is minted as a Person, so a label of "Name" over a
+           box that wants the whole name is the one thing that must not be ambiguous. -->
       <app-text-field
-        v-model="role.name" label="Name" :required="required" class="col-12 col-sm-6"
+        v-model="role.name" label="Full Name" :required="required" class="col-12 col-sm-6"
         :error="!!err('name')" :error-message="err('name')"
       />
       <app-text-field
@@ -22,7 +25,7 @@
       />
       <div class="col-12">
         <!-- Optional even on a required contact: roleComplete() asks only for a name and a valid email. -->
-        <app-phone-input v-model="role.phone" label="Phone" />
+        <app-phone-input v-model="role.phone" label="Phone Number" />
         <div v-if="err('phone')" class="text-negative text-caption q-mt-xs">{{ err('phone') }}</div>
       </div>
     </div>

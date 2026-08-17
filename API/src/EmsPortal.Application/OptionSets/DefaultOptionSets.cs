@@ -31,11 +31,12 @@ public static class DefaultOptionSets
         IReadOnlyList<ItemDefinition> Items);
 
     /// <summary>
-    /// The platform-standard option lists to seed. The REMS feature (WO-110) ships four standard lists
-    /// keyed to <see cref="EntityType.Rems"/>: request type, status and industry group (whose
-    /// codes are stored on the REMS/REMSForm rows), plus the grouped marketing-methods list whose items
-    /// are referenced by foreign key from <c>REMSEngagementMarketingMethod</c>. Each marketing item
-    /// carries its group and behaviour flags in <see cref="ItemDefinition.MetadataJson"/>.
+    /// The platform-standard option lists to seed. Most of the REMS lists keyed to
+    /// <see cref="EntityType.Rems"/> are CODE-valued — the chosen item's <c>Value</c> is what gets stored
+    /// on the REMS / REMSForm / REMSEngagement row. Two are not: the grouped marketing-methods list and the
+    /// tax-form checklist are referenced by item ID, as foreign keys from
+    /// <c>REMSEngagementMarketingMethod</c> and <c>REMSEngagementTaxForm</c>. Each marketing item carries
+    /// its group and behaviour flags in <see cref="ItemDefinition.MetadataJson"/>.
     /// </summary>
     public static IReadOnlyList<Definition> All { get; } = new[]
     {
@@ -78,16 +79,43 @@ public static class DefaultOptionSets
         new Definition(EntityType.Rems, "REMS.Status", "REMS Status", OptionItemSortMode.Custom, new[]
         {
             // The request lifecycle, in stage order — each value names who the request is waiting on.
-            // See RemsRequestStatuses for the transitions and the per-engagement roll-up.
-            new ItemDefinition("draft", "Draft", 1),
-            new ItemDefinition("submitted", "Submitted", 2),
-            new ItemDefinition("awaiting_customer", "Awaiting Customer", 3),
-            new ItemDefinition("customer_submitted", "Engagement Setup", 4),
-            new ItemDefinition("pending_approval", "Pending Approval", 5),
-            new ItemDefinition("changes_requested", "Changes Requested", 6),
-            new ItemDefinition("approved", "Approved", 7),
+            // See RemsRequestStatuses for the transitions.
+            //
+            // "submitted" is gone with the Admin Pool it described: the initiator now sends the intake
+            // form to the client themselves, so a request never waits in a pool to be picked up.
+            // "customer_submitted" keeps its code and is relabelled — the stage is the Admin reviewing
+            // what came back, not staff starting the engagement setup, which happens before any of this.
+            new ItemDefinition("draft", "Draft", 1, Description:
+                "With its initiator. Saved but not yet sent to the client."),
+            new ItemDefinition("awaiting_customer", "Awaiting Customer", 2, Description:
+                "The intake form has been emailed. The ball is with the client."),
+            new ItemDefinition("customer_submitted", "Admin Review", 3, Description:
+                "The client's answers are in and the named Admin is reviewing them."),
+            new ItemDefinition("returned_to_initiator", "Returned to Initiator", 4, Description:
+                "The Admin sent the engagement setup back for rework, with a reason. Client intake is read-only."),
+            new ItemDefinition("awaiting_admin_confirmation", "Awaiting Admin Confirmation", 5, Description:
+                "The initiator revised the setup and handed it back for the Admin to confirm."),
+            new ItemDefinition("pending_approval", "Pending Approval", 6, Description:
+                "Routed to the approvers. Every field is read-only while a round is open."),
+            new ItemDefinition("changes_requested", "Changes Requested", 7, Description:
+                "Enough approvers declined to close the round. Back with the initiator to rework the setup."),
+            new ItemDefinition("approved", "Approved", 8, Description:
+                "Fully approved. Permanently read-only."),
         }),
-        new Definition(EntityType.Rems, "REMS.IndustryGroup", "REMS Industry Group", OptionItemSortMode.Custom, new[]
+        new Definition(EntityType.Rems, "REMS.BillingPeriod", "REMS Billing Period", OptionItemSortMode.Custom, new[]
+        {
+            // How often the client is billed. Pairs with the engagement's No. of Bills, which is a plain
+            // count rather than anything derived from the period.
+            new ItemDefinition("monthly", "Monthly", 1),
+            new ItemDefinition("quarterly", "Quarterly", 2),
+            new ItemDefinition("annual", "Annual", 3),
+        }),
+        // What KIND of entity the client is — an individual, a not-for-profit, an insurer, a commercial
+        // business, a government body. Shown as "Entity Type"; the key stays REMS.IndustryGroup because
+        // every tenant's own copy of the list is keyed by it. An "audit" department for a "government"
+        // entity is a Government Audit and additionally requires a contract number + Florida 1%
+        // state-fee flag (RemsEngagementCodes.IsGovernmentAudit).
+        new Definition(EntityType.Rems, "REMS.IndustryGroup", "REMS Entity Type", OptionItemSortMode.Custom, new[]
         {
             // "Business" was split into the three kinds THF actually onboards. All three ask the client
             // exactly the same questions the old single group did (EIN, CEO/CFO/AP, banker, lawyer) — see
@@ -97,6 +125,46 @@ public static class DefaultOptionSets
             new ItemDefinition("insurance", "Insurance", 3),
             new ItemDefinition("commercial", "Commercial", 4),
             new ItemDefinition("government", "Government", 5),
+        }),
+        // The client's trade. Shown as "Industry"; the key stays REMS.SubIndustry for the same reason as
+        // the entity type above. Unlike the entity type — which decides which questions the client's
+        // intake form asks and is therefore frozen once that form goes out — this is an internal
+        // classification only, so it stays editable for as long as the setup does. One flat list rather
+        // than one filtered by the entity type: the two do not partition cleanly (a hospital is Health
+        // Care whether it is Commercial or Not-for-Profit), and a tenant adding a trade should not have to
+        // say which entity types may see it.
+        new Definition(EntityType.Rems, "REMS.SubIndustry", "REMS Industry", OptionItemSortMode.Custom, new[]
+        {
+            new ItemDefinition("affordable_housing", "Affordable Housing", 1),
+            new ItemDefinition("agribusiness", "Agribusiness", 2),
+            new ItemDefinition("auto_dealers", "Auto Dealers", 3),
+            new ItemDefinition("construction", "Construction", 4),
+            new ItemDefinition("entertainment", "Entertainment", 5),
+            new ItemDefinition("financial_institutions_banking", "Financial Institutions/Banking", 6),
+            new ItemDefinition("hospitality", "Hospitality", 7),
+            new ItemDefinition("manufacturing", "Manufacturing", 8),
+            new ItemDefinition("professional_service_firms", "Professional Service Firms", 9),
+            new ItemDefinition("real_estate", "Real Estate", 10),
+            new ItemDefinition("retail", "Retail", 11),
+            new ItemDefinition("health_care", "Health Care", 12),
+            new ItemDefinition("oil_gas_distribution", "Oil & Gas Distribution", 13),
+            new ItemDefinition("wholesale", "Wholesale", 14),
+            new ItemDefinition("technology", "Technology", 15),
+            new ItemDefinition("state_government", "State Government", 16),
+            new ItemDefinition("local_government", "Local Government", 17),
+            new ItemDefinition("federal_government", "Federal Government", 18),
+            new ItemDefinition("educational_institutions", "Educational Institutions", 19),
+            new ItemDefinition("insurance_property_casualty", "Insurance - Property and Casualty", 20),
+            new ItemDefinition("insurance_life", "Insurance - Life", 21),
+            new ItemDefinition("insurance_other", "Insurance - Other", 22),
+            new ItemDefinition("trade_associations", "Trade Associations", 23),
+            new ItemDefinition("charitable_organizations_foundations", "Charitable Organizations or Foundations", 24),
+            new ItemDefinition("other_not_for_profit", "Other Not-for-Profit", 25),
+            // Kept alongside the three tiers above it: not every government client is filed as state,
+            // local or federal, and the unqualified value is what those are recorded under.
+            new ItemDefinition("government", "Government", 26),
+            new ItemDefinition("individual", "Individual", 27),
+            new ItemDefinition("distribution", "Distribution", 28),
         }),
         new Definition(EntityType.Rems, "REMSMarketing_MarketingMethods.MarketingMethodId", "REMS Marketing Methods", OptionItemSortMode.Custom, new[]
         {
@@ -128,14 +196,43 @@ public static class DefaultOptionSets
             new ItemDefinition("audit", "Audit", 3),
             new ItemDefinition("gcs", "GCS", 4),
         }),
-        // Engagement service line (WO-114). An "audit" department with the "government" service line is a
-        // Government Audit and additionally requires a contract number + Florida 1% state-fee flag.
-        new Definition(EntityType.Rems, "REMS.ServiceLine", "REMS Service Line", OptionItemSortMode.Custom, new[]
+        // REMS.ServiceLine (Commercial / Non-Profit / Government / Individual) stood here. It was dropped:
+        // it asked what KIND of client this is, which is what REMS.EntityType below already answers, so
+        // every engagement was classified twice and the two could disagree. The Government Audit rule it
+        // used to carry moved to the entity type, and the list itself is retired by the
+        // RenameRemsEngagementClassifications migration. Engagements keep their stored ServiceLine code —
+        // nothing reads or writes it any more.
+        //
+        // The service actually being sold. This IS "Service Line" now (its key stays REMS.SubServiceLine,
+        // because a tenant's own copy of a list is keyed by it and renaming the key would orphan theirs).
+        // A classification field: what the firm is engaged to do, for reporting and for the
+        // billing/marketing view. The Internal-* values are the firm's own work, booked as engagements so
+        // the same setup and approval route covers them.
+        new Definition(EntityType.Rems, "REMS.SubServiceLine", "REMS Service Line", OptionItemSortMode.Custom, new[]
         {
-            new ItemDefinition("commercial", "Commercial", 1),
-            new ItemDefinition("non_profit", "Non-Profit", 2),
-            new ItemDefinition("government", "Government", 3),
-            new ItemDefinition("individual", "Individual", 4),
+            new ItemDefinition("attest_services", "Attest Services", 1),
+            new ItemDefinition("tax_compliance", "Tax Compliance", 2),
+            new ItemDefinition("client_accounting_services", "Client Accounting Services", 3),
+            new ItemDefinition("outsourced_cfo", "Outsourced CFO", 4),
+            new ItemDefinition("consulting", "Consulting", 5),
+            new ItemDefinition("business_valuation", "Business Valuation", 6),
+            new ItemDefinition("it_services", "IT Services", 7),
+            new ItemDefinition("plan_administration", "Plan Administration", 8),
+            new ItemDefinition("mergers_acquisitions", "Mergers & Acquisitions", 9),
+            new ItemDefinition("payroll_services", "Payroll Services", 10),
+            new ItemDefinition("peer_review", "Peer Review", 11),
+            new ItemDefinition("soc", "SOC", 12, Description:
+                "System and Organization Controls reporting (SOC 1 / SOC 2)."),
+            new ItemDefinition("employee_benefits", "Employee Benefits", 13),
+            new ItemDefinition("estate_planning", "Estate Planning", 14),
+            new ItemDefinition("litigation_support", "Litigation Support", 15),
+            new ItemDefinition("forensic_accounting", "Forensic Accounting", 16),
+            new ItemDefinition("internal_accounting", "Internal-Accounting", 17),
+            new ItemDefinition("internal_billing", "Internal-Billing", 18),
+            new ItemDefinition("internal_operations", "Internal-Operations", 19),
+            new ItemDefinition("internal_marketing", "Internal-Marketing", 20),
+            new ItemDefinition("internal_it", "Internal-IT", 21),
+            new ItemDefinition("internal_miscellaneous", "Internal-Miscellaneous", 22),
         }),
         // Engagement tax forms (WO-114): the checklist values referenced by foreign key from
         // REMSEngagementTaxForm.TaxFormId on a tax engagement's tax detail.

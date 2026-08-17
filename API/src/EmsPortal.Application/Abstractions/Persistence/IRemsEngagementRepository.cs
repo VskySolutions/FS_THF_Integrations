@@ -14,23 +14,17 @@ public interface IRemsEngagementRepository
 
     /// <summary>
     /// The engagement with its full staff/approval context (WO-114): marketing methods, commission splits,
-    /// and its entity → client (→ its other entities) → owning REMS request. Backs the approver-list build,
-    /// the approval send/resubmit pre-checks, and the copy-from source/target lookups.
+    /// and its owning REMS request → the client materialised from the intake → that client's entities and
+    /// their addresses. Backs the approver-list build and the approval send/resubmit pre-checks.
     /// </summary>
     Task<REMSEngagement?> GetWithContextAsync(Guid id, CancellationToken cancellationToken = default);
 
-    /// <summary>The active engagement for an entity.</summary>
-    Task<REMSEngagement?> GetByEntityIdAsync(Guid remsEntityId, CancellationToken cancellationToken = default);
-
-    /// <summary>Active engagements for a set of entities (WO-114 workspace), with marketing and commission loaded.</summary>
-    Task<IReadOnlyList<REMSEngagement>> ListByEntityIdsAsync(IReadOnlyCollection<Guid> entityIds, CancellationToken cancellationToken = default);
-
     /// <summary>
-    /// Every engagement on a request, as (id, status) pairs only. Backs the request-status roll-up: a
-    /// request carries one engagement per entity, and its status summarises them all.
+    /// A request's engagement, with marketing and commission loaded. There is exactly one, created when the
+    /// initiator first saves the request — so this replaces the old per-entity lookup, the batch load across
+    /// a client's entities, and the status roll-up that summarised them.
     /// </summary>
-    Task<IReadOnlyList<(Guid Id, RemsEngagementStatus Status)>> ListStatusesByRemsIdAsync(
-        Guid remsId, CancellationToken cancellationToken = default);
+    Task<REMSEngagement?> GetByRemsIdAsync(Guid remsId, CancellationToken cancellationToken = default);
 
     /// <summary>Audit details for a set of engagements (WO-114 workspace).</summary>
     Task<IReadOnlyList<REMSEngagementAuditDetail>> ListAuditDetailsAsync(IReadOnlyCollection<Guid> engagementIds, CancellationToken cancellationToken = default);

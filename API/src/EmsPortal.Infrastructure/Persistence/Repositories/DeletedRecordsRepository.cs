@@ -59,7 +59,6 @@ internal sealed class DeletedRecordsRepository : IDeletedRecordsRepository
         Add(map, EntityType.UserGroup, _dbContext.UserGroups, g => g.Name, g => g.TenantId);
         Add(map, EntityType.PermissionGroup, _dbContext.PermissionGroups, g => g.Name, g => g.TenantId);
         Add(map, EntityType.Tag, _dbContext.Tags, t => t.Name, t => t.TenantId);
-        Add(map, EntityType.SavedView, _dbContext.SavedViews, v => v.Name, v => v.TenantId);
         Add(map, EntityType.SmtpAccount, _dbContext.Set<SmtpAccount>(), a => a.AccountName, a => a.TenantId);
 
         // A sticky note has no name of its own; the title is optional, so fall back to the body.
@@ -291,7 +290,7 @@ internal sealed class DeletedRecordsRepository : IDeletedRecordsRepository
     private async Task PurgeRemsAggregateAsync(Guid remsId, CancellationToken cancellationToken)
     {
         var engagementIds = _dbContext.RemsEngagements.IgnoreQueryFilters()
-            .Where(e => e.Entity!.Client!.REMSId == remsId).Select(e => e.Id);
+            .Where(e => e.REMSId == remsId).Select(e => e.Id);
         var entityIds = _dbContext.RemsEntities.IgnoreQueryFilters()
             .Where(n => n.Client!.REMSId == remsId).Select(n => n.Id);
         var formIds = _dbContext.RemsForms.IgnoreQueryFilters()
@@ -327,7 +326,14 @@ internal sealed class DeletedRecordsRepository : IDeletedRecordsRepository
         await _dbContext.RemsEngagementApprovers.IgnoreQueryFilters()
             .Where(a => engagementIds.Contains(a.REMSEngagementId)).ExecuteDeleteAsync(cancellationToken);
         await _dbContext.RemsEngagements.IgnoreQueryFilters()
-            .Where(e => entityIds.Contains(e.REMSEntityId)).ExecuteDeleteAsync(cancellationToken);
+            .Where(e => e.REMSId == remsId).ExecuteDeleteAsync(cancellationToken);
+
+        // Request-owned rows that hang off no other aggregate: the other businesses the client named at
+        // intake, and every time the admin returned the setup.
+        await _dbContext.RemsAdditionalEntities.IgnoreQueryFilters()
+            .Where(a => a.REMSId == remsId).ExecuteDeleteAsync(cancellationToken);
+        await _dbContext.RemsSendBacks.IgnoreQueryFilters()
+            .Where(s => s.REMSId == remsId).ExecuteDeleteAsync(cancellationToken);
 
         // Client graph. The client precedes the submissions because it references the one it came from.
         await _dbContext.RemsEntityAddresses.IgnoreQueryFilters()
@@ -356,8 +362,8 @@ internal sealed class DeletedRecordsRepository : IDeletedRecordsRepository
     /// <summary>Un-deletes the soft-deleted UF rows that share the record's (EntityType, EntityId) key.</summary>
     private async Task RestoreUniversalFeaturesAsync(EntityType entityType, Guid entityId, CancellationToken cancellationToken)
     {
-        await _dbContext.Notes.IgnoreQueryFilters().Where(n => n.EntityType == entityType && n.EntityId == entityId && n.Deleted)
-            .ExecuteUpdateAsync(s => s.SetProperty(n => n.Deleted, false).SetProperty(n => n.DeletedOnUtc, (DateTime?)null), cancellationToken);
+        await _dbContext.ConversationMessages.IgnoreQueryFilters().Where(m => m.EntityType == entityType && m.EntityId == entityId && m.Deleted)
+            .ExecuteUpdateAsync(s => s.SetProperty(m => m.Deleted, false).SetProperty(m => m.DeletedOnUtc, (DateTime?)null), cancellationToken);
         await _dbContext.EntityTags.IgnoreQueryFilters().Where(e => e.EntityType == entityType && e.EntityId == entityId && e.Deleted)
             .ExecuteUpdateAsync(s => s.SetProperty(e => e.Deleted, false).SetProperty(e => e.DeletedOnUtc, (DateTime?)null), cancellationToken);
         await _dbContext.Attachments.IgnoreQueryFilters().Where(a => a.EntityType == entityType && a.EntityId == entityId && a.Deleted)
@@ -373,7 +379,7 @@ internal sealed class DeletedRecordsRepository : IDeletedRecordsRepository
     /// <summary>Permanently removes all UF rows for the record's (EntityType, EntityId) key. Child rows cascade via DB FKs.</summary>
     private async Task CascadeDeleteUniversalFeaturesAsync(EntityType entityType, Guid entityId, CancellationToken cancellationToken)
     {
-        await _dbContext.Notes.IgnoreQueryFilters().Where(n => n.EntityType == entityType && n.EntityId == entityId).ExecuteDeleteAsync(cancellationToken);
+        await _dbContext.ConversationMessages.IgnoreQueryFilters().Where(m => m.EntityType == entityType && m.EntityId == entityId).ExecuteDeleteAsync(cancellationToken);
         await _dbContext.EntityTags.IgnoreQueryFilters().Where(e => e.EntityType == entityType && e.EntityId == entityId).ExecuteDeleteAsync(cancellationToken);
         await _dbContext.Attachments.IgnoreQueryFilters().Where(a => a.EntityType == entityType && a.EntityId == entityId).ExecuteDeleteAsync(cancellationToken);
         await _dbContext.ActivityEvents.IgnoreQueryFilters().Where(a => a.EntityType == entityType && a.EntityId == entityId).ExecuteDeleteAsync(cancellationToken);

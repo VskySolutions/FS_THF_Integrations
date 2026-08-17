@@ -73,7 +73,7 @@
           <q-card-section class="pef-card__head">Contact</q-card-section>
           <q-separator />
           <q-card-section>
-            <div class="row q-col-gutter-md">
+            <div class="row q-col-gutter-sm">
               <app-text-field
                 v-model="payload.clientName" label="Client Name" required class="col-12 col-sm-6"
                 :error="!!errors.clientName" :error-message="errors.clientName"
@@ -85,7 +85,7 @@
                 <template #append><q-icon name="o_lock" size="18px" color="grey-6" /></template>
               </app-text-field>
               <div class="col-12 col-sm-6">
-                <app-phone-input v-model="payload.mobileNumber" label="Mobile Number" />
+                <app-phone-input v-model="payload.mobileNumber" label="Phone Number" />
               </div>
               <!-- Each option's description is its own tooltip, maintained by staff in Administration →
                    Option Sets and delivered with the form (this page is anonymous and cannot resolve an
@@ -110,17 +110,11 @@
                 :placeholder="referralDetailPlaceholder"
               />
 
-              <!-- Individual: spouse. All optional — captured when known, never a reason to block. -->
-              <template v-if="isIndividual">
-                <app-text-field v-model="payload.spouseName" label="Spouse Name" class="col-12 col-sm-6" />
-                <app-text-field
-                  v-model="payload.spouseEmail" label="Spouse Email Address" type="email"
-                  class="col-12 col-sm-6" :error="!!errors.spouseEmail" :error-message="errors.spouseEmail"
-                />
-                <div class="col-12 col-sm-6">
-                  <app-phone-input v-model="payload.spousePhone" label="Spouse Phone" />
-                </div>
-              </template>
+              <!-- No spouse fields here. An individual's spouse is asked for once, in the Spouse block of
+                   the Contacts card below — name, email and phone together, as one contact. This card used
+                   to ask the same three a second time into their own payload fields, which invited two
+                   different answers for one spouse and materialised into nothing: only the Contacts answer
+                   becomes a person record on submit. -->
 
               <!-- Business: EIN -->
               <app-text-field
@@ -131,9 +125,16 @@
           </q-card-section>
         </q-card>
 
-        <!-- Address -->
+        <!-- Addresses: three of them, each stored in its own right. "Copy from" fills the fields once and
+             leaves them editable — it is not a live mirror, so correcting the physical address later does
+             not silently move the other two with it. -->
         <q-card flat bordered class="pef-card q-mb-md">
-          <q-card-section class="pef-card__head">Address</q-card-section>
+          <q-card-section class="pef-card__head">
+            Addresses
+            <div class="text-caption text-grey-7 text-weight-regular">
+              If your mailing or billing address is the same, copy it across and edit anything that differs.
+            </div>
+          </q-card-section>
           <q-separator />
           <q-card-section>
             <div class="pef-subhead">Physical Address</div>
@@ -141,17 +142,29 @@
               v-model="payload.physicalAddress" required :errors="addressErrors(errors, 'physicalAddress')"
             />
 
-            <q-toggle
-              v-model="mailingSame" label="Mailing address is the same as the physical address"
-              color="primary" class="q-mt-md"
+            <div class="pef-addr-head q-mt-lg">
+              <div class="pef-subhead">Mailing Address</div>
+              <q-btn
+                flat dense no-caps size="sm" color="primary" icon="o_content_copy"
+                label="Copy from physical" :disable="!hasAny(payload.physicalAddress)"
+                @click="copyAddress('physicalAddress', 'mailingAddress')"
+              />
+            </div>
+            <app-address-fields
+              v-model="payload.mailingAddress" required :errors="addressErrors(errors, 'mailingAddress')"
             />
 
-            <template v-if="!mailingSame">
-              <div class="pef-subhead q-mt-sm">Mailing Address</div>
-              <app-address-fields
-                v-model="payload.mailingAddress" required :errors="addressErrors(errors, 'mailingAddress')"
+            <div class="pef-addr-head q-mt-lg">
+              <div class="pef-subhead">Billing Address</div>
+              <q-btn
+                flat dense no-caps size="sm" color="primary" icon="o_content_copy"
+                label="Copy from mailing" :disable="!hasAny(payload.mailingAddress)"
+                @click="copyAddress('mailingAddress', 'billingAddress')"
               />
-            </template>
+            </div>
+            <app-address-fields
+              v-model="payload.billingAddress" :errors="addressErrors(errors, 'billingAddress')"
+            />
           </q-card-section>
         </q-card>
 
@@ -160,7 +173,7 @@
           <q-card-section class="pef-card__head">Contract Details</q-card-section>
           <q-separator />
           <q-card-section>
-            <div class="row q-col-gutter-md">
+            <div class="row q-col-gutter-sm">
               <app-date-field v-model="payload.contractStartDate" label="Contract Start Date" class="col-12 col-sm-6" />
               <app-date-field v-model="payload.contractEndDate" label="Contract End Date" class="col-12 col-sm-6" />
               <app-text-field v-model="payload.originalTerm" label="Original Term" class="col-12 col-sm-6" />
@@ -189,14 +202,20 @@
           </q-card-section>
         </q-card>
 
-        <!-- Related businesses -->
+        <!-- Other entities: who to speak to, not a second set of business details. Each one becomes its
+             own EMS request, raised by the partner afterwards, which is where its details get asked for. -->
         <q-card flat bordered class="pef-card q-mb-md">
-          <q-card-section class="pef-card__head">Related Businesses</q-card-section>
+          <q-card-section class="pef-card__head">
+            Other Entities
+            <div class="text-caption text-grey-7 text-weight-regular">
+              We will set each one up separately and get in touch about it.
+            </div>
+          </q-card-section>
           <q-separator />
           <q-card-section>
             <q-toggle
               :model-value="hasRelatedEntities"
-              label="I have related or subsidiary businesses to add"
+              label="Do you have more entities?"
               color="primary"
               @update:model-value="onToggleRelated"
             />
@@ -207,37 +226,32 @@
                 flat bordered class="pef-entity"
               >
                 <q-card-section class="row items-center no-wrap q-pb-none">
-                  <div class="text-subtitle2 text-weight-medium col">Related business #{{ i + 1 }}</div>
+                  <div class="text-subtitle2 text-weight-medium col">Entity #{{ i + 1 }}</div>
                   <q-btn flat round dense color="negative" icon="o_delete" @click="removeEntity(i)">
                     <q-tooltip>Remove</q-tooltip>
                   </q-btn>
                 </q-card-section>
                 <q-card-section>
-                  <div class="row q-col-gutter-md">
+                  <div class="row q-col-gutter-sm">
                     <app-text-field
-                      v-model="entity.businessName" label="Business Name" required class="col-12 col-sm-6"
-                      :error="!!entityErr(i, 'businessName')" :error-message="entityErr(i, 'businessName')"
+                      v-model="entity.fullName" label="Client/Entity Name" required class="col-12 col-sm-4"
+                      :error="!!entityErr(i, 'fullName')" :error-message="entityErr(i, 'fullName')"
                     />
-                    <app-text-field v-model="entity.ein" label="EIN" class="col-12 col-sm-6" />
-                    <app-text-field v-model="entity.contactName" label="Contact Name" class="col-12 col-sm-6" />
+                    <!-- Required, not "email or phone": each of these becomes its own EMS request, and that
+                         request is opened by emailing an intake form to this address. A row we cannot write
+                         to is a row that never becomes anything. -->
+                    <app-text-field
+                      v-model="entity.emailAddress" label="Email Address" type="email" required
+                      class="col-12 col-sm-4"
+                      :error="!!entityErr(i, 'emailAddress')" :error-message="entityErr(i, 'emailAddress')"
+                    />
+                    <app-text-field v-model="entity.phoneNumber" label="Phone Number" class="col-12 col-sm-4" />
                   </div>
-
-                  <div class="pef-subhead q-mt-md">Physical Address</div>
-                  <app-address-fields v-model="entity.physicalAddress" />
-
-                  <q-toggle
-                    v-model="entity._mailingDiffers" label="Add a different mailing address"
-                    color="primary" class="q-mt-md"
-                  />
-                  <template v-if="entity._mailingDiffers">
-                    <div class="pef-subhead q-mt-sm">Mailing Address</div>
-                    <app-address-fields v-model="entity.mailingAddress" />
-                  </template>
                 </q-card-section>
               </q-card>
 
               <div>
-                <q-btn outline no-caps color="primary" icon="o_add" label="Add another business" @click="addEntity" />
+                <q-btn outline no-caps color="primary" icon="o_add" label="Add another entity" @click="addEntity" />
               </div>
             </div>
           </q-card-section>
@@ -248,29 +262,15 @@
           <q-card-section class="pef-card__head">Billing</q-card-section>
           <q-separator />
           <q-card-section>
-            <div class="row q-col-gutter-md">
+            <div class="row q-col-gutter-sm">
               <app-text-field v-model="payload.billingContactName" label="Billing Contact" class="col-12 col-sm-6" />
               <app-text-field
                 v-model="payload.billingEmail" label="Billing Email" type="email" class="col-12 col-sm-6"
                 :error="!!errors.billingEmail" :error-message="errors.billingEmail"
               />
             </div>
-            <div class="pef-subhead q-mt-md">Billing Address</div>
-            <!-- Same idiom as the mailing toggle above: choose a source and the fields disappear, choose a
-                 different address and you fill it in. The Mailing option only appears when there IS a
-                 separate mailing address to follow. -->
-            <div class="row items-center q-gutter-md q-mb-sm">
-              <q-radio v-model="billingSource" val="physical" label="Same as physical address" color="primary" dense />
-              <q-radio
-                v-if="payload.mailingDiffers" v-model="billingSource" val="mailing"
-                label="Same as mailing address" color="primary" dense
-              />
-              <q-radio v-model="billingSource" val="custom" label="Use a different address" color="primary" dense />
-            </div>
-            <app-address-fields
-              v-if="billingSource === 'custom'"
-              v-model="payload.billingAddress" :errors="addressErrors(errors, 'billingAddress')"
-            />
+            <!-- The billing ADDRESS moved up to the Addresses card with the other two, so this block is
+                 only the person to bill. -->
           </q-card-section>
         </q-card>
 
@@ -350,7 +350,7 @@ import { remsPublicApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } fro
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import {
-  blankAddress, toAddress, fromAddress, addressErrors, addressHasAny, addressComplete
+  blankAddress, toAddress, fromAddress, addressErrors, addressComplete
 } from "modules/rems/remsAddress";
 import { REMS_OPTION_SEED } from "modules/rems/useRemsOptionCatalog";
 import { isBusinessIndustryGroup } from "modules/rems/useRemsMeta";
@@ -429,7 +429,6 @@ const payload = reactive({
   referralSource: "",
   referralSourceDetail: "",
   physicalAddress: blankAddress(),
-  mailingDiffers: false,
   mailingAddress: blankAddress(),
   billingContactName: "",
   billingEmail: "",
@@ -454,7 +453,7 @@ const payload = reactive({
     lawyer: blankRole(),
     financeDirector: blankRole()
   },
-  relatedEntities: []   // [{ sourceKey, businessName, ein, contactName, physicalAddress, _mailingDiffers, mailingAddress }]
+  relatedEntities: []   // [{ sourceKey, fullName, emailAddress, phoneNumber }]
 });
 
 // ---- Derived ----
@@ -465,35 +464,20 @@ const industryLabel = computed(() => INDUSTRY_LABELS[industryGroup.value] || "On
 const showUnavailable = computed(() => loadFailed.value || state.value === "Invalid" || state.value === "Unavailable");
 const busy = computed(() => reviewing.value || submitting.value);
 
-const mailingSame = computed({
-  get: () => !payload.mailingDiffers,
-  set: (v) => { payload.mailingDiffers = !v; }
-});
+// Whether an address has anything in it at all — what decides if there is something worth copying.
+const hasAny = (address) =>
+  !!address && Object.values(address).some((v) => typeof v === "string" && v.trim() !== "");
 
-// Where the billing address comes from: "physical", "mailing", or "custom" (typed in below).
-// Defaults to custom so loading a saved draft always shows the billing address exactly as it was stored,
-// rather than silently overwriting it from another address on the way in.
-const billingSource = ref("custom");
-
-// While billing FOLLOWS another address it has to keep following it — editing the physical address after
-// choosing "same as physical" must not leave billing on the stale copy. Assigned field by field into the
-// existing object so the bound model instance survives (AppAddressFields resolves its country → state →
-// city cascade from that instance).
-watch(
-  [billingSource, () => payload.physicalAddress, () => payload.mailingAddress],
-  () => {
-    if (billingSource.value === "custom") return;
-    const from = billingSource.value === "mailing" ? payload.mailingAddress : payload.physicalAddress;
-    Object.assign(payload.billingAddress, { ...from });
-  },
-  { deep: true }
-);
-
-// Turning off "mailing differs" removes the address billing was following — fall back to the physical one
-// rather than leaving it pinned to a mailing address that no longer exists.
-watch(() => payload.mailingDiffers, (differs) => {
-  if (!differs && billingSource.value === "mailing") billingSource.value = "physical";
-});
+// Copy one address into another, ONCE. Deliberately not a live mirror: the client can correct the copy
+// afterwards, and a later edit to the source must not silently drag the copy along with it — which is
+// exactly what the old "same as physical" radio did, and why an amended physical address used to move
+// the billing address without anyone asking.
+//
+// Assigned field by field into the EXISTING object rather than replacing it, so the bound model instance
+// survives (AppAddressFields resolves its country → state → city cascade from that instance).
+const copyAddress = (fromKey, toKey) => {
+  Object.assign(payload[toKey], { ...payload[fromKey] });
+};
 
 const roleDefs = computed(() => {
   if (isIndividual.value) {
@@ -542,9 +526,9 @@ const clientIssues = computed(() => {
   if (!filled(payload.clientName)) out.push("Client name is required.");
   const addressIssue = "needs country, state, city, address line 1 and zip code.";
   if (!addressComplete(payload.physicalAddress)) out.push(`Physical address ${addressIssue}`);
-  if (payload.mailingDiffers && !addressComplete(payload.mailingAddress)) {
-    out.push(`Mailing address ${addressIssue}`);
-  }
+  // Both are required now: there is no "same as" flag deciding whether a mailing address exists, only a
+  // copy button that fills it in for you.
+  if (!addressComplete(payload.mailingAddress)) out.push(`Mailing address ${addressIssue}`);
   if (filled(payload.billingEmail) && !emailOk(payload.billingEmail)) out.push("Billing email is not a valid email address.");
 
   const roles = payload.roles;
@@ -567,8 +551,14 @@ const clientIssues = computed(() => {
     opt("accountsPayable", "Accounts Payable");
   }
 
+  // Name and email both required — the phone stays optional, as it is on every contact on this form.
   payload.relatedEntities.forEach((e, i) => {
-    if (!filled(e.businessName)) out.push(`Related business #${i + 1} needs a business name.`);
+    if (!filled(e.fullName)) out.push(`Entity #${i + 1} needs a client / entity name.`);
+    if (!filled(e.emailAddress)) {
+      out.push(`Entity #${i + 1} needs an email address.`);
+    } else if (!emailOk(e.emailAddress)) {
+      out.push(`Entity #${i + 1} has an invalid email address.`);
+    }
   });
 
   return out;
@@ -600,8 +590,7 @@ function buildPayload () {
     referralSource: s(payload.referralSource),
     referralSourceDetail: s(payload.referralSourceDetail),
     physicalAddress: fromAddress(payload.physicalAddress),
-    mailingDiffers: payload.mailingDiffers,
-    mailingAddress: payload.mailingDiffers ? fromAddress(payload.mailingAddress) : null,
+    mailingAddress: fromAddress(payload.mailingAddress),
     billingContactName: s(payload.billingContactName),
     billingEmail: s(payload.billingEmail),
     billingAddress: fromAddress(payload.billingAddress),
@@ -618,11 +607,9 @@ function buildPayload () {
     roles: buildRoles(),
     relatedEntities: payload.relatedEntities.map((e, i) => ({
       sourceKey: e.sourceKey || `related-${i + 1}`,
-      businessName: s(e.businessName),
-      ein: s(e.ein),
-      contactName: s(e.contactName),
-      physicalAddress: fromAddress(e.physicalAddress),
-      mailingAddress: e._mailingDiffers ? fromAddress(e.mailingAddress) : null
+      fullName: s(e.fullName),
+      emailAddress: s(e.emailAddress),
+      phoneNumber: s(e.phoneNumber)
     }))
   };
 }
@@ -634,16 +621,11 @@ function fillRole (target, src) {
   target.phone = src?.phone ?? "";
 }
 function makeEntity (e, i) {
-  const mailing = toAddress(e?.mailingAddress);
   return {
     sourceKey: e?.sourceKey || `related-${Date.now()}-${i}`,
-    businessName: e?.businessName ?? "",
-    ein: e?.ein ?? "",
-    contactName: e?.contactName ?? "",
-    physicalAddress: toAddress(e?.physicalAddress),
-    // A stored mailing address only means "differs" when it actually carries lines of its own.
-    _mailingDiffers: addressHasAny(mailing),
-    mailingAddress: mailing
+    fullName: e?.fullName ?? "",
+    emailAddress: e?.emailAddress ?? "",
+    phoneNumber: e?.phoneNumber ?? ""
   };
 }
 
@@ -667,7 +649,6 @@ function seed (prefill, draft) {
   payload.contractEndDate = d.contractEndDate ?? "";
   payload.poStartDate = d.poStartDate ?? "";
   payload.poEndDate = d.poEndDate ?? "";
-  payload.mailingDiffers = !!d.mailingDiffers;
 
   payload.physicalAddress = toAddress(d.physicalAddress);
   payload.mailingAddress = toAddress(d.mailingAddress);
@@ -826,19 +807,14 @@ async function onCancel () {
 }
 
 // ---- Related businesses ----
-const entityHasData = (e) =>
-  filled(e.businessName) || filled(e.ein) || filled(e.contactName) ||
-  addressHasAny(e.physicalAddress) || addressHasAny(e.mailingAddress);
+const entityHasData = (e) => filled(e.fullName) || filled(e.emailAddress) || filled(e.phoneNumber);
 
 function addEntity () {
   payload.relatedEntities.push({
     sourceKey: `related-${Date.now()}-${payload.relatedEntities.length}`,
-    businessName: "",
-    ein: "",
-    contactName: "",
-    physicalAddress: blankAddress(),
-    _mailingDiffers: false,
-    mailingAddress: blankAddress()
+    fullName: "",
+    emailAddress: "",
+    phoneNumber: ""
   });
 }
 
@@ -855,8 +831,8 @@ async function onToggleRelated (val) {
   }
   if (payload.relatedEntities.some(entityHasData)) {
     const ok = await confirm({
-      title: "Remove related businesses?",
-      message: "This will remove all related businesses you've added to this form.",
+      title: "Remove other entities?",
+      message: "This will remove every other entity you've added to this form.",
       confirmLabel: "Remove",
       type: "danger"
     });
@@ -894,6 +870,18 @@ onMounted(load);
   text-transform: uppercase;
   color: var(--q-primary);
   margin-bottom: 8px;
+}
+/* Heading and its copy button on one baseline. The button sits with the label it fills in, so it reads as
+   "this address, copied from that one" rather than as a stray action above the fields. */
+.pef-addr-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.pef-addr-head .pef-subhead {
+  margin-bottom: 0;
 }
 .pef-entity {
   border-radius: 10px;

@@ -16,8 +16,10 @@ internal sealed class RemsConfiguration : IEntityTypeConfiguration<REMS>
         builder.HasKey(r => r.Id);
 
         builder.Property(r => r.REMSNumber).IsRequired().HasMaxLength(64);
-        builder.Property(r => r.Title).IsRequired().HasMaxLength(200);
-        builder.Property(r => r.Description).HasMaxLength(500);
+        // The partner's message is client-facing now and holds pasted correspondence, so it is uncapped.
+        // The old nvarchar(500) measured the markup rather than the words in it, which a forwarded email
+        // exceeded almost immediately.
+        builder.Property(r => r.Description).HasColumnType("nvarchar(max)");
         builder.Property(r => r.Type).IsRequired().HasMaxLength(64);
         builder.Property(r => r.Status).IsRequired().HasMaxLength(64);
         builder.Property(r => r.RequestedClientName).IsRequired().HasMaxLength(200);
@@ -29,6 +31,10 @@ internal sealed class RemsConfiguration : IEntityTypeConfiguration<REMS>
 
         builder.HasOne<User>().WithMany().HasForeignKey(r => r.AdminAssignedToId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<User>().WithMany().HasForeignKey(r => r.CSEId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<User>().WithMany().HasForeignKey(r => r.OnBehalfOfUserId).OnDelete(DeleteBehavior.Restrict);
+
+        // "Everything raised for me", including what a delegate prepared — the principal's own list.
+        builder.HasIndex(r => new { r.TenantId, r.OnBehalfOfUserId, r.Status });
 
         // The client's Person master record. A real FK, unlike the loose ExistingClientReferenceId beside
         // it: a person may be shared by many requests and may later become a User, so the link has to hold.
@@ -63,5 +69,86 @@ internal sealed class RemsFilesConfiguration : IEntityTypeConfiguration<REMSFile
         builder.HasOne(f => f.Media).WithMany().HasForeignKey(f => f.MediaId).OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(f => new { f.TenantId, f.REMSId, f.MediaId }).IsUnique().HasFilter("[Deleted] = 0");
+    }
+}
+
+internal sealed class RemsAdditionalEntityConfiguration : IEntityTypeConfiguration<REMSAdditionalEntity>
+{
+    public void Configure(EntityTypeBuilder<REMSAdditionalEntity> builder)
+    {
+        builder.ToTable("REMSAdditionalEntity");
+        builder.HasKey(a => a.Id);
+
+        builder.Property(a => a.SourceKey).IsRequired().HasMaxLength(64);
+        builder.Property(a => a.FullName).IsRequired().HasMaxLength(200);
+        builder.Property(a => a.EmailAddress).HasMaxLength(256);
+        builder.Property(a => a.PhoneNumber).HasMaxLength(32);
+
+        builder.HasOne<Tenant>().WithMany().HasForeignKey(a => a.TenantId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(a => a.TenantId);
+
+        builder.HasOne(a => a.Rems).WithMany(r => r.AdditionalEntities).HasForeignKey(a => a.REMSId).OnDelete(DeleteBehavior.Restrict);
+
+        // CreatedREMSId is deliberately NOT a foreign key. The follow-up request stands on its own — it is
+        // not a child of the request that revealed it — and modelling it as a relationship would invite
+        // exactly the parent/child reads that decision rules out.
+
+        builder.HasIndex(a => new { a.TenantId, a.REMSId, a.SourceKey }).IsUnique().HasFilter("[Deleted] = 0");
+
+        // "Which of this client's other businesses still need an EMS" — the read behind the list flag.
+        builder.HasIndex(a => new { a.TenantId, a.REMSId, a.CreatedREMSId });
+    }
+}
+
+internal sealed class RemsDelegationConfiguration : IEntityTypeConfiguration<REMSDelegation>
+{
+    public void Configure(EntityTypeBuilder<REMSDelegation> builder)
+    {
+        builder.ToTable("REMSDelegation", t => t.HasCheckConstraint(
+            "CK_REMSDelegation_Dates",
+            "[StartsOn] IS NULL OR [EndsOn] IS NULL OR [EndsOn] >= [StartsOn]"));
+        builder.HasKey(d => d.Id);
+
+        builder.HasOne<Tenant>().WithMany().HasForeignKey(d => d.TenantId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(d => d.TenantId);
+
+        builder.HasOne(d => d.Principal).WithMany().HasForeignKey(d => d.PrincipalUserId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(d => d.Delegate).WithMany().HasForeignKey(d => d.DelegateUserId).OnDelete(DeleteBehavior.Restrict);
+
+        // One live grant per pair. Re-granting with different rights edits the row rather than stacking a
+        // second one, so there is never a question of which of two grants applies.
+        builder.HasIndex(d => new { d.TenantId, d.PrincipalUserId, d.DelegateUserId })
+            .IsUnique()
+            .HasFilter("[Deleted] = 0");
+
+        // "Who can I act for?" — the read behind the acting-as picker.
+        builder.HasIndex(d => new { d.TenantId, d.DelegateUserId });
+    }
+}
+
+internal sealed class RemsSendBackConfiguration : IEntityTypeConfiguration<REMSSendBack>
+{
+    public void Configure(EntityTypeBuilder<REMSSendBack> builder)
+    {
+        builder.ToTable("REMSSendBack");
+        builder.HasKey(s => s.Id);
+
+        // Matches the request's own description: an admin explaining what is wrong with the setup should
+        // not be rationed, and a truncated reason is not actionable.
+        builder.Property(s => s.Reason).IsRequired().HasColumnType("nvarchar(max)");
+
+        builder.HasOne<Tenant>().WithMany().HasForeignKey(s => s.TenantId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(s => s.TenantId);
+
+        builder.HasOne(s => s.Rems).WithMany(r => r.SendBacks).HasForeignKey(s => s.REMSId).OnDelete(DeleteBehavior.Restrict);
+
+        // At most one unresolved return per request: the loop is sequential, so a second open return would
+        // mean the request was in two places at once.
+        builder.HasIndex(s => new { s.TenantId, s.REMSId })
+            .IsUnique()
+            .HasFilter("[Deleted] = 0 AND [ResolvedOnUtc] IS NULL");
+
+        // The history read, newest last.
+        builder.HasIndex(s => new { s.TenantId, s.REMSId, s.CreatedOnUtc });
     }
 }

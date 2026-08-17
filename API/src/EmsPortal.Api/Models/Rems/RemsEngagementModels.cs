@@ -49,11 +49,32 @@ public sealed record RemsEngagementWorkspace(
     Guid RemsId,
     string RemsNumber,
     string RequestStatus,
-    RemsClientView Client,
+    // Null until the client submits their intake form. The engagement below exists from the moment the
+    // request does — the initiator fills its setup before the client is ever contacted — so a workspace
+    // with no client is the ordinary state of every request that has not been answered yet.
+    RemsClientView? Client,
     IReadOnlyList<RemsEntityView> Entities,
+    // The request's single engagement, which used to hang off each entity. Null only before the initiator
+    // has saved the request for the first time.
+    RemsEngagementView? Engagement,
+    // The industry group the client's intake was built around. It lives on the form record rather than the
+    // engagement, but the setup section shows and edits it, so it travels with the workspace.
+    string? IndustryGroup,
+    // Other businesses the client named at intake. Each is a prompt for its own request; a row carrying a
+    // CreatedRemsId has already produced one.
+    IReadOnlyList<RemsAdditionalEntityView> AdditionalEntities,
     // The tenant's department → director map, so the setup form can show the director a department will
     // get the moment it is picked rather than only after the save round-trip.
     IReadOnlyList<RemsDepartmentDirectorView> DepartmentDirectors);
+
+/// <summary>Another business the client named at intake, and the request it has produced (if any).</summary>
+public sealed record RemsAdditionalEntityView(
+    Guid Id,
+    string FullName,
+    string? EmailAddress,
+    string? PhoneNumber,
+    Guid? CreatedRemsId,
+    string? CreatedRemsNumber);
 
 /// <summary>The editable client record. <see cref="Email"/> is locked (never editable).</summary>
 public sealed record RemsClientView(
@@ -63,8 +84,7 @@ public sealed record RemsClientView(
     string? MobileNumber,
     string? ReferralSource,
     string? BillingContactName,
-    string? BillingEmail,
-    RemsAddressView? BillingAddress);
+    string? BillingEmail);
 
 /// <summary>A shared postal address projected for the workspace (mirrors <see cref="RemsAddressInput"/>).</summary>
 public sealed record RemsAddressView(
@@ -78,17 +98,19 @@ public sealed record RemsAddressView(
     string? CountryCode,
     string? CountryName);
 
-/// <summary>An entity within the workspace, with its addresses, contacts and (one) engagement.</summary>
+/// <summary>
+/// An entity within the workspace, with its addresses and contacts. It no longer carries an engagement:
+/// the request has one, reported once on the workspace itself.
+/// </summary>
 public sealed record RemsEntityView(
     Guid Id,
     string Name,
     string? Ein,
     bool IsMainEntity,
     IReadOnlyList<RemsEntityAddressView> Addresses,
-    IReadOnlyList<RemsEntityContactView> Contacts,
-    RemsEngagementView? Engagement);
+    IReadOnlyList<RemsEntityContactView> Contacts);
 
-/// <summary>An entity address (physical/mailing) row.</summary>
+/// <summary>An entity address (physical/mailing/billing) row.</summary>
 public sealed record RemsEntityAddressView(Guid Id, string AddressType, RemsAddressView Address);
 
 /// <summary>An entity contact row (person resolved to name/email/phone).</summary>
@@ -99,11 +121,15 @@ public sealed record RemsEngagementView(
     Guid Id,
     string? Department,
     string? ServiceLine,
+    string? SubServiceLine,
+    string? SubIndustry,
     RemsUserRef? DepartmentDirector,
     RemsUserRef? EngagementExecutive,
     RemsUserRef? BillingManager,
     decimal? FirstYearFeeEstimate,
     decimal? RealizationPercentage,
+    string? BillingPeriod,
+    int? NumberOfBills,
     string Status,
     IReadOnlyList<Guid> MarketingMethodIds,
     IReadOnlyList<RemsCommissionSplitView> CommissionSplits,
@@ -204,12 +230,37 @@ public sealed class RemsEntityContactInput
 public sealed class UpdateRemsEngagementRequest
 {
     public string? Department { get; set; }
+
+    /// <summary>
+    /// RETIRED, and still accepted only so an old caller is not broken by sending it. The setup form drops
+    /// it from the payload entirely, which is what preserves whatever a historical engagement recorded.
+    /// </summary>
     public string? ServiceLine { get; set; }
+
+    /// <summary>
+    /// The service being sold — the SERVICE LINE as the setup form labels it (option-set
+    /// <c>REMS.SubServiceLine</c> code; the key kept its old name). Optional, so — like the client's own
+    /// optional fields — an EMPTY string clears it while null leaves it alone.
+    /// </summary>
+    public string? SubServiceLine { get; set; }
+
+    /// <summary>
+    /// The client's trade — the INDUSTRY as the setup form labels it (option-set <c>REMS.SubIndustry</c>
+    /// code, likewise). Cleared with an empty string, as above.
+    /// </summary>
+    public string? SubIndustry { get; set; }
+
     public Guid? DepartmentDirectorId { get; set; }
     public Guid? EngagementExecutiveId { get; set; }
     public Guid? BillingManagerId { get; set; }
     public decimal? FirstYearFeeEstimate { get; set; }
     public decimal? RealizationPercentage { get; set; }
+
+    /// <summary>How often the client is billed (option-set <c>REMS.BillingPeriod</c> code).</summary>
+    public string? BillingPeriod { get; set; }
+
+    /// <summary>How many bills the engagement is billed over. Entered, not derived from the period.</summary>
+    public int? NumberOfBills { get; set; }
 }
 
 /// <summary>The engagement update result: the refreshed engagement plus the director the chosen department maps to (prefill hint).</summary>
@@ -268,14 +319,20 @@ public sealed class RemsCommissionInput
 // -------------------- Shared helpers --------------------
 
 /// <summary>
-/// The canonical engagement Department / ServiceLine codes this WO branches on (seeded in
+/// The canonical engagement Department / entity-type codes this WO branches on (seeded in
 /// <c>DefaultOptionSets</c>). Option-set values are stored as codes and not otherwise validated at save.
 /// </summary>
 internal static class RemsEngagementCodes
 {
     public const string DepartmentAudit = "audit";
     public const string DepartmentTax = "tax";
-    public const string ServiceLineGovernment = "government";
+
+    /// <summary>
+    /// The <c>REMS.IndustryGroup</c> code shown as Entity Type = "Government". A government AUDIT used to
+    /// be read off the engagement's service line; that list was dropped for asking what the entity type
+    /// already answers, so the rule now reads the entity type itself.
+    /// </summary>
+    public const string EntityTypeGovernment = "government";
 
     public static bool IsAudit(string? department)
         => string.Equals(department, DepartmentAudit, StringComparison.OrdinalIgnoreCase);
@@ -283,8 +340,14 @@ internal static class RemsEngagementCodes
     public static bool IsTax(string? department)
         => string.Equals(department, DepartmentTax, StringComparison.OrdinalIgnoreCase);
 
-    public static bool IsGovernmentAudit(string? department, string? serviceLine)
-        => IsAudit(department) && string.Equals(serviceLine, ServiceLineGovernment, StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// An audit engagement for a government entity — the one that additionally needs a contract number and
+    /// the Florida 1% state-fee flag. <paramref name="entityType"/> is the request's
+    /// <c>REMSForm.IndustryGroup</c>, not a field of the engagement: it is fixed when the intake form goes
+    /// out, which is exactly the guarantee this rule wants.
+    /// </summary>
+    public static bool IsGovernmentAudit(string? department, string? entityType)
+        => IsAudit(department) && string.Equals(entityType, EntityTypeGovernment, StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>The computed tax due-date schedule stored as JSON on <c>REMSEngagementTaxDetail.CalculatedDueDates</c>.</summary>

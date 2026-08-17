@@ -1,18 +1,24 @@
 using EmsPortal.Api.Models.Media;
+using EmsPortal.Api.Security;
+using EmsPortal.Api.Storage;
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Abstractions.Storage;
 using EmsPortal.Shared.Contracts;
+using EmsPortal.Shared.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using DomainMedia = EmsPortal.Domain.Entities.Media;
+using EntityTypeEnum = EmsPortal.Domain.Enums.EntityType;
 using MediaTypeEnum = EmsPortal.Domain.Enums.MediaType;
 using MediaCategoryEnum = EmsPortal.Domain.Enums.MediaCategory;
 
 namespace EmsPortal.Api.Controllers;
 
 /// <summary>
-/// Centralized media upload/serving (WO-61). Files are stored under the content root and
-/// streamed back by id; public media (e.g. profile pictures) can be fetched anonymously by
-/// their unguessable id so they render in plain &lt;img&gt; tags.
+/// Centralized media upload/serving (WO-61). Files are filed under the content root by the record
+/// they belong to — <c>media-uploads/{tenant}/{EntityType}/{recordKey}/{purpose}/</c> — and streamed
+/// back by id; public media (e.g. profile pictures) can be fetched anonymously by their unguessable
+/// id so they render in plain &lt;img&gt; tags.
 /// </summary>
 [ApiController]
 [Produces("application/json")]
@@ -23,19 +29,32 @@ namespace EmsPortal.Api.Controllers;
 public sealed class MediaController : ControllerBase
 {
     private const long MaxFileSizeBytes = 10 * 1024 * 1024; // 10 MB
-    private const string StorageFolder = "media-uploads";
 
     private readonly IMediaRepository _media;
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IWebHostEnvironment _environment;
+    private readonly IFileStorage _fileStorage;
+    private readonly IUploadRecordKeyResolver _recordKeys;
+    private readonly IPersonRepository _persons;
 
-    public MediaController(IMediaRepository media, IUnitOfWork unitOfWork, IWebHostEnvironment environment)
+    public MediaController(
+        IMediaRepository media,
+        IUnitOfWork unitOfWork,
+        IFileStorage fileStorage,
+        IUploadRecordKeyResolver recordKeys,
+        IPersonRepository persons)
     {
         _media = media;
         _unitOfWork = unitOfWork;
-        _environment = environment;
+        _fileStorage = fileStorage;
+        _recordKeys = recordKeys;
+        _persons = persons;
     }
 
+    /// <summary>
+    /// Uploads a file. <paramref name="entityType"/> + <paramref name="entityId"/> name the record it
+    /// belongs to and decide the folder it lands in; without them the file is filed under
+    /// <c>_unassigned</c>, which is a holding pen for a cleanup sweep rather than a place to leave things.
+    /// </summary>
     [HttpPost("/api/media")]
     [Authorize]
     [RequestSizeLimit(MaxFileSizeBytes)]
@@ -43,6 +62,8 @@ public sealed class MediaController : ControllerBase
     public async Task<IActionResult> Upload(
         [FromForm] IFormFile? file,
         [FromForm] string? mediaCategory,
+        [FromForm] EntityTypeEnum? entityType,
+        [FromForm] Guid? entityId,
         CancellationToken cancellationToken)
     {
         if (file is null || file.Length == 0)
@@ -55,32 +76,52 @@ public sealed class MediaController : ControllerBase
         }
 
         var category = Enum.TryParse<MediaCategoryEnum>(mediaCategory, ignoreCase: true, out var cat) ? cat : MediaCategoryEnum.Profile;
-        var mediaType = ResolveMediaType(file.ContentType);
-        var extension = Path.GetExtension(file.FileName);
-        var id = Guid.NewGuid();
-        var storedFileName = id.ToString("N") + extension;
+        var purpose = StoragePaths.PurposeFor(category);
+        var tenantId = User.GetActiveTenantId() ?? Guid.Empty;
 
-        var storageRoot = Path.Combine(_environment.ContentRootPath, StorageFolder);
-        Directory.CreateDirectory(storageRoot);
-        var absolutePath = Path.Combine(storageRoot, storedFileName);
-        await using (var stream = System.IO.File.Create(absolutePath))
+        StorageLocation location;
+        if (entityType is { } type && entityId is { } id && id != Guid.Empty)
         {
-            await file.CopyToAsync(stream, cancellationToken);
+            if (!await CanFileUnderAsync(type, id, cancellationToken))
+            {
+                return Forbid();
+            }
+
+            var recordKey = await _recordKeys.ResolveAsync(type, id, cancellationToken);
+            if (recordKey is null)
+            {
+                return BadRequest(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, "Validation failed.", $"No {type} record was found for '{id}'."));
+            }
+
+            location = StorageLocation.For(tenantId, type, recordKey, purpose);
+        }
+        else
+        {
+            location = StorageLocation.Unassigned(tenantId, purpose, DateTime.UtcNow);
         }
 
+        StoredFile stored;
+        await using (var stream = file.OpenReadStream())
+        {
+            stored = await _fileStorage.SaveAsync(location, file.FileName, stream, cancellationToken);
+        }
+
+        var extension = Path.GetExtension(file.FileName);
         var media = new DomainMedia
         {
-            Id = id,
-            MediaType = mediaType,
+            // The store's id becomes the row's id, which is what makes the short suffix on the stored
+            // file name traceable back to this record from the server.
+            Id = stored.FileId,
+            MediaType = ResolveMediaType(file.ContentType),
             MediaCategory = category,
             OriginalFileName = file.FileName,
-            StoredFileName = storedFileName,
+            StoredFileName = stored.StoredFileName,
             FileExtension = string.IsNullOrWhiteSpace(extension) ? null : extension.TrimStart('.'),
             MimeType = file.ContentType,
             FileSize = file.Length,
             StorageProvider = "Local",
-            RelativePath = Path.Combine(StorageFolder, storedFileName).Replace('\\', '/'),
-            PublicUrl = $"/api/media/{id}/content",
+            RelativePath = stored.RelativePath,
+            PublicUrl = $"/api/media/{stored.FileId}/content",
             // Profile pictures must be viewable in <img> tags without an auth header.
             IsPublic = category == MediaCategoryEnum.Profile,
             IsProcessed = true,
@@ -110,14 +151,33 @@ public sealed class MediaController : ControllerBase
             return Unauthorized(ApiResponseFactory.Unauthorized("Authentication required."));
         }
 
-        var absolutePath = Path.Combine(_environment.ContentRootPath, media.RelativePath ?? string.Empty);
-        if (string.IsNullOrWhiteSpace(media.RelativePath) || !System.IO.File.Exists(absolutePath))
+        // Resolved through the store rather than by joining paths here, so rows written before the
+        // structured tree (a bare "media-uploads/{guid}.png") and rows written after it read the same way.
+        var stream = await _fileStorage.OpenAsync(media.RelativePath ?? string.Empty, cancellationToken);
+        if (stream is null)
         {
             return NotFound(ApiResponseFactory.NotFound("Media file not found."));
         }
 
-        var stream = System.IO.File.OpenRead(absolutePath);
         return File(stream, string.IsNullOrWhiteSpace(media.MimeType) ? "application/octet-stream" : media.MimeType);
+    }
+
+    /// <summary>
+    /// Whether the caller may file a file under a record. Being able to read the record is the bar,
+    /// so nobody can drop a file into a folder belonging to a record they cannot open — except for
+    /// their own person record, which they reach through the self-service profile screen and without
+    /// holding <c>users.read</c>.
+    /// </summary>
+    private async Task<bool> CanFileUnderAsync(EntityTypeEnum entityType, Guid entityId, CancellationToken cancellationToken)
+    {
+        if (User.CanAccess(entityType))
+        {
+            return true;
+        }
+
+        return entityType is EntityTypeEnum.Person
+            && User.GetUserId() is { } userId
+            && (await _persons.GetByUserIdAsync(userId, cancellationToken))?.Id == entityId;
     }
 
     private static MediaTypeEnum ResolveMediaType(string? contentType)

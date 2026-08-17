@@ -1,9 +1,12 @@
-// REMS (Phase 15, WO-115/116). Partner Dashboard + Admin Pool lists, the shared request detail, and the
-// Admin EMS-form workspaces (Build EMS, EMS Inbox, Client Forms). Each route is permission-gated (the
-// router guard reads meta.permissions → hasAnyPermission): the Partner areas require rems.requests.read,
-// the Admin Pool requires rems.pool.read, Build EMS + EMS Inbox require rems.forms.manage, and Client
-// Forms requires rems.engagements.manage. The Approvals nav item + the Engagement Workspace belong to
-// later WOs and resolve to their own routes.
+// REMS (Phase 16, initiator-first rebuild). THREE lists and one form.
+//
+// The Partner/CSE creates a request, fills the whole thing — client details AND engagement setup — and
+// sends the intake link to the client themselves. The Admin appears only once the client has answered,
+// as a reviewer who can return the setup for rework. So the Admin Pool, the EMS Inbox and the Build EMS
+// screen are all gone: nothing waits in a pool to be picked up, and CSE + Entity Type are fields on
+// the initiator's own form rather than a separate admin step.
+//
+// Each route is permission-gated (the router guard reads meta.permissions → hasAnyPermission).
 export default [
   {
     path: "/rems",
@@ -13,47 +16,62 @@ export default [
         path: "partner",
         name: "rems_partner",
         component: () => import("modules/rems/pages/PartnerDashboard.vue"),
-        meta: { requiresAuth: true, permissions: ["rems.requests.read"], title: "REMS Partner Dashboard" }
+        meta: { requiresAuth: true, permissions: ["rems.requests.read"], title: "My REMS Requests" }
       },
       {
-        path: "admin-pool",
-        name: "rems_admin_pool",
-        component: () => import("modules/rems/pages/AdminPool.vue"),
-        meta: { requiresAuth: true, permissions: ["rems.pool.read"], title: "REMS Admin Pool" }
+        // The Admin's only surface: requests whose clients have answered, opened for review of BOTH the
+        // client's intake and the engagement setup. Grew out of Client Forms; /rems/client-forms redirects
+        // here so old links and bookmarks still land.
+        path: "ems-review",
+        name: "rems_ems_review",
+        component: () => import("modules/rems/pages/EmsReview.vue"),
+        meta: { requiresAuth: true, permissions: ["rems.engagements.manage"], title: "EMS Review" }
+      },
+      { path: "client-forms", redirect: { name: "rems_ems_review" } },
+      // THE form (WO-118): one tabbed page covering client information and the complete engagement setup.
+      // Replaces the old create/edit drawer, the entity tab strip and the four-step
+      // Setup/Marketing/Commission/Approval wizard. Reached from both lists — what a given user may EDIT
+      // depends on the request's stage, not on which list they came from.
+      //
+      // Three paths, one component. Creating, editing and reading are the same page, and which of the
+      // three you are on is the URL itself rather than a flag hung off it: /requests/new,
+      // /requests/edit/:id, /requests/:id. The page reads its own route name; nothing carries a `mode`.
+      {
+        // A request that does not exist yet has no id to live under and nothing to read — it is the form
+        // and only the form. Gated on CREATE: reading requests is not permission to raise one.
+        path: "requests/new",
+        name: "rems_request_new",
+        component: () => import("modules/rems/pages/RemsRequestForm.vue"),
+        meta: { requiresAuth: true, permissions: ["rems.requests.create"], title: "New REMS Request" }
       },
       {
-        path: "ems-inbox",
-        name: "rems_ems_inbox",
-        component: () => import("modules/rems/pages/EmsInbox.vue"),
-        meta: { requiresAuth: true, permissions: ["rems.forms.manage"], title: "EMS Inbox" }
-      },
-      {
-        path: "client-forms",
-        name: "rems_client_forms",
-        component: () => import("modules/rems/pages/ClientForms.vue"),
-        meta: { requiresAuth: true, permissions: ["rems.engagements.manage"], title: "Client Forms" }
-      },
-      {
-        path: "requests/:id",
-        name: "rems_request_detail",
-        component: () => import("modules/rems/pages/RequestDetail.vue"),
+        path: "requests/edit/:id",
+        name: "rems_request_edit",
+        component: () => import("modules/rems/pages/RemsRequestForm.vue"),
         meta: { requiresAuth: true, permissions: ["rems.requests.read"], title: "REMS Request" }
       },
       {
-        path: "requests/:id/build-ems",
-        name: "rems_build_ems",
-        component: () => import("modules/rems/pages/BuildEmsPage.vue"),
-        meta: { requiresAuth: true, permissions: ["rems.forms.manage"], title: "Build EMS Form" }
+        // The read-only request detail. The old separate detail page is folded into this, which shows
+        // everything it did and the whole engagement besides — so this is the plain permalink for a
+        // request, and what REMS notifications and emailed links point at.
+        path: "requests/:id",
+        name: "rems_request",
+        component: () => import("modules/rems/pages/RemsRequestForm.vue"),
+        meta: { requiresAuth: true, permissions: ["rems.requests.read"], title: "REMS Request" }
       },
+      // Links minted before the split: /rems/requests/:id/form, with ?mode=edit deciding which of the
+      // two it meant, and /rems/engagements/:id from the workspace this page replaced. `mode` is dropped
+      // on the way through — it is what the new paths say instead.
       {
-        // The staff REMS engagement workspace (WO-117): entity setup, marketing, commission and
-        // send-for-approval for a submitted request. Reached from Client Forms / EMS Inbox. The approver
-        // decision/checklist UI is a SEPARATE surface (the Approvals inbox) and does not live here.
-        path: "engagements/:remsId",
-        name: "rems_engagement",
-        component: () => import("modules/rems/pages/EngagementWorkspace.vue"),
-        meta: { requiresAuth: true, permissions: ["rems.engagements.manage"], title: "Engagement Workspace" }
+        path: "requests/:id/form",
+        redirect: (to) => {
+          const { mode, ...query } = to.query;
+          if (to.params.id === "new") return { name: "rems_request_new", query };
+          const name = mode === "edit" ? "rems_request_edit" : "rems_request";
+          return { name, params: { id: to.params.id }, query };
+        }
       },
+      { path: "engagements/:id", redirect: (to) => ({ name: "rems_request", params: { id: to.params.id } }) },
       {
         // The task-isolated Approval Inbox (WO-117 Part B): the approver's OWN pending + historical tasks.
         // Deliberately NOT permission-gated — anyone can be made an approver (the CSE, a commission

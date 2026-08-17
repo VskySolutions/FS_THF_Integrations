@@ -46,6 +46,7 @@ public sealed class RemsPublicFormController : ControllerBase
     private static readonly RemsFormPayloadValidator PayloadValidator = new();
 
     private readonly IRemsFormRepository _forms;
+    private readonly IRemsRepository _rems;
     private readonly IRemsClientRepository _clients;
     private readonly IRemsEngagementRepository _engagements;
     private readonly IAddressRepository _addresses;
@@ -62,6 +63,7 @@ public sealed class RemsPublicFormController : ControllerBase
 
     public RemsPublicFormController(
         IRemsFormRepository forms,
+        IRemsRepository rems,
         IRemsClientRepository clients,
         IRemsEngagementRepository engagements,
         IAddressRepository addresses,
@@ -77,6 +79,7 @@ public sealed class RemsPublicFormController : ControllerBase
         ILogger<RemsPublicFormController> logger)
     {
         _forms = forms;
+        _rems = rems;
         _clients = clients;
         _engagements = engagements;
         _addresses = addresses;
@@ -334,7 +337,10 @@ public sealed class RemsPublicFormController : ControllerBase
         // Build the ENTIRE object graph up front (stable, pre-generated ids). Persisting a fully-built graph
         // means a re-executed transaction (connection resiliency) re-adds the SAME instances rather than
         // duplicate-keyed new ones, and keeps the transaction body a flat, ordered sequence of inserts.
-        var graph = BuildSubmitGraph(form, payload, now);
+        // The request's one engagement, created when the initiator first saved it. Only the Government
+        // contract dates need it — they come from the client's answers but belong to the engagement.
+        var engagement = await _engagements.GetByRemsIdAsync(form.REMSId, cancellationToken);
+        var graph = BuildSubmitGraph(form, payload, now, engagement?.Id);
 
         await _unitOfWork.ExecuteInTransactionAsync(async ct =>
         {
@@ -365,9 +371,9 @@ public sealed class RemsPublicFormController : ControllerBase
             {
                 await _clients.AddEntityContactAsync(contact, ct);
             }
-            foreach (var engagement in graph.Engagements)
+            foreach (var additional in graph.AdditionalEntities)
             {
-                await _engagements.AddAsync(engagement, ct);
+                await _rems.AddAdditionalEntityAsync(additional, ct);
             }
             if (graph.GovernmentDetail is not null)
             {
@@ -380,7 +386,9 @@ public sealed class RemsPublicFormController : ControllerBase
             form.Status = RemsFormStatus.Submitted;
             form.SubmittedOnUtc = now;
             form.InviteLockedOnUtc ??= now;
-            form.Rems!.Status = RemsRequestStatuses.EngagementSetup;
+            // The client's answers are in, so the request passes to the Admin the initiator named. The
+            // engagement setup was filled before any of this, so what happens next is review, not setup.
+            form.Rems!.Status = RemsRequestStatuses.AdminReview;
 
             // 8. Commit.
             await _unitOfWork.SaveChangesAsync(ct);
@@ -392,7 +400,7 @@ public sealed class RemsPublicFormController : ControllerBase
     /// government detail) with explicit TenantId on every REMS/Person row and pre-generated ids. Pure (no
     /// I/O) so it can run outside the transaction.
     /// </summary>
-    private SubmitGraph BuildSubmitGraph(REMSForm form, RemsFormPayloadV1 payload, DateTime now)
+    private SubmitGraph BuildSubmitGraph(REMSForm form, RemsFormPayloadV1 payload, DateTime now, Guid? engagementId)
     {
         var tenantId = form.TenantId;
         var isBusiness = RemsFormPayloadValidator.IsBusinessGroup(form.IndustryGroup);
@@ -412,16 +420,9 @@ public sealed class RemsPublicFormController : ControllerBase
             },
         };
 
-        // Client billing address (only when supplied). Email is LOCKED to the request — the payload email is
-        // never read on submit.
-        Guid? billingAddressId = null;
-        if (payload.BillingAddress is { HasAny: true } billing)
-        {
-            var billingAddress = NewAddress(billing, AddressType.Billing);
-            graph.Addresses.Add(billingAddress);
-            billingAddressId = billingAddress.Id;
-        }
-
+        // The billing ADDRESS is no longer staged here — it is one of the main entity's three addresses now
+        // (see StageEntityAddresses). Only the billing contact's name and email stay on the client.
+        // Email is LOCKED to the request — the payload email is never read on submit.
         graph.Client = new REMSClient
         {
             Id = clientId,
@@ -438,10 +439,11 @@ public sealed class RemsPublicFormController : ControllerBase
             ReferralSourceDetail = Clean(payload.ReferralSourceDetail),
             BillingContactName = Clean(payload.BillingContactName),
             BillingEmail = Clean(payload.BillingEmail),
-            BillingAddressId = billingAddressId,
         };
 
-        // Main entity + its addresses, role contacts, blank engagement and (Government) contract detail.
+        // Main entity + its addresses, role contacts and (Government) contract detail. No engagement is
+        // staged: the request already has one, created when the initiator first saved it, and the
+        // government contract dates simply attach to it.
         var mainEntityId = Guid.NewGuid();
         graph.Entities.Add(new REMSEntity
         {
@@ -453,17 +455,20 @@ public sealed class RemsPublicFormController : ControllerBase
             EIN = isBusiness ? Clean(payload.Ein) : null,
             IsMainEntity = true,
         });
-        StageEntityAddresses(graph, tenantId, mainEntityId, payload.PhysicalAddress, payload.MailingDiffers, payload.MailingAddress);
+        StageEntityAddresses(
+            graph, tenantId, mainEntityId,
+            payload.PhysicalAddress, payload.MailingAddress, payload.BillingAddress);
         StageRoleContacts(graph, tenantId, form.REMSId, form.IndustryGroup, mainEntityId, payload.Roles);
-        var mainEngagementId = StageBlankEngagement(graph, tenantId, mainEntityId);
 
-        if (isGovernment)
+        // Guarded on the engagement existing: a request written before the setup moved to the front could
+        // reach here without one, and a contract detail with nothing to hang off would fail the insert.
+        if (isGovernment && engagementId is { } governmentEngagementId)
         {
             graph.GovernmentDetail = new REMSEngagementGovernmentDetail
             {
                 Id = Guid.NewGuid(),
                 TenantId = tenantId,
-                REMSEngagementId = mainEngagementId,
+                REMSEngagementId = governmentEngagementId,
                 ContractStartDate = payload.ContractStartDate,
                 ContractEndDate = payload.ContractEndDate,
                 OriginalTerm = Clean(payload.OriginalTerm),
@@ -473,48 +478,53 @@ public sealed class RemsPublicFormController : ControllerBase
             };
         }
 
-        // Related entities: one entity + (optional) addresses + a blank engagement each. They carry no role
-        // contacts (the payload provides only a name, preserved verbatim in the immutable submission).
+        // The client's other businesses, as contacts on the REQUEST rather than entities under the client.
+        // Each one is a prompt for its own REMS request, raised by hand from the Partner/CSE list — so
+        // there is no entity, no address and no engagement to stage here, and nothing that fans this
+        // request out into several approvals.
         var usedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "main" };
         var fallbackIndex = 0;
         foreach (var related in payload.RelatedEntities)
         {
-            var relatedEntityId = Guid.NewGuid();
-            graph.Entities.Add(new REMSEntity
+            graph.AdditionalEntities.Add(new REMSAdditionalEntity
             {
-                Id = relatedEntityId,
+                Id = Guid.NewGuid(),
                 TenantId = tenantId,
-                REMSClientId = clientId,
-                SourceEntityKey = UniqueEntityKey(related.SourceKey, usedKeys, ref fallbackIndex),
-                Name = Clean(related.BusinessName) ?? string.Empty,
-                EIN = Clean(related.Ein),
-                IsMainEntity = false,
+                REMSId = form.REMSId,
+                SourceKey = UniqueEntityKey(related.SourceKey, usedKeys, ref fallbackIndex),
+                FullName = Clean(related.FullName) ?? string.Empty,
+                EmailAddress = Clean(related.EmailAddress),
+                PhoneNumber = Clean(related.PhoneNumber),
             });
-            StageEntityAddresses(
-                graph, tenantId, relatedEntityId, related.PhysicalAddress,
-                mailingDiffers: related.MailingAddress?.HasAny == true, related.MailingAddress);
-            StageBlankEngagement(graph, tenantId, relatedEntityId);
         }
 
         return graph;
     }
 
+    /// <summary>
+    /// Stages the entity's physical, mailing and billing addresses. All three are written whenever the
+    /// client supplied them — the form offers "copy from" rather than a differs/hide toggle, and a copied
+    /// address is a snapshot the client can then edit, so each one is stored in its own right. Under the
+    /// old toggle an unticked "mailing differs" wrote no mailing row at all, which meant correcting the
+    /// physical address silently moved the mailing address with it.
+    /// </summary>
     private static void StageEntityAddresses(
-        SubmitGraph graph, Guid tenantId, Guid entityId, RemsAddressPayload? physical, bool mailingDiffers, RemsAddressPayload? mailing)
+        SubmitGraph graph, Guid tenantId, Guid entityId,
+        RemsAddressPayload? physical, RemsAddressPayload? mailing, RemsAddressPayload? billing)
     {
-        // Physical is always captured for the main entity (validation-required); optional for related entities.
-        if (physical is { HasAny: true })
-        {
-            var address = NewAddress(physical, AddressType.Office);
-            graph.Addresses.Add(address);
-            graph.EntityAddresses.Add(NewEntityAddress(tenantId, entityId, address.Id, RemsAddressType.Physical));
-        }
+        Stage(physical, AddressType.Office, RemsAddressType.Physical);
+        Stage(mailing, AddressType.Other, RemsAddressType.Mailing);
+        Stage(billing, AddressType.Billing, RemsAddressType.Billing);
 
-        if (mailingDiffers && mailing is { HasAny: true })
+        void Stage(RemsAddressPayload? payload, AddressType addressType, RemsAddressType remsType)
         {
-            var address = NewAddress(mailing, AddressType.Other);
+            if (payload is not { HasAny: true })
+            {
+                return;
+            }
+            var address = NewAddress(payload, addressType);
             graph.Addresses.Add(address);
-            graph.EntityAddresses.Add(NewEntityAddress(tenantId, entityId, address.Id, RemsAddressType.Mailing));
+            graph.EntityAddresses.Add(NewEntityAddress(tenantId, entityId, address.Id, remsType));
         }
     }
 
@@ -579,18 +589,9 @@ public sealed class RemsPublicFormController : ControllerBase
         };
     }
 
-    private static Guid StageBlankEngagement(SubmitGraph graph, Guid tenantId, Guid entityId)
-    {
-        var engagement = new REMSEngagement
-        {
-            Id = Guid.NewGuid(),
-            TenantId = tenantId,
-            REMSEntityId = entityId,
-            Status = RemsEngagementStatus.Draft,
-        };
-        graph.Engagements.Add(engagement);
-        return engagement.Id;
-    }
+    // StageBlankEngagement is gone. Engagements are no longer minted on submit: the initiator fills the
+    // engagement setup before the client is ever contacted, so by the time a submission arrives the
+    // request already has its one engagement and this path only attaches the client's answers to it.
 
     /// <summary>The staged submit graph — every row carries an explicit TenantId and a pre-generated id.</summary>
     private sealed class SubmitGraph
@@ -602,7 +603,7 @@ public sealed class RemsPublicFormController : ControllerBase
         public List<REMSEntity> Entities { get; } = new();
         public List<REMSEntityAddress> EntityAddresses { get; } = new();
         public List<REMSEntityContact> Contacts { get; } = new();
-        public List<REMSEngagement> Engagements { get; } = new();
+        public List<REMSAdditionalEntity> AdditionalEntities { get; } = new();
         public REMSEngagementGovernmentDetail? GovernmentDetail { get; set; }
     }
 
@@ -633,7 +634,7 @@ public sealed class RemsPublicFormController : ControllerBase
                     userId,
                     NotificationType.RemsFormSubmitted,
                     "A REMS onboarding form was submitted",
-                    $"{rems.REMSNumber} — {rems.Title}",
+                    $"{rems.REMSNumber} — {rems.RequestedClientName}",
                     EntityType.Rems,
                     rems.Id), cancellationToken);
             }
@@ -680,12 +681,13 @@ public sealed class RemsPublicFormController : ControllerBase
 
         var others = payload.RelatedEntities
             .Select(r => new RemsReviewOtherEntity(
-                Clean(r.SourceKey), Clean(r.BusinessName), Clean(r.Ein), Clean(r.ContactName),
-                NonEmpty(r.PhysicalAddress), NonEmpty(r.MailingAddress)))
+                Clean(r.SourceKey), Clean(r.FullName), Clean(r.EmailAddress), Clean(r.PhoneNumber)))
             .ToList();
 
+        // All three addresses are shown as given. The old "mailing differs" flag decided whether there was
+        // a mailing address at all; the client now copies one forward and edits it, so each stands alone.
         var address = new RemsReviewAddressGroup(
-            NonEmpty(payload.PhysicalAddress), payload.MailingDiffers, payload.MailingDiffers ? NonEmpty(payload.MailingAddress) : null);
+            NonEmpty(payload.PhysicalAddress), NonEmpty(payload.MailingAddress), NonEmpty(payload.BillingAddress));
 
         var additionalContacts = EnumerateRoles(industryGroup, payload.Roles ?? new RemsRolesPayload())
             .Where(t => t.Role is { HasAny: true })

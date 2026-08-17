@@ -62,8 +62,10 @@ public static class Permissions
     public const string RemsRequestsDelete = "rems.requests.delete";
     /// <summary>Assign a REMS request to a person/pool.</summary>
     public const string RemsRequestsAssign = "rems.requests.assign";
-    /// <summary>View the shared REMS request pool.</summary>
-    public const string RemsPoolRead = "rems.pool.read";
+    // rems.pool.read is gone with the Admin Pool. The initiator fills the whole request and sends the
+    // intake link to the client themselves, so no request ever waits in a shared pool to be picked up.
+    // The admin's queue is the requests whose clients have answered, and their own assignment is what
+    // scopes it — not a permission.
     /// <summary>Create, edit, and configure REMS forms.</summary>
     public const string RemsFormsManage = "rems.forms.manage";
     /// <summary>Send REMS forms to recipients.</summary>
@@ -92,7 +94,7 @@ public static class Permissions
         SettingsManage, RecordsAdminDelete,
         OptionSetsRead, OptionSetsManage,
         RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsDelete, RemsRequestsAssign,
-        RemsPoolRead, RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
+        RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
         RemsApprovalsSend, RemsEmailLogRead
     };
 
@@ -120,21 +122,29 @@ public static class Permissions
         // Full REMS access within their tenant — the same set a REMS Admin holds. Tenant isolation still
         // applies: this widens WHAT they can do in their tenant, never WHICH tenant.
         RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsDelete, RemsRequestsAssign,
-        RemsPoolRead, RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
+        RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
         RemsApprovalsSend, RemsEmailLogRead
     };
 
     /// <summary>REMS Partner: works their own requests (read/create/update) and assigns them.</summary>
     public static IReadOnlyList<string> ForPartner() => new[]
     {
-        RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsAssign, OptionSetsRead
+        // RemsFormsSend is now a Partner permission: the initiator emails the intake link to the client
+        // themselves rather than handing the request to an admin to send. RemsRequestsAssign stays because
+        // naming the reviewing admin is mandatory at intake and reassignment is open to both sides.
+        RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsAssign,
+        // The email log follows the sending: the person chasing a client is the one who needs to know
+        // whether the last three emails reached them, and since Phase 16 that person is the initiator
+        // rather than an admin. Reading it is still record-scoped on top of this — the endpoint asks
+        // RemsSetupAccess.CanRead, so holding the key is not permission to read every request's log.
+        RemsFormsSend, RemsEmailLogRead, OptionSetsRead
     };
 
     /// <summary>REMS Admin: full request lifecycle plus pool, forms, engagements, approvals routing and the email log.</summary>
     public static IReadOnlyList<string> ForAdmin() => new[]
     {
         RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsDelete, RemsRequestsAssign,
-        RemsPoolRead, RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
+        RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
         RemsApprovalsSend, RemsEmailLogRead, OptionSetsRead
     };
 

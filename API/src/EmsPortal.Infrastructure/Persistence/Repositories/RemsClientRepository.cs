@@ -48,9 +48,10 @@ internal sealed class RemsClientRepository : IRemsClientRepository
 
     public void RemoveEntityContact(REMSEntityContact contact) => _dbContext.RemsEntityContacts.Remove(contact);
 
+    // The billing address is no longer a reference on the client — it is one of the entity's three
+    // addresses, so the Addresses include below already brings it back.
     private IQueryable<REMSClient> LoadGraph()
         => _dbContext.RemsClients
-            .Include(c => c.BillingAddress)
             .Include(c => c.Entities).ThenInclude(e => e.Addresses).ThenInclude(a => a.Address)
             .Include(c => c.Entities).ThenInclude(e => e.Contacts).ThenInclude(ct => ct.Person);
 }

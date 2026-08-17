@@ -32,18 +32,18 @@ public sealed class PersonalFeaturesController : ControllerBase
 
     private readonly IPinRepository _pins;
     private readonly IColourCodeRepository _colours;
-    private readonly INoteRepository _notes;
+    private readonly IConversationMessageRepository _messages;
     private readonly IUnitOfWork _unitOfWork;
 
     public PersonalFeaturesController(
         IPinRepository pins,
         IColourCodeRepository colours,
-        INoteRepository notes,
+        IConversationMessageRepository messages,
         IUnitOfWork unitOfWork)
     {
         _pins = pins;
         _colours = colours;
-        _notes = notes;
+        _messages = messages;
         _unitOfWork = unitOfWork;
     }
 
@@ -203,9 +203,9 @@ public sealed class PersonalFeaturesController : ControllerBase
         }
 
         var (title, lines) = await BuildExportContentAsync(request, cancellationToken);
-        if (request.IncludeNotes)
+        if (request.IncludeConversation)
         {
-            await AppendNotesAsync(request.EntityType, request.EntityId, lines, cancellationToken);
+            await AppendConversationAsync(request.EntityType, request.EntityId, lines, cancellationToken);
         }
 
         var pdf = SimplePdfWriter.Build(title, lines);
@@ -222,19 +222,19 @@ public sealed class PersonalFeaturesController : ControllerBase
         return Task.FromResult(($"{request.EntityType} Export", lines));
     }
 
-    private async Task AppendNotesAsync(EntityType entityType, Guid entityId, List<string> lines, CancellationToken cancellationToken)
+    private async Task AppendConversationAsync(EntityType entityType, Guid entityId, List<string> lines, CancellationToken cancellationToken)
     {
-        var (notes, _) = await _notes.ListAsync(entityType, entityId, null, null, 1, 100, cancellationToken);
-        if (notes.Count == 0)
+        var (messages, _) = await _messages.ListAsync(entityType, entityId, null, null, 1, 100, cancellationToken);
+        if (messages.Count == 0)
         {
             return;
         }
 
         lines.Add(string.Empty);
-        lines.Add("Notes:");
-        foreach (var note in notes)
+        lines.Add("Conversation:");
+        foreach (var message in messages)
         {
-            lines.Add($"- [{note.CreatedOnUtc:u}] {note.Body}");
+            lines.Add($"- [{message.CreatedOnUtc:u}] {message.Body}");
         }
     }
 }

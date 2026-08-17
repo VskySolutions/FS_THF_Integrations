@@ -31,19 +31,30 @@ public sealed class UpdateRemsEntityContactsRequestValidator : AbstractValidator
     }
 }
 
-/// <summary>Validates an engagement update (WO-114): realization is 0–100 and the fee estimate is non-negative.</summary>
+/// <summary>
+/// Validates an engagement update (WO-114): realization is 0–100, the fee estimate is non-negative, and
+/// the bill count is a whole number above zero — the last mirrors the
+/// <c>CK_REMSEngagement_NumberOfBills</c> check constraint, so a bad value is refused with a message
+/// rather than by the database.
+/// </summary>
 public sealed class UpdateRemsEngagementRequestValidator : AbstractValidator<UpdateRemsEngagementRequest>
 {
     public UpdateRemsEngagementRequestValidator()
     {
         RuleFor(x => x.Department).MaximumLength(64).When(x => x.Department is not null);
         RuleFor(x => x.ServiceLine).MaximumLength(64).When(x => x.ServiceLine is not null);
+        RuleFor(x => x.SubServiceLine).MaximumLength(64).When(x => x.SubServiceLine is not null);
+        RuleFor(x => x.SubIndustry).MaximumLength(64).When(x => x.SubIndustry is not null);
+        RuleFor(x => x.BillingPeriod).MaximumLength(64).When(x => x.BillingPeriod is not null);
         RuleFor(x => x.FirstYearFeeEstimate)
             .GreaterThanOrEqualTo(0).WithMessage("firstYearFeeEstimate must be zero or greater.")
             .When(x => x.FirstYearFeeEstimate.HasValue);
         RuleFor(x => x.RealizationPercentage)
             .InclusiveBetween(0, 100).WithMessage("realizationPercentage must be between 0 and 100.")
             .When(x => x.RealizationPercentage.HasValue);
+        RuleFor(x => x.NumberOfBills)
+            .GreaterThan(0).WithMessage("numberOfBills must be greater than zero.")
+            .When(x => x.NumberOfBills.HasValue);
     }
 }
 

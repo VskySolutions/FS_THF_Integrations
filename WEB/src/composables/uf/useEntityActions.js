@@ -28,7 +28,7 @@ export function useEntityActions (entityType, entityId, label = "record", initia
   const reminderOverdue = computed(() => !!reminder.value?.isOverdue);
 
   const pdfOpen = ref(false);
-  const includeNotes = ref(true);
+  const includeConversation = ref(true);
   const exporting = ref(false);
 
   const loadColour = async () => {
@@ -115,7 +115,7 @@ export function useEntityActions (entityType, entityId, label = "record", initia
   const exportPdf = async () => {
     exporting.value = true;
     try {
-      const blob = await ufPdfApi.export({ entityType, entityId, includeNotes: includeNotes.value });
+      const blob = await ufPdfApi.export({ entityType, entityId, includeConversation: includeConversation.value });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -162,7 +162,7 @@ export function useEntityActions (entityType, entityId, label = "record", initia
     cancelReminder,
     // pdf
     pdfOpen,
-    includeNotes,
+    includeConversation,
     exporting,
     exportPdf,
     // misc

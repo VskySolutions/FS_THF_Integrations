@@ -52,8 +52,10 @@ builder.Services.AddEmsPortalHangfireDashboard(builder.Configuration);
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
-// Universal Features (Phase 14): local-disk attachment storage under the content root.
-builder.Services.AddScoped<EmsPortal.Application.Abstractions.UniversalFeatures.IFileStorage, EmsPortal.Api.Storage.LocalFileStorage>();
+// File uploads: one local-disk store for every module, plus the resolver that names the folder a
+// record owns in the tree (media-uploads/{tenant}/{EntityType}/{recordKey}/{purpose}/).
+builder.Services.AddScoped<EmsPortal.Application.Abstractions.Storage.IFileStorage, EmsPortal.Api.Storage.LocalFileStorage>();
+builder.Services.AddScoped<EmsPortal.Api.Storage.IUploadRecordKeyResolver, EmsPortal.Api.Storage.UploadRecordKeyResolver>();
 
 // Dashboard (WO-72): short-lived in-process cache (singleton) + scoped read-model aggregator.
 builder.Services.AddMemoryCache();

@@ -155,7 +155,7 @@ const roleChips = computed(() => [...new Set(assignments.value.flatMap((t) => t.
 
 const contactRows = computed(() => [
   { icon: "o_mail", label: "Email", value: email.value },
-  { icon: "o_smartphone", label: "Mobile", value: profile.value?.mobileNumber },
+  { icon: "o_smartphone", label: "Phone Number", value: profile.value?.mobileNumber },
   { icon: "o_work", label: "Job title", value: profile.value?.jobTitle },
   { icon: "o_business", label: "Organization", value: profile.value?.organization }
 ]);

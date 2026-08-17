@@ -240,11 +240,14 @@ const fileUrl = (file) => mediaApi.absoluteUrl(file.url);
 let clearingAttachments = false;
 watch(attachments, () => { if (!clearingAttachments) emit("change"); }, { deep: true });
 
-const uploadAttachments = async () => {
+// `remsId` is the request the files are filed under on the server — the page passes it because it is
+// the page, not this component, that knows whether the request has been created yet.
+const uploadAttachments = async (remsId = null) => {
   if (attachmentError.value) throw new Error(attachmentError.value);
   const pending = [...attachments.value];
   if (!pending.length) return [];
-  const media = await Promise.all(pending.map((file) => mediaApi.upload(file, "Attachment")));
+  const entity = remsId ? { type: "Rems", id: remsId } : null;
+  const media = await Promise.all(pending.map((file) => mediaApi.upload(file, "Attachment", entity)));
   // Cleared only once every upload has landed — a failure leaves the picker as the user left it, so a
   // retried save re-sends the same files rather than silently dropping them.
   clearingAttachments = true;

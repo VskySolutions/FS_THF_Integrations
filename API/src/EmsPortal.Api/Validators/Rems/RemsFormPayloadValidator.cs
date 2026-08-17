@@ -106,7 +106,7 @@ public sealed class RemsFormPayloadValidator
         }
         else
         {
-            failures.Add(new ValidationFailure("industryGroup", $"Unsupported industry group '{industryGroup}'."));
+            failures.Add(new ValidationFailure("industryGroup", $"Unsupported entity type '{industryGroup}'."));
         }
 
         // ---- Additional entities ----

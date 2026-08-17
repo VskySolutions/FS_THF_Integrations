@@ -68,13 +68,13 @@ pattern repeats, extract a component/composable.
 
 ### Universal Features (Phase 15)
 Platform-wide collaboration/personalisation that attaches to **any** entity via an `(entityType, entityId)` key.
-- **Reusable components** live in `components/universal/`: `EntityUniversalPanel` (Notes / Activity /
+- **Reusable components** live in `components/universal/`: `EntityUniversalPanel` (Conversation / Activity /
   Checklists / Attachments tabs + tags), `EntityHeaderActions` (Pin · Colour · Reminder · Copy Link ·
   PDF), `FieldLogIcon` + `FieldModifiedLogDrawer` (field change history), `DeletedRecordsPanel`
   (Show Deleted · Restore · Permanently Delete), `NotificationCentre`, `StickyNoteLayer`.
 - **Composables** live in `composables/uf/`: `useEntityMeta` (label/icon/permalink route per `EntityType`),
   `usePins`, `useColourCodes`, `useFieldLogCounts`, `useShowDeleted`, `useNotificationMeta`.
-- **API** groups in `services/api.js`: `ufNotesApi`, `ufTagsApi`, `ufAttachmentsApi`, `ufActivityApi`,
+- **API** groups in `services/api.js`: `ufConversationApi`, `ufTagsApi`, `ufAttachmentsApi`, `ufActivityApi`,
   `ufReminderApi`, `ufNotificationApi`, `ufPinApi`, `ufColourApi`, `ufPdfApi`,
   `ufChecklistApi`, `ufStickyNoteApi`, `ufDeletedApi`, `ufModifiedLogApi` (+ the `EntityType` enum).
 - **Standalone pages** + settings/admin pages live in `modules/universal/`.

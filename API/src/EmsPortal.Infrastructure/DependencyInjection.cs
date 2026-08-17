@@ -87,7 +87,7 @@ public static class DependencyInjection
         // Universal Features (Phase 14) repositories.
         services.AddScoped<IActivityEventRepository, ActivityEventRepository>();
         services.AddScoped<INotificationRepository, NotificationRepository>();
-        services.AddScoped<INoteRepository, NoteRepository>();
+        services.AddScoped<IConversationMessageRepository, ConversationMessageRepository>();
         services.AddScoped<ITagRepository, TagRepository>();
         services.AddScoped<IAttachmentRepository, AttachmentRepository>();
         services.AddScoped<IReminderRepository, ReminderRepository>();

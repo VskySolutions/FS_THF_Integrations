@@ -84,7 +84,7 @@
       <q-card style="min-width: 320px;">
         <q-card-section class="text-h6">Export to PDF</q-card-section>
         <q-card-section class="q-pt-none">
-          <q-toggle v-model="includeNotes" label="Include notes" />
+          <q-toggle v-model="includeConversation" label="Include conversation" />
         </q-card-section>
         <q-card-actions align="right">
           <q-btn v-close-popup flat no-caps label="Cancel" />
@@ -123,7 +123,7 @@ const {
   pinned, busy, togglePin,
   currentColour, setColour,
   reminder, reminderOverdue, reminderOpen, savingReminder, reminderForm, openReminder, saveReminder, cancelReminder,
-  pdfOpen, includeNotes, exporting, exportPdf,
+  pdfOpen, includeConversation, exporting, exportPdf,
   copyLink, loadAll
 } = useEntityActions(props.entityType, props.entityId, props.label, props.initialPinned);
 

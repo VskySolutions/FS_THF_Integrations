@@ -50,7 +50,7 @@ const hasMore = ref(false);
 const ICONS = {
   StatusChanged: "o_swap_horiz",
   FieldEdited: "o_edit",
-  NoteAdded: "o_chat",
+  ConversationMessageAdded: "o_chat",
   TagApplied: "o_label",
   TagRemoved: "o_label_off",
   AttachmentUploaded: "o_attach_file",
@@ -65,7 +65,7 @@ const iconFor = (type) => ICONS[type] || "o_circle";
 const LABELS = {
   StatusChanged: "Status changed",
   FieldEdited: "Field edited",
-  NoteAdded: "Note added",
+  ConversationMessageAdded: "Message posted",
   TagApplied: "Tag applied",
   TagRemoved: "Tag removed",
   AttachmentUploaded: "Attachment uploaded",

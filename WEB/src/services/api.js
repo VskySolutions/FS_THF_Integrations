@@ -214,10 +214,17 @@ export const profileApi = {
 
 export const mediaApi = {
   // Uploads a file (multipart) and returns the stored media (incl. publicUrl).
-  upload: (file, mediaCategory = "Profile") => {
+  // `entity` ({ type, id }) names the record the file belongs to and is what files it under
+  // media-uploads/{tenant}/{EntityType}/{recordKey}/{purpose}/. Omitting it is not an error but lands
+  // the file in the swept `_unassigned` holding pen, so pass it wherever the parent id is known.
+  upload: (file, mediaCategory = "Profile", entity = null) => {
     const form = new FormData();
     form.append("file", file);
     form.append("mediaCategory", mediaCategory);
+    if (entity?.type && entity?.id) {
+      form.append("entityType", entity.type);
+      form.append("entityId", entity.id);
+    }
     return api.post("/api/media", form, { headers: { "Content-Type": "multipart/form-data" } }).then(unwrap);
   },
   // Absolute URL for a media public path (the API serves public media anonymously).
@@ -309,12 +316,13 @@ export const EntityType = Object.freeze({
   StickyNote: 15
 });
 
-// Notes (@mention-aware annotations).
-export const ufNotesApi = {
-  list: (params) => api.get("/api/uf/notes", { params }).then(envelope),
-  create: (payload) => api.post("/api/uf/notes", payload).then(unwrap),
-  update: (id, payload) => api.put(`/api/uf/notes/${id}`, payload).then(unwrap),
-  remove: (id) => api.delete(`/api/uf/notes/${id}`).then(envelope),
+// Conversations — a record's @mention-aware thread. There is no conversation resource of its own: the
+// thread IS the messages sharing an (entityType, entityId), which is what `list` asks for.
+export const ufConversationApi = {
+  list: (params) => api.get("/api/uf/conversation-messages", { params }).then(envelope),
+  create: (payload) => api.post("/api/uf/conversation-messages", payload).then(unwrap),
+  update: (id, payload) => api.put(`/api/uf/conversation-messages/${id}`, payload).then(unwrap),
+  remove: (id) => api.delete(`/api/uf/conversation-messages/${id}`).then(envelope),
   // Tenant users for the @mention autocomplete.
   mentionCandidates: (search) => api.get("/api/uf/mention-candidates", { params: { search } }).then(unwrap)
 };
@@ -458,7 +466,7 @@ export const dashboardApi = {
 // create/edit/assign/duplicate/delete actions, and the client + admin pickers. Row visibility and the
 // per-row `actions` flags are enforced server-side; the UI additionally gates on permission keys.
 // The conversation thread / activity / attachments reuse the Universal Features endpoints keyed on
-// EntityType.Rems (see ufNotesApi) — this object deliberately does not duplicate them.
+// EntityType.Rems (see ufConversationApi) — this object deliberately does not duplicate them.
 export const remsApi = {
   // params: { scope?, poolScope?, clientName?, contact?, status?, type?,
   //           assignedAdminUserId?, createdFrom?, createdTo?, page?, limit? }
@@ -507,7 +515,8 @@ export const remsApi = {
   // payload: { delegateUserId, canPrepare, canSend, startsOn?, endsOn? } — upserts on the pair.
   saveDelegate: (payload) => api.put("/api/rems/delegations", payload).then(unwrap),
   removeDelegate: (id) => api.delete(`/api/rems/delegations/${id}`).then(envelope),
-  assign: (id, adminUserId) => api.post(`/api/rems/requests/${id}/assign`, { adminUserId }).then(unwrap),
+  // No `assign` wrapper: the reviewing admin is named at intake and re-pointed by `update`
+  // (assignAdminUserId), so nothing in the SPA calls POST /requests/{id}/assign any more.
   duplicate: (id) => api.post(`/api/rems/requests/${id}/duplicate`).then(unwrap),
   remove: (id) => api.delete(`/api/rems/requests/${id}`).then(envelope),
   // Client picker (2+ chars): [{ id, name, email, phone, parentCompany:null, pastWork:null }].
@@ -521,9 +530,8 @@ export const remsApi = {
   admins: (group) => api.get("/api/rems/admins", { params: group ? { group } : undefined }).then(unwrap),
 
   // ---- EMS form build / send (WO-112, WO-116) ----
-  // The build screen read (`getForm`), the EMS Inbox list (`inbox`) and the provider email log
-  // (`emailLog`) are gone with the screens that called them — the Build EMS page, the Inbox and the
-  // email-log dialog. All three endpoints are still served; nothing in the app asks for them.
+  // The build screen read (`getForm`) and the EMS Inbox list (`inbox`) are gone with the screens that
+  // called them — the Build EMS page and the Inbox. Both endpoints are still served; nothing asks for them.
   // payload: { cseUserId, industryGroup } — both required (AC-REMS-007.7). Returns the build screen.
   saveForm: (remsId, payload) => api.post(`/api/rems/requests/${remsId}/form`, payload).then(unwrap),
   // Pre-send preview: { destinationEmail, formLink } (AC-REMS-008.1).
@@ -538,6 +546,15 @@ export const remsApi = {
   previewReminder: (remsId) => api.get(`/api/rems/requests/${remsId}/form/reminder/preview`).then(unwrap),
   sendReminder: (remsId, payload) =>
     api.post(`/api/rems/requests/${remsId}/form/reminder`, payload || {}).then(unwrap),
+  // The request's email history and whether THIS caller may chase the client from it:
+  //   { canRemind, remindBlockedReason, events: [{ id, eventType, recipientEmail, occurredOnUtc,
+  //     providerMessageId, detail, sentBy }] } — newest first.
+  // eventType is a RemsFormEmailEventType name (Sent | Reminder | Delivered | Opened | Failed);
+  // `sentBy` names the person who pressed Send/Remind and is null on provider-reported events; `detail`
+  // explains a Failed event this portal recorded itself. `canRemind` is the reminder endpoint's own
+  // decision asked ahead of the click, and `remindBlockedReason` is set only where the answer is worth
+  // showing — the request's state, or its being with somebody else.
+  emailLog: (remsId) => api.get(`/api/rems/requests/${remsId}/email-log`).then(unwrap),
 
   // ---- Client forms + submitted-form review (WO-114, WO-116) ----
   // Client Forms list (paginated envelope). params: { page?, limit?, search?, submitted?, requestStatus? } —
@@ -567,6 +584,10 @@ export const remsApi = {
   //   { id, department, serviceLine, subServiceLine, subIndustry, departmentDirector, engagementExecutive,
   //     billingManager, firstYearFeeEstimate, realizationPercentage, billingPeriod, numberOfBills, status,
   //     marketingMethodIds[], commissionSplits[], audit, government, tax } | null.
+  // `serviceLine` is RETIRED — the old Commercial/Non-Profit/Government/Individual list, which asked what
+  // the request's entity type already answers. Still returned so historical engagements do not lose it;
+  // nothing in the app reads it. What the setup form calls Service Line is `subServiceLine`, and what it
+  // calls Industry is `subIndustry` (see the note at the top of modules/rems/useRemsMeta).
   engagement: (remsId) => api.get(`/api/rems/requests/${remsId}/engagement`).then(unwrap),
   // Correcting the client's own answers — the client record (`updateClient`), the main entity's three
   // addresses (`updateEntityAddresses`) and its role contacts (`updateEntityContacts`) — has no screen any
@@ -574,8 +595,9 @@ export const remsApi = {
   // endpoints stand; add the wrapper back with whatever screen wants them.
   // payload: any subset of { department, serviceLine, subServiceLine, subIndustry, departmentDirectorId,
   //   engagementExecutiveId, billingManagerId, firstYearFeeEstimate, realizationPercentage, billingPeriod,
-  //   numberOfBills } — null fields are left unchanged. The two optional sub-classifications are therefore
-  //   CLEARED with an empty string, not with null.
+  //   numberOfBills } — null fields are left unchanged. Service Line (`subServiceLine`) and Industry
+  //   (`subIndustry`) are optional and therefore CLEARED with an empty string, not with null. The setup
+  //   form no longer sends the retired `serviceLine` at all, which is exactly what preserves it.
   // Returns { engagement, mappedDepartmentDirectorId } — the director the chosen department maps to (hint).
   updateEngagement: (id, payload) => api.put(`/api/rems/engagements/${id}`, payload).then(unwrap),
   // Link a previously-uploaded media id as the signed client-acceptance form (audit engagements).

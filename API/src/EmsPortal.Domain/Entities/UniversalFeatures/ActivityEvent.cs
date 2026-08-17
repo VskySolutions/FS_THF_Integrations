@@ -39,7 +39,7 @@ public static class ActivityEventTypes
 {
     public const string StatusChanged = "StatusChanged";
     public const string FieldEdited = "FieldEdited";
-    public const string NoteAdded = "NoteAdded";
+    public const string ConversationMessageAdded = "ConversationMessageAdded";
     public const string TagApplied = "TagApplied";
     public const string TagRemoved = "TagRemoved";
     public const string AttachmentUploaded = "AttachmentUploaded";

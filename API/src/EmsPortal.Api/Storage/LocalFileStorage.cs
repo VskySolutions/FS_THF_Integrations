@@ -1,25 +1,27 @@
-using EmsPortal.Application.Abstractions.UniversalFeatures;
+using EmsPortal.Application.Abstractions.Storage;
 
 namespace EmsPortal.Api.Storage;
 
 /// <summary>
-/// Local-disk <see cref="IFileStorage"/>: persists attachment binaries under the host content root,
-/// mirroring the existing media-upload storage. Stored paths are relative and forward-slashed so they
-/// are portable across platforms.
+/// Local-disk <see cref="IFileStorage"/>: persists uploads under the host content root, at the
+/// canonical path <see cref="StoragePaths"/> builds. Stored paths are relative and forward-slashed so
+/// they are portable across platforms, and every one is resolved back through
+/// <see cref="ResolveAbsolute"/>, which refuses to hand out a path outside the root.
 /// </summary>
 public sealed class LocalFileStorage : IFileStorage
 {
-    private readonly IWebHostEnvironment _environment;
+    private readonly string _contentRoot;
 
-    public LocalFileStorage(IWebHostEnvironment environment) => _environment = environment;
+    public LocalFileStorage(IWebHostEnvironment environment)
+        => _contentRoot = Path.GetFullPath(environment.ContentRootPath);
 
-    public async Task<string> SaveAsync(string folder, string originalFileName, Stream content, CancellationToken cancellationToken = default)
+    public async Task<StoredFile> SaveAsync(StorageLocation location, string? originalFileName, Stream content, CancellationToken cancellationToken = default)
     {
-        var extension = Path.GetExtension(originalFileName);
-        var storedFileName = Guid.NewGuid().ToString("N") + extension;
-        var relativeDir = folder.Replace('\\', '/').Trim('/');
+        var fileId = Guid.NewGuid();
+        var storedFileName = StoragePaths.FileNameFor(originalFileName, fileId);
+        var relativeDir = StoragePaths.DirectoryFor(location);
 
-        var absoluteDir = Path.Combine(_environment.ContentRootPath, relativeDir);
+        var absoluteDir = ResolveAbsolute(relativeDir);
         Directory.CreateDirectory(absoluteDir);
 
         var absolutePath = Path.Combine(absoluteDir, storedFileName);
@@ -28,13 +30,12 @@ public sealed class LocalFileStorage : IFileStorage
             await content.CopyToAsync(stream, cancellationToken);
         }
 
-        return $"{relativeDir}/{storedFileName}";
+        return new StoredFile(fileId, $"{relativeDir}/{storedFileName}", storedFileName);
     }
 
     public Task<Stream?> OpenAsync(string storedPath, CancellationToken cancellationToken = default)
     {
-        var absolutePath = ResolveAbsolute(storedPath);
-        if (!File.Exists(absolutePath))
+        if (!TryResolveAbsolute(storedPath, out var absolutePath) || !File.Exists(absolutePath))
         {
             return Task.FromResult<Stream?>(null);
         }
@@ -44,8 +45,7 @@ public sealed class LocalFileStorage : IFileStorage
 
     public Task DeleteAsync(string storedPath, CancellationToken cancellationToken = default)
     {
-        var absolutePath = ResolveAbsolute(storedPath);
-        if (File.Exists(absolutePath))
+        if (TryResolveAbsolute(storedPath, out var absolutePath) && File.Exists(absolutePath))
         {
             File.Delete(absolutePath);
         }
@@ -53,6 +53,31 @@ public sealed class LocalFileStorage : IFileStorage
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Absolute path for a stored relative path, or throws when it would land outside the content
+    /// root. Stored paths are server-generated today, so this guards against a future caller rather
+    /// than against the current ones — which is the point of having it before that caller exists.
+    /// </summary>
     private string ResolveAbsolute(string storedPath)
-        => Path.Combine(_environment.ContentRootPath, storedPath.Replace('/', Path.DirectorySeparatorChar));
+        => TryResolveAbsolute(storedPath, out var absolutePath)
+            ? absolutePath
+            : throw new InvalidOperationException($"Storage path '{storedPath}' resolves outside the storage root.");
+
+    private bool TryResolveAbsolute(string? storedPath, out string absolutePath)
+    {
+        absolutePath = string.Empty;
+        if (string.IsNullOrWhiteSpace(storedPath))
+        {
+            return false;
+        }
+
+        var candidate = Path.GetFullPath(Path.Combine(_contentRoot, storedPath.Replace('/', Path.DirectorySeparatorChar)));
+        if (!candidate.StartsWith(_contentRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        absolutePath = candidate;
+        return true;
+    }
 }

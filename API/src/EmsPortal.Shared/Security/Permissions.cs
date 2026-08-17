@@ -133,7 +133,11 @@ public static class Permissions
         // themselves rather than handing the request to an admin to send. RemsRequestsAssign stays because
         // naming the reviewing admin is mandatory at intake and reassignment is open to both sides.
         RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsAssign,
-        RemsFormsSend, OptionSetsRead
+        // The email log follows the sending: the person chasing a client is the one who needs to know
+        // whether the last three emails reached them, and since Phase 16 that person is the initiator
+        // rather than an admin. Reading it is still record-scoped on top of this — the endpoint asks
+        // RemsSetupAccess.CanRead, so holding the key is not permission to read every request's log.
+        RemsFormsSend, RemsEmailLogRead, OptionSetsRead
     };
 
     /// <summary>REMS Admin: full request lifecycle plus pool, forms, engagements, approvals routing and the email log.</summary>

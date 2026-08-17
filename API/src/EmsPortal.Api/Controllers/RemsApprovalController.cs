@@ -55,6 +55,13 @@ public sealed class RemsApprovalController : ControllerBase
     private const string MarketingSetKey = "REMSMarketing_MarketingMethods.MarketingMethodId";
     private const string TaxFormSetKey = "REMS.TaxForm";
 
+    /// <summary>
+    /// The user group the firm's managing shareholder(s) are read from — scoped by group name, the same way
+    /// the CSE, Engagement Executive and Billing Manager pickers are. Maintained in Administration → User
+    /// Groups; a tenant that has not made the group falls back to the single shareholder on RemsSettings.
+    /// </summary>
+    private const string ManagingShareholderGroup = "Managing Shareholder";
+
     private readonly IRemsRepository _rems;
     private readonly IRemsEngagementRepository _engagements;
     private readonly IRemsApprovalRepository _approvals;
@@ -63,6 +70,7 @@ public sealed class RemsApprovalController : ControllerBase
     private readonly IMediaRepository _media;
     private readonly IOptionSetRepository _optionSets;
     private readonly IUserRepository _users;
+    private readonly IUserGroupRepository _groups;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IActivityEventWriter _activity;
     private readonly INotificationDispatcher _notifications;
@@ -76,6 +84,7 @@ public sealed class RemsApprovalController : ControllerBase
         IMediaRepository media,
         IOptionSetRepository optionSets,
         IUserRepository users,
+        IUserGroupRepository groups,
         IUnitOfWork unitOfWork,
         IActivityEventWriter activity,
         INotificationDispatcher notifications)
@@ -88,6 +97,7 @@ public sealed class RemsApprovalController : ControllerBase
         _media = media;
         _optionSets = optionSets;
         _users = users;
+        _groups = groups;
         _unitOfWork = unitOfWork;
         _activity = activity;
         _notifications = notifications;
@@ -96,8 +106,9 @@ public sealed class RemsApprovalController : ControllerBase
     // -------------------- Suggested approvers (live) --------------------
 
     /// <summary>
-    /// The engagement's approver list (AC-REMS-018): the automatic approvers — the CSE and every commission
-    /// recipient — plus anyone added on the Approval tab. Updates until the round is sent.
+    /// The engagement's approver list (AC-REMS-018): the four automatic approvers — the managing
+    /// shareholder, the Department Director, the CSE and every commission recipient — plus anyone added on
+    /// the Approval tab. Updates until the round is sent.
     /// </summary>
     [HttpGet("engagements/{id:guid}/approvers")]
     [RequirePermission(Permissions.RemsEngagementsManage)]
@@ -713,30 +724,61 @@ public sealed class RemsApprovalController : ControllerBase
     // -------------------- Approver-list generation --------------------
 
     /// <summary>
-    /// The approver set to route to (AC-REMS-018). A selection saved on the Approval tab wins; with none
-    /// saved this falls back to the default — the CSE and every commission recipient. Either way each
-    /// user's role comes from <see cref="RoleFor"/> rather than from storage.
+    /// The approver set to route to (AC-REMS-018): the four automatic approvers, plus whoever was added on
+    /// the Approval tab. Each user's role comes from <see cref="RoleFor"/> rather than from storage, so a
+    /// saved list keeps up when the engagement's people change under it.
     /// </summary>
     private async Task<IReadOnlyList<(Guid UserId, RemsApproverRole Role)>> BuildApproverListAsync(
         REMSEngagement engagement, CancellationToken cancellationToken)
     {
         var picked = await _engagements.ListApproversAsync(engagement.Id, cancellationToken);
+        var shareholders = await ManagingShareholderIdsAsync(cancellationToken);
 
-        // Added approvers come ON TOP of the automatic ones — picking someone never removes the CSE or a
-        // commission recipient, who approve by virtue of their standing on the engagement.
-        var userIds = AutomaticApproverIds(engagement).Concat(picked.Select(a => a.UserId));
+        // Added approvers come ON TOP of the automatic ones — picking somebody never removes an approver
+        // who holds their place by standing on the engagement.
+        var userIds = AutomaticApproverIds(engagement, shareholders).Concat(picked.Select(a => a.UserId));
 
-        var settings = await _settings.GetAsync(cancellationToken);
         return userIds
             .Distinct()
-            .Select(userId => (UserId: userId, Role: RoleFor(engagement, settings?.ManagingShareholderUserId, userId)))
+            .Select(userId => (UserId: userId, Role: RoleFor(engagement, shareholders, userId)))
             .ToList();
     }
 
     /// <summary>
+    /// The firm's managing shareholder(s), read from the <c>Managing Shareholder</c> USER GROUP — scoped by
+    /// group name exactly as the CSE, Engagement Executive and Billing Manager pickers are, so who signs off
+    /// on every engagement is maintained in one place with the rest of them, and more than one person can
+    /// hold the seat.
+    /// <para>
+    /// A tenant with no such group (or an empty one) falls back to the single shareholder on
+    /// <c>RemsSettings</c>, which is set from a user's own detail page. That is where every tenant's
+    /// shareholder is recorded today, so adopting the group is a migration a firm makes when it wants to,
+    /// not a prerequisite for approvals to route.
+    /// </para>
+    /// </summary>
+    private async Task<IReadOnlyList<Guid>> ManagingShareholderIdsAsync(CancellationToken cancellationToken)
+    {
+        if (await _groups.GetByNameAsync(ManagingShareholderGroup, cancellationToken) is { } group)
+        {
+            var ids = (await _groups.GetMembersWithUsersByGroupAsync(group.Id, cancellationToken))
+                .Where(m => m.User is { IsActive: true })
+                .Select(m => m.UserId)
+                .Distinct()
+                .ToList();
+            if (ids.Count > 0)
+            {
+                return ids;
+            }
+        }
+
+        var settings = await _settings.GetAsync(cancellationToken);
+        return settings?.ManagingShareholderUserId is { } shareholder ? new[] { shareholder } : Array.Empty<Guid>();
+    }
+
+    /// <summary>
     /// The users the Approval tab offers as EXTRA approvers: those holding the <c>Approver</c> role in the
-    /// tenant. The automatic approvers are deliberately absent — they are already routed to, so listing
-    /// them would invite picking someone who is on the list either way.
+    /// tenant. The four automatic approvers are routed to whether or not they appear here, so picking one
+    /// of them changes nothing — the list is deduplicated before the round is built.
     /// </summary>
     private async Task<IReadOnlyList<RemsApproverOption>> ApproverOptionsAsync(Guid tenantId, CancellationToken cancellationToken)
     {
@@ -751,11 +793,6 @@ public sealed class RemsApprovalController : ControllerBase
     }
 
     /// <summary>
-    /// The approvers every engagement routes to regardless of what is picked: the CSE and each commission
-    /// recipient. The department director and the managing shareholder are not automatic — they are added
-    /// on the Approval tab like anyone else.
-    /// </summary>
-    /// <summary>
     /// The client materialised from the request's intake, or null before the client has submitted. Clients
     /// is a collection at the EF level — one active row, enforced by a filtered unique index — because the
     /// engagement now hangs off the request rather than off the client's entity.
@@ -763,9 +800,21 @@ public sealed class RemsApprovalController : ControllerBase
     private static REMSClient? ClientOf(REMSEngagement engagement)
         => engagement.Rems?.Clients.FirstOrDefault(c => !c.Deleted);
 
-    private static List<Guid> AutomaticApproverIds(REMSEngagement engagement)
+    /// <summary>
+    /// The approvers every engagement routes to whatever is picked on the Approval tab: the managing
+    /// shareholder, the Department Director and CSE from the engagement's own setup, and every commission
+    /// recipient. None of the four is a choice — each one is already on this engagement, and the tab adds
+    /// people to them rather than deciding them. Anyone missing (no CSE named, no director on the chosen
+    /// department, no shareholder anywhere) simply contributes nobody.
+    /// </summary>
+    private static List<Guid> AutomaticApproverIds(
+        REMSEngagement engagement, IReadOnlyList<Guid> managingShareholderIds)
     {
-        var ids = new List<Guid>();
+        var ids = new List<Guid>(managingShareholderIds);
+        if (engagement.DepartmentDirectorId is { } director)
+        {
+            ids.Add(director);
+        }
         if (engagement.Rems?.CSEId is { } cse)
         {
             ids.Add(cse);
@@ -779,7 +828,8 @@ public sealed class RemsApprovalController : ControllerBase
     /// own — a hand-picked approver — reviews as a plain <see cref="RemsApproverRole.Approver"/>. Derived
     /// rather than stored so a saved list keeps up when the CSE or the commission recipients change.
     /// </summary>
-    private static RemsApproverRole RoleFor(REMSEngagement engagement, Guid? managingShareholderId, Guid userId)
+    private static RemsApproverRole RoleFor(
+        REMSEngagement engagement, IReadOnlyList<Guid> managingShareholderIds, Guid userId)
     {
         if (engagement.Rems?.CSEId == userId)
         {
@@ -789,7 +839,7 @@ public sealed class RemsApprovalController : ControllerBase
         {
             return RemsApproverRole.DepartmentDirector;
         }
-        if (managingShareholderId == userId)
+        if (managingShareholderIds.Contains(userId))
         {
             return RemsApproverRole.ManagingShareholder;
         }
@@ -825,7 +875,8 @@ public sealed class RemsApprovalController : ControllerBase
         // on its Setup step too; this is the backstop for anything reaching the API another way.
         var missing = new List<string>();
         if (string.IsNullOrWhiteSpace(engagement.Department)) missing.Add("Department");
-        if (string.IsNullOrWhiteSpace(engagement.ServiceLine)) missing.Add("Service Line");
+        // The old Service Line is not among these any more: the field is gone from the setup form, so
+        // requiring it would block every engagement raised since on a question nobody is asked.
         if (engagement.EngagementExecutiveId is null) missing.Add("Engagement Executive");
         if (engagement.BillingManagerId is null) missing.Add("Billing Manager");
         if (engagement.RealizationPercentage is null) missing.Add("% Realization");
@@ -848,7 +899,11 @@ public sealed class RemsApprovalController : ControllerBase
             }
         }
 
-        if (RemsEngagementCodes.IsGovernmentAudit(engagement.Department, engagement.ServiceLine))
+        // The entity type lives on the request's FORM record, not on the engagement, so it takes a read of
+        // its own. Same source the workspace and the approval packet show it from.
+        var entityType = (await _rems.GetFormStatesAsync(new[] { engagement.REMSId }, cancellationToken))
+            .FirstOrDefault()?.IndustryGroup;
+        if (RemsEngagementCodes.IsGovernmentAudit(engagement.Department, entityType))
         {
             var government = await _engagements.GetGovernmentDetailAsync(engagement.Id, cancellationToken);
             if (government is null || string.IsNullOrWhiteSpace(government.ContractNumber) || government.FloridaOnePercentStateFeeApplies is null)

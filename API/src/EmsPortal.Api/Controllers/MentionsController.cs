@@ -10,7 +10,7 @@ namespace EmsPortal.Api.Controllers;
 
 /// <summary>
 /// Mention Inbox + @mention autocomplete. Lists the authenticated user's @mentions across all records,
-/// and resolves candidate users (tenant people who hold a login) for the note editor's autocomplete.
+/// and resolves candidate users (tenant people who hold a login) for the conversation editor's autocomplete.
 /// Scoped to the calling user / active tenant.
 /// </summary>
 [ApiController]
@@ -23,14 +23,14 @@ namespace EmsPortal.Api.Controllers;
 [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
 public sealed class MentionsController : ControllerBase
 {
-    private readonly INoteRepository _notes;
+    private readonly IConversationMessageRepository _messages;
     private readonly IPersonRepository _persons;
     private readonly IUserRepository _users;
     private readonly IUnitOfWork _unitOfWork;
 
-    public MentionsController(INoteRepository notes, IPersonRepository persons, IUserRepository users, IUnitOfWork unitOfWork)
+    public MentionsController(IConversationMessageRepository messages, IPersonRepository persons, IUserRepository users, IUnitOfWork unitOfWork)
     {
-        _notes = notes;
+        _messages = messages;
         _persons = persons;
         _users = users;
         _unitOfWork = unitOfWork;
@@ -50,15 +50,15 @@ public sealed class MentionsController : ControllerBase
             return Unauthorized(ApiResponseFactory.Unauthorized("No user context."));
         }
 
-        var (items, total) = await _notes.ListMentionsForUserAsync(userId, entityType, isRead, page, limit, cancellationToken);
+        var (items, total) = await _messages.ListMentionsForUserAsync(userId, entityType, isRead, page, limit, cancellationToken);
         var authorNames = await _users.GetFullNamesAsync(
-            items.Where(x => x.Note.CreatedById.HasValue).Select(x => x.Note.CreatedById!.Value), cancellationToken);
+            items.Where(x => x.Message.CreatedById.HasValue).Select(x => x.Message.CreatedById!.Value), cancellationToken);
 
         var data = items.Select(x => new MentionResponse(
-            x.Mention.Id, x.Note.Id, x.Note.EntityType, x.Note.EntityId, x.Note.CreatedById,
-            x.Note.CreatedById is { } id && authorNames.TryGetValue(id, out var name) ? name : null,
-            x.Note.Body.Length > 160 ? x.Note.Body[..160] + "…" : x.Note.Body,
-            x.Mention.IsRead, x.Note.CreatedOnUtc));
+            x.Mention.Id, x.Message.Id, x.Message.EntityType, x.Message.EntityId, x.Message.CreatedById,
+            x.Message.CreatedById is { } id && authorNames.TryGetValue(id, out var name) ? name : null,
+            x.Message.Body.Length > 160 ? x.Message.Body[..160] + "…" : x.Message.Body,
+            x.Mention.IsRead, x.Message.CreatedOnUtc));
         return Ok(ApiResponseFactory.Paginated(data, "Mentions retrieved.", page, limit, total));
     }
 
@@ -71,7 +71,7 @@ public sealed class MentionsController : ControllerBase
             return Unauthorized(ApiResponseFactory.Unauthorized("No user context."));
         }
 
-        var mention = await _notes.GetMentionForUserAsync(id, userId, cancellationToken);
+        var mention = await _messages.GetMentionForUserAsync(id, userId, cancellationToken);
         if (mention is null)
         {
             return NotFound(ApiResponseFactory.NotFound("Mention not found."));

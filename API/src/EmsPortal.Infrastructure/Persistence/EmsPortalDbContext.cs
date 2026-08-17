@@ -79,8 +79,8 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<OptionSetItem> OptionSetItems => Set<OptionSetItem>();
 
     // ---- Universal Features (Phase 14) ----
-    public DbSet<Note> Notes => Set<Note>();
-    public DbSet<NoteMention> NoteMentions => Set<NoteMention>();
+    public DbSet<ConversationMessage> ConversationMessages => Set<ConversationMessage>();
+    public DbSet<ConversationMessageMention> ConversationMessageMentions => Set<ConversationMessageMention>();
     public DbSet<Tag> Tags => Set<Tag>();
     public DbSet<EntityTag> EntityTags => Set<EntityTag>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
@@ -153,8 +153,8 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
         // Universal Features (Phase 14): every UF table is tenant-scoped + soft-deletable, so it
         // carries the combined ambient-tenant + soft-delete filter. FieldModifiedLog is the lone
         // exception — it is append-only with no soft-delete column, so it uses a tenant-only filter.
-        modelBuilder.Entity<Note>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
-        modelBuilder.Entity<NoteMention>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<ConversationMessage>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
+        modelBuilder.Entity<ConversationMessageMention>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<Tag>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<EntityTag>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
         modelBuilder.Entity<Attachment>().HasQueryFilter(e => (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId) && !e.Deleted);
@@ -316,11 +316,11 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
                     break;
 
                 // ---- Universal Features (Phase 14) ----
-                case Note note when note.TenantId == Guid.Empty:
-                    note.TenantId = _tenantContext.TenantId;
+                case ConversationMessage conversationMessage when conversationMessage.TenantId == Guid.Empty:
+                    conversationMessage.TenantId = _tenantContext.TenantId;
                     break;
-                case NoteMention noteMention when noteMention.TenantId == Guid.Empty:
-                    noteMention.TenantId = _tenantContext.TenantId;
+                case ConversationMessageMention conversationMessageMention when conversationMessageMention.TenantId == Guid.Empty:
+                    conversationMessageMention.TenantId = _tenantContext.TenantId;
                     break;
                 case Tag tag when tag.TenantId == Guid.Empty:
                     tag.TenantId = _tenantContext.TenantId;

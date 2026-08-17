@@ -85,23 +85,23 @@
           >
             <q-tooltip>Edit</q-tooltip>
           </q-btn>
-          <!-- Re-point the reviewing admin. Naming one is mandatory at intake, so this is a correction
-               rather than a hand-off — and it stays available past draft, because either side may need to
-               change who reviews a request after it has gone out. -->
-          <q-btn
-            v-if="cell.row.actions?.canAssign && cell.row.status === 'draft'"
-            flat round dense color="primary" icon="o_person_add" @click="openAssign(cell.row)"
-          >
-            <q-tooltip>Assign to Admin</q-tooltip>
-          </q-btn>
           <q-btn
             v-if="cell.row.actions?.canDuplicate"
             flat round dense color="primary" icon="o_content_copy" @click="duplicate(cell.row)"
           >
             <q-tooltip>Duplicate</q-tooltip>
           </q-btn>
+          <!-- What has been emailed to the client about this request, and the way to chase them again.
+               Only once something has actually gone out: before the intake link is sent there is no
+               history to read and nobody to remind. -->
+          <q-btn
+            v-if="canReadEmailLog && emsFormActivity(cell.row)"
+            flat round dense color="primary" icon="o_mark_email_read" @click="openEmailLog(cell.row)"
+          >
+            <q-tooltip>Email log</q-tooltip>
+          </q-btn>
           <q-btn flat round dense color="primary" icon="o_forum" @click="openConversation(cell.row)">
-            <q-tooltip>Notes</q-tooltip>
+            <q-tooltip>Conversation</q-tooltip>
           </q-btn>
         </q-td>
       </template>
@@ -120,12 +120,11 @@
       v-if="canManageDeleted" :entity-type="EntityType.Rems" :show="showDeleted" @restored="load"
     />
 
-    <assign-admin-dialog
-      v-model="assignOpen" mode="draft" :request-id="assignTarget.id"
-      :request-number="assignTarget.number"
-      @assigned="onAssigned"
-    />
     <conversation-dialog v-model="conversationOpen" :request-id="conversationId" :subtitle="conversationSubtitle" />
+
+    <!-- A sent reminder adds an email event and nothing else, but the row's EMS State and Updated On are
+         what the list shows of it, so it reloads on the way out. -->
+    <email-log-dialog v-model="emailLogOpen" :rems-id="emailLogId" :subtitle="emailLogSubtitle" @sent="load" />
   </q-page>
 </template>
 
@@ -152,8 +151,8 @@ import AppTextField from "components/common/AppTextField.vue";
 import AppDateField from "components/common/AppDateField.vue";
 import AppDataTable from "components/common/AppDataTable.vue";
 import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
-import AssignAdminDialog from "modules/rems/components/AssignAdminDialog.vue";
 import ConversationDialog from "modules/rems/components/ConversationDialog.vue";
+import EmailLogDialog from "modules/rems/components/EmailLogDialog.vue";
 
 const router = useRouter();
 const { showDeleted, canManageDeleted } = useDeletedRecords();
@@ -164,13 +163,16 @@ const fmt = useDateFormat();
 const auditColumns = useAuditColumns();
 const {
   typeLabel, typeHint, requestStatusLabel, requestStatusColor,
-  emsStateLabel, submissionStateLabel,
+  emsStateLabel, submissionStateLabel, emsFormActivity,
   statusFilterOptions, typeOptions
 } = useRemsMeta();
 
 const canCreate = computed(() => has(Permissions.RemsRequestsCreate));
+const canReadEmailLog = computed(() => has(Permissions.RemsEmailLogRead));
 
-// The Assigned Admin filter needs the admin list, which is gated the same way the assign action is.
+// The Assigned Admin filter needs the admin list, so it is offered only to callers who may read it.
+// Re-pointing the admin is no longer an action on this list — every request names one at intake, and
+// correcting that is done on the request form itself.
 const canSeeAdmins = computed(() => has(Permissions.RemsRequestsAssign));
 const adminFilterOptions = ref([]);
 onMounted(async () => {
@@ -213,7 +215,7 @@ const columns = computed(() => [
   { name: "customerEmail", label: "Client Email", field: (r) => r.customerEmail || "—", align: "left", default: false, filterable: false },
   { name: "customerMobileNumber", label: "Client Phone Number", field: (r) => r.customerMobileNumber || "—", align: "left", default: false, filterable: false },
   { name: "cse", label: "CSE", field: (r) => r.cse?.name || "—", align: "left", default: false, filterable: false },
-  { name: "industryGroup", label: "Industry Group", field: (r) => r.industryGroup || "—", align: "left", default: false, filterable: false },
+  { name: "industryGroup", label: "Entity Type", field: (r) => r.industryGroup || "—", align: "left", default: false, filterable: false },
   { name: "clientSubmissionState", label: "Client Submission", field: (r) => submissionStateLabel(r.clientSubmissionState), align: "left", default: false, filterable: false },
   ...auditColumns({ only: ["updatedBy", "updatedOnUtc"] }),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
@@ -284,17 +286,6 @@ const openCreate = () => {
   router.push({ name: "rems_request_new" });
 };
 
-// ---- Re-point the reviewing admin ----
-const assignOpen = ref(false);
-const assignTarget = reactive({ id: null, number: "" });
-const openAssign = (row) => {
-  assignTarget.id = row.id;
-  assignTarget.number = row.remsNumber || "";
-  assignOpen.value = true;
-};
-// The row leaves draft on success, so the list has to be re-read rather than patched in place.
-const onAssigned = () => { assignOpen.value = false; load(); };
-
 // ---- Conversation ----
 const conversationOpen = ref(false);
 const conversationId = ref(null);
@@ -302,9 +293,24 @@ const conversationSubtitle = ref("");
 const openConversation = (row) => {
   conversationId.value = row.id;
   // The client, not a title: a request has no title of its own any more — it is identified by who it is for.
-  conversationSubtitle.value = [row.remsNumber, row.clientName].filter(Boolean).join(" — ");
+  conversationSubtitle.value = rowLabel(row);
   conversationOpen.value = true;
 };
+
+// ---- Email log ----
+// The client's side of the correspondence: every intake-form email sent for this request and what the
+// provider reported back, with Send Reminder on it for a client who has not answered yet.
+const emailLogOpen = ref(false);
+const emailLogId = ref(null);
+const emailLogSubtitle = ref("");
+const openEmailLog = (row) => {
+  emailLogId.value = row.id;
+  emailLogSubtitle.value = rowLabel(row);
+  emailLogOpen.value = true;
+};
+
+// How a request names itself in a dialog title bar.
+const rowLabel = (row) => [row.remsNumber, row.clientName].filter(Boolean).join(" — ");
 
 // ---- Duplicate ----
 const duplicate = async (row) => {

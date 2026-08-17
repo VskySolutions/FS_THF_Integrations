@@ -92,8 +92,17 @@
           >
             <q-tooltip>{{ cell.row.submitted ? "View submitted form" : "The client has not submitted this form yet" }}</q-tooltip>
           </q-btn>
+          <!-- What the client has been emailed about this request and what came back, plus the reminder
+               for one who still has not answered. Every row here has a form, so there is always a log to
+               open — an empty one is itself the answer for a form nobody has sent yet. -->
+          <q-btn
+            v-if="canReadEmailLog"
+            flat round dense color="primary" icon="o_mark_email_read" @click.stop="openEmailLog(cell.row)"
+          >
+            <q-tooltip>Email log</q-tooltip>
+          </q-btn>
           <q-btn flat round dense color="primary" icon="o_forum" @click.stop="openConversation(cell.row)">
-            <q-tooltip>Notes</q-tooltip>
+            <q-tooltip>Conversation</q-tooltip>
           </q-btn>
         </q-td>
       </template>
@@ -109,6 +118,7 @@
 
     <submitted-form-dialog v-model="viewOpen" :rems-id="viewRemsId" />
     <conversation-dialog v-model="conversationOpen" :request-id="conversationId" :subtitle="conversationSubtitle" />
+    <email-log-dialog v-model="emailLogOpen" :rems-id="emailLogId" :subtitle="emailLogSubtitle" @sent="load" />
   </q-page>
 </template>
 
@@ -118,6 +128,7 @@ import { debounce } from "quasar";
 import { useRouter } from "vue-router";
 import { remsApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
+import { usePermissions, Permissions } from "composables/usePermissions";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
 import { useDateFormat } from "composables/useDateFormat";
@@ -130,12 +141,16 @@ import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppDataTable from "components/common/AppDataTable.vue";
 import SubmittedFormDialog from "modules/rems/components/SubmittedFormDialog.vue";
 import ConversationDialog from "modules/rems/components/ConversationDialog.vue";
+import EmailLogDialog from "modules/rems/components/EmailLogDialog.vue";
 
 const router = useRouter();
 const notify = useNotify();
 const fmt = useDateFormat();
 const auditColumns = useAuditColumns();
+const { has } = usePermissions();
 const { statusLabel, statusColor, statusFilterOptions, engagementOwnerDenial } = useRemsMeta();
+
+const canReadEmailLog = computed(() => has(Permissions.RemsEmailLogRead));
 
 // Why Engagement Setup is unavailable on a row, or null when it is open: the client has to have
 // submitted, and setup then belongs to whoever picked the request up.
@@ -196,15 +211,29 @@ const openRequest = (row, mode) => {
   });
 };
 
-// ---- Notes ----
-// The REQUEST's thread, the same one every other REMS surface opens — so a note left here reaches the
+// ---- Conversation ----
+// The REQUEST's thread, the same one every other REMS surface opens — so a message left here reaches the
 // partner, the pool and the approvers rather than being visible only from this list.
 const conversationOpen = ref(false);
 const conversationId = ref(null);
 const conversationSubtitle = ref("");
 const openConversation = (row) => {
   conversationId.value = row.remsId;
-  conversationSubtitle.value = `${row.remsNumber} — ${row.clientName || ""}`.trim();
+  conversationSubtitle.value = rowLabel(row);
   conversationOpen.value = true;
 };
+
+// ---- Email log ----
+// Every intake-form email sent for this request and what the provider reported back, with Send Reminder
+// on it while the client still owes an answer.
+const emailLogOpen = ref(false);
+const emailLogId = ref(null);
+const emailLogSubtitle = ref("");
+const openEmailLog = (row) => {
+  emailLogId.value = row.remsId;
+  emailLogSubtitle.value = rowLabel(row);
+  emailLogOpen.value = true;
+};
+
+const rowLabel = (row) => [row.remsNumber, row.clientName].filter(Boolean).join(" — ");
 </script>

@@ -40,12 +40,19 @@
             @click="setMode('edit')"
           />
           <q-btn
-            v-if="request" outline no-caps color="primary" icon="o_forum" label="Notes"
-            @click="notesOpen = true"
+            v-if="request" outline no-caps color="primary" icon="o_forum" label="Conversation"
+            @click="conversationOpen = true"
           />
           <q-btn
             v-if="hasSubmission" outline no-caps color="primary" icon="o_description"
             label="View submitted form" @click="submittedOpen = true"
+          />
+          <!-- What the client has actually been sent, and whether it landed. Beside Send Reminder rather
+               than buried on a list, because "have we already chased them twice?" is the question asked
+               immediately before pressing it. -->
+          <q-btn
+            v-if="canReadEmailLog" outline no-caps color="primary" icon="o_mark_email_read"
+            label="Email log" @click="emailLogOpen = true"
           />
 
           <!-- The workflow moves: each one hands the request to somebody else. -->
@@ -206,7 +213,7 @@
 
             <detail-grid v-else-if="!isEditing" :rows="setupRows" />
 
-            <!-- The CSE and the Industry Group are the page's to save (they belong to the request's EMS
+            <!-- The CSE and the Entity Type are the page's to save (they belong to the request's EMS
                  form record, not to the engagement) but the setup form's to lay out — they sit among the
                  engagement's own fields, so they are v-modelled down rather than rendered up here in a
                  row of their own. -->
@@ -221,7 +228,6 @@
               :cse-hint="cseHint"
               :industry-locked="industryLocked"
               :dept-options="departmentOptions"
-              :service-line-options="serviceLineOptions"
               :sub-service-line-options="subServiceLineOptions"
               :sub-industry-options="subIndustryOptions"
               :tax-form-options="taxFormOptions"
@@ -299,7 +305,8 @@
         v-model="reminderOpen" mode="reminder" :rems-id="remsId" :subtitle="subtitle" @sent="load"
       />
       <submitted-form-dialog v-model="submittedOpen" :rems-id="remsId" />
-      <conversation-dialog v-model="notesOpen" :request-id="remsId" :subtitle="subtitle" />
+      <conversation-dialog v-model="conversationOpen" :request-id="remsId" :subtitle="subtitle" />
+      <email-log-dialog v-model="emailLogOpen" :rems-id="remsId" :subtitle="subtitle" @sent="load" />
     </template>
   </q-page>
 </template>
@@ -354,16 +361,17 @@ import EngagementApproval from "modules/rems/components/engagement/EngagementApp
 import SendEmsDialog from "modules/rems/components/SendEmsDialog.vue";
 import SubmittedFormDialog from "modules/rems/components/SubmittedFormDialog.vue";
 import ConversationDialog from "modules/rems/components/ConversationDialog.vue";
+import EmailLogDialog from "modules/rems/components/EmailLogDialog.vue";
 
 const route = useRoute();
 const router = useRouter();
 const notify = useNotify();
 const { has } = usePermissions();
-const { statusLabel, statusColor } = useRemsMeta();
+const { statusLabel, statusColor, emsFormActivity } = useRemsMeta();
 const { typeOptions, load: loadTypes } = useRemsOptionSets();
 const { industryGroupOptions, load: loadIndustryGroups } = useRemsIndustryGroups();
 const {
-  departmentOptions, serviceLineOptions, subServiceLineOptions, subIndustryOptions,
+  departmentOptions, subServiceLineOptions, subIndustryOptions,
   marketingGroups, marketingUnavailable,
   taxFormOptions, taxFormUnavailable, billingPeriodOptions, load: loadEngagementOptions
 } = useRemsEngagementOptionSets();
@@ -405,8 +413,9 @@ const setupRef = ref(null);
 const marketingRef = ref(null);
 const commissionRef = ref(null);
 
-const notesOpen = ref(false);
+const conversationOpen = ref(false);
 const submittedOpen = ref(false);
+const emailLogOpen = ref(false);
 const sendOpen = ref(false);
 const reminderOpen = ref(false);
 const sendBackOpen = ref(false);
@@ -442,7 +451,6 @@ const engagementId = computed(() => engagement.value?.id || null);
 const newEngagement = Object.freeze({
   id: null,
   department: null,
-  serviceLine: null,
   subServiceLine: null,
   subIndustry: null,
   departmentDirector: null,
@@ -539,6 +547,10 @@ const canSendToClient = computed(() =>
   !isNew.value && status.value === REMS_STATUS.DRAFT && has(Permissions.RemsFormsSend));
 const canRemind = computed(() =>
   status.value === REMS_STATUS.AWAITING_CUSTOMER && has(Permissions.RemsFormsSend));
+// There is a log to read once something has been emailed; before the intake link goes out it would open
+// on nothing. The reminder inside it is gated separately, by the server.
+const canReadEmailLog = computed(() =>
+  !isNew.value && has(Permissions.RemsEmailLogRead) && emsFormActivity(request.value));
 const canReturnToAdmin = computed(() =>
   [REMS_STATUS.RETURNED_TO_INITIATOR, REMS_STATUS.CHANGES_REQUESTED].includes(status.value));
 const canSendBack = computed(() => isAdminStage.value && isAdmin.value);
@@ -553,7 +565,7 @@ const readyToSend = computed(() =>
 const sendBlockedReason = computed(() => {
   if (!clientForm.customerEmail?.trim()) return "The client has no email address to send the form to.";
   if (!setupForm.cseUserId) return "Choose a CSE first — it is on the Engagement Setup tab.";
-  if (!setupForm.industryGroup) return "Choose an industry group — it decides what the client is asked.";
+  if (!setupForm.industryGroup) return "Choose an entity type — it decides what the client is asked.";
   return "";
 });
 
@@ -708,10 +720,9 @@ const setupRows = computed(() => {
   // The same sequence the form is filled in, so reading a request and typing one describe it in the
   // same order.
   return [
-    { label: "Industry Group", value: labelOf(industryGroupOptions.value, setupForm.industryGroup) },
-    { label: "Sub-Industry", value: labelOf(subIndustryOptions.value, e.subIndustry) },
-    { label: "Service Line", value: labelOf(serviceLineOptions.value, e.serviceLine) },
-    { label: "Sub-Service Line", value: labelOf(subServiceLineOptions.value, e.subServiceLine) },
+    { label: "Entity Type", value: labelOf(industryGroupOptions.value, setupForm.industryGroup) },
+    { label: "Industry", value: labelOf(subIndustryOptions.value, e.subIndustry) },
+    { label: "Service Line", value: labelOf(subServiceLineOptions.value, e.subServiceLine) },
     { label: "Department", value: labelOf(departmentOptions.value, e.department) },
     { label: "Department Director", value: e.departmentDirector?.name },
     { label: "CSE", value: nameOf(cseOptions.value, setupForm.cseUserId) },
@@ -859,16 +870,17 @@ const {
       clientBaseline = clientSnapshot();
     }
     // Uploaded now rather than on selection, so the files land on a request that exists.
-    const mediaIds = (await clientFieldsRef.value?.uploadAttachments()) || [];
+    const mediaIds = (await clientFieldsRef.value?.uploadAttachments(remsId.value)) || [];
     if (mediaIds.length) request.value = await remsApi.addFiles(remsId.value, mediaIds);
     return "";
   },
   form: async () => {
     if (!canEditSetup.value) return "";
-    // CSE and Industry Group live on the EMS form record, which is what the client's link is minted from.
-    // Both or neither: the endpoint requires the pair.
+    // CSE and Entity Type live on the EMS form record, which is what the client's link is minted from
+    // (`industryGroup` on the wire — see the note at the top of useRemsMeta). Both or neither: the
+    // endpoint requires the pair.
     if (!setupForm.cseUserId || !setupForm.industryGroup) {
-      return "The CSE and the Industry Group are saved together — choose both.";
+      return "The CSE and the Entity Type are saved together — choose both.";
     }
     await remsApi.saveForm(remsId.value, {
       cseUserId: setupForm.cseUserId,
@@ -880,7 +892,7 @@ const {
   // one of those. Every request created since has one — raised in the same transaction as the request.
   setup: async () => {
     if (!canEditSetup.value || !engagementId.value) return "";
-    await setupRef.value?.saveSetup(engagementId.value);
+    await setupRef.value?.saveSetup(engagementId.value, remsId.value);
     return "";
   },
   marketing: async () => {
@@ -998,7 +1010,7 @@ const createDraft = async () => {
       ...clientPayload(),
       assignAdminUserId: clientForm.assignAdminUserId
     });
-    const mediaIds = (await clientFieldsRef.value?.uploadAttachments()) || [];
+    const mediaIds = (await clientFieldsRef.value?.uploadAttachments(created.id)) || [];
     if (mediaIds.length) await remsApi.addFiles(created.id, mediaIds);
     notify.success(`${created.remsNumber} saved as a draft. Everything from here saves itself.`);
   } catch (err) {

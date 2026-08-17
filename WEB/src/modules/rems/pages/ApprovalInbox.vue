@@ -85,7 +85,7 @@
             <q-tooltip>Open task</q-tooltip>
           </q-btn>
           <q-btn flat round dense color="primary" icon="o_forum" @click.stop="openConversation(cell.row)">
-            <q-tooltip>Notes</q-tooltip>
+            <q-tooltip>Conversation</q-tooltip>
           </q-btn>
         </q-td>
       </template>
@@ -198,7 +198,7 @@ const progressHint = (row) => {
 
 const openTask = (row) => router.push({ name: "rems_approval_task", params: { taskId: row.taskId } });
 
-// ---- Notes ----
+// ---- Conversation ----
 // The REQUEST's thread, the same one the task detail shows under the checklist — so an approver can raise
 // a question from the inbox and have the partner and CSE see it, without opening the task first.
 const conversationOpen = ref(false);

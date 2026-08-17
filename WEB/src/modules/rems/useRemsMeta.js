@@ -5,11 +5,23 @@ import {
   useRemsOptionCatalog, ensureRemsOptionsLoaded, REMS_OPTION_SEED
 } from "modules/rems/useRemsOptionCatalog";
 
-// Type / Status / Industry Group / Department / Service Line are TENANT-CONFIGURABLE option
+// Type / Status / Entity Type / Department / Service Line are TENANT-CONFIGURABLE option
 // sets, so their labels come from useRemsOptionCatalog — a tenant that renames a status in Administration
 // → Option Sets sees that everywhere, not just in the picker they edited it from. The arrays below are
 // the catalogue's seed, re-exported for the few callers that need the closed set itself (the marking
 // rules, and the sort order a filter dropdown is built in).
+//
+// THREE OF THE ENGAGEMENT CLASSIFICATIONS READ ONE WAY ON SCREEN AND ANOTHER IN CODE. They were renamed;
+// their data — columns, option-set keys, API fields — deliberately was not, because each tenant's own copy
+// of a list is filed under the old key and so are the codes already stored against it:
+//
+//   industryGroup*   is labelled  "Entity Type"   — what kind of entity the client is
+//   subIndustry*     is labelled  "Industry"      — the client's trade
+//   subServiceLine*  is labelled  "Service Line"  — what the firm is engaged to do
+//
+// The helpers below keep the DATA name, so what each one reads is never in doubt; only the strings a user
+// sees carry the new wording. A fourth, the old `serviceLine`, is gone entirely — it asked what the entity
+// type already answers, and the Government Audit rule it carried moved there with it.
 //
 // Everything further down that looks similar — form state, approver role, approval status, engagement
 // status, email events — mirrors a C# ENUM the backend branches on. Those have no option set and must not
@@ -161,7 +173,6 @@ export function useRemsMeta () {
   const referralSourceHint = (v) => hintFrom(options.referralSource, v);
   const industryGroupLabel = (v) => labelFrom(options.industryGroup, v);
   const departmentLabel = (v) => labelFrom(options.department, v);
-  const serviceLineLabel = (v) => labelFrom(options.serviceLine, v);
   const subServiceLineLabel = (v) => labelFrom(options.subServiceLine, v);
   const subIndustryLabel = (v) => labelFrom(options.subIndustry, v);
 
@@ -220,7 +231,6 @@ export function useRemsMeta () {
   const statusOptions = computed(() => options.status);
   const industryGroupOptions = computed(() => options.industryGroup);
   const departmentOptions = computed(() => options.department);
-  const serviceLineOptions = computed(() => options.serviceLine);
   const subServiceLineOptions = computed(() => options.subServiceLine);
   const subIndustryOptions = computed(() => options.subIndustry);
   const statusFilterOptions = computed(() => options.status.map((option) =>
@@ -233,7 +243,6 @@ export function useRemsMeta () {
     referralSourceHint,
     statusLabel,
     departmentLabel,
-    serviceLineLabel,
     subServiceLineLabel,
     subIndustryLabel,
     statusColor,
@@ -246,7 +255,6 @@ export function useRemsMeta () {
     statusOptions,
     industryGroupOptions,
     departmentOptions,
-    serviceLineOptions,
     subServiceLineOptions,
     subIndustryOptions,
     statusFilterOptions,
@@ -279,13 +287,17 @@ export function useRemsOptionSets () {
 
 // ---- Engagement workspace (WO-117) option sets + conditional logic ----
 
-// Department + Service Line are stored as string codes, so — like Type/IndustryGroup — the closed
-// seed lists are a safe fallback when the resolve endpoint 403s (the REMS Admin role lacks optionSets.read).
+// Department + Entity Type are stored as string codes, so — like Type — the closed seed lists are a safe
+// fallback when the resolve endpoint 403s (the REMS Admin role lacks optionSets.read).
 export const REMS_DEPARTMENT_CODES = Object.freeze({ CAS: "cas", TAX: "tax", AUDIT: "audit", GCS: "gcs" });
-export const REMS_SERVICE_LINE_GOVERNMENT = "government";
+
+// The Entity Type code (REMS.IndustryGroup value) that makes an audit a GOVERNMENT audit. It used to be
+// read off the engagement's service line; that list was dropped for asking what the entity type already
+// answers, so the rule reads the entity type — which is also the stronger place for it, being required
+// and frozen once the client's intake form goes out.
+export const REMS_ENTITY_TYPE_GOVERNMENT = "government";
 
 export const REMS_DEPARTMENT_OPTIONS = REMS_OPTION_SEED.department;
-export const REMS_SERVICE_LINE_OPTIONS = REMS_OPTION_SEED.serviceLine;
 
 // The REMS.Marketing groups (from each item's MetadataJson `group` tag), in display order.
 const MARKETING_GROUPS = [
@@ -298,11 +310,13 @@ const MARKETING_GROUPS = [
 // Conditional engagement-detail predicates — mirror the backend RemsEngagementCodes helper exactly.
 export const isAuditDepartment = (department) => department === REMS_DEPARTMENT_CODES.AUDIT;
 export const isTaxDepartment = (department) => department === REMS_DEPARTMENT_CODES.TAX;
-export const isGovernmentAudit = (department, serviceLine) =>
-  isAuditDepartment(department) && serviceLine === REMS_SERVICE_LINE_GOVERNMENT;
+// An audit engagement for a government ENTITY — `entityType` is the request's industryGroup code, which
+// lives on the form record rather than on the engagement, so callers pass it in.
+export const isGovernmentAudit = (department, entityType) =>
+  isAuditDepartment(department) && entityType === REMS_ENTITY_TYPE_GOVERNMENT;
 
-// Loads the engagement's code-valued option sets (Department, Service Line and the two sub-classifications)
-// plus Marketing / Tax Form for the workspace. The code-valued ones degrade to the closed lists in the
+// Loads the engagement's code-valued option sets (Department, Service Line and Industry) plus Marketing /
+// Tax Form for the workspace. The code-valued ones degrade to the closed lists in the
 // catalogue's seed. Marketing + Tax Form are keyed by OptionSetItem *id* (the
 // REMSEngagementMarketingMethod / REMSEngagementTaxForm FKs), so there is no closed fallback for their ids
 // — those pickers are simply empty (flagged `*Unavailable`) when resolve is denied.
@@ -312,7 +326,6 @@ export function useRemsEngagementOptionSets () {
   // a different shape and only this workspace needs it.
   const catalog = useRemsOptionCatalog();
   const departmentOptions = computed(() => catalog.department);
-  const serviceLineOptions = computed(() => catalog.serviceLine);
   const marketingGroups = ref([]);
   const marketingUnavailable = ref(false);
   const taxFormOptions = ref([]);
@@ -371,9 +384,8 @@ export function useRemsEngagementOptionSets () {
 
   return {
     departmentOptions,
-    serviceLineOptions,
-    // The two sub-classifications, one level below the service line and the industry group. Code-valued
-    // like their parents, so they come from the shared catalogue too.
+    // Service Line and Industry — still keyed subServiceLine / subIndustry in the data, per the note at
+    // the top of this file. Code-valued, so they come from the shared catalogue too.
     subServiceLineOptions: computed(() => catalog.subServiceLine),
     subIndustryOptions: computed(() => catalog.subIndustry),
     // How often the client is billed (REMS.BillingPeriod). Code-valued like Department and Service Line,

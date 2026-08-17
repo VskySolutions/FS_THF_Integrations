@@ -1,8 +1,7 @@
 <template>
   <div class="column q-gutter-sm">
-    <!-- Header: title (left) + quick search with loader + Add note (right) -->
+    <!-- Header: quick search with loader + Add message -->
     <div class="row items-center no-wrap q-gutter-sm">
-      <!-- <div class="text-subtitle1">Notes</div> -->
       <q-space />
       <q-input
         v-model="search"
@@ -10,7 +9,7 @@
         outlined
         clearable
         placeholder="Quick search"
-        class="uf-notes__search"
+        class="uf-conversation__search"
         debounce="300"
         :loading="loading"
         @update:model-value="load"
@@ -24,7 +23,7 @@
         unelevated
         dense
         icon="o_add"
-        label="Add note"
+        label="Add message"
         @click="openComposer"
       />
     </div>
@@ -36,8 +35,8 @@
         v-model="draft"
         min-height="6rem"
         :toolbar="toolbar"
-        placeholder="Write a note… type @ to mention someone"
-        content-class="uf-notes__editor"
+        placeholder="Write a message… type @ to mention someone"
+        content-class="uf-conversation__editor"
         @keydown.esc="mentionOpen = false"
       />
       <q-menu
@@ -77,7 +76,7 @@
           no-caps
           unelevated
           dense
-          label="Save note"
+          label="Post message"
           :loading="posting"
           :disable="!hasContent(draft)"
           @click="post"
@@ -85,36 +84,36 @@
       </div>
     </div>
 
-    <!-- Timeline (newest first) -->
+    <!-- The thread (newest first) -->
     <q-inner-loading :showing="loading" />
-    <div v-if="!loading && !notes.length" class="text-grey-6 q-pa-md text-center">No notes yet.</div>
+    <div v-if="!loading && !messages.length" class="text-grey-6 q-pa-md text-center">No messages yet.</div>
     <q-list separator>
-      <q-item v-for="note in notes" :key="note.id" class="q-py-sm">
+      <q-item v-for="message in messages" :key="message.id" class="q-py-sm">
         <q-item-section avatar top>
-          <q-avatar size="34px" color="primary" text-color="white">{{ initials(note.authorName) }}</q-avatar>
+          <q-avatar size="34px" color="primary" text-color="white">{{ initials(message.authorName) }}</q-avatar>
         </q-item-section>
         <q-item-section>
           <q-item-label>
-            <span class="text-weight-medium">{{ note.authorName || "Unknown" }}</span>
-            <span class="text-grey-6 q-ml-sm fs-12">{{ formatDateTime(note.createdOnUtc) }}</span>
-            <q-badge v-if="note.isEdited" outline color="grey-7" class="q-ml-sm" label="edited" />
+            <span class="text-weight-medium">{{ message.authorName || "Unknown" }}</span>
+            <span class="text-grey-6 q-ml-sm fs-12">{{ formatDateTime(message.createdOnUtc) }}</span>
+            <q-badge v-if="message.isEdited" outline color="grey-7" class="q-ml-sm" label="edited" />
           </q-item-label>
 
-          <div v-if="editingId === note.id" class="q-mt-xs">
-            <q-editor v-model="editDraft" min-height="5rem" :toolbar="toolbar" content-class="uf-notes__editor" />
+          <div v-if="editingId === message.id" class="q-mt-xs">
+            <q-editor v-model="editDraft" min-height="5rem" :toolbar="toolbar" content-class="uf-conversation__editor" />
             <div class="row q-gutter-xs q-mt-xs">
-              <q-btn dense no-caps unelevated color="primary" label="Save" @click="saveEdit(note)" />
+              <q-btn dense no-caps unelevated color="primary" label="Save" @click="saveEdit(message)" />
               <q-btn dense no-caps flat label="Cancel" @click="editingId = null" />
             </div>
           </div>
           <!-- eslint-disable-next-line vue/no-v-html -->
-          <div v-else class="q-mt-xs note-body" v-html="renderBody(note.body)" />
+          <div v-else class="q-mt-xs message-body" v-html="renderBody(message.body)" />
         </q-item-section>
 
         <q-item-section side top>
           <div class="row">
-            <q-btn v-if="canEdit(note)" flat round dense size="sm" icon="o_edit" @click="startEdit(note)" />
-            <q-btn v-if="canDelete(note)" flat round dense size="sm" icon="o_delete" color="negative" @click="remove(note)" />
+            <q-btn v-if="canEdit(message)" flat round dense size="sm" icon="o_edit" @click="startEdit(message)" />
+            <q-btn v-if="canDelete(message)" flat round dense size="sm" icon="o_delete" color="negative" @click="remove(message)" />
           </div>
         </q-item-section>
       </q-item>
@@ -124,7 +123,7 @@
 
 <script setup>
 import { ref, nextTick, onMounted, onBeforeUnmount } from "vue";
-import { ufNotesApi, getApiErrorMessage } from "services/api";
+import { ufConversationApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
@@ -155,7 +154,7 @@ const toolbar = [
   ["removeFormat"]
 ];
 
-const notes = ref([]);
+const messages = ref([]);
 const loading = ref(false);
 const search = ref("");
 
@@ -178,7 +177,7 @@ const editDraft = ref("");
 const load = async () => {
   loading.value = true;
   try {
-    const res = await ufNotesApi.list({
+    const res = await ufConversationApi.list({
       entityType: props.entityType,
       entityId: props.entityId,
       search: search.value || undefined,
@@ -187,7 +186,7 @@ const load = async () => {
     });
     const rows = res?.data || [];
     // Newest first, regardless of server ordering.
-    notes.value = rows.sort((a, b) => new Date(b.createdOnUtc) - new Date(a.createdOnUtc));
+    messages.value = rows.sort((a, b) => new Date(b.createdOnUtc) - new Date(a.createdOnUtc));
   } catch (err) {
     notify.error(getApiErrorMessage(err));
   } finally {
@@ -276,13 +275,13 @@ const post = async () => {
   if (!hasContent(draft.value)) return;
   posting.value = true;
   try {
-    await ufNotesApi.create({
+    await ufConversationApi.create({
       entityType: props.entityType,
       entityId: props.entityId,
       body: draft.value,
       mentionedUserIds: extractMentionIds(draft.value)
     });
-    notify.success("Note added.");
+    notify.success("Message posted.");
     closeComposer();
     await load();
   } catch (err) {
@@ -292,36 +291,36 @@ const post = async () => {
   }
 };
 
-const canEdit = (note) => note.authorId && note.authorId === currentUserId;
-const canDelete = (note) => canEdit(note) || isAdmin;
+const canEdit = (message) => message.authorId && message.authorId === currentUserId;
+const canDelete = (message) => canEdit(message) || isAdmin;
 
-const startEdit = (note) => {
-  editingId.value = note.id;
-  editDraft.value = note.body;
+const startEdit = (message) => {
+  editingId.value = message.id;
+  editDraft.value = message.body;
 };
 
-const saveEdit = async (note) => {
+const saveEdit = async (message) => {
   try {
-    await ufNotesApi.update(note.id, { body: editDraft.value, mentionedUserIds: extractMentionIds(editDraft.value) });
+    await ufConversationApi.update(message.id, { body: editDraft.value, mentionedUserIds: extractMentionIds(editDraft.value) });
     editingId.value = null;
-    notify.success("Note updated.");
+    notify.success("Message updated.");
     await load();
   } catch (err) {
     notify.error(getApiErrorMessage(err));
   }
 };
 
-const remove = async (note) => {
+const remove = async (message) => {
   const ok = await confirm({
-    title: "Delete note",
-    message: "Delete this note? This cannot be undone.",
+    title: "Delete message",
+    message: "Delete this message? This cannot be undone.",
     confirmLabel: "Delete",
     type: "danger"
   });
   if (!ok) return;
   try {
-    await ufNotesApi.remove(note.id);
-    notify.success("Note deleted.");
+    await ufConversationApi.remove(message.id);
+    notify.success("Message deleted.");
     await load();
   } catch (err) {
     notify.error(getApiErrorMessage(err));
@@ -329,9 +328,10 @@ const remove = async (note) => {
 };
 
 // ---- rendering ----
-// Sanitizing/escaping lives in utils/richText so notes and the description editors share one allowlist.
+// Sanitizing/escaping lives in utils/richText so the conversation and the description editors share one
+// allowlist.
 
-// New notes are q-editor HTML; legacy notes are plain text with @[Name](id) tokens.
+// New messages are q-editor HTML; ones written before the rich editor are plain text with @[Name](id) tokens.
 const renderBody = (body) => {
   if (isHtml(body)) {
     return sanitizeHtml(body);
@@ -350,9 +350,9 @@ defineExpose({ load });
 </script>
 
 <style scoped>
-.uf-notes__search { max-width: 220px; width: 100%; }
-.note-body { white-space: normal; word-break: break-word; }
-.note-body :deep(.uf-mention) { color: #1976d2; font-weight: 500; background: #e3f2fd; border-radius: 4px; padding: 0 2px; }
-.note-body :deep(p) { margin: 0 0 6px; }
-.note-body :deep(ul), .note-body :deep(ol) { margin: 0 0 6px; padding-left: 20px; }
+.uf-conversation__search { max-width: 220px; width: 100%; }
+.message-body { white-space: normal; word-break: break-word; }
+.message-body :deep(.uf-mention) { color: #1976d2; font-weight: 500; background: #e3f2fd; border-radius: 4px; padding: 0 2px; }
+.message-body :deep(p) { margin: 0 0 6px; }
+.message-body :deep(ul), .message-body :deep(ol) { margin: 0 0 6px; padding-left: 20px; }
 </style>

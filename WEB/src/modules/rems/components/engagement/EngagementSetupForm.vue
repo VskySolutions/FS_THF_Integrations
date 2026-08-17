@@ -11,46 +11,37 @@
     <q-form ref="formRef" greedy>
       <div class="row q-col-gutter-md">
         <!-- ── What the client is ───────────────────────────────────────────────────────────────── -->
-        <!-- A classification and the level below it, on one line — same shape as the service pair that
-             follows. Industry Group is the odd one out: it belongs to the request's EMS FORM record, not
-             to the engagement, and is written by a different endpoint. It leads because it decides what
-             the client is asked. -->
+        <!-- The kind of entity, and the trade it is in. Entity Type is the odd one out: it belongs to the
+             request's EMS FORM record, not to the engagement, and is written by a different endpoint. It
+             leads because it decides what the client is asked. -->
         <app-select
-          :model-value="industryGroup" :options="industryGroupOptions" label="Industry Group" required
+          :model-value="industryGroup" :options="industryGroupOptions" label="Entity Type" required
           class="col-12 col-sm-6" :readonly="!editable || industryLocked" :clearable="false"
           :hint="industryLocked ? 'Locked — the intake form has been sent.' : ''"
-          info="Decides which questions the client's intake form asks, so it is fixed once the form goes out."
+          info="What kind of entity the client is. Decides which questions the client's intake form asks, so it is fixed once the form goes out — and an Audit for a Government entity is a Government Audit, which asks for a contract number."
           @update:model-value="$emit('update:industryGroup', $event)"
         />
-        <!-- Optional, and deliberately NOT filtered by the industry group beside it: the groups do not
-             partition cleanly (a hospital is Health Care whether it is Commercial or Not-for-Profit).
-             Clearable for the same reason — an engagement that does not fit one of the trades is better
-             left blank than filed under a wrong one. -->
+        <!-- Optional, and deliberately NOT filtered by the entity type beside it: the two do not partition
+             cleanly (a hospital is Health Care whether it is Commercial or Not-for-Profit). Clearable for
+             the same reason — an engagement that does not fit one of the trades is better left blank than
+             filed under a wrong one. -->
         <app-select
-          v-model="core.subIndustry" :options="subIndustryOptions" label="Sub-Industry"
+          v-model="core.subIndustry" :options="subIndustryOptions" label="Industry"
           class="col-12 col-sm-6" :readonly="!editable"
-          info="From the REMS Sub-Industry option list (Administration → Option Sets). The client's trade, one level below the industry group. Every trade is offered whichever group is chosen."
+          info="From the REMS Industry option list (Administration → Option Sets). The client's trade. Every trade is offered whichever entity type is chosen."
         />
 
-        <!-- ── And what the firm does for it ────────────────────────────────────────────────────── -->
-        <!-- Government is a Service Line, not a Department (AC-REMS-014.5/6). -->
+        <!-- ── What the firm does for it, where it sits, and who heads that ─────────────────────── -->
+        <!-- A trio, not two pairs: the old Service Line — Commercial / Non-Profit / Government / Individual
+             — was dropped for asking what Entity Type above already answers, and what it left behind reads
+             as one line. What we do · where it sits · who runs it. -->
         <app-select
-          v-model="core.serviceLine" :options="serviceLineOptions" label="Service Line" required
-          class="col-12 col-sm-6" :readonly="!editable" :clearable="false"
-          :rules="[requiredRule('a Service Line')]"
-          info="From the REMS Service Line option list (Administration → Option Sets). Audit + Government makes this a Government Audit, which asks for a contract number."
+          v-model="core.subServiceLine" :options="subServiceLineOptions" label="Service Line"
+          class="col-12 col-sm-4" :readonly="!editable"
+          info="From the REMS Service Line option list (Administration → Option Sets). What the firm is actually engaged to do."
         />
-        <!-- Optional like the sub-industry, and for the same reason: nothing branches on it, it classifies
-             the engagement for reporting. -->
         <app-select
-          v-model="core.subServiceLine" :options="subServiceLineOptions" label="Sub-Service Line"
-          class="col-12 col-sm-6" :readonly="!editable"
-          info="From the REMS Sub-Service Line option list (Administration → Option Sets). What the firm is actually engaged to do, one level below the service line."
-        />
-
-        <!-- ── Where it sits, and who heads that ────────────────────────────────────────────────── -->
-        <app-select
-          v-model="core.department" :options="deptOptions" label="Department" required class="col-12 col-sm-6"
+          v-model="core.department" :options="deptOptions" label="Department" required class="col-12 col-sm-4"
           :readonly="!editable" :clearable="false" :rules="[requiredRule('a Department')]"
           info="From the REMS Department option list (Administration → Option Sets). The choice drives the conditional detail below: Audit needs a signed CAF, Tax a fiscal year end."
         />
@@ -59,7 +50,7 @@
              it is derived from, so the pair reads as one answer and its second half explains itself. -->
         <app-readonly-field
           :model-value="directorName" label="Department Director" placeholder="Not assigned"
-          :hint="directorHint" :hint-alert="directorHintAlert" class="col-12 col-sm-6"
+          :hint="directorHint" :hint-alert="directorHintAlert" class="col-12 col-sm-4"
         />
 
         <!-- ── The three people who run it ──────────────────────────────────────────────────────── -->
@@ -146,7 +137,7 @@
         </q-card-section>
       </q-card>
 
-      <!-- Conditional: Government Audit (Department=audit + ServiceLine=government) → contract number +
+      <!-- Conditional: Government Audit (Department=audit + Entity Type=government) → contract number +
            Florida 1% state-fee flag (AC-REMS-014.13). Saved by Save & Next along with everything else. -->
       <q-card v-if="showGovernment" flat bordered class="rems-inner q-mt-md">
         <q-card-section class="q-py-sm text-subtitle2 text-primary">
@@ -213,14 +204,19 @@
 </template>
 
 <script setup>
-// The request's engagement setup (AC-REMS-014/015): department + service line placement, the mapped
-// department director (read-only), the engagement team, fee/realization, and the conditional Audit /
-// Government / Tax detail forms.
+// The request's engagement setup (AC-REMS-014/015): what the client is (entity type + industry), what the
+// firm does for it and where that sits (service line + department), the mapped department director
+// (read-only), the engagement team, fee/realization, and the conditional Audit / Government / Tax forms.
+//
+// Three of those classifications are labelled here differently from the data they hold — Entity Type is
+// `industryGroup`, Industry is `subIndustry`, Service Line is `subServiceLine`. The note at the top of
+// useRemsMeta says why the data kept its names.
 //
 // Controlled by the page rather than saving itself. It holds the fields, announces every edit (`change`)
-// and exposes saveSetup(engagementId) for the page's auto-save to call — which is also why the engagement
-// id is an argument rather than read off the prop: a request created moments ago has one only once the
-// page has filed it.
+// and exposes saveSetup(engagementId, remsId) for the page's auto-save to call — which is also why the
+// engagement id is an argument rather than read off the prop: a request created moments ago has one only
+// once the page has filed it. `remsId` rides along because the signed CAF is filed under the request on
+// the server, not under the engagement: one request has one engagement, so one folder holds both.
 import { ref, computed, watch, nextTick } from "vue";
 import { remsApi, mediaApi } from "services/api";
 import { isAuditDepartment, isTaxDepartment, isGovernmentAudit } from "modules/rems/useRemsMeta";
@@ -233,7 +229,8 @@ import AppSingleFileUpload from "components/common/AppSingleFileUpload.vue";
 const props = defineProps({
   engagement: { type: Object, required: true },
   deptOptions: { type: Array, default: () => [] },
-  serviceLineOptions: { type: Array, default: () => [] },
+  // Rendered as "Service Line" and "Industry"; still named for the data behind them. See the note at the
+  // top of useRemsMeta.
   subServiceLineOptions: { type: Array, default: () => [] },
   subIndustryOptions: { type: Array, default: () => [] },
   taxFormOptions: { type: Array, default: () => [] },
@@ -248,7 +245,7 @@ const props = defineProps({
   billingManagerOptions: { type: Array, default: () => [] },
   editable: { type: Boolean, default: true },
 
-  // The two fields that are NOT the engagement's. The CSE and the Industry Group live on the request's
+  // The two fields that are NOT the engagement's. The CSE and the Entity Type live on the request's
   // EMS form record — what the client's invite is minted from — and are written by a different endpoint,
   // so they are v-modelled through to the page rather than held in `core` below. They are rendered here
   // because the sequence puts them among the engagement's own fields: reading the setup top to bottom
@@ -283,7 +280,9 @@ const dateOnly = (v) => {
 // ---- Core engagement fields (local editable copy, re-synced from the source view) ----
 const buildCore = (e) => ({
   department: e.department || null,
-  serviceLine: e.serviceLine || null,
+  // No `serviceLine`: the old field is gone from the form, and leaving it out of the payload is also what
+  // preserves it — the endpoint reads an omitted field as "leave this alone", so whatever a historical
+  // engagement recorded stays recorded.
   subServiceLine: e.subServiceLine || null,
   subIndustry: e.subIndustry || null,
   engagementExecutiveId: e.engagementExecutive?.id || null,
@@ -322,10 +321,12 @@ watch(() => props.engagement, (e) => {
   nextTick(() => { syncing = false; });
 });
 
-// ---- Conditional visibility keys off the LOCALLY selected department/service line (immediate) ----
+// ---- Conditional visibility keys off the LOCALLY selected department (immediate) ----
 const showAudit = computed(() => isAuditDepartment(core.value.department));
 const showTax = computed(() => isTaxDepartment(core.value.department));
-const showGovernment = computed(() => isGovernmentAudit(core.value.department, core.value.serviceLine));
+// The entity type is the page's, not this form's local copy — it is saved by a different endpoint — so
+// this reads the prop. Same rule the API applies when the round is routed.
+const showGovernment = computed(() => isGovernmentAudit(core.value.department, props.industryGroup));
 
 const departmentChangedUnsaved = computed(() => core.value.department !== props.engagement.department);
 
@@ -380,8 +381,9 @@ const dueDates = computed(() => {
   }
 });
 
-// Department, Service Line, the engagement team and % Realization are mandatory (they are also the
-// backend's send-for-approval prerequisites), so Save & Next cannot pass with any of them blank.
+// Department, the engagement team and % Realization are mandatory (they are also the backend's
+// send-for-approval prerequisites), so Save & Next cannot pass with any of them blank. Service Line is
+// not among them: it kept the optional standing it had under its old name, and nothing branches on it.
 const requiredRule = (what) => (v) => (v !== null && v !== undefined && v !== "") || `Select ${what}`;
 
 const feeRules = [(v) => v === "" || v === null || Number(v) >= 0 || "Enter a valid amount"];
@@ -416,7 +418,7 @@ const toNum = (v) => (v === "" || v === null || v === undefined ? null : Number(
 //
 // Ranges are checked all the same. A blank fee means "not known yet"; a fee of -5 or a realization of
 // 300% is wrong however early it is typed, and both the API and the DB reject them.
-const saveSetup = async (engagementId) => {
+const saveSetup = async (engagementId, remsId = null) => {
   if (!validateFormats()) {
     throw new Error(
       "Check the engagement setup: the fee cannot be negative, realization is 0–100%, and the number " +
@@ -425,7 +427,6 @@ const saveSetup = async (engagementId) => {
 
   let view = (await remsApi.updateEngagement(engagementId, {
     department: core.value.department,
-    serviceLine: core.value.serviceLine,
     // Empty string rather than null for the two clearable ones: the endpoint reads null as "leave this
     // field alone" and only an empty value clears it, so sending null would make Clear look like it
     // worked and then bring the old value back on the next read.
@@ -450,7 +451,8 @@ const saveSetup = async (engagementId) => {
     });
   }
   if (cafFile.value) {
-    const media = await mediaApi.upload(cafFile.value, "Document");
+    const media = await mediaApi.upload(
+      cafFile.value, "ClientAcceptance", remsId ? { type: "Rems", id: remsId } : null);
     view = await remsApi.uploadCaf(engagementId, media.id);
     syncing = true;
     cafFile.value = null;

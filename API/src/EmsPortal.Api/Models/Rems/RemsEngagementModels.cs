@@ -230,17 +230,23 @@ public sealed class RemsEntityContactInput
 public sealed class UpdateRemsEngagementRequest
 {
     public string? Department { get; set; }
+
+    /// <summary>
+    /// RETIRED, and still accepted only so an old caller is not broken by sending it. The setup form drops
+    /// it from the payload entirely, which is what preserves whatever a historical engagement recorded.
+    /// </summary>
     public string? ServiceLine { get; set; }
 
     /// <summary>
-    /// The service being sold, below the line (option-set <c>REMS.SubServiceLine</c> code). Optional, so —
-    /// like the client's own optional fields — an EMPTY string clears it while null leaves it alone.
+    /// The service being sold — the SERVICE LINE as the setup form labels it (option-set
+    /// <c>REMS.SubServiceLine</c> code; the key kept its old name). Optional, so — like the client's own
+    /// optional fields — an EMPTY string clears it while null leaves it alone.
     /// </summary>
     public string? SubServiceLine { get; set; }
 
     /// <summary>
-    /// The client's trade, below the industry group (option-set <c>REMS.SubIndustry</c> code). Cleared with
-    /// an empty string, as above.
+    /// The client's trade — the INDUSTRY as the setup form labels it (option-set <c>REMS.SubIndustry</c>
+    /// code, likewise). Cleared with an empty string, as above.
     /// </summary>
     public string? SubIndustry { get; set; }
 
@@ -313,14 +319,20 @@ public sealed class RemsCommissionInput
 // -------------------- Shared helpers --------------------
 
 /// <summary>
-/// The canonical engagement Department / ServiceLine codes this WO branches on (seeded in
+/// The canonical engagement Department / entity-type codes this WO branches on (seeded in
 /// <c>DefaultOptionSets</c>). Option-set values are stored as codes and not otherwise validated at save.
 /// </summary>
 internal static class RemsEngagementCodes
 {
     public const string DepartmentAudit = "audit";
     public const string DepartmentTax = "tax";
-    public const string ServiceLineGovernment = "government";
+
+    /// <summary>
+    /// The <c>REMS.IndustryGroup</c> code shown as Entity Type = "Government". A government AUDIT used to
+    /// be read off the engagement's service line; that list was dropped for asking what the entity type
+    /// already answers, so the rule now reads the entity type itself.
+    /// </summary>
+    public const string EntityTypeGovernment = "government";
 
     public static bool IsAudit(string? department)
         => string.Equals(department, DepartmentAudit, StringComparison.OrdinalIgnoreCase);
@@ -328,8 +340,14 @@ internal static class RemsEngagementCodes
     public static bool IsTax(string? department)
         => string.Equals(department, DepartmentTax, StringComparison.OrdinalIgnoreCase);
 
-    public static bool IsGovernmentAudit(string? department, string? serviceLine)
-        => IsAudit(department) && string.Equals(serviceLine, ServiceLineGovernment, StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// An audit engagement for a government entity — the one that additionally needs a contract number and
+    /// the Florida 1% state-fee flag. <paramref name="entityType"/> is the request's
+    /// <c>REMSForm.IndustryGroup</c>, not a field of the engagement: it is fixed when the intake form goes
+    /// out, which is exactly the guarantee this rule wants.
+    /// </summary>
+    public static bool IsGovernmentAudit(string? department, string? entityType)
+        => IsAudit(department) && string.Equals(entityType, EntityTypeGovernment, StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>The computed tax due-date schedule stored as JSON on <c>REMSEngagementTaxDetail.CalculatedDueDates</c>.</summary>

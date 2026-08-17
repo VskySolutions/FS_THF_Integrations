@@ -15,7 +15,7 @@ namespace EmsPortal.Api.Controllers;
 /// assign/duplicate/delete actions on a REMS request. Endpoints are permission-gated; row visibility is
 /// additionally record-level (drafts are creator-only; a partner sees requests they created or are
 /// involved in; an Admin/Super Admin sees the whole tenant pool). The conversation thread, activity
-/// timeline, and attachments reuse the Universal Features (Notes/Activity/Attachments) endpoints keyed
+/// timeline, and attachments reuse the Universal Features (Conversations/Activity/Attachments) endpoints keyed
 /// on <see cref="EntityType.Rems"/>.
 /// </summary>
 [ApiController]

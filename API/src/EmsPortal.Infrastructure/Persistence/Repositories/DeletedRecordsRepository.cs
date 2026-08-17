@@ -362,8 +362,8 @@ internal sealed class DeletedRecordsRepository : IDeletedRecordsRepository
     /// <summary>Un-deletes the soft-deleted UF rows that share the record's (EntityType, EntityId) key.</summary>
     private async Task RestoreUniversalFeaturesAsync(EntityType entityType, Guid entityId, CancellationToken cancellationToken)
     {
-        await _dbContext.Notes.IgnoreQueryFilters().Where(n => n.EntityType == entityType && n.EntityId == entityId && n.Deleted)
-            .ExecuteUpdateAsync(s => s.SetProperty(n => n.Deleted, false).SetProperty(n => n.DeletedOnUtc, (DateTime?)null), cancellationToken);
+        await _dbContext.ConversationMessages.IgnoreQueryFilters().Where(m => m.EntityType == entityType && m.EntityId == entityId && m.Deleted)
+            .ExecuteUpdateAsync(s => s.SetProperty(m => m.Deleted, false).SetProperty(m => m.DeletedOnUtc, (DateTime?)null), cancellationToken);
         await _dbContext.EntityTags.IgnoreQueryFilters().Where(e => e.EntityType == entityType && e.EntityId == entityId && e.Deleted)
             .ExecuteUpdateAsync(s => s.SetProperty(e => e.Deleted, false).SetProperty(e => e.DeletedOnUtc, (DateTime?)null), cancellationToken);
         await _dbContext.Attachments.IgnoreQueryFilters().Where(a => a.EntityType == entityType && a.EntityId == entityId && a.Deleted)
@@ -379,7 +379,7 @@ internal sealed class DeletedRecordsRepository : IDeletedRecordsRepository
     /// <summary>Permanently removes all UF rows for the record's (EntityType, EntityId) key. Child rows cascade via DB FKs.</summary>
     private async Task CascadeDeleteUniversalFeaturesAsync(EntityType entityType, Guid entityId, CancellationToken cancellationToken)
     {
-        await _dbContext.Notes.IgnoreQueryFilters().Where(n => n.EntityType == entityType && n.EntityId == entityId).ExecuteDeleteAsync(cancellationToken);
+        await _dbContext.ConversationMessages.IgnoreQueryFilters().Where(m => m.EntityType == entityType && m.EntityId == entityId).ExecuteDeleteAsync(cancellationToken);
         await _dbContext.EntityTags.IgnoreQueryFilters().Where(e => e.EntityType == entityType && e.EntityId == entityId).ExecuteDeleteAsync(cancellationToken);
         await _dbContext.Attachments.IgnoreQueryFilters().Where(a => a.EntityType == entityType && a.EntityId == entityId).ExecuteDeleteAsync(cancellationToken);
         await _dbContext.ActivityEvents.IgnoreQueryFilters().Where(a => a.EntityType == entityType && a.EntityId == entityId).ExecuteDeleteAsync(cancellationToken);

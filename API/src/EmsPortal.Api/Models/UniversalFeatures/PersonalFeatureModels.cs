@@ -27,5 +27,5 @@ public sealed class PdfExportRequest
 {
     public EntityType EntityType { get; set; }
     public Guid EntityId { get; set; }
-    public bool IncludeNotes { get; set; }
+    public bool IncludeConversation { get; set; }
 }

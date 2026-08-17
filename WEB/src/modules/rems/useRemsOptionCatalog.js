@@ -94,15 +94,14 @@ const SEED = {
     { label: "Quarterly", value: "quarterly" },
     { label: "Annual", value: "annual" }
   ],
-  serviceLine: [
-    { label: "Commercial", value: "commercial" },
-    { label: "Non-Profit", value: "non_profit" },
-    { label: "Government", value: "government" },
-    { label: "Individual", value: "individual" }
-  ],
-  // One level below the service line: the service actually being sold. Nothing branches on it — the
-  // Government Audit rule keys off the LINE — so this is classification only. The Internal-* values are
-  // the firm's own work, booked as engagements so the same setup and approval route covers them.
+  // A `serviceLine` list (Commercial / Non-Profit / Government / Individual) stood here. It asked what
+  // KIND of client this is — which is what industryGroup, now shown as ENTITY TYPE, already answers — so
+  // the field was dropped from Engagement Setup and the Government Audit rule moved to the entity type.
+  //
+  // The service actually being sold, and what the form now calls the SERVICE LINE. The key stays
+  // REMS.SubServiceLine (below): every tenant's own copy of the list is keyed by it, and so are the codes
+  // already stored on engagements. Nothing branches on this one — it is classification. The Internal-*
+  // values are the firm's own work, booked as engagements so the same setup and approval route covers them.
   subServiceLine: [
     { label: "Attest Services", value: "attest_services" },
     { label: "Tax Compliance", value: "tax_compliance" },
@@ -131,9 +130,10 @@ const SEED = {
     { label: "Internal-IT", value: "internal_it" },
     { label: "Internal-Miscellaneous", value: "internal_miscellaneous" }
   ],
-  // One level below the industry group: the client's trade. Deliberately NOT filtered by the chosen group
-  // — the groups do not partition cleanly (a hospital is Health Care whether it is Commercial or
-  // Not-for-Profit), so the whole list is offered and the pairing is the user's to make.
+  // The client's trade — what the form now calls the INDUSTRY, keyed REMS.SubIndustry for the same reason
+  // as the service line above. Deliberately NOT filtered by the chosen entity type: the two do not
+  // partition cleanly (a hospital is Health Care whether it is Commercial or Not-for-Profit), so the whole
+  // list is offered and the pairing is the user's to make.
   subIndustry: [
     { label: "Affordable Housing", value: "affordable_housing" },
     { label: "Agribusiness", value: "agribusiness" },
@@ -170,9 +170,14 @@ const SET_KEYS = {
   type: "REMS.Type",
   referralSource: "REMS.ReferralSource",
   status: "REMS.Status",
+  // Three of these read one way in the UI and another here. The KEY is what a tenant's own copy of the
+  // list is filed under, so renaming it would orphan theirs and strand the codes stored against it —
+  // only the display name moved:
+  //   industryGroup   → "Entity Type"
+  //   subIndustry     → "Industry"
+  //   subServiceLine  → "Service Line"
   industryGroup: "REMS.IndustryGroup",
   department: "REMS.Department",
-  serviceLine: "REMS.ServiceLine",
   subServiceLine: "REMS.SubServiceLine",
   subIndustry: "REMS.SubIndustry",
   billingPeriod: "REMS.BillingPeriod"

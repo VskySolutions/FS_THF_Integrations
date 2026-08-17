@@ -7,30 +7,32 @@ namespace EmsPortal.Infrastructure.Persistence.Configurations;
 // EF Core configurations for the Universal Features tables. All carry a TenantId and are subject to
 // the ambient tenant + soft-delete global query filter declared in EmsPortalDbContext.
 
-internal sealed class NoteConfiguration : IEntityTypeConfiguration<Note>
+internal sealed class ConversationMessageConfiguration : IEntityTypeConfiguration<ConversationMessage>
 {
-    public void Configure(EntityTypeBuilder<Note> builder)
+    public void Configure(EntityTypeBuilder<ConversationMessage> builder)
     {
-        builder.ToTable("Notes");
-        builder.HasKey(n => n.Id);
-        builder.Property(n => n.EntityType).HasConversion<int>().IsRequired();
-        builder.Property(n => n.Body).HasColumnType("nvarchar(max)").IsRequired();
-        builder.HasIndex(n => new { n.EntityType, n.EntityId });
-        builder.HasIndex(n => n.TenantId);
-        builder.HasMany(n => n.Mentions)
-            .WithOne(m => m.Note!)
-            .HasForeignKey(m => m.NoteId)
+        builder.ToTable("ConversationMessages");
+        builder.HasKey(m => m.Id);
+        builder.Property(m => m.EntityType).HasConversion<int>().IsRequired();
+        builder.Property(m => m.Body).HasColumnType("nvarchar(max)").IsRequired();
+        // The conversation itself has no row — this pair IS the thread, so it is the index every read of
+        // a record's conversation goes through.
+        builder.HasIndex(m => new { m.EntityType, m.EntityId });
+        builder.HasIndex(m => m.TenantId);
+        builder.HasMany(m => m.Mentions)
+            .WithOne(x => x.ConversationMessage!)
+            .HasForeignKey(x => x.ConversationMessageId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }
 
-internal sealed class NoteMentionConfiguration : IEntityTypeConfiguration<NoteMention>
+internal sealed class ConversationMessageMentionConfiguration : IEntityTypeConfiguration<ConversationMessageMention>
 {
-    public void Configure(EntityTypeBuilder<NoteMention> builder)
+    public void Configure(EntityTypeBuilder<ConversationMessageMention> builder)
     {
-        builder.ToTable("NoteMentions");
+        builder.ToTable("ConversationMessageMentions");
         builder.HasKey(m => m.Id);
-        builder.HasIndex(m => m.NoteId);
+        builder.HasIndex(m => m.ConversationMessageId);
         builder.HasIndex(m => new { m.MentionedUserId, m.IsRead });
         builder.HasIndex(m => m.TenantId);
     }

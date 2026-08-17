@@ -319,7 +319,9 @@ const uploading = ref(false);
 const onCropUpload = async (file) => {
   uploading.value = true;
   try {
-    const media = await mediaApi.upload(file, "Profile");
+    // Filed under the person it pictures, so the server's copy is findable without a database lookup.
+    const media = await mediaApi.upload(
+      file, "Profile", profile.value?.id ? { type: "Person", id: profile.value.id } : null);
     form.profileMediaId = media.id;
     previewUrl.value = mediaApi.absoluteUrl(media.publicUrl);
     imageUpload.value?.closeCrop();

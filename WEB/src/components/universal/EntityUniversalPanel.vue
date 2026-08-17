@@ -41,17 +41,17 @@
 <script setup>
 import { ref, reactive, computed, watch } from "vue";
 import EntityTagsPanel from "./EntityTagsPanel.vue";
-import EntityNotesPanel from "./EntityNotesPanel.vue";
+import EntityConversationPanel from "./EntityConversationPanel.vue";
 import EntityActivityTimeline from "./EntityActivityTimeline.vue";
 import EntityChecklistsPanel from "./EntityChecklistsPanel.vue";
 import EntityAttachmentsPanel from "./EntityAttachmentsPanel.vue";
 
-// The reusable Universal Features collaboration panel: inline tags plus tabbed notes, activity,
+// The reusable Universal Features collaboration panel: inline tags plus a tabbed conversation, activity,
 // checklists and attachments for any (entityType, entityId). Drop it onto any detail page:
 //   <entity-universal-panel :entity-type="EntityType.User" :entity-id="userId" />
 // Pick/Order sections with `tabs`, hide tags with `:show-tags="false"`, add a heading with `title`.
 const TAB_REGISTRY = {
-  notes: { label: "Notes", icon: "o_chat", component: EntityNotesPanel },
+  conversation: { label: "Conversation", icon: "o_chat", component: EntityConversationPanel },
   activity: { label: "Activity", icon: "o_history", component: EntityActivityTimeline },
   checklists: { label: "Checklists", icon: "o_checklist", component: EntityChecklistsPanel },
   attachments: { label: "Attachments", icon: "o_attach_file", component: EntityAttachmentsPanel }
@@ -61,7 +61,7 @@ const props = defineProps({
   entityType: { type: Number, required: true },
   entityId: { type: String, required: true },
   // Which sections to show, in order. Unknown keys are ignored.
-  tabs: { type: Array, default: () => ["notes", "activity", "checklists", "attachments"] },
+  tabs: { type: Array, default: () => ["conversation", "activity", "checklists", "attachments"] },
   // Show the inline tags row above the tabs.
   showTags: { type: Boolean, default: true },
   // The tab open on first render; defaults to the first visible tab.

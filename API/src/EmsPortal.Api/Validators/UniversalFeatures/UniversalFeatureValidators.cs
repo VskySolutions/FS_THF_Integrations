@@ -3,9 +3,9 @@ using EmsPortal.Api.Models.UniversalFeatures;
 
 namespace EmsPortal.Api.Validators.UniversalFeatures;
 
-public sealed class CreateNoteRequestValidator : AbstractValidator<CreateNoteRequest>
+public sealed class CreateConversationMessageRequestValidator : AbstractValidator<CreateConversationMessageRequest>
 {
-    public CreateNoteRequestValidator()
+    public CreateConversationMessageRequestValidator()
     {
         RuleFor(x => x.EntityId).NotEmpty();
         RuleFor(x => x.Body).NotEmpty().MaximumLength(10000);
@@ -13,9 +13,9 @@ public sealed class CreateNoteRequestValidator : AbstractValidator<CreateNoteReq
     }
 }
 
-public sealed class UpdateNoteRequestValidator : AbstractValidator<UpdateNoteRequest>
+public sealed class UpdateConversationMessageRequestValidator : AbstractValidator<UpdateConversationMessageRequest>
 {
-    public UpdateNoteRequestValidator()
+    public UpdateConversationMessageRequestValidator()
     {
         RuleFor(x => x.Body).NotEmpty().MaximumLength(10000);
     }

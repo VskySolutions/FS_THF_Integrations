@@ -3,7 +3,7 @@
 // The Partner/CSE creates a request, fills the whole thing — client details AND engagement setup — and
 // sends the intake link to the client themselves. The Admin appears only once the client has answered,
 // as a reviewer who can return the setup for rework. So the Admin Pool, the EMS Inbox and the Build EMS
-// screen are all gone: nothing waits in a pool to be picked up, and CSE + Industry Group are fields on
+// screen are all gone: nothing waits in a pool to be picked up, and CSE + Entity Type are fields on
 // the initiator's own form rather than a separate admin step.
 //
 // Each route is permission-gated (the router guard reads meta.permissions → hasAnyPermission).

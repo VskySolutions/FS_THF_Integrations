@@ -5,8 +5,8 @@ namespace EmsPortal.Domain.Entities;
 /// <summary>
 /// The engagement being set up by a <see cref="REMS"/> request — exactly one per request. Holds the
 /// servicing team, fee estimate, realization and billing schedule, and routes through approval.
-/// <see cref="Department"/>, <see cref="ServiceLine"/>, <see cref="SubServiceLine"/>,
-/// <see cref="SubIndustry"/> and <see cref="BillingPeriod"/> store option-set codes.
+/// <see cref="Department"/>, <see cref="SubServiceLine"/>, <see cref="SubIndustry"/> and
+/// <see cref="BillingPeriod"/> store option-set codes (<see cref="ServiceLine"/> did too, and is retired).
 /// <para>
 /// It hangs off the REQUEST, not off a <see cref="REMSEntity"/>. The initiator fills the engagement
 /// setup before the client is ever contacted, so there is no entity to attach it to when it is created —
@@ -29,20 +29,26 @@ public class REMSEngagement : AuditableEntity
     /// <summary>Owning department (option-set code).</summary>
     public string? Department { get; set; }
 
-    /// <summary>Service line (option-set code).</summary>
+    /// <summary>
+    /// RETIRED. The old service line (Commercial / Non-Profit / Government / Individual), which asked what
+    /// KIND of client this is — the question the request's entity type already answers. Dropped from the
+    /// setup form, and nothing reads or writes it any more. Kept on the row so historical engagements do
+    /// not lose what was recorded against them; expect it to be null on anything raised since.
+    /// </summary>
     public string? ServiceLine { get; set; }
 
     /// <summary>
-    /// The service actually being sold, one level below <see cref="ServiceLine"/> (option-set
-    /// <c>REMS.SubServiceLine</c> code). Classification only — nothing branches on it.
+    /// The service actually being sold — what the setup form calls the SERVICE LINE (option-set
+    /// <c>REMS.SubServiceLine</c> code; the key keeps its old name so each tenant's own copy of the list
+    /// stays theirs). Classification only — nothing branches on it.
     /// </summary>
     public string? SubServiceLine { get; set; }
 
     /// <summary>
-    /// The client's trade, one level below the request's industry group (option-set
-    /// <c>REMS.SubIndustry</c> code). The GROUP lives on the form record because it decides what the client
-    /// is asked and is frozen once the intake goes out; this is internal classification, so it belongs to
-    /// the engagement and stays editable for as long as the setup does.
+    /// The client's trade — what the setup form calls the INDUSTRY (option-set <c>REMS.SubIndustry</c>
+    /// code, the key likewise kept). The ENTITY TYPE above it lives on the form record because it decides
+    /// what the client is asked and is frozen once the intake goes out; this is internal classification, so
+    /// it belongs to the engagement and stays editable for as long as the setup does.
     /// </summary>
     public string? SubIndustry { get; set; }
 

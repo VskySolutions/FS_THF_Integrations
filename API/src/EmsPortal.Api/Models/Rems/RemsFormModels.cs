@@ -69,7 +69,27 @@ public sealed record RemsEmailEventRow(
     string RecipientEmail,
     DateTime OccurredOnUtc,
     string? ProviderMessageId,
-    string? Detail);
+    string? Detail,
+    // Who pressed Send or Remind. Null on the events a provider reported back (delivered / opened /
+    // failed): nobody here caused those, and "the system" is not a person worth naming.
+    string? SentBy);
+
+/// <summary>
+/// The email log as one screen: the delivery events, and whether THIS caller can nudge the client from
+/// it. <paramref name="CanRemind"/> is the same test the reminder endpoint itself applies — the
+/// rems.forms.send permission, the record rule about whose request this is, and the state window a
+/// reminder makes sense in — so the button is offered exactly when pressing it would work.
+/// <para>
+/// <paramref name="RemindBlockedReason"/> explains a refusal only where knowing it changes what the
+/// reader would do: the request's own state ("the client has already submitted this"), or its being with
+/// somebody else. A caller who simply does not hold rems.forms.send gets null and no button — that they
+/// cannot send is not news to them.
+/// </para>
+/// </summary>
+public sealed record RemsEmailLog(
+    bool CanRemind,
+    string? RemindBlockedReason,
+    IReadOnlyList<RemsEmailEventRow> Events);
 
 /// <summary>
 /// One EMS-Inbox row (WO-112, AC-REMS-009): a request with a form, its request context, form state,

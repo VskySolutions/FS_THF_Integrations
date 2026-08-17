@@ -32,6 +32,20 @@ public class REMSFormEmailEvent : AuditableEntity
     /// <summary>Raw provider webhook payload as JSON.</summary>
     public string? ProviderPayload { get; set; }
 
+    /// <summary>
+    /// The subject line the client was sent, on the events this portal raised itself (Sent and Reminder).
+    /// Null on provider callbacks, which report on a message rather than being one.
+    /// </summary>
+    public string? Subject { get; set; }
+
+    /// <summary>
+    /// The message body the client was sent, as it went — the sender may edit the template's wording in
+    /// the Send dialog before pressing send, so re-rendering the template later would not reproduce it.
+    /// Stored so the Email Log can show what was actually said rather than what would be said today.
+    /// Null on provider callbacks, and on sends made before this was recorded.
+    /// </summary>
+    public string? Body { get; set; }
+
     // ---- Navigations ----
     public REMSForm? Form { get; set; }
 }

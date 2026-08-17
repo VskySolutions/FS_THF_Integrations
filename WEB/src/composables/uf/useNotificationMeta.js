@@ -1,10 +1,13 @@
 // NotificationType enum mirror (backend EmsPortal.Domain.Enums.NotificationType).
+//
+// EVERY VALUE HERE IS ONE THE BACKEND ACTUALLY SENDS. This list becomes the type filter on the
+// notifications page, so a value the server can never raise is a filter that always finds nothing.
+// Retired numbers, never to be reused: 3, 4, 5 (sync notifications, from an integration that no longer
+// exists), 6 (a generic "System" catch-all nothing raised) and 14 (approval resubmitted — a resubmitted
+// round arrives as RemsApprovalRequested with a different title).
 export const NotificationType = Object.freeze({
   Mention: 1,
   ReminderDue: 2,
-  SyncCompleted: 4,
-  SyncFailed: 5,
-  System: 6,
   // REMS (Phase 15, WO-111..114). All in-app only; each deep-links to the REMS request via EntityType.Rems.
   RemsRequestAssigned: 7,
   RemsCseAssigned: 8,
@@ -13,7 +16,6 @@ export const NotificationType = Object.freeze({
   RemsApprovalRequested: 11,
   RemsEngagementApproved: 12,
   RemsEngagementRejected: 13,
-  RemsApprovalResubmitted: 14,
   RemsRequestSubmitted: 15,
   RemsRequestPickedUp: 16
 });
@@ -21,9 +23,6 @@ export const NotificationType = Object.freeze({
 const META = {
   [NotificationType.Mention]: { label: "Mention", icon: "o_alternate_email", color: "primary" },
   [NotificationType.ReminderDue]: { label: "Reminder", icon: "o_alarm", color: "orange-8" },
-  [NotificationType.SyncCompleted]: { label: "Sync completed", icon: "o_cloud_done", color: "positive" },
-  [NotificationType.SyncFailed]: { label: "Sync failed", icon: "o_error", color: "negative" },
-  [NotificationType.System]: { label: "System", icon: "o_notifications", color: "grey-7" },
   [NotificationType.RemsRequestAssigned]: { label: "REMS request assigned", icon: "o_assignment_ind", color: "primary" },
   [NotificationType.RemsCseAssigned]: { label: "CSE assigned", icon: "o_support_agent", color: "primary" },
   [NotificationType.RemsFormSent]: { label: "EMS form sent", icon: "o_send", color: "teal-7" },
@@ -31,9 +30,10 @@ const META = {
   [NotificationType.RemsApprovalRequested]: { label: "Approval requested", icon: "o_approval", color: "orange-8" },
   [NotificationType.RemsEngagementApproved]: { label: "Engagement approved", icon: "o_verified", color: "positive" },
   [NotificationType.RemsEngagementRejected]: { label: "Engagement rejected", icon: "o_cancel", color: "negative" },
-  [NotificationType.RemsApprovalResubmitted]: { label: "Approval resubmitted", icon: "o_restart_alt", color: "primary" },
-  [NotificationType.RemsRequestSubmitted]: { label: "Waiting for pickup", icon: "o_pan_tool", color: "amber-8" },
-  [NotificationType.RemsRequestPickedUp]: { label: "Request picked up", icon: "o_how_to_reg", color: "teal-7" }
+  // Both are named for what they carry NOW, not for the pool submissions and pickups the numbers were
+  // minted for — that pool is gone, and a filter labelled "Waiting for pickup" would find only send-backs.
+  [NotificationType.RemsRequestSubmitted]: { label: "Sent back for rework", icon: "o_assignment_return", color: "amber-8" },
+  [NotificationType.RemsRequestPickedUp]: { label: "Assignment & rework updates", icon: "o_how_to_reg", color: "teal-7" }
 };
 
 const FALLBACK = { label: "Notification", icon: "o_notifications", color: "grey-7" };

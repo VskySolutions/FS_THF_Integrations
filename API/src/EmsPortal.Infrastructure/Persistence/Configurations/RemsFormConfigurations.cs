@@ -84,6 +84,12 @@ internal sealed class RemsFormEmailEventConfiguration : IEntityTypeConfiguration
         builder.Property(e => e.RecipientEmail).IsRequired().HasMaxLength(256);
         builder.Property(e => e.ProviderPayload).HasColumnType("nvarchar(max)");
 
+        // What the client was actually sent, on the Sent and Reminder rows. The subject is a header and is
+        // bounded; the body is rich text the sender may have rewritten wholesale, so it gets the same
+        // unrationed column the send dialog's editor implies.
+        builder.Property(e => e.Subject).HasMaxLength(512);
+        builder.Property(e => e.Body).HasColumnType("nvarchar(max)");
+
         builder.HasOne<Tenant>().WithMany().HasForeignKey(e => e.TenantId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(e => e.TenantId);
 

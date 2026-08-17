@@ -62,6 +62,8 @@ public sealed record RemsClientFormItem(
     Guid RemsId,
     string RemsNumber,
     string ClientName,
+    /// <summary>The client this one is a subsidiary of, or null on every other request type.</summary>
+    string? ParentClientName,
     string RequestStatus,
     bool Submitted,
     DateTime? SubmittedOnUtc,

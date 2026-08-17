@@ -162,6 +162,8 @@ const engagementBlocked = (row) =>
 const columns = computed(() => [
   { name: "remsNumber", label: "Request ID", field: "remsNumber", align: "left", sortable: true, default: true, filterable: false },
   { name: "clientName", label: "Client", field: "clientName", align: "left", sortable: true, default: true, filterable: false },
+  // Populated only on a subsidiary, so it is off by default like the other context columns.
+  { name: "parentClientName", label: "Parent Client", field: (r) => r.parentClientName || "—", align: "left", default: false, filterable: false },
   { name: "submitted", label: "Form", field: "submitted", align: "left", sortable: true, default: true, filterOptions: REMS_FORM_SUBMITTED_OPTIONS },
   // Off by default so the table keeps its current shape; it is in the filter drawer either way.
   { name: "requestStatus", label: "Request Status", field: "requestStatus", align: "left", default: false, filterOptions: statusFilterOptions.value },

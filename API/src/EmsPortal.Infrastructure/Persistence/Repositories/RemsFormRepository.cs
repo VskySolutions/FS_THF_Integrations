@@ -78,6 +78,7 @@ internal sealed class RemsFormRepository : IRemsFormRepository
                 x.Rems.Id,
                 x.Rems.REMSNumber,
                 x.Rems.RequestedClientName,
+                x.Rems.ParentClientName,
                 x.Rems.Status,
                 x.Form.Status == RemsFormStatus.Submitted || x.Form.SubmittedOnUtc != null,
                 x.Form.SubmittedOnUtc,

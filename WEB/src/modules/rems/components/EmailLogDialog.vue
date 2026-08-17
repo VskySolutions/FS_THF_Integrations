@@ -37,14 +37,25 @@
                      have no actor, so they say nothing rather than crediting the last human. -->
                 <template v-if="ev.sentBy"> · by {{ ev.sentBy }}</template>
               </q-item-label>
-              <q-item-label v-if="ev.providerMessageId" caption class="event-id">
-                {{ ev.providerMessageId }}
+              <!-- The subject line stood in for by a transport id here before. The id ("…@localhost") is
+                   how the provider's callbacks find this row; it is not something a reader can act on,
+                   and the message itself is what they opened the log to see. -->
+              <q-item-label v-if="ev.subject" caption class="event-subject">
+                {{ ev.subject }}
               </q-item-label>
               <!-- Why a Failed event failed. Only set for failures the portal recorded itself; provider
                    webhook payloads are never echoed here. -->
               <q-item-label v-if="ev.detail" caption class="text-negative event-detail">
                 {{ ev.detail }}
               </q-item-label>
+            </q-item-section>
+
+            <!-- Only the rows that ARE a message carry one to read. A delivery or open callback reports
+                 on a message rather than being one, so it has nothing to preview. -->
+            <q-item-section v-if="ev.body" side>
+              <q-btn flat round dense color="primary" icon="o_visibility" @click="openPreview(ev)">
+                <q-tooltip>Preview email</q-tooltip>
+              </q-btn>
             </q-item-section>
           </q-item>
         </q-list>
@@ -66,11 +77,56 @@
         <div v-if="!canRemind && remindBlockedReason" class="col text-caption text-grey-7 remind-note">
           {{ remindBlockedReason }}
         </div>
+        <!-- The client's own form link, for chasing them by any means other than this dialog — a phone
+             call, a message from someone's own mailbox. Present only while the link is theirs to follow:
+             the server withholds it until the form has been sent, and again once they have answered, so
+             this button appears and disappears with it rather than deciding for itself.
+             Offered to anyone who may READ the log: copying a link is not sending mail as the firm. -->
+        <q-btn
+          v-if="clientFormLink" outline no-caps color="primary" icon="o_content_copy"
+          label="Client Form" @click="copyClientFormLink"
+        >
+          <q-tooltip>Copy the client's intake form link</q-tooltip>
+        </q-btn>
         <q-btn
           v-if="canRemind" unelevated no-caps color="amber-8" icon="o_notifications_active"
           label="Send reminder" @click="reminderOpen = true"
         />
         <q-btn flat no-caps color="grey-8" label="Close" @click="open = false" />
+      </q-card-actions>
+    </q-card>
+  </q-dialog>
+
+  <!-- The message as the client received it, read from what was stored at send rather than re-rendered
+       from the template: the sender may rewrite any of it in the compose dialog, so the template is not a
+       record of what went out. Read-only — an email that has already gone cannot be edited. -->
+  <q-dialog v-model="previewOpen">
+    <q-card class="preview-card">
+      <q-card-section class="row items-center no-wrap">
+        <div class="col">
+          <div class="text-subtitle1 text-primary">{{ emailEventLabel(previewing.eventType) }} email</div>
+          <div class="text-caption text-grey-7">
+            To {{ previewing.recipientEmail || "—" }} · {{ fmt.formatDateTime(previewing.occurredOnUtc) }}
+          </div>
+        </div>
+        <q-btn flat round dense icon="o_close" color="grey-7" @click="previewOpen = false" />
+      </q-card-section>
+      <q-separator />
+      <q-card-section>
+        <div class="preview-subject-label">Subject</div>
+        <div class="preview-subject">{{ previewing.subject || "—" }}</div>
+      </q-card-section>
+      <q-separator />
+      <!-- The body IS html — it is what the template produces and what the rich-text editor wrote. It is
+           staff-authored and already stored, so it is rendered rather than escaped, the same way the
+           compose dialog showed it before sending. -->
+      <q-card-section class="preview-body">
+        <!-- eslint-disable-next-line vue/no-v-html -->
+        <div v-html="previewing.body" />
+      </q-card-section>
+      <q-separator />
+      <q-card-actions align="right">
+        <q-btn flat no-caps color="grey-8" label="Close" @click="previewOpen = false" />
       </q-card-actions>
     </q-card>
   </q-dialog>
@@ -84,7 +140,7 @@
 
 <script setup>
 import { ref, computed, watch } from "vue";
-import { remsApi, getApiErrorMessage } from "services/api";
+import { remsApi, getApiErrorMessage, webUrl } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useDateFormat } from "composables/useDateFormat";
 import { useRemsMeta } from "modules/rems/useRemsMeta";
@@ -111,6 +167,13 @@ const open = computed({
 const events = ref([]);
 const loading = ref(false);
 const reminderOpen = ref(false);
+const previewOpen = ref(false);
+// The row being read. An object rather than an id so the preview keeps its content while the dialog
+// animates shut, instead of emptying out under the reader.
+const previewing = ref({});
+// The client's intake link, or empty where the server withholds it — before the form has been sent, and
+// once the client has answered. See the footer button.
+const clientFormLink = ref("");
 // Whether THIS caller can chase the client, decided by the server rather than re-derived from a row: it
 // is the reminder endpoint's own answer — permission, whose request it is, and the state window — so the
 // button is offered exactly when pressing it would work.
@@ -125,13 +188,31 @@ const load = async () => {
     events.value = log?.events || [];
     canRemind.value = !!log?.canRemind;
     remindBlockedReason.value = log?.remindBlockedReason || "";
+    clientFormLink.value = webUrl(log?.clientFormLink);
   } catch (err) {
     notify.error(getApiErrorMessage(err));
     events.value = [];
     canRemind.value = false;
     remindBlockedReason.value = "";
+    clientFormLink.value = "";
   } finally {
     loading.value = false;
+  }
+};
+
+const openPreview = (ev) => {
+  previewing.value = ev;
+  previewOpen.value = true;
+};
+
+const copyClientFormLink = async () => {
+  try {
+    await navigator.clipboard.writeText(clientFormLink.value);
+    notify.success("Client form link copied.");
+  } catch {
+    // Denied clipboard permission, or an insecure origin. Saying so beats a button that looks like it
+    // worked — the link is on screen in the send dialog if they need it by hand.
+    notify.warning("Could not copy the link. Your browser blocked clipboard access.");
   }
 };
 
@@ -144,11 +225,37 @@ watch(() => props.modelValue, (isOpen) => { if (isOpen) load(); });
 </script>
 
 <style scoped>
-.event-id {
-  font-family: monospace;
-  font-size: 11px;
-  word-break: break-all;
+.event-subject {
+  color: var(--ink-900);
+  white-space: normal;
+  word-break: break-word;
 }
+.preview-card {
+  width: 640px;
+  max-width: 92vw;
+  border-radius: 12px;
+}
+.preview-subject-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--ink-500);
+}
+.preview-subject {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-900);
+  word-break: break-word;
+}
+/* The body is whatever the template and the sender produced, so it is given room to scroll inside the
+   card rather than pushing the actions off the bottom of a long email. */
+.preview-body {
+  max-height: 52vh;
+  overflow: auto;
+  word-break: break-word;
+}
+.preview-body :deep(img) { max-width: 100%; height: auto; }
 .event-detail {
   white-space: normal;
   word-break: break-word;

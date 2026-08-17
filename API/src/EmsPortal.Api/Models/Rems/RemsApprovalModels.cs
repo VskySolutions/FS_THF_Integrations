@@ -107,6 +107,8 @@ public sealed record RemsApprovalRequestView(
     string RemsNumber,
     string? Description,
     string RequestedClientName,
+    /// <summary>The client this one is a subsidiary of, or null on every other request type.</summary>
+    string? ParentClientName,
     string Type,
     string Status,
     string? CustomerEmail,

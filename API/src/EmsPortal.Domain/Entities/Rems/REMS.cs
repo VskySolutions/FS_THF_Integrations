@@ -43,6 +43,22 @@ public class REMS : AuditableEntity
     public Guid? ExistingClientReferenceId { get; set; }
 
     /// <summary>
+    /// The THF client this one is a subsidiary or child of — a <see cref="Person"/> stamped as a client,
+    /// referenced loosely like <see cref="ExistingClientReferenceId"/> rather than by foreign key. Set only
+    /// where <see cref="Type"/> is the subsidiary code; choosing any other type clears it, because a parent
+    /// on a request that is not a child is a claim nothing on the form is making.
+    /// </summary>
+    public Guid? ParentClientReferenceId { get; set; }
+
+    /// <summary>
+    /// The parent's name as it stood when the referral was raised. Denormalised for the same reason
+    /// <see cref="RequestedClientName"/> is: every list that shows a request would otherwise join out to
+    /// Person for one column. It is a snapshot — a parent later renamed keeps its old name here, and
+    /// <see cref="ParentClientReferenceId"/> is what anything needing the live record follows.
+    /// </summary>
+    public string? ParentClientName { get; set; }
+
+    /// <summary>
     /// The <see cref="Person"/> master record this request's client is, set on every save. Where
     /// <see cref="ExistingClientReferenceId"/> records that intake <em>matched</em> a client THF already
     /// had — null for a brand-new client — this is simply who the client is, minted on the spot when

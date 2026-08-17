@@ -114,21 +114,98 @@
     </div>
 
     <div id="rf-type-question" class="rf-question">How does this referral relate to THF's records?</div>
-    <div class="rf-chips" role="radiogroup" aria-labelledby="rf-type-question">
-      <button
-        v-for="opt in typeOptions" :key="opt.value"
-        type="button" role="radio" :aria-checked="model.type === opt.value" :disabled="readonly"
-        class="rf-chip" :class="{ 'rf-chip--on': model.type === opt.value }"
-        @click="chooseType(opt.value)"
-      >
-        {{ opt.label }}
-        <template v-if="typeHint(opt.value)">
-          <q-icon name="o_info" size="15px" class="rf-chip__info" />
-          <q-tooltip anchor="top middle" self="bottom middle" max-width="320px" :delay="300">
-            {{ typeHint(opt.value) }}
-          </q-tooltip>
-        </template>
-      </button>
+
+    <!-- The answer and the one follow-up it raises, on a line. Picking "Subsidiary" is what asks "of
+         whom?", so the box holding that answer opens beside the chip rather than below the question,
+         where it would read as a new question of its own. -->
+    <div class="rf-typerow">
+      <div class="rf-chips" role="radiogroup" aria-labelledby="rf-type-question">
+        <button
+          v-for="opt in typeOptions" :key="opt.value"
+          type="button" role="radio" :aria-checked="model.type === opt.value" :disabled="readonly"
+          class="rf-chip" :class="{ 'rf-chip--on': model.type === opt.value }"
+          @click="chooseType(opt.value)"
+        >
+          {{ opt.label }}
+          <template v-if="typeHint(opt.value)">
+            <q-icon name="o_info" size="15px" class="rf-chip__info" />
+            <q-tooltip anchor="top middle" self="bottom middle" max-width="320px" :delay="300">
+              {{ typeHint(opt.value) }}
+            </q-tooltip>
+          </template>
+        </button>
+      </div>
+
+      <!-- A lookup with no free-text fallback, unlike the client box above — "child of an EXISTING
+           client" cannot be satisfied by typing a name nobody has on file. -->
+      <div v-if="isSubsidiary" class="rf-parent">
+        <div class="app-field">
+          <app-field-label label="Parent Client" required />
+          <q-input
+            ref="parentFieldRef"
+            v-model="parentQuery"
+            outlined dense hide-bottom-space
+            :readonly="readonly"
+            placeholder="Search the parent client…"
+            autocomplete="off"
+            aria-label="Parent Client"
+            :error="attempted && !model.parentClientReferenceId"
+            error-message="Pick the client this one is a subsidiary of."
+            @update:model-value="onParentTyped"
+            @focus="onParentFocus"
+            @blur="onParentBlur"
+            @keydown.down.prevent="moveParentActive(1)"
+            @keydown.up.prevent="moveParentActive(-1)"
+            @keydown.enter.prevent="onParentEnter"
+            @keydown.esc="parentMenu = false"
+          >
+            <template #prepend>
+              <q-icon
+                :name="model.parentClientReferenceId ? 'o_account_tree' : 'o_search'"
+                :color="model.parentClientReferenceId ? 'positive' : 'grey-6'"
+              />
+            </template>
+            <template #append>
+              <q-spinner v-if="parentLoading" size="18px" color="primary" />
+              <q-icon
+                v-else-if="parentQuery && !readonly" name="o_close" color="grey-6" class="cursor-pointer"
+                aria-label="Clear parent client" @click="clearParent"
+              />
+              <q-icon name="o_info" size="18px" color="grey-6" class="rf-note">
+                <q-tooltip anchor="top right" self="bottom right" max-width="300px" :delay="200">
+                  The client THF already has on file that this one belongs to. Only clients on file are
+                  offered — a parent nobody has a record of is not a parent this request can point at.
+                </q-tooltip>
+              </q-icon>
+            </template>
+          </q-input>
+
+          <q-menu
+            v-model="parentMenu" fit no-focus no-refocus no-parent-event
+            anchor="bottom start" self="top start" :offset="[0, 6]"
+          >
+            <q-list separator>
+              <q-item
+                v-for="(client, i) in parentOptions" :key="client.id"
+                clickable :active="i === parentActiveIndex" active-class="bg-grey-2 text-primary"
+                @mousedown.prevent @click="pickParent(client)"
+              >
+                <q-item-section>
+                  <q-item-label>{{ client.name }}</q-item-label>
+                  <q-item-label caption>
+                    {{ client.email || "no email" }} · {{ client.phone || "no phone" }}
+                  </q-item-label>
+                </q-item-section>
+              </q-item>
+              <q-item v-if="!parentOptions.length">
+                <q-item-section class="text-grey-7">
+                  No client on file matches “{{ parentQuery.trim() }}”.
+                </q-item-section>
+              </q-item>
+            </q-list>
+          </q-menu>
+        </div>
+      </div>
     </div>
     <div v-if="attempted && !model.type" class="rf-hint rf-hint--error">
       Choose how this referral relates to THF's records.
@@ -158,12 +235,23 @@
         info="From the REMS Industry option list (Administration → Option Sets). The client's trade. Every trade is offered whichever entity type is chosen."
         @update:model-value="$emit('update:subIndustry', $event)"
       />
+      <!-- Completing the trio rather than standing in a row of its own at the foot of the tab, where a
+           single picker after the attachments read as an afterthought. Note it obeys THIS tab's edit
+           right, not the setup's like the two beside it — who reviews the request is part of the request,
+           not of its engagement. -->
+      <app-select
+        v-model="model.assignAdminUserId" :options="adminOptions" label="Assign to Admin" required
+        class="col-12 col-sm-6 col-md-4" :readonly="readonly" :clearable="false"
+        :error="attempted && !model.assignAdminUserId"
+        info="The admin who reviews this request once the client's intake comes back. They have nothing to do until then. Either of you can change who it is later."
+      />
     </div>
 
-    <app-rich-text-field
-      v-model="model.description" label="Message from Partner" class="q-mt-md" :readonly="readonly"
-      placeholder="Paste the client's email, summarize the ask, or add context for the admin and the client..."
-    />
+    <!-- "Message from Partner" stood here — a rich-text box for context to the admin and the client.
+         Removed: the request's own Conversation thread is where that context belongs, because it reaches
+         the admin, the CSE and the approvers, and can be replied to. A field on the form could only ever
+         be written once, by one person, and read by whoever happened to open the tab. Requests raised
+         before this keep whatever was typed in them; nothing here writes the field any more. -->
 
     <!-- Already-attached files, so a request being edited says what it is already carrying rather than
          showing an empty picker over documents nobody can see from here. -->
@@ -185,16 +273,8 @@
       :error-message="attachmentError"
     />
 
-    <!-- One picker, but in a row all the same: a bare col-4 outside one is a width that happens to work
-         rather than a column, and it would not line up with the fields above it. -->
-    <div class="row q-col-gutter-md q-mt-md">
-      <app-select
-        v-model="model.assignAdminUserId" :options="adminOptions" label="Assign to Admin" required
-        class="col-12 col-sm-6 col-md-4" :readonly="readonly" :clearable="false"
-        :error="attempted && !model.assignAdminUserId"
-        info="The admin who reviews this request once the client's intake comes back. They have nothing to do until then. Either of you can change who it is later."
-      />
-    </div>
+    <!-- Assign to Admin stood here in a row of its own. It has moved up beside Entity Type and Industry,
+         so the tab now ends on the attachments rather than on a lone picker below them. -->
   </div>
 </template>
 
@@ -208,15 +288,16 @@
 import { ref, reactive, computed, watch, nextTick, onBeforeUnmount } from "vue";
 import { remsApi, mediaApi } from "services/api";
 import { useNotify } from "composables/useNotify";
-import { useRemsMeta, REMS_EXISTING_CLIENT_TYPES, REMS_TYPE_BRAND_NEW_CLIENT, REMS_TYPE_EXISTING_CLIENT }
-  from "modules/rems/useRemsMeta";
+import {
+  useRemsMeta, REMS_EXISTING_CLIENT_TYPES, REMS_TYPE_BRAND_NEW_CLIENT, REMS_TYPE_EXISTING_CLIENT,
+  REMS_TYPE_SUBSIDIARY
+} from "modules/rems/useRemsMeta";
 import { dialFromIso, DEFAULT_COUNTRY_ISO } from "composables/useCountries";
 
 import AppTextField from "components/common/AppTextField.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
 import AppFieldLabel from "components/common/AppFieldLabel.vue";
-import AppRichTextField from "components/common/AppRichTextField.vue";
 import AppMultiFileUpload from "components/common/AppMultiFileUpload.vue";
 
 const props = defineProps({
@@ -494,6 +575,119 @@ const chooseType = (value) => {
   typeChosenByUser.value = true;
   model.type = value;
   if (value === REMS_TYPE_BRAND_NEW_CLIENT && linkedClient.value) detachClient();
+  // Leaving "Subsidiary" takes the parent with it — the field is gone from the form, so a parent left
+  // behind would be a claim nothing on screen is still making. The server applies the same rule.
+  if (value !== REMS_TYPE_SUBSIDIARY) clearParent();
+};
+
+// ---- Parent client (subsidiary only) ----
+// Deliberately a separate lookup from the client box above rather than a second use of it: they answer
+// different questions, and a shared box would make picking the parent look like changing who the request
+// is for. Same endpoint, so both offer exactly the clients THF has on file.
+const isSubsidiary = computed(() => model.type === REMS_TYPE_SUBSIDIARY);
+
+const parentQuery = ref(model.parentClientName || "");
+const parentOptions = ref([]);
+const parentLoading = ref(false);
+const parentMenu = ref(false);
+const parentFocused = ref(false);
+const parentActiveIndex = ref(-1);
+const parentFieldRef = ref(null);
+
+let parentTimer = null;
+let parentSeq = 0;
+
+// Keep the box in step when the parent re-seeds after a save or reload.
+watch(() => props.modelValue.parentClientName, (name) => {
+  if ((name || "") !== parentQuery.value) parentQuery.value = name || "";
+});
+
+const runParentLookup = (term) => {
+  clearTimeout(parentTimer);
+  parentSeq += 1;
+  const seq = parentSeq;
+  if (term.length < MIN_LOOKUP_CHARS) {
+    parentLoading.value = false;
+    parentOptions.value = [];
+    parentMenu.value = false;
+    return;
+  }
+  parentLoading.value = true;
+  parentTimer = setTimeout(async () => {
+    let items = [];
+    try {
+      items = (await remsApi.clientLookup(term)) || [];
+    } catch {
+      items = [];
+    }
+    if (seq !== parentSeq) return;
+    parentOptions.value = items;
+    parentActiveIndex.value = items.length ? 0 : -1;
+    parentLoading.value = false;
+    parentMenu.value = parentFocused.value;
+  }, LOOKUP_DEBOUNCE_MS);
+};
+
+// Typing detaches whatever was picked: the box shows a name, and a name that no longer matches the chosen
+// record must not leave the request pointing at that record.
+const onParentTyped = (val) => {
+  const term = (val || "").trim();
+  if (model.parentClientReferenceId && term !== (model.parentClientName || "").trim()) {
+    model.parentClientReferenceId = null;
+    model.parentClientName = "";
+  }
+  runParentLookup(term);
+};
+
+const pickParent = (client) => {
+  if (!client || props.readonly) return;
+  model.parentClientReferenceId = client.id;
+  model.parentClientName = client.name || "";
+  parentQuery.value = model.parentClientName;
+  parentMenu.value = false;
+  parentActiveIndex.value = -1;
+};
+
+const clearParent = () => {
+  model.parentClientReferenceId = null;
+  model.parentClientName = "";
+  parentQuery.value = "";
+  parentOptions.value = [];
+  parentMenu.value = false;
+};
+
+const openParentMenuIfResults = () => {
+  if (parentOptions.value.length) parentMenu.value = true;
+};
+
+const onParentFocus = () => {
+  if (props.readonly) return;
+  parentFocused.value = true;
+  openParentMenuIfResults();
+};
+
+// Nothing is auto-linked on blur, unlike the client box: an exact name match there decides who the request
+// is FOR and is worth guessing at, while a parent picked by accident is a relationship nobody stated.
+const onParentBlur = () => {
+  parentFocused.value = false;
+  parentMenu.value = false;
+  // A half-typed name that resolved to nobody is not a parent. Leaving the text would show a parent the
+  // request does not have.
+  if (!model.parentClientReferenceId) parentQuery.value = "";
+};
+
+const moveParentActive = (delta) => {
+  if (!parentMenu.value) {
+    openParentMenuIfResults();
+    return;
+  }
+  const count = parentOptions.value.length;
+  if (!count) return;
+  parentActiveIndex.value = (parentActiveIndex.value + delta + count) % count;
+};
+
+const onParentEnter = () => {
+  if (parentMenu.value && parentActiveIndex.value >= 0) pickParent(parentOptions.value[parentActiveIndex.value]);
 };
 
 const openMenuIfResults = () => {
@@ -529,7 +723,10 @@ const onClientEnter = () => {
   if (clientMenu.value && activeIndex.value >= 0) pickClient(clientOptions.value[activeIndex.value]);
 };
 
-onBeforeUnmount(() => clearTimeout(lookupTimer));
+onBeforeUnmount(() => {
+  clearTimeout(lookupTimer);
+  clearTimeout(parentTimer);
+});
 </script>
 
 <style scoped>
@@ -570,7 +767,25 @@ onBeforeUnmount(() => clearTimeout(lookupTimer));
   font-weight: 600;
   color: var(--ink-900);
 }
+/* The chips and the follow-up they raise, on one line. Top-aligned so the chips do not MOVE when the
+   Parent Client box appears: bottom-aligning them lined the input up with the chips, but the field is
+   taller than they are, so choosing "Subsidiary" shunted the whole row of chips downward under the
+   cursor. A field that sits a little low is a better trade than a control that shifts as you click it.
+   Wrapping puts the box on its own line before either half is squeezed. */
+.rf-typerow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 20px;
+}
 .rf-chips { display: flex; flex-wrap: wrap; gap: 10px; }
+/* Grows into the space the chips leave, down to a width the client names still read at, and never wider
+   than the fields it lines up under. */
+.rf-parent {
+  flex: 1 1 260px;
+  min-width: 240px;
+  max-width: 340px;
+}
 .rf-chip {
   display: inline-flex;
   align-items: center;

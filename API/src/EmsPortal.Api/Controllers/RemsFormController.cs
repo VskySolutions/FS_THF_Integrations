@@ -323,6 +323,11 @@ public sealed class RemsFormController : ControllerBase
             EventType = RemsFormEmailEventType.Sent,
             RecipientEmail = email,
             OccurredOnUtc = now,
+            // What the client is about to read, kept alongside the fact that we sent it. The dialog seeds
+            // these from the tenant's template and the sender may rewrite either, so the template is not a
+            // record of what went out — this is.
+            Subject = Normalize(request?.Subject),
+            Body = Normalize(request?.Body),
         }, cancellationToken);
 
         await _activity.WriteAsync(new CreateActivityEventDto(EntityType.Rems, remsId, ActivityEventTypes.RemsFormSent), cancellationToken);
@@ -415,6 +420,8 @@ public sealed class RemsFormController : ControllerBase
             EventType = RemsFormEmailEventType.Reminder,
             RecipientEmail = email,
             OccurredOnUtc = DateTime.UtcNow,
+            Subject = Normalize(request?.Subject),
+            Body = Normalize(request?.Body),
         }, cancellationToken);
 
         await _activity.WriteAsync(
@@ -546,9 +553,10 @@ public sealed class RemsFormController : ControllerBase
             cancellationToken);
 
         var rows = events.Select(e => new RemsEmailEventRow(
-            e.Id, e.EventType.ToString(), e.RecipientEmail, e.OccurredOnUtc, e.ProviderMessageId,
+            e.Id, e.EventType.ToString(), e.RecipientEmail, e.OccurredOnUtc,
             DescribeFailure(e),
-            e.CreatedById is { } actor && senders.TryGetValue(actor, out var name) ? name : null)).ToList();
+            e.CreatedById is { } actor && senders.TryGetValue(actor, out var name) ? name : null,
+            e.Subject, e.Body)).ToList();
 
         // Exactly what POST .../form/reminder would decide, asked ahead of the click.
         var blocked = RemindBlocked(rems, form);
@@ -558,7 +566,17 @@ public sealed class RemsFormController : ControllerBase
             ? null
             : blocked?.Reason ?? (isOwner ? null : RemsSetupAccess.WorkDeniedReason(rems));
 
-        var log = new RemsEmailLog(blocked is null && maySend && isOwner, reason, rows);
+        // The client's link, only while it is genuinely theirs to follow: sent, and not yet answered. The
+        // same window a reminder makes sense in, minus the permission and record checks above — copying a
+        // link to chase somebody with is not the same act as sending mail on the firm's behalf, so anyone
+        // who may READ this log may copy it.
+        var linkable = form is not null
+            && !string.IsNullOrWhiteSpace(form.InviteCode)
+            && form.SentOnUtc is not null
+            && form.Status is not (RemsFormStatus.Submitted or RemsFormStatus.Cancelled);
+        var clientFormLink = linkable ? BuildFormLink(form!.InviteCode) : null;
+
+        var log = new RemsEmailLog(blocked is null && maySend && isOwner, reason, rows, clientFormLink);
         return Ok(ApiResponseFactory.Success(log, "REMS form email log retrieved."));
     }
 

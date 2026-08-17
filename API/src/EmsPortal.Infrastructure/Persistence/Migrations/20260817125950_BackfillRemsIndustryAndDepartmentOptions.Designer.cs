@@ -4,6 +4,7 @@ using EmsPortal.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace EmsPortal.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(EmsPortalDbContext))]
-    partial class EmsPortalDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260817125950_BackfillRemsIndustryAndDepartmentOptions")]
+    partial class BackfillRemsIndustryAndDepartmentOptions
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1676,13 +1679,6 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid?>("OnBehalfOfUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("ParentClientName")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<Guid?>("ParentClientReferenceId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("REMSNumber")

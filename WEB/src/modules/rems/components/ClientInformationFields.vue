@@ -134,6 +134,32 @@
       Choose how this referral relates to THF's records.
     </div>
 
+    <!-- What kind of entity the client is, and the trade they are in. Neither is a contact detail, but
+         both describe THIS CLIENT — asking them over on the setup tab described the same client in two
+         places, and the entity type in particular decides what the client's own intake form asks, which
+         is a decision taken while filling this tab in.
+         They obey the SETUP's edit right rather than this tab's: in the two rework states the setup is
+         back with the initiator while the client's details above are not theirs to change. -->
+    <div class="row q-col-gutter-md q-mt-md">
+      <app-select
+        :model-value="industryGroup" :options="industryGroupOptions" label="Entity Type" required
+        class="col-12 col-sm-6 col-md-4" :readonly="setupReadonly || industryLocked" :clearable="false"
+        :hint="industryLocked ? 'Locked — the intake form has been sent.' : ''"
+        info="What kind of entity the client is. Decides which questions the client's intake form asks, so it is fixed once the form goes out — and an Audit for a Government entity is a Government Audit, which asks for a contract number."
+        @update:model-value="$emit('update:industryGroup', $event)"
+      />
+      <!-- Optional, and deliberately NOT filtered by the entity type beside it: the two do not partition
+           cleanly (a hospital is Health Care whether it is Commercial or Not-for-Profit). Clearable for
+           the same reason — a client whose trade is not on the list is better left blank than filed under
+           a wrong one. -->
+      <app-select
+        :model-value="subIndustry" :options="subIndustryOptions" label="Industry"
+        class="col-12 col-sm-6 col-md-4" :readonly="setupReadonly"
+        info="From the REMS Industry option list (Administration → Option Sets). The client's trade. Every trade is offered whichever entity type is chosen."
+        @update:model-value="$emit('update:subIndustry', $event)"
+      />
+    </div>
+
     <app-rich-text-field
       v-model="model.description" label="Message from Partner" class="q-mt-md" :readonly="readonly"
       placeholder="Paste the client's email, summarize the ask, or add context for the admin and the client..."
@@ -173,7 +199,8 @@
 </template>
 
 <script setup>
-// Section 1 of the REMS form: who the engagement is for and how to reach them.
+// Section 1 of the REMS form: who the engagement is for, how to reach them, what kind of entity they are
+// and what trade they are in.
 //
 // Client identification is unchanged from the old intake drawer — search and pick, or type a name nobody
 // matched and file them as new. No field is treated as a unique key: the same client comes back for a
@@ -203,12 +230,31 @@ const props = defineProps({
   typeOptions: { type: Array, default: () => [] },
   // What the request already carries — [{ id, fileName, url }] off the request detail.
   files: { type: Array, default: () => [] },
-  attempted: { type: Boolean, default: false }
+  attempted: { type: Boolean, default: false },
+
+  // ---- The two classifications, which are NOT part of `model` ----
+  // Entity Type belongs to the request's EMS form record and Industry to its engagement, so both are
+  // written by endpoints of their own; the page owns the values and v-models them through here. Rendered
+  // on this tab because they describe the client (see the template), not because the client record holds
+  // them.
+  //
+  // Their edit right is the SETUP's, not this tab's — hence a second readonly flag rather than reusing
+  // `readonly` above.
+  setupReadonly: { type: Boolean, default: false },
+  industryGroup: { type: String, default: null },
+  industryGroupOptions: { type: Array, default: () => [] },
+  // The invite has gone out under this entity type; changing it would ask the client different questions
+  // from the ones they were sent.
+  industryLocked: { type: Boolean, default: false },
+  // Labelled "Industry"; still named for the data behind it. See the note at the top of useRemsMeta.
+  subIndustry: { type: String, default: null },
+  subIndustryOptions: { type: Array, default: () => [] }
 });
 // `change` covers the ATTACHMENT picker only. Every other field on this section writes straight through
 // to the object the page owns (see `model` below), so the page watches that and sees those itself; files
-// wait here until save time and are invisible to it until then.
-const emit = defineEmits(["update:modelValue", "change"]);
+// wait here until save time and are invisible to it until then. The two classification updates are
+// ordinary v-models: the page owns those values and writes them with endpoints of their own.
+const emit = defineEmits(["update:modelValue", "change", "update:industryGroup", "update:subIndustry"]);
 
 const notify = useNotify();
 const { typeHint } = useRemsMeta();

@@ -5,36 +5,16 @@
          becomes its own request with its own setup, so there is never a sibling to copy from. -->
 
     <!-- Core engagement placement + team + fee/realization (AC-REMS-014.5-10).
-         The column widths ARE the grouping: 6+6 wraps to a pair per line and 4+4+4 to a trio, so the
-         lines below read as what they are — what the client is, what the firm does for it, where the work
-         sits, who runs it, what it is worth, and how it is billed. -->
+         The column widths ARE the grouping: 4+4+4 wraps to a trio per line and 6+6 to a pair, so the
+         lines below read as what they are — what the firm does and where the work sits, who runs it, what
+         it is worth, and how it is billed.
+         What the CLIENT is — Entity Type and Industry — is not here: both describe the client rather than
+         the engagement, so they are asked on the Client Information tab with the rest of what is known
+         about them. This form still reads the entity type, because the Government Audit rule keys off it
+         together with the department below, but as a prop it does not own. -->
     <q-form ref="formRef" greedy>
       <div class="row q-col-gutter-md">
-        <!-- ── What the client is ───────────────────────────────────────────────────────────────── -->
-        <!-- The kind of entity, and the trade it is in. Entity Type is the odd one out: it belongs to the
-             request's EMS FORM record, not to the engagement, and is written by a different endpoint. It
-             leads because it decides what the client is asked. -->
-        <app-select
-          :model-value="industryGroup" :options="industryGroupOptions" label="Entity Type" required
-          class="col-12 col-sm-6" :readonly="!editable || industryLocked" :clearable="false"
-          :hint="industryLocked ? 'Locked — the intake form has been sent.' : ''"
-          info="What kind of entity the client is. Decides which questions the client's intake form asks, so it is fixed once the form goes out — and an Audit for a Government entity is a Government Audit, which asks for a contract number."
-          @update:model-value="$emit('update:industryGroup', $event)"
-        />
-        <!-- Optional, and deliberately NOT filtered by the entity type beside it: the two do not partition
-             cleanly (a hospital is Health Care whether it is Commercial or Not-for-Profit). Clearable for
-             the same reason — an engagement that does not fit one of the trades is better left blank than
-             filed under a wrong one. -->
-        <app-select
-          v-model="core.subIndustry" :options="subIndustryOptions" label="Industry"
-          class="col-12 col-sm-6" :readonly="!editable"
-          info="From the REMS Industry option list (Administration → Option Sets). The client's trade. Every trade is offered whichever entity type is chosen."
-        />
-
-        <!-- ── What the firm does for it, where it sits, and who heads that ─────────────────────── -->
-        <!-- A trio, not two pairs: the old Service Line — Commercial / Non-Profit / Government / Individual
-             — was dropped for asking what Entity Type above already answers, and what it left behind reads
-             as one line. What we do · where it sits · who runs it. -->
+        <!-- ── What the firm does, where the work sits, and who heads that ──────────────────────── -->
         <app-select
           v-model="core.subServiceLine" :options="subServiceLineOptions" label="Service Line"
           class="col-12 col-sm-4" :readonly="!editable"
@@ -204,13 +184,16 @@
 </template>
 
 <script setup>
-// The request's engagement setup (AC-REMS-014/015): what the client is (entity type + industry), what the
-// firm does for it and where that sits (service line + department), the mapped department director
-// (read-only), the engagement team, fee/realization, and the conditional Audit / Government / Tax forms.
+// The request's engagement setup (AC-REMS-014/015): what the firm does, where the work sits and the mapped
+// department director (read-only), the engagement team, fee/realization, and the conditional Audit /
+// Government / Tax forms.
 //
-// Three of those classifications are labelled here differently from the data they hold — Entity Type is
-// `industryGroup`, Industry is `subIndustry`, Service Line is `subServiceLine`. The note at the top of
-// useRemsMeta says why the data kept its names.
+// The two classifications that describe THE CLIENT — Entity Type and Industry — are asked on the Client
+// Information tab instead. The entity type still arrives here as a prop, because the Government Audit card
+// keys off it together with the department chosen below.
+//
+// Service Line is labelled here differently from the data it holds — it is `subServiceLine`. The note at
+// the top of useRemsMeta says why the data kept its name.
 //
 // Controlled by the page rather than saving itself. It holds the fields, announces every edit (`change`)
 // and exposes saveSetup(engagementId, remsId) for the page's auto-save to call — which is also why the
@@ -229,10 +212,8 @@ import AppSingleFileUpload from "components/common/AppSingleFileUpload.vue";
 const props = defineProps({
   engagement: { type: Object, required: true },
   deptOptions: { type: Array, default: () => [] },
-  // Rendered as "Service Line" and "Industry"; still named for the data behind them. See the note at the
-  // top of useRemsMeta.
+  // Rendered as "Service Line"; still named for the data behind it. See the note at the top of useRemsMeta.
   subServiceLineOptions: { type: Array, default: () => [] },
-  subIndustryOptions: { type: Array, default: () => [] },
   taxFormOptions: { type: Array, default: () => [] },
   taxFormUnavailable: { type: Boolean, default: false },
   billingPeriodOptions: { type: Array, default: () => [] },
@@ -245,23 +226,20 @@ const props = defineProps({
   billingManagerOptions: { type: Array, default: () => [] },
   editable: { type: Boolean, default: true },
 
-  // The two fields that are NOT the engagement's. The CSE and the Entity Type live on the request's
-  // EMS form record — what the client's invite is minted from — and are written by a different endpoint,
-  // so they are v-modelled through to the page rather than held in `core` below. They are rendered here
-  // because the sequence puts them among the engagement's own fields: reading the setup top to bottom
-  // should not mean reading it in two places.
+  // The CSE is NOT the engagement's. It lives on the request's EMS form record — what the client's invite
+  // is minted from — and is written by a different endpoint, so it is v-modelled through to the page
+  // rather than held in `core` below. It is rendered here because it belongs with the other two people
+  // who run the engagement: reading who owns this work should not mean reading it in two places.
   cseUserId: { type: String, default: null },
-  industryGroup: { type: String, default: null },
   cseOptions: { type: Array, default: () => [] },
-  industryGroupOptions: { type: Array, default: () => [] },
   cseHint: { type: String, default: "" },
-  // The invite has gone out under this industry group; changing it would ask the client different
-  // questions from the ones they were sent.
-  industryLocked: { type: Boolean, default: false }
+  // Read-only here, and owned by the Client Information tab. Present because the Government Audit card
+  // below appears only for an Audit department on a Government entity.
+  industryGroup: { type: String, default: null }
 });
 // `change` says the engagement half has something to save — the page cannot see the local copies below.
-// The other two are ordinary v-model updates: the page owns those values and writes them itself.
-const emit = defineEmits(["change", "update:cseUserId", "update:industryGroup"]);
+// The CSE is an ordinary v-model update: the page owns that value and writes it itself.
+const emit = defineEmits(["change", "update:cseUserId"]);
 const formRef = ref(null);
 
 // Set while this component is writing to its own state rather than the user: re-seeding from a fresh
@@ -280,11 +258,11 @@ const dateOnly = (v) => {
 // ---- Core engagement fields (local editable copy, re-synced from the source view) ----
 const buildCore = (e) => ({
   department: e.department || null,
-  // No `serviceLine`: the old field is gone from the form, and leaving it out of the payload is also what
-  // preserves it — the endpoint reads an omitted field as "leave this alone", so whatever a historical
-  // engagement recorded stays recorded.
+  // Neither `serviceLine` nor `subIndustry`. The old service line is gone from the form entirely; the
+  // industry is asked on the Client Information tab and written by the page. Leaving a field out of the
+  // payload is also what preserves it — the endpoint reads an omitted field as "leave this alone" — so
+  // this form saving cannot undo either of them.
   subServiceLine: e.subServiceLine || null,
-  subIndustry: e.subIndustry || null,
   engagementExecutiveId: e.engagementExecutive?.id || null,
   billingManagerId: e.billingManager?.id || null,
   firstYearFeeEstimate: e.firstYearFeeEstimate ?? "",
@@ -427,11 +405,10 @@ const saveSetup = async (engagementId, remsId = null) => {
 
   let view = (await remsApi.updateEngagement(engagementId, {
     department: core.value.department,
-    // Empty string rather than null for the two clearable ones: the endpoint reads null as "leave this
-    // field alone" and only an empty value clears it, so sending null would make Clear look like it
-    // worked and then bring the old value back on the next read.
+    // Empty string rather than null for the clearable one: the endpoint reads null as "leave this field
+    // alone" and only an empty value clears it, so sending null would make Clear look like it worked and
+    // then bring the old value back on the next read.
     subServiceLine: core.value.subServiceLine ?? "",
-    subIndustry: core.value.subIndustry ?? "",
     engagementExecutiveId: core.value.engagementExecutiveId,
     billingManagerId: core.value.billingManagerId,
     firstYearFeeEstimate: toNum(core.value.firstYearFeeEstimate),

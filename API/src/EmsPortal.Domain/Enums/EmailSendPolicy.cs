@@ -5,6 +5,14 @@ namespace EmsPortal.Domain.Enums;
 /// templates may be delivered by email; every other <see cref="EmailTemplateKey"/> — mentions, reminders
 /// and any future internal workflow alert — is in-app only. Enforced centrally by the email dispatch
 /// pipeline so no caller can send email for a non-allowlisted type.
+/// <para>
+/// EVERY ACCOUNT-SECURITY KEY BELONGS HERE. The gate drops a non-allowlisted send with nothing but a
+/// warning log, and the endpoints behind these keys deliberately answer the same either way — the
+/// forgot-password flow returns its neutral "if that address exists we have emailed it" whether or not
+/// anything was sent. So a key missing from this list is invisible from the outside: it does not fail,
+/// it just never arrives. <see cref="EmailTemplateKey.PasswordResetLink"/> was missing and locked users
+/// out of self-service reset entirely.
+/// </para>
 /// </summary>
 public static class EmailSendPolicy
 {
@@ -12,6 +20,7 @@ public static class EmailSendPolicy
     {
         EmailTemplateKey.UserInvitation,    // account security — invitation
         EmailTemplateKey.PasswordReset,     // account security — admin-initiated password reset
+        EmailTemplateKey.PasswordResetLink, // account security — self-service "forgot password" link
         EmailTemplateKey.PasswordChanged,   // account security — password-change confirmation
         EmailTemplateKey.Welcome,           // account security — account activated
         EmailTemplateKey.RemsFormLink,      // REMS external — client form link

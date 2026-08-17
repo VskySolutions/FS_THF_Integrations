@@ -1109,30 +1109,10 @@ public sealed class RemsRequestsController : ControllerBase
             EntityType.Rems,
             rems.Id);
 
-    /// <summary>
-    /// Tells the tenant's admins a request has landed in the pool unclaimed. Without this the pool is a
-    /// screen someone has to remember to open — the whole point of submitting is that it gets picked up.
-    /// The submitter is skipped (they just did it) and so is an already-assigned request.
-    /// </summary>
-    private async Task NotifyPoolOfSubmissionAsync(REMS rems, Guid actorId, CancellationToken cancellationToken)
-    {
-        if (rems.AdminAssignedToId is not null || User.GetActiveTenantId() is not { } tenantId)
-        {
-            return;
-        }
-
-        var admins = await _users.ListByTenantRolesAsync(tenantId, new[] { Roles.Admin, Roles.SuperAdmin }, cancellationToken);
-        foreach (var admin in admins.Where(u => u.Id != actorId))
-        {
-            await _notifications.DispatchAsync(new CreateNotificationDto(
-                admin.Id,
-                NotificationType.RemsRequestSubmitted,
-                "New REMS request waiting for pickup",
-                $"{rems.REMSNumber} — {rems.RequestedClientName}",
-                EntityType.Rems,
-                rems.Id), cancellationToken);
-        }
-    }
+    // NotifyPoolOfSubmissionAsync stood here — "New REMS request waiting for pickup", broadcast to every
+    // admin in the tenant. It announced a request landing in the admin pool unclaimed, and it lost its last
+    // caller when Phase 16 removed the pool: a request now names its reviewing admin at intake and the
+    // initiator sends the client's link themselves, so nothing waits to be picked up by anybody.
 
     /// <summary>
     /// Tells whoever raised the request that an admin now owns it. The requester (typically the Partner)

@@ -20,11 +20,10 @@
         </q-banner>
 
         <template v-else-if="view">
-          <!-- Summary -->
+          <!-- Summary. No entity-type badge: this dialog is the snapshot of what the CLIENT submitted,
+               and the entity type is THF's own classification — never something they were asked. It is
+               read on the request's Client Information tab, where it is set. -->
           <div class="row items-center q-col-gutter-sm q-mb-md">
-            <div class="col-auto">
-              <q-badge :color="statusColor('customer_submitted')">{{ industryGroupLabel(view.industryGroup) }}</q-badge>
-            </div>
             <div class="col text-grey-8">
               <span class="text-weight-medium">{{ payload.clientName || view.remsNumber }}</span>
               <span class="text-grey-6"> · {{ view.remsNumber }}</span>
@@ -96,7 +95,7 @@ const props = defineProps({
 const emit = defineEmits(["update:modelValue"]);
 
 const fmt = useDateFormat();
-const { industryGroupLabel, statusColor, referralSourceLabel, referralSourceHint } = useRemsMeta();
+const { referralSourceLabel, referralSourceHint } = useRemsMeta();
 
 const open = computed({
   get: () => props.modelValue,

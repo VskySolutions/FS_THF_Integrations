@@ -45,12 +45,13 @@
     <!-- Editable ------------------------------------------------------------------------------------- -->
     <template v-else-if="state === 'Editable'">
       <!-- Intro -->
+      <!-- The entity type is NOT shown. It is THF's classification of the client, not something the
+           client told us or is being asked to confirm — it decides which questions appear below, and
+           that is the whole of its job here. A chip stating it invited the client to query a label they
+           were never asked about and cannot change. -->
       <div class="pef-head">
         <div class="row items-center q-gutter-sm">
           <div class="text-h5 text-weight-bold col">EMS Onboarding Form</div>
-          <q-chip square dense color="teal-1" text-color="primary" class="q-ma-none">
-            {{ industryLabel }}
-          </q-chip>
         </div>
         <div class="text-body2 text-grey-7 q-mt-xs">
           Please review and complete the details below. Your progress saves automatically as you go.
@@ -370,15 +371,10 @@ const GROUP_ROLES = {
   government: ["financeDirector", "accountsPayable"]
 };
 const ROLE_KEYS = ["self", "spouse", "ceo", "cfo", "accountsPayable", "banker", "lawyer", "financeDirector"];
-// The chip above the form. `business` is kept for forms sent before it was split into the three below.
-const INDUSTRY_LABELS = {
-  individual: "Individual",
-  not_for_profit: "Not-for-Profit",
-  insurance: "Insurance",
-  commercial: "Commercial",
-  business: "Business",
-  government: "Government"
-};
+// INDUSTRY_LABELS stood here — the display names behind a chip that named the client's entity type above
+// the form. The chip is gone (see the template) and with it the only thing that ever read the map. The
+// entity type itself is still very much in use below; it just does its work silently now, deciding which
+// questions the client is asked.
 
 const route = useRoute();
 const notify = useNotify();
@@ -460,7 +456,6 @@ const payload = reactive({
 const isIndividual = computed(() => industryGroup.value === "individual");
 const isBusiness = computed(() => isBusinessIndustryGroup(industryGroup.value));
 const isGovernment = computed(() => industryGroup.value === "government");
-const industryLabel = computed(() => INDUSTRY_LABELS[industryGroup.value] || "Onboarding");
 const showUnavailable = computed(() => loadFailed.value || state.value === "Invalid" || state.value === "Unavailable");
 const busy = computed(() => reviewing.value || submitting.value);
 

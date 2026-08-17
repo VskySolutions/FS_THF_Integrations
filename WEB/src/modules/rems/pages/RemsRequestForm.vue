@@ -185,12 +185,22 @@
           <!-- ---------- Client Information ---------- -->
           <q-tab-panel name="client">
             <detail-grid v-if="!isEditing" :rows="clientRows" />
+            <!-- Entity Type and Industry are the page's to save — one belongs to the request's EMS form
+                 record and the other to its engagement, neither to the client row — but this tab's to
+                 lay out, because both describe the client. They are v-modelled down rather than rendered
+                 in a row of their own up here. -->
             <client-information-fields
               v-else
               ref="clientFieldsRef"
               v-model="clientForm"
+              v-model:industry-group="setupForm.industryGroup"
+              v-model:sub-industry="setupForm.subIndustry"
               :readonly="!canEditClient"
               :client-locked="clientLocked"
+              :setup-readonly="!canEditSetup"
+              :industry-group-options="industryGroupOptions"
+              :industry-locked="industryLocked"
+              :sub-industry-options="subIndustryOptions"
               :admin-options="adminOptions"
               :type-options="typeOptions"
               :files="request?.files || []"
@@ -213,23 +223,20 @@
 
             <detail-grid v-else-if="!isEditing" :rows="setupRows" />
 
-            <!-- The CSE and the Entity Type are the page's to save (they belong to the request's EMS
-                 form record, not to the engagement) but the setup form's to lay out — they sit among the
-                 engagement's own fields, so they are v-modelled down rather than rendered up here in a
-                 row of their own. -->
+            <!-- The CSE is the page's to save (it belongs to the request's EMS form record, not to the
+                 engagement) but the setup form's to lay out — it sits with the other two people who run
+                 the engagement, so it is v-modelled down rather than rendered up here in a row of its
+                 own. The entity type goes down read-only: the Government Audit card keys off it. -->
             <engagement-setup-form
               v-else
               ref="setupRef"
               v-model:cse-user-id="setupForm.cseUserId"
-              v-model:industry-group="setupForm.industryGroup"
               :engagement="setupEngagement"
               :cse-options="cseOptions"
-              :industry-group-options="industryGroupOptions"
               :cse-hint="cseHint"
-              :industry-locked="industryLocked"
+              :industry-group="setupForm.industryGroup"
               :dept-options="departmentOptions"
               :sub-service-line-options="subServiceLineOptions"
-              :sub-industry-options="subIndustryOptions"
               :tax-form-options="taxFormOptions"
               :tax-form-unavailable="taxFormUnavailable"
               :department-directors="workspace?.departmentDirectors || []"
@@ -430,7 +437,10 @@ const blankClient = () => ({
   assignAdminUserId: null
 });
 const clientForm = reactive(blankClient());
-const setupForm = reactive({ cseUserId: null, industryGroup: null });
+// The fields the page owns rather than a tab: each is written by an endpoint of its own, and two of the
+// three are asked on the Client tab while the third is on Setup, so no single tab component can hold them.
+// `industryGroup` is Entity Type and `subIndustry` is Industry — see the note at the top of useRemsMeta.
+const setupForm = reactive({ cseUserId: null, industryGroup: null, subIndustry: null });
 
 // ---- View vs Edit ----
 // Two ways of looking at the same record: View renders every field as a label, Edit renders the controls.
@@ -452,7 +462,6 @@ const newEngagement = Object.freeze({
   id: null,
   department: null,
   subServiceLine: null,
-  subIndustry: null,
   departmentDirector: null,
   engagementExecutive: null,
   billingManager: null,
@@ -565,7 +574,9 @@ const readyToSend = computed(() =>
 const sendBlockedReason = computed(() => {
   if (!clientForm.customerEmail?.trim()) return "The client has no email address to send the form to.";
   if (!setupForm.cseUserId) return "Choose a CSE first — it is on the Engagement Setup tab.";
-  if (!setupForm.industryGroup) return "Choose an entity type — it decides what the client is asked.";
+  if (!setupForm.industryGroup) {
+    return "Choose an entity type on the Client Information tab — it decides what the client is asked.";
+  }
   return "";
 });
 
@@ -705,6 +716,8 @@ const clientRows = computed(() => [
   { label: "Client Email Address", value: clientForm.customerEmail },
   { label: "Client Phone Number", value: clientForm.customerMobileNumber },
   { label: "Relationship to THF", value: labelOf(typeOptions.value, clientForm.type) },
+  { label: "Entity Type", value: labelOf(industryGroupOptions.value, setupForm.industryGroup) },
+  { label: "Industry", value: labelOf(subIndustryOptions.value, setupForm.subIndustry) },
   { label: "Reviewing Admin", value: nameOf(adminOptions.value, clientForm.assignAdminUserId) },
   { label: "Message from Partner", value: clientForm.description, wide: true, html: true },
   {
@@ -718,10 +731,9 @@ const setupRows = computed(() => {
   const e = engagement.value;
   if (!e) return [];
   // The same sequence the form is filled in, so reading a request and typing one describe it in the
-  // same order.
+  // same order. Entity Type and Industry are not here — they are read on the Client tab, where they are
+  // now asked.
   return [
-    { label: "Entity Type", value: labelOf(industryGroupOptions.value, setupForm.industryGroup) },
-    { label: "Industry", value: labelOf(subIndustryOptions.value, e.subIndustry) },
     { label: "Service Line", value: labelOf(subServiceLineOptions.value, e.subServiceLine) },
     { label: "Department", value: labelOf(departmentOptions.value, e.department) },
     { label: "Department Director", value: e.departmentDirector?.name },
@@ -771,6 +783,13 @@ const loadPickers = async () => {
   billingManagerOptions.value = toOptions(billing);
 };
 
+// Entity Type and Industry as they were picked BEFORE the request existed. Both are asked on the first
+// tab, which a request being composed can fill in, and neither can be written at create time: the entity
+// type is filed with the CSE and the endpoint requires the pair, and the industry needs an engagement id.
+// So they are carried across the reload that follows the create — `seedForms` reads a server that does
+// not have them yet, and would otherwise wipe two answers the user just gave.
+let pendingSetupPick = null;
+
 const seedForms = (detail, ws) => {
   clientForm.clientName = detail.clientName || "";
   clientForm.customerEmail = detail.customerEmail || "";
@@ -780,7 +799,9 @@ const seedForms = (detail, ws) => {
   clientForm.existingClientReferenceId = detail.existingClientReferenceId || null;
   clientForm.assignAdminUserId = detail.assignedAdmin?.id || null;
   setupForm.cseUserId = detail.cse?.id || null;
-  setupForm.industryGroup = ws?.industryGroup || detail.industryGroup || null;
+  setupForm.industryGroup =
+    ws?.industryGroup || detail.industryGroup || pendingSetupPick?.industryGroup || null;
+  setupForm.subIndustry = ws?.engagement?.subIndustry || pendingSetupPick?.subIndustry || null;
 };
 
 // The reasons behind the LAST failed round, so the initiator sees what to fix without opening history.
@@ -831,7 +852,9 @@ const clientPayload = () => ({
 
 // ---- Auto-save ----
 // Everything after the first save writes itself, part by part, in the order the records depend on each
-// other: the request, then the CSE + industry group on its intake form, then the engagement.
+// other: the request, then the CSE + entity type on its intake form, then the engagement — the client's
+// industry first, because it is asked on the first tab and must save without the setup tab ever having
+// been opened.
 //
 // A part that is not fillable yet returns why instead of failing — a commission recipient added a second
 // ago has no percentage on them, and that is someone still typing, not an error to shout about.
@@ -878,14 +901,27 @@ const {
     if (!canEditSetup.value) return "";
     // CSE and Entity Type live on the EMS form record, which is what the client's link is minted from
     // (`industryGroup` on the wire — see the note at the top of useRemsMeta). Both or neither: the
-    // endpoint requires the pair.
+    // endpoint requires the pair, and the two are asked on different tabs, so the reason says where the
+    // missing one is rather than leaving the user to hunt for it.
     if (!setupForm.cseUserId || !setupForm.industryGroup) {
-      return "The CSE and the Entity Type are saved together — choose both.";
+      return setupForm.industryGroup
+        ? "The CSE and the Entity Type are saved together — choose a CSE on the Engagement Setup tab."
+        : "The CSE and the Entity Type are saved together — choose an Entity Type on the Client Information tab.";
     }
     await remsApi.saveForm(remsId.value, {
       cseUserId: setupForm.cseUserId,
       industryGroup: setupForm.industryGroup
     });
+    return "";
+  },
+  // The client's trade. Asked on the Client tab but stored on the ENGAGEMENT, so the page writes it rather
+  // than the setup form below: that form exists only once its own tab has been opened, and a field on the
+  // first tab cannot depend on somebody having visited the second.
+  industry: async () => {
+    if (!canEditSetup.value || !engagementId.value) return "";
+    // Empty string, not null — the endpoint reads null as "leave this field alone", so clearing the
+    // picker has to say so out loud or the old value comes back on the next read.
+    await remsApi.updateEngagement(engagementId.value, { subIndustry: setupForm.subIndustry ?? "" });
     return "";
   },
   // Only a request raised before engagements existed has none, and there is nowhere to put the setup for
@@ -909,9 +945,12 @@ const {
   onSaved: refreshEngagement
 });
 
-// The two pieces of state the page owns itself. The tabs below own theirs and announce it (@change).
+// The state the page owns itself. The tabs below own theirs and announce it (@change).
 watch(clientForm, () => markDirty("client"), { deep: true });
-watch(setupForm, () => markDirty("form"), { deep: true });
+// `setupForm` is two writes, so it is two flags rather than one deep watcher: the CSE and the entity type
+// go to the EMS form record together, the industry to the engagement.
+watch([() => setupForm.cseUserId, () => setupForm.industryGroup], () => markDirty("form"));
+watch(() => setupForm.subIndustry, () => markDirty("industry"));
 
 const saveChip = computed(() => ({
   saving: { tone: "busy", icon: "o_sync", text: "Saving…" },
@@ -960,6 +999,14 @@ const load = async () => {
     await nextTick();
     resetSaves();
     resumeSaves();
+    // Whatever was picked before the request existed is writable against it now. Marked rather than
+    // written here so it goes through the same savers as any other edit — including the entity type's
+    // "choose a CSE too", which is what the user lands on the Setup tab to do.
+    if (pendingSetupPick) {
+      if (pendingSetupPick.industryGroup) markDirty("form");
+      if (pendingSetupPick.subIndustry) markDirty("industry");
+      pendingSetupPick = null;
+    }
   }
 };
 
@@ -1002,6 +1049,9 @@ const createDraft = async () => {
   }
 
   saving.value = true;
+  // The create writes the client row only. The two classifications on this tab belong to records that do
+  // not exist until it returns, so they ride across the reload instead (see `pendingSetupPick`).
+  pendingSetupPick = { industryGroup: setupForm.industryGroup, subIndustry: setupForm.subIndustry };
   // Held outside the try: once the request exists, this page is about THAT request whatever fails
   // afterwards, or a second attempt would file a second copy of it.
   let created = null;
@@ -1025,6 +1075,9 @@ const createDraft = async () => {
     // Leaves the URL on the request that now exists, open for editing, on the tab that comes next.
     if (created) {
       router.replace({ name: ROUTE_EDIT, params: { id: created.id }, query: { tab: "setup" } });
+    } else {
+      // Nothing was created, so nothing reloads and the picks are still on screen where they were made.
+      pendingSetupPick = null;
     }
   }
 };

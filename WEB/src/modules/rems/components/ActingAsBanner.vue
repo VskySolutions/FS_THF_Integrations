@@ -62,6 +62,9 @@ onMounted(load);
 .aab {
   display: flex;
   align-items: center;
+  /* Wraps rather than squeezing: a long principal name and the switch button do not both fit on one
+     line of a phone, and this banner is the one thing on the page that must stay readable. */
+  flex-wrap: wrap;
   gap: 8px;
   padding: 6px 8px 6px 12px;
   margin-bottom: 14px;

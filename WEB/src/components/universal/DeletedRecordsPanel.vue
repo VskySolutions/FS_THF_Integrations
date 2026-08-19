@@ -57,7 +57,7 @@
 
     <!-- Two-step permanent delete dialog -->
     <q-dialog v-model="confirmOpen">
-      <q-card style="min-width: 360px;">
+      <q-card style="width: 360px; max-width: 92vw;">
         <q-card-section class="text-h6 text-negative">Permanently delete</q-card-section>
         <q-card-section class="q-pt-none">
           <p>This permanently deletes <strong>{{ target?.identity }}</strong> and all its related data. This cannot be undone.</p>

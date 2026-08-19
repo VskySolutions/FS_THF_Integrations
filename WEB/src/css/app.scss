@@ -794,3 +794,18 @@ background-color: inherit;
   overflow-y: auto;
   max-height: 300px;
 }
+
+// ---- Small screens -----------------------------------------------------------------------------
+// Two rules that only matter on a phone, kept together because they are one decision.
+//
+// The viewport meta no longer carries `user-scalable=no, maximum-scale=1` — a client filling the EMS
+// onboarding form on a phone must be able to pinch-zoom (WCAG 1.4.4), and that flag forbade it.
+// Suppressing zoom was also the only thing stopping iOS Safari from zooming the page in whenever a
+// field smaller than 16px took focus, and leaving the field zoomed after it. So the fields become 16px
+// below sm, which is the size iOS leaves alone — and is the more readable size on a phone anyway.
+@media (max-width: 599px) {
+  .q-field__native,
+  .q-field__input {
+    font-size: 16px;
+  }
+}

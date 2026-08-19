@@ -1,6 +1,6 @@
 <template>
   <q-dialog v-model="open">
-    <q-card style="min-width: 560px; max-width: 92vw;">
+    <q-card style="width: 560px; max-width: 92vw;">
       <q-card-section class="row items-center no-wrap">
         <div>
           <div class="text-h6">Email Log</div>

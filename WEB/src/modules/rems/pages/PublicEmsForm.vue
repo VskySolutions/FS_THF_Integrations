@@ -890,6 +890,7 @@ onMounted(load);
   bottom: 0;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 12px 4px;
   margin-top: 8px;
@@ -910,5 +911,29 @@ onMounted(load);
 }
 .pef-save--error {
   color: var(--q-negative);
+}
+
+/* The client fills this in on a phone as often as not. Below sm the three items across the bar do not
+   fit on one line, so the save state takes the line above and the two buttons split the one below,
+   each wide enough to be a thumb target rather than a 60px stub. */
+@media (max-width: 599px) {
+  .pef-actionbar {
+    gap: 8px 10px;
+    padding: 10px 0;
+  }
+  .pef-save {
+    order: -1;
+    width: 100%;
+    margin: 0;
+    justify-content: center;
+  }
+  /* Splits the row evenly between them; the spacer that separates the pair on a desktop would
+     otherwise claim a third of the line for itself. */
+  .pef-actionbar > .q-btn {
+    flex: 1 1 0;
+  }
+  .pef-actionbar > .q-space {
+    display: none;
+  }
 }
 </style>

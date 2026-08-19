@@ -1,10 +1,16 @@
 <template>
   <q-card flat bordered class="app-detail-header q-mb-md">
-    <q-card-section class="row items-center no-wrap q-py-sm">
-      <app-breadcrumbs :items="items" no-margin class="col" />
-      <q-space />
-      <slot name="actions" />
-      <q-btn outline no-caps color="primary" icon="o_arrow_back" label="Back" class="q-ml-sm" @click="goBack" />
+    <!-- Crumbs on the left and the actions on the right — on one line where there is width for it, and on
+         two once there is not. The row was no-wrap, which on a phone pushed Back (and whatever the page
+         put in the actions slot before it) off the side of the card with nothing to scroll it back. -->
+    <q-card-section class="app-detail-header__bar q-py-sm">
+      <app-breadcrumbs :items="items" no-margin class="app-detail-header__crumbs" />
+      <!-- The page's own actions and Back travel as one group, so they wrap onto a second line together
+           and stay right-aligned there rather than Back dropping away from the buttons it belongs with. -->
+      <div class="app-detail-header__actions">
+        <slot name="actions" />
+        <q-btn outline no-caps color="primary" icon="o_arrow_back" label="Back" @click="goBack" />
+      </div>
     </q-card-section>
   </q-card>
 </template>
@@ -43,5 +49,28 @@ const goBack = () => {
 <style scoped>
 .app-detail-header {
   border-radius: 12px;
+}
+/* gap rather than margin utilities on the children: a wrapped second line then sits the same distance
+   from the first as the buttons do from each other. */
+.app-detail-header__bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+/* min-width:0 lets a long trail of crumbs shrink and ellipsize instead of forcing the actions onto a
+   line of their own while there is still room beside them. */
+.app-detail-header__crumbs {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.app-detail-header__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+  min-width: 0;
 }
 </style>

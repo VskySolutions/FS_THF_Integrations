@@ -219,7 +219,10 @@ const groups = computed(() => {
 }
 .review-group__body {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* auto-fit rather than a hard pair: two columns of a phone-width dialog leave each answer about a
+     hundred and thirty pixels wide, which wraps an email address over three lines. Under the minimum it
+     drops to one column and every label keeps its value beside it. */
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 10px 24px;
 }
 .field-row--dense {

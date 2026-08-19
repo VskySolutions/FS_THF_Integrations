@@ -1,32 +1,38 @@
 <template>
   <q-card flat bordered class="app-list-header q-mb-md">
-    <div class="row items-center no-wrap q-gutter-sm q-px-md q-py-sm">
-      <app-breadcrumbs v-if="breadcrumbs.length" :items="breadcrumbs" no-margin />
-      <q-space />
+    <!-- Crumbs on the left, the tools for the list on the right. The bar was one no-wrap row, so on a
+         phone the search box, Filters, Add and Back ran straight off the side of the card. It wraps
+         now, and below sm the tools take a line of their own with the search box spanning it. -->
+    <div class="app-list-header__bar q-px-md q-py-sm">
+      <app-breadcrumbs
+        v-if="breadcrumbs.length" :items="breadcrumbs" no-margin class="app-list-header__crumbs"
+      />
 
-      <q-input
-        v-if="showSearch"
-        :model-value="search"
-        dense
-        outlined
-        debounce="300"
-        :placeholder="searchPlaceholder"
-        class="app-list-header__search"
-        @update:model-value="$emit('update:search', $event)"
-      >
-        <template #prepend><q-icon name="o_search" /></template>
-      </q-input>
+      <div class="app-list-header__tools">
+        <q-input
+          v-if="showSearch"
+          :model-value="search"
+          dense
+          outlined
+          debounce="300"
+          :placeholder="searchPlaceholder"
+          class="app-list-header__search"
+          @update:model-value="$emit('update:search', $event)"
+        >
+          <template #prepend><q-icon name="o_search" /></template>
+        </q-input>
 
-      <q-btn v-if="showFilters" outline no-caps color="primary" icon="o_filter_list" label="Filters" @click="$emit('filters')">
-        <q-badge v-if="filterCount" floating color="primary">{{ filterCount }}</q-badge>
-      </q-btn>
+        <q-btn v-if="showFilters" outline no-caps color="primary" icon="o_filter_list" label="Filters" @click="$emit('filters')">
+          <q-badge v-if="filterCount" floating color="primary">{{ filterCount }}</q-badge>
+        </q-btn>
 
-      <!-- Extra page-specific actions (e.g. a secondary "Add Bulk" button), shown before Add. -->
-      <slot name="actions" />
+        <!-- Extra page-specific actions (e.g. a secondary "Add Bulk" button), shown before Add. -->
+        <slot name="actions" />
 
-      <q-btn v-if="showAdd" unelevated no-caps color="primary" :icon="addIcon" :label="addLabel" :disable="addDisable" @click="$emit('add')" />
+        <q-btn v-if="showAdd" unelevated no-caps color="primary" :icon="addIcon" :label="addLabel" :disable="addDisable" @click="$emit('add')" />
 
-      <q-btn v-if="showBack" flat no-caps color="primary" icon="o_arrow_back" label="Back" @click="$emit('back')" />
+        <q-btn v-if="showBack" flat no-caps color="primary" icon="o_arrow_back" label="Back" @click="$emit('back')" />
+      </div>
     </div>
   </q-card>
 </template>
@@ -55,8 +61,43 @@ defineEmits(["update:search", "filters", "add", "back"]);
 .app-list-header {
   border-radius: 12px;
 }
+/* gap rather than q-gutter: the utility's negative margins fight the card padding once the row wraps. */
+.app-list-header__bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+/* min-width:0 so a long trail of crumbs shrinks rather than pushing the tools onto their own line while
+   there is still room beside them. */
+.app-list-header__crumbs {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.app-list-header__tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+  min-width: 0;
+}
 .app-list-header__search {
-  max-width: 260px;
-  width: 100%;
+  width: 260px;
+  max-width: 100%;
+}
+
+/* On a phone the crumbs and the tools each get a line. The search box takes the width the buttons
+   leave rather than a fixed 260px, which is wider than some phones. */
+@media (max-width: 599px) {
+  .app-list-header__tools {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .app-list-header__search {
+    flex: 1 1 160px;
+    width: auto;
+  }
 }
 </style>

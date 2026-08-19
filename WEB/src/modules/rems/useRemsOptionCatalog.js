@@ -166,7 +166,7 @@ const SEED = {
     { label: "Government", value: "government" },
     { label: "Individual", value: "individual" },
     { label: "Distribution", value: "distribution" },
-    { label: "Insurance - Health", value: "insurance_health" }
+    { label: "Insurance - Healthcare", value: "insurance_health" }
   ]
 };
 

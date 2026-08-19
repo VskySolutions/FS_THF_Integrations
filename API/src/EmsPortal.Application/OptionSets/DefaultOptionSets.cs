@@ -169,7 +169,7 @@ public static class DefaultOptionSets
             // backfill that adds this to each existing tenant's copy takes MAX(DisplayOrder) + 1, so
             // renumbering here would put the item in one place for a new tenant and another for everybody
             // already running. The list is not alphabetical in any case — Health Care sits at 12.
-            new ItemDefinition("insurance_health", "Insurance - Health", 29),
+            new ItemDefinition("insurance_health", "Insurance - Healthcare", 29),
         }),
         new Definition(EntityType.Rems, "REMSMarketing_MarketingMethods.MarketingMethodId", "REMS Marketing Methods", OptionItemSortMode.Custom, new[]
         {

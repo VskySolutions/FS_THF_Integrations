@@ -2,10 +2,11 @@
   <q-page padding>
     <app-detail-header :items="breadcrumbs" :back-to="backTo">
       <template #actions>
-        <!-- EVERY action on the request lives here. The header row itself is no-wrap and this is a badge,
-             a status chip and up to half a dozen buttons — enough to run off the side of a laptop, never
-             mind a phone — so it is wrapped in a flex box of its own that stacks onto a second line
-             instead of pushing the Back button off the card.
+        <!-- EVERY action on the request lives here. There is a badge, a status chip and up to half a
+             dozen buttons — enough to run off the side of a laptop, never mind a phone — so they are
+             wrapped in a box of their own that stacks onto further lines rather than growing the header
+             sideways. The header wraps around it in turn, so on a phone this box and the Back button
+             take a line each instead of one of them running off the card.
              Stepping through the form is the one thing NOT here: Prev / Next / the finish actions sit on
              the tab strip, because they act on the tabs rather than on the request. -->
         <div class="rf-head">
@@ -279,6 +280,11 @@
 
           <!-- ---------- Commission ---------- -->
           <q-tab-panel v-if="setupEngagement" name="commission">
+            <!-- On the panel rather than inside the form below it, so it is there whether the tab is being
+                 read or filled in. The number is ambiguous either way: "40%" beside a name says nothing
+                 about what it is 40% OF, and the fee and the realization on the setup tab are both
+                 percentages this could plausibly be read against. -->
+            <div class="rf-hint">The percentage represents percentage of commission.</div>
             <detail-grid v-if="!isEditing" :rows="commissionRows" />
             <engagement-commission
               v-else
@@ -368,6 +374,7 @@ import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } 
 import { useRoute, useRouter, onBeforeRouteLeave } from "vue-router";
 import { remsApi, getApiErrorMessage, webUrl } from "services/api";
 import { useNotify } from "composables/useNotify";
+import { useConfirm } from "composables/useConfirm";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import {
   useRemsMeta, useRemsOptionSets, useRemsEngagementOptionSets, useRemsIndustryGroups,
@@ -395,6 +402,7 @@ import EmailLogDialog from "modules/rems/components/EmailLogDialog.vue";
 const route = useRoute();
 const router = useRouter();
 const notify = useNotify();
+const { confirm } = useConfirm();
 const { has } = usePermissions();
 const { statusLabel, statusColor, emsFormActivity } = useRemsMeta();
 const { typeOptions, load: loadTypes } = useRemsOptionSets();
@@ -1191,6 +1199,16 @@ const sendBack = async (payload) => {
 };
 
 const returnToAdmin = async () => {
+  // Confirmed because it is the initiator's last move on the request: the setup goes read-only to them
+  // the moment it lands with the admin, and getting it back means asking for another send-back.
+  const admin = request.value?.assignedAdmin?.name || "the admin";
+  const ok = await confirm({
+    title: "Return to admin",
+    message: `This hands the revised engagement setup to ${admin} to confirm, and notifies them. ` +
+      "The setup is read-only to you until they act on it. Continue?",
+    confirmLabel: "Return to admin"
+  });
+  if (!ok) return;
   acting.value = true;
   try {
     await flushSaves();
@@ -1290,7 +1308,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", warnOnUnload));
   margin-bottom: 14px;
 }
 
-/* min-width:0 is what lets this shrink inside the header's no-wrap row; without it the box refuses to go
+/* min-width:0 is what lets this shrink inside the header's action group; without it the box refuses to go
    below the width of everything in it and nothing ever wraps. */
 .rf-head {
   display: flex;
@@ -1324,6 +1342,17 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", warnOnUnload));
 .rf-alert--warn { background: #fff4e5; color: #8a5300; }
 .rf-alert--reject { background: #fdecea; color: #8a1c12; }
 .rf-alert--lock { background: var(--teal-050); color: var(--teal-900); }
+
+/* A phone spends the panel gutter on the fields instead, and the header actions line up with the
+   breadcrumb above them once they have a line of their own. */
+@media (max-width: 599px) {
+  .rf-card :deep(.q-tab-panel) {
+    padding: 12px 10px;
+  }
+  .rf-head {
+    justify-content: flex-start;
+  }
+}
 
 /* The action bar that used to close the page is gone — every button is in the header or on the tab strip
    now, so the form ends on its last field. */

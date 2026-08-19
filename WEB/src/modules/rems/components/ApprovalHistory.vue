@@ -1,6 +1,9 @@
 <template>
   <q-expansion-item icon="o_history" label="Approval history" dense-toggle class="ah">
     <div v-if="loading" class="q-pa-md row flex-center"><q-spinner color="primary" size="24px" /></div>
+    <div v-else-if="failed" class="q-pa-md text-grey-6">
+      This engagement's approval history is not available to you.
+    </div>
     <div v-else-if="!rounds.length" class="q-pa-md text-grey-6">
       This engagement has not been routed for approval yet.
     </div>
@@ -57,14 +60,21 @@ const props = defineProps({
 const fmt = useDateFormat();
 const rounds = ref([]);
 const loading = ref(false);
+// Told apart from an empty history on purpose. This panel also sits on the approver's own task now,
+// and reading the engagement behind it is not a permission every approver holds — a 403 rendered as
+// "not routed for approval yet" would be a flat lie to somebody staring at an open round.
+const failed = ref(false);
 
 const roundColor = (status) =>
   ({ Approved: "positive", Rejected: "negative", Pending: "primary" }[status] || "grey-6");
 
+// A ratio only meant something while a round could carry with an objection against it. One decline closes
+// a round now, so "1/1" says nothing — and a round closed under the old two-decline threshold would read
+// its own count against today's, as "2/1". The decisions underneath name every decliner either way.
 const roundLabel = (r) => {
   if (r.status === "Approved") return "Approved";
-  if (r.status === "Rejected") return `Declined ${r.declineCount}/${r.declineThreshold}`;
-  return `Open — ${r.declineCount}/${r.declineThreshold} declines`;
+  if (r.status === "Rejected") return r.declineCount > 1 ? `Declined by ${r.declineCount}` : "Declined";
+  return "Open";
 };
 
 // Superseded is the one that needs saying in words: the round closed before this approver decided, which
@@ -76,6 +86,7 @@ const decisionColor = (status) =>
   ({ Approved: "positive", Rejected: "negative", Superseded: "grey-6", Pending: "primary" }[status] || "grey-6");
 
 const load = async () => {
+  failed.value = false;
   if (!props.engagementId) {
     rounds.value = [];
     return;
@@ -84,8 +95,10 @@ const load = async () => {
   try {
     rounds.value = (await remsApi.approvalHistory(props.engagementId)) || [];
   } catch {
-    // A history that will not load is not worth an error banner over the page it decorates.
+    // A history that will not load is not worth an error banner over the page it decorates; the panel
+    // says so in its own body instead.
     rounds.value = [];
+    failed.value = true;
   } finally {
     loading.value = false;
   }

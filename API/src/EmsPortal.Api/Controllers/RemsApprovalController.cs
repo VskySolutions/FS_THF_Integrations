@@ -524,12 +524,13 @@ public sealed class RemsApprovalController : ControllerBase
         _approvals.UpdateTask(task);
         await _activity.WriteAsync(new CreateActivityEventDto(EntityType.Rems, rems.Id, ActivityEventTypes.RemsApproved, null, task.ApproverRole.ToString()), cancellationToken);
 
-        // The round is settled once nobody is still deciding. It cannot require EVERY task to be approved
-        // any more: a single decline no longer closes the round, so a round holding one decline and
-        // otherwise approvals would never satisfy that test and would sit open forever with no pending task
-        // left to move it. Below the decline threshold the objection is outvoted and the round carries.
-        // (A round that REACHED the threshold was closed by Reject and is not Pending, so it cannot land
-        // here.) Flip the round + engagement and raise the full-approval notification EXACTLY ONCE to
+        // The round is settled once nobody is still deciding. At a threshold of one decline that comes to
+        // the same thing as every task being approved: a decline closes the round from Reject, so a round
+        // still Pending here holds nothing but approvals and the tasks yet to answer. It stays written as
+        // "nobody pending" rather than "all approved" because that is what the threshold means — raise
+        // RemsApprovalThreshold.Declines and an outvoted decline sits in an open round, which "all
+        // approved" could never satisfy and would leave the round open forever with no pending task left
+        // to move it. Flip the round + engagement and raise the full-approval notification EXACTLY ONCE to
         // everyone involved (AC-REMS-019.1/12).
         var fullyApproved = round.Tasks.All(t => t.Id == task.Id || t.Status != RemsApprovalTaskStatus.Pending);
         if (fullyApproved)
@@ -572,17 +573,17 @@ public sealed class RemsApprovalController : ControllerBase
     /// <summary>
     /// Decline the caller's own task with a required reason (AC-REMS-020).
     /// <para>
-    /// One decline no longer ends a round. The round closes when
-    /// <see cref="RemsApprovalThreshold.Declines"/> approvers have declined, so a lone objector is outvoted
-    /// rather than decisive — with four approvals against one decline the engagement is approved over that
-    /// objection. Approvers still pending when the threshold is reached are marked
-    /// <see cref="RemsApprovalTaskStatus.Superseded"/> rather than left Pending on a closed round, which
-    /// would read as though they never responded.
+    /// One decline ends the round (<see cref="RemsApprovalThreshold.Declines"/>): an objection is answered
+    /// by reworking the engagement, never outvoted by the approvals beside it. Approvers still pending when
+    /// it closes are marked <see cref="RemsApprovalTaskStatus.Superseded"/> rather than left Pending on a
+    /// closed round, which would read as though they never responded; approvers who had already approved
+    /// keep that decision on the dead round and decide again, checklist and all, on the next one.
     /// </para>
     /// <para>
     /// A closed round sends the request back to its INITIATOR to rework the engagement setup, not to the
-    /// admin. Each decliner's own reason is the record of why — the round's single
-    /// <c>RejectionReason</c> cannot hold several, so it carries only the decline that closed the round.
+    /// admin. The round's single <c>RejectionReason</c> carries the decline that closed it, and each
+    /// decliner's own reason stays on their task — which is the whole record at a threshold of one, and
+    /// still holds if the threshold is ever raised past it.
     /// </para>
     /// </summary>
     [HttpPost("approval-tasks/{taskId:guid}/reject")]
@@ -628,6 +629,8 @@ public sealed class RemsApprovalController : ControllerBase
         var threshold = RemsApprovalThreshold.EffectiveFor(round.Tasks.Count);
         var closesRound = declines >= threshold;
 
+        // Inert while the threshold is one decline, and deliberately kept: what decides is the threshold,
+        // not this branch. Raise RemsApprovalThreshold.Declines and a round has to stay open again.
         if (!closesRound)
         {
             await _unitOfWork.SaveChangesAsync(cancellationToken);

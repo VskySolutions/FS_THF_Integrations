@@ -65,12 +65,22 @@
         </q-td>
       </template>
 
-      <!-- How far the whole ROUND has got, not just this task: "1/4" reads as one of four approvers done. -->
+      <!-- How far the whole ROUND has got, not just this task. Approved and rejected are counted apart
+           because a rejection ENDS the round: "1/4" on its own read as three approvers still thinking
+           about it, when in fact nobody else will ever decide. The red count is what says so, and it is
+           there only when somebody actually rejected — a red 0 on every other row buys nothing. -->
       <template #body-cell-approvals="cell">
         <q-td :props="cell">
-          <q-badge :color="progressColor(cell.row)">
-            {{ cell.row.approvedCount }}/{{ cell.row.approverCount }}
-          </q-badge>
+          <div class="row items-center no-wrap">
+            <!-- Grey until somebody has actually approved: green on a 0 reads as progress. -->
+            <q-badge :color="cell.row.approvedCount ? 'positive' : 'grey-6'">
+              <q-icon name="o_check" size="12px" class="q-mr-xs" />{{ cell.row.approvedCount || 0 }}
+            </q-badge>
+            <q-badge v-if="cell.row.rejectedCount" color="negative" class="q-ml-xs">
+              <q-icon name="o_close" size="12px" class="q-mr-xs" />{{ cell.row.rejectedCount }}
+            </q-badge>
+            <span class="text-caption text-grey-7 q-ml-sm">of {{ cell.row.approverCount || 0 }}</span>
+          </div>
           <q-tooltip>{{ progressHint(cell.row) }}</q-tooltip>
         </q-td>
       </template>
@@ -182,12 +192,6 @@ watch([search, filters], reload, { deep: true });
 // Round progress. A rejection ENDS the round, so the undecided tasks never decide — "awaiting" is only
 // meaningful while the round is still open, and the counts must not imply otherwise.
 const pendingOf = (row) => Math.max(0, (row.approverCount || 0) - (row.approvedCount || 0) - (row.rejectedCount || 0));
-
-const progressColor = (row) => {
-  if (row.rejectedCount > 0) return "negative";
-  if (row.approverCount > 0 && row.approvedCount === row.approverCount) return "positive";
-  return "primary";
-};
 
 const progressHint = (row) => {
   const parts = [`${row.approvedCount || 0} of ${row.approverCount || 0} approved`];

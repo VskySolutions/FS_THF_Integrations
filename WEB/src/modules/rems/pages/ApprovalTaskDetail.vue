@@ -86,6 +86,33 @@
                   </div>
                 </div>
 
+                <q-separator class="q-my-md" />
+                <!-- The entity's addresses and contacts, as the client gave them on the intake
+                     form. They read with the request that asked for them, rather than with
+                     Engagement Setup, which is the firm's own work on top of that answer. -->
+                <q-expansion-item icon="o_home_work" label="Addresses & contacts" dense-toggle class="rems-details">
+                  <div class="q-pa-sm">
+                    <div class="row q-col-gutter-md">
+                      <div class="col-12 col-sm-6">
+                        <div class="rems-label">Physical</div>
+                        <div class="rems-value">{{ addressOf("Physical") }}</div>
+                      </div>
+                      <div class="col-12 col-sm-6">
+                        <div class="rems-label">Mailing</div>
+                        <div class="rems-value">{{ addressOf("Mailing") }}</div>
+                      </div>
+                    </div>
+                    <div class="rems-label q-mt-sm">Contacts</div>
+                    <div v-if="entityContacts.length" class="column q-gutter-xs">
+                      <div v-for="c in entityContacts" :key="c.id" class="rems-value">
+                        <span class="text-weight-medium">{{ roleText(c.role) }}:</span> {{ c.name || "—" }}
+                        <span class="text-grey-6">({{ c.email || "no email" }} · {{ c.phone || "no phone" }})</span>
+                      </div>
+                    </div>
+                    <div v-else class="rems-value text-grey-6">No contacts.</div>
+                  </div>
+                </q-expansion-item>
+
                 <template v-if="request.description">
                   <q-separator class="q-my-md" />
                   <div class="rems-label">Description</div>
@@ -140,30 +167,6 @@
 
               <!-- ---------- Setup ---------- -->
               <q-tab-panel name="setup">
-                <!-- The entity's addresses + contacts, as they came in on the submitted form. -->
-                <q-expansion-item icon="o_home_work" label="Addresses & contacts" dense-toggle class="rems-details q-mb-md">
-                  <div class="q-pa-sm">
-                    <div class="row q-col-gutter-md">
-                      <div class="col-12 col-sm-6">
-                        <div class="rems-label">Physical</div>
-                        <div class="rems-value">{{ addressOf("Physical") }}</div>
-                      </div>
-                      <div class="col-12 col-sm-6">
-                        <div class="rems-label">Mailing</div>
-                        <div class="rems-value">{{ addressOf("Mailing") }}</div>
-                      </div>
-                    </div>
-                    <div class="rems-label q-mt-sm">Contacts</div>
-                    <div v-if="entityContacts.length" class="column q-gutter-xs">
-                      <div v-for="c in entityContacts" :key="c.id" class="rems-value">
-                        <span class="text-weight-medium">{{ roleText(c.role) }}:</span> {{ c.name || "—" }}
-                        <span class="text-grey-6">({{ c.email || "no email" }} · {{ c.phone || "no phone" }})</span>
-                      </div>
-                    </div>
-                    <div v-else class="rems-value text-grey-6">No contacts.</div>
-                  </div>
-                </q-expansion-item>
-
                 <div class="row q-col-gutter-md">
                   <div v-for="item in setupRows" :key="item.label" class="col-12 col-sm-6">
                     <div class="rems-label">{{ item.label }}</div>
@@ -331,6 +334,15 @@
                     </q-item-section>
                   </q-item>
                 </q-list>
+
+                <!-- Every round on this engagement, not only the one being decided. A resubmission opens
+                     a NEW round rather than reopening the last, so what the previous approvers objected
+                     to is readable nowhere else on this page. Open on arrival: an approver looking at a
+                     repeat round needs the round it repeats in front of them, not behind a toggle. -->
+                <approval-history
+                  v-if="engagement.engagementId" :engagement-id="engagement.engagementId"
+                  default-opened class="q-mt-md"
+                />
               </q-tab-panel>
             </q-tab-panels>
           </q-card>
@@ -406,7 +418,7 @@
 
     <!-- Reject: a required reason (AC-REMS-020.1). -->
     <q-dialog v-model="rejectOpen" persistent>
-      <q-card style="min-width: 380px; max-width: 90vw;">
+      <q-card style="width: 380px; max-width: 90vw;">
         <q-card-section class="text-subtitle1 text-weight-medium">Reject this approval task</q-card-section>
         <q-separator />
         <q-card-section>
@@ -455,6 +467,7 @@ import AppDetailHeader from "components/common/AppDetailHeader.vue";
 // Explicit import: boot/components.js registers only the Zw* inputs globally, so without this the tag
 // resolves to nothing and the Conversation card renders empty — no error, just a blank panel.
 import EntityConversationPanel from "components/universal/EntityConversationPanel.vue";
+import ApprovalHistory from "modules/rems/components/ApprovalHistory.vue";
 
 const route = useRoute();
 const notify = useNotify();
@@ -480,12 +493,15 @@ const savingItemId = ref(null);
 const TABS = [
   { name: "request", icon: "o_assignment", label: "Request" },
   { name: "client", icon: "o_business", label: "Client" },
-  { name: "setup", icon: "o_engineering", label: "Setup" },
+  { name: "setup", icon: "o_engineering", label: "Engagement Setup" },
   { name: "marketing", icon: "o_campaign", label: "Marketing" },
   { name: "commission", icon: "o_payments", label: "Commission" },
   { name: "approval", icon: "o_approval", label: "Approval" }
 ];
-const tab = ref("setup");
+// Opens on Approval, not on the packet: the approver came here to decide, and that tab carries the
+// round, where the other approvers stand and their own decision. The tabs before it are the material
+// they read on the way to it, left in the order it was filled in.
+const tab = ref("approval");
 
 const request = computed(() => task.value?.request || {});
 const engagement = computed(() => task.value?.engagement || {});

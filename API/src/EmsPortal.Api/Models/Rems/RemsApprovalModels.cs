@@ -160,8 +160,9 @@ public sealed record RemsApprovalRoundHistory(
     DateTime SentOnUtc,
     string? SentBy,
     DateTime? CompletedOnUtc,
-    // What it would have taken to close this round, and how close it got — a round that carried with one
-    // decline against it reads very differently from a unanimous one.
+    // What it would have taken to close this round, and how close it got. One decline closes a round
+    // now, so these agree on anything that failed today — but a round closed under the old two-decline
+    // threshold still carries the count it actually took, against a threshold recomputed as one.
     int DeclineThreshold,
     int DeclineCount,
     IReadOnlyList<RemsApprovalRoundDecision> Decisions);

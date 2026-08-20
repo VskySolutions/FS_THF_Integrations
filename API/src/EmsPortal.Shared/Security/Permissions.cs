@@ -51,7 +51,7 @@ public static class Permissions
     public const string OptionSetsManage = "optionSets.manage";
 
     // REMS — Real Estate Management System (WO-110+). The operational roles Partner/Admin are composed of
-    // these keys (see ForPartner/ForAdmin). The three seat roles are composed of none of them, deliberately.
+    // these keys (see ForPartner/ForAdmin). The four seat roles are composed of none of them, deliberately.
     /// <summary>View REMS requests.</summary>
     public const string RemsRequestsRead = "rems.requests.read";
     /// <summary>Create REMS requests.</summary>
@@ -176,13 +176,14 @@ public static class Permissions
     };
 
     /// <summary>
-    /// The REMS seat roles — CSE, Engagement Executive and Billing Manager. They grant
+    /// The REMS seat roles — CSE, Engagement Executive, Billing Manager and Shareholder. They grant
     /// nothing, and that is the point: each one marks somebody as offerable in the picker that fills that
-    /// seat on an engagement, and what they may then do follows from the engagement naming them, not from
-    /// a permission key. A CSE approves because they are this engagement's CSE; requiring a permission to
-    /// do it could only ever lock a genuine one out.
+    /// seat on an engagement — or, for a Shareholder, as an automatic approver on every engagement —
+    /// and what they may then do follows from being ON the engagement, not from a permission key. A CSE
+    /// approves because they are this engagement's CSE; requiring a permission to do it could only ever
+    /// lock a genuine one out.
     /// <para>
-    /// One set for all three because there is nothing to tell apart — they are directories, not
+    /// One set for all four because there is nothing to tell apart — they are directories, not
     /// capabilities. The retired Approver role was the same idea and the same empty set.
     /// </para>
     /// </summary>
@@ -190,7 +191,7 @@ public static class Permissions
 
     /// <summary>
     /// The seeded permission set for a system role name (SuperAdmin/TenantAdmin, the REMS operational
-    /// roles Partner/Admin, and the three seat roles), or an empty set for any other name (including custom
+    /// roles Partner/Admin, and the four seat roles), or an empty set for any other name (including custom
     /// roles). Used as the fallback when an assignment carries no explicit permission keys and when a
     /// caller holds only a role claim (API-key callers, pre-RBAC tokens).
     /// </summary>
@@ -202,7 +203,8 @@ public static class Permissions
         Roles.Admin => ForAdmin(),
         // Listed rather than left to fall through, so the seat roles are visibly a decision — they grant
         // nothing on purpose, which reads very differently from a name nobody thought about.
-        Roles.Cse or Roles.EngagementExecutive or Roles.BillingManager => ForSeatRole(),
+        Roles.Cse or Roles.EngagementExecutive or Roles.BillingManager or Roles.Shareholder
+            => ForSeatRole(),
         _ => Array.Empty<string>(),
     };
 }

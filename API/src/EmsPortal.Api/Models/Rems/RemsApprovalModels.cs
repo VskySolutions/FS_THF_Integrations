@@ -12,9 +12,10 @@ public sealed record RemsApproverSuggestion(RemsUserRef User, string Role);
 
 /// <summary>
 /// The full approver list an engagement will route to (updates until the round is sent): the automatic
-/// approvers — the CSE and every commission recipient — plus anyone added on the Approval tab.
+/// approvers — the firm's shareholders, the Department Director, the CSE and every commission recipient —
+/// plus anyone added on the Approval tab. Ordered for reading, shareholders first.
 /// <see cref="SelectedApproverIds"/> is just the added ones, so the picker shows only what a user chose
-/// rather than the people who are approvers regardless.
+/// rather than the people who are approvers regardless — and cannot be used to take one of them off.
 /// </summary>
 public sealed record RemsApproverList(
     Guid EngagementId,
@@ -23,15 +24,21 @@ public sealed record RemsApproverList(
     IReadOnlyList<Guid> SelectedApproverIds);
 
 /// <summary>
-/// A user selectable as an extra approver: someone holding the Approver role in the active tenant. The
-/// email travels with them because the name alone does not separate two people who share one — the job
-/// title used to do that job, and it is gone from the platform.
+/// A user selectable as an extra approver: any active user in the tenant (there is no Approver role).
+/// <para>
+/// <paramref name="Roles"/> is every role they hold in this tenant, which is what the picker shows beside
+/// the name: choosing who else should sign off is a question about what someone IS to the firm, and a list
+/// of bare names cannot answer it. The email travels with them too, as the tiebreak when two people share
+/// a name and a role.
+/// </para>
 /// </summary>
-public sealed record RemsApproverOption(Guid UserId, string Name, string? Email);
+public sealed record RemsApproverOption(
+    Guid UserId, string Name, string? Email, IReadOnlyList<string> Roles);
 
 /// <summary>
 /// Replaces the engagement's ADDED approvers with exactly these users (AC-REMS-018). An empty list removes
-/// the additions; the automatic approvers are unaffected either way.
+/// the additions; the automatic approvers — shareholders among them — are unaffected either way, which is
+/// what makes them impossible to remove from here.
 /// </summary>
 public sealed class SetRemsApproversRequest
 {
@@ -108,7 +115,7 @@ public sealed record RemsApprovalRequestView(
     string RemsNumber,
     string? Description,
     string RequestedClientName,
-    /// <summary>The client this one is a subsidiary of, or null on every other request type.</summary>
+    /// <summary>The client this one is a subsidiary or child of, where the referral named one.</summary>
     string? ParentClientName,
     string Type,
     string Status,
@@ -289,8 +296,10 @@ public static class RemsApprovalChecklistCatalog
         "Commission allocation accepted",
     };
 
-    // A hand-picked approver with no other standing on the engagement: a general review, since nothing
-    // narrower can be assumed about why they were added.
+    // An approver with no other standing on the engagement: a general review, since nothing narrower can
+    // be assumed about why they are looking at it. Shared with Shareholder — being asked about every
+    // engagement says nothing about what to ask them, and a firm-wide checklist would have to be general
+    // in exactly this way.
     private static readonly IReadOnlyList<string> Approver = new[]
     {
         "Engagement details reviewed",
@@ -303,7 +312,7 @@ public static class RemsApprovalChecklistCatalog
         RemsApproverRole.CSE => Cse,
         RemsApproverRole.DepartmentDirector => DepartmentDirector,
         RemsApproverRole.CommissionRecipient => CommissionRecipient,
-        RemsApproverRole.Approver => Approver,
+        RemsApproverRole.Shareholder or RemsApproverRole.Approver => Approver,
         _ => Array.Empty<string>(),
     };
 }

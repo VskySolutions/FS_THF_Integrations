@@ -15,8 +15,10 @@ import { optionSetApi, EntityType } from "services/api";
 // Seeded with the closed codes so the first paint is already right and stays right if a resolve fails
 // (a caller without optionSets.read, an offline tick). The resolved set overlays it when it arrives.
 const SEED = {
-  // "New Engagement" and "Existing Client" were merged into one value — every new engagement for a
-  // client we already have is both — keeping the `existing_client` code (MergeRemsExistingClientTypes).
+  // Two answers, down from four. "New Engagement" and "Existing Client" merged, since every new engagement
+  // for a client we already have is both (MergeRemsExistingClientTypes); "Subsidiary / Child of Existing
+  // Client" then folded into the same value (RetireRemsSubsidiaryType), because a child of a client on file
+  // is one of those too — what marks it as a child is the Parent Client named on it.
   // `description` mirrors the option item's own Description column — it is what the tooltip renders
   // wherever the value is offered or displayed, so the seed carries it too and a resolve failure does
   // not silently strip the explanation.
@@ -30,13 +32,8 @@ const SEED = {
       label: "New Engagement, Existing Client",
       value: "existing_client",
       description: "The person or company already has an active client record with THF, and this request " +
-        "creates an additional engagement under that same client."
-    },
-    {
-      label: "Subsidiary / Child of Existing Client",
-      value: "subsidiary_child_of_existing_client",
-      description: "When the client is a child of an already present parent client. All the billing goes " +
-        "to the parent client in this situation."
+        "creates an additional engagement under that same client. Name the parent client if this one is " +
+        "a subsidiary or child of it."
     }
   ],
   // How the client heard about THF, asked on the public EMS form.

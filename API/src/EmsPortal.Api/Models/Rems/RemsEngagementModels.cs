@@ -16,7 +16,7 @@ public sealed record RemsClientFormRow(
     Guid RemsId,
     string RemsNumber,
     string ClientName,
-    /// <summary>The client this one is a subsidiary of, or null on every other request type.</summary>
+    /// <summary>The client this one is a subsidiary or child of, where the referral named one.</summary>
     string? ParentClientName,
     string RequestStatus,
     bool HasForm,

@@ -218,8 +218,8 @@ const columns = computed(() => [
   // unreachable.
   { name: "customerEmail", label: "Client Email", field: (r) => r.customerEmail || "—", align: "left", default: false, filterable: false },
   { name: "customerMobileNumber", label: "Client Phone Number", field: (r) => r.customerMobileNumber || "—", align: "left", default: false, filterable: false },
-  // Populated only on a subsidiary, so it reads as "—" on most rows — which is why it is off by default
-  // like the other context columns rather than sitting in everyone's way.
+  // Populated only where a parent was named, so it reads as "—" on most rows — which is why it is off by
+  // default like the other context columns rather than sitting in everyone's way.
   { name: "parentClientName", label: "Parent Client", field: (r) => r.parentClientName || "—", align: "left", default: false, filterable: false },
   { name: "cse", label: "CSE", field: (r) => r.cse?.name || "—", align: "left", default: false, filterable: false },
   { name: "industryGroup", label: "Entity Type", field: (r) => r.industryGroup || "—", align: "left", default: false, filterable: false },

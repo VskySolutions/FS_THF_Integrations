@@ -191,9 +191,9 @@ public sealed class RemsRequestsController : ControllerBase
             return emailClash;
         }
 
-        // The parent, on a subsidiary. Resolved from the type that was just settled above rather than the
-        // one the caller sent, so a request auto-promoted to "existing client" by the name match does not
-        // keep a parent it no longer claims to have.
+        // The parent, where one is named. Resolved from the type that was just settled above rather than
+        // the one the caller sent, so a request demoted to "brand-new client" does not keep a parent it no
+        // longer claims to have.
         var (parentId, parentName, badParent) = await ResolveParentClientAsync(
             type, request.ParentClientReferenceId, cancellationToken);
         if (badParent is not null)
@@ -340,8 +340,8 @@ public sealed class RemsRequestsController : ControllerBase
         if (request.ExistingClientReferenceId.HasValue) rems.ExistingClientReferenceId = request.ExistingClientReferenceId;
 
         // The parent, resolved against the type the request now holds — which is why it runs after Type has
-        // landed above. Assigned unconditionally rather than only-when-supplied: on any type but subsidiary
-        // this resolves to null, and that IS the clearing. `??` keeps a parent already on file when an edit
+        // landed above. Assigned unconditionally rather than only-when-supplied: on a brand-new client this
+        // resolves to null, and that IS the clearing. `??` keeps a parent already on file when an edit
         // simply does not mention it.
         var (parentId, parentName, badParent) = await ResolveParentClientAsync(
             rems.Type, request.ParentClientReferenceId ?? rems.ParentClientReferenceId, cancellationToken);
@@ -1116,8 +1116,14 @@ public sealed class RemsRequestsController : ControllerBase
     /// </summary>
     /// <summary>
     /// The parent client to store, for a given request type: the named person and their name today, or
-    /// (null, null) on any type but subsidiary — which is what clears a parent left behind by a type
-    /// change. The third element is a 400 when the id names somebody who is not a client on file.
+    /// (null, null) on any type but "new engagement, existing client" — which is what clears a parent left
+    /// behind by a type change. The third element is a 400 when the id names somebody who is not a client
+    /// on file.
+    /// <para>
+    /// Optional on that type, not required. A parent is what marks the referral as a subsidiary or child;
+    /// most new engagements for an existing client are not one, and the answer to "who is the parent" is
+    /// then nobody rather than a question left unanswered.
+    /// </para>
     /// <para>
     /// The name is copied rather than joined at read time, matching <c>RequestedClientName</c>: the lists
     /// that show it are paged over hundreds of requests and would otherwise reach into Person for one
@@ -1127,7 +1133,7 @@ public sealed class RemsRequestsController : ControllerBase
     private async Task<(Guid? Id, string? Name, IActionResult? Failure)> ResolveParentClientAsync(
         string? type, Guid? parentClientReferenceId, CancellationToken cancellationToken)
     {
-        if (!string.Equals(type, RemsRequestTypes.SubsidiaryChildOfExistingClient, StringComparison.Ordinal)
+        if (!string.Equals(type, RemsRequestTypes.ExistingClient, StringComparison.Ordinal)
             || parentClientReferenceId is not { } parentId)
         {
             return (null, null, null);

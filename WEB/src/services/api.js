@@ -648,10 +648,13 @@ export const remsApi = {
   // Set the commission splits (≤10 recipients, each > 0 and ≤ 100). splits: [{ employeeId, percentage }].
   updateCommission: (id, splits) => api.put(`/api/rems/engagements/${id}/commission`, { splits }).then(unwrap),
   // The full approver list: { engagementId, engagementStatus, approvers:[{ user:{id,name}, role }],
-  // selectedApproverIds }. approvers = the automatic ones (CSE + commission recipients) plus the added
-  // ones; selectedApproverIds = only the added ones, which is what the picker binds to.
+  // selectedApproverIds }. approvers = the automatic ones (the firm's shareholders, the department
+  // director, the CSE and the commission recipients), ordered for reading, plus the added ones;
+  // selectedApproverIds = only the added ones, which is what the picker binds to — so the automatic ones
+  // cannot be unpicked.
   approvers: (id) => api.get(`/api/rems/engagements/${id}/approvers`).then(unwrap),
-  // Users selectable as EXTRA approvers — the tenant's Approver-role users → [{ userId, name, email }].
+  // Users selectable as EXTRA approvers — every active user in the tenant, with the roles they hold there
+  // for the picker label → [{ userId, name, email, roles: [] }].
   approverOptions: (id) => api.get(`/api/rems/engagements/${id}/approver-options`).then(unwrap),
   // Replace the ADDED approvers. An empty array removes the additions; the automatic ones always route.
   setApprovers: (id, userIds) => api.put(`/api/rems/engagements/${id}/approvers`, { userIds }).then(unwrap),

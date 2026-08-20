@@ -136,11 +136,13 @@
         </button>
       </div>
 
-      <!-- A lookup with no free-text fallback, unlike the client box above — "child of an EXISTING
-           client" cannot be satisfied by typing a name nobody has on file. -->
-      <div v-if="isSubsidiary" class="rf-parent">
+      <!-- Only where the client is one THF already has, and optional there: naming a parent is what marks
+           the referral as a subsidiary or child, and most new engagements for an existing client are
+           neither. A lookup with no free-text fallback, unlike the client box above — a child of an
+           EXISTING client cannot hang off a name nobody has on file. -->
+      <div v-if="showsParent" class="rf-parent">
         <div class="app-field">
-          <app-field-label label="Parent Client" required />
+          <app-field-label label="Parent Client" />
           <q-input
             ref="parentFieldRef"
             v-model="parentQuery"
@@ -149,8 +151,6 @@
             placeholder="Search the parent client…"
             autocomplete="off"
             aria-label="Parent Client"
-            :error="attempted && !model.parentClientReferenceId"
-            error-message="Pick the client this one is a subsidiary of."
             @update:model-value="onParentTyped"
             @focus="onParentFocus"
             @blur="onParentBlur"
@@ -173,8 +173,9 @@
               />
               <q-icon name="o_info" size="18px" color="grey-6" class="rf-note">
                 <q-tooltip anchor="top right" self="bottom right" max-width="300px" :delay="200">
-                  The client THF already has on file that this one belongs to. Only clients on file are
-                  offered — a parent nobody has a record of is not a parent this request can point at.
+                  Fill this in only if the referral is a subsidiary or child of a client THF already has —
+                  that is what marks it as one. Only clients on file are offered: a parent nobody has a
+                  record of is not a parent this request can point at.
                 </q-tooltip>
               </q-icon>
             </template>
@@ -279,8 +280,7 @@ import { ref, reactive, computed, watch, nextTick, onBeforeUnmount } from "vue";
 import { remsApi, mediaApi } from "services/api";
 import { useNotify } from "composables/useNotify";
 import {
-  useRemsMeta, REMS_EXISTING_CLIENT_TYPES, REMS_TYPE_BRAND_NEW_CLIENT, REMS_TYPE_EXISTING_CLIENT,
-  REMS_TYPE_SUBSIDIARY
+  useRemsMeta, REMS_EXISTING_CLIENT_TYPES, REMS_TYPE_BRAND_NEW_CLIENT, REMS_TYPE_EXISTING_CLIENT
 } from "modules/rems/useRemsMeta";
 import { dialFromIso, DEFAULT_COUNTRY_ISO } from "composables/useCountries";
 
@@ -564,16 +564,21 @@ const chooseType = (value) => {
   typeChosenByUser.value = true;
   model.type = value;
   if (value === REMS_TYPE_BRAND_NEW_CLIENT && linkedClient.value) detachClient();
-  // Leaving "Subsidiary" takes the parent with it — the field is gone from the form, so a parent left
-  // behind would be a claim nothing on screen is still making. The server applies the same rule.
-  if (value !== REMS_TYPE_SUBSIDIARY) clearParent();
+  // Answering "brand-new client" takes the parent with it — the field is gone from the form, so a parent
+  // left behind would be a claim nothing on screen is still making. Nobody THF has on file can be the
+  // parent of a company THF has never heard of, either. The server applies the same rule.
+  if (value !== REMS_TYPE_EXISTING_CLIENT) clearParent();
 };
 
-// ---- Parent client (subsidiary only) ----
+// ---- Parent client ----
+// Offered on "New Engagement, Existing Client" and optional there. Naming a parent is what marks the
+// referral as a subsidiary or child; there was a third type saying so, and it only ever asked the partner
+// to say the same thing twice — before they had looked the parent up.
+//
 // Deliberately a separate lookup from the client box above rather than a second use of it: they answer
 // different questions, and a shared box would make picking the parent look like changing who the request
 // is for. Same endpoint, so both offer exactly the clients THF has on file.
-const isSubsidiary = computed(() => model.type === REMS_TYPE_SUBSIDIARY);
+const showsParent = computed(() => model.type === REMS_TYPE_EXISTING_CLIENT);
 
 const parentQuery = ref(model.parentClientName || "");
 const parentOptions = ref([]);

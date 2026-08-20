@@ -63,7 +63,6 @@ public sealed class RemsApprovalController : ControllerBase
     private readonly IRemsEngagementRepository _engagements;
     private readonly IRemsApprovalRepository _approvals;
     private readonly IRemsClientRepository _clients;
-    private readonly IRemsSettingsRepository _settings;
     private readonly IMediaRepository _media;
     private readonly IOptionSetRepository _optionSets;
     private readonly IUserRepository _users;
@@ -76,7 +75,6 @@ public sealed class RemsApprovalController : ControllerBase
         IRemsEngagementRepository engagements,
         IRemsApprovalRepository approvals,
         IRemsClientRepository clients,
-        IRemsSettingsRepository settings,
         IMediaRepository media,
         IOptionSetRepository optionSets,
         IUserRepository users,
@@ -88,7 +86,6 @@ public sealed class RemsApprovalController : ControllerBase
         _engagements = engagements;
         _approvals = approvals;
         _clients = clients;
-        _settings = settings;
         _media = media;
         _optionSets = optionSets;
         _users = users;
@@ -100,9 +97,9 @@ public sealed class RemsApprovalController : ControllerBase
     // -------------------- Suggested approvers (live) --------------------
 
     /// <summary>
-    /// The engagement's approver list (AC-REMS-018): the four automatic approvers — the managing
-    /// shareholder, the Department Director, the CSE and every commission recipient — plus anyone added on
-    /// the Approval tab. Updates until the round is sent.
+    /// The engagement's approver list (AC-REMS-018): the automatic approvers — the firm's shareholders, the
+    /// Department Director, the CSE and every commission recipient — plus anyone added on the Approval tab.
+    /// Updates until the round is sent.
     /// </summary>
     [HttpGet("engagements/{id:guid}/approvers")]
     [RequirePermission(Permissions.RemsEngagementsManage)]
@@ -177,7 +174,7 @@ public sealed class RemsApprovalController : ControllerBase
             if (requested.Any(uid => !allowed.Contains(uid)))
             {
                 return BadRequest(ApiResponseFactory.Error(
-                    ApiErrorCodes.ValidationFailed, "Validation failed.", "One or more selected approvers do not hold the Approver role."));
+                    ApiErrorCodes.ValidationFailed, "Validation failed.", "One or more selected approvers are not active users of this tenant."));
             }
         }
 
@@ -760,24 +757,59 @@ public sealed class RemsApprovalController : ControllerBase
     // -------------------- Approver-list generation --------------------
 
     /// <summary>
-    /// The approver set to route to (AC-REMS-018): the automatic approvers, plus whoever was added on
-    /// the Approval tab. Each user's role comes from <see cref="RoleFor"/> rather than from storage, so a
-    /// saved list keeps up when the engagement's people change under it.
+    /// The firm's shareholders: everyone holding the <c>Shareholder</c> role in the caller's tenant. Read
+    /// from the role rather than stored on the engagement, so naming a new shareholder puts them on every
+    /// engagement still to be routed without anyone reopening one.
+    /// </summary>
+    private async Task<IReadOnlyList<Guid>> ShareholderIdsAsync(CancellationToken cancellationToken)
+    {
+        if (User.GetActiveTenantId() is not { } tenantId)
+        {
+            return Array.Empty<Guid>();
+        }
+
+        var holders = await _users.ListByTenantRolesAsync(
+            tenantId, new[] { Roles.Shareholder }, cancellationToken);
+        return holders.Select(u => u.Id).Distinct().ToList();
+    }
+
+    /// <summary>
+    /// The approver set to route to (AC-REMS-018): the automatic approvers, plus whoever was added on the
+    /// Approval tab. Each user's role comes from <see cref="RoleFor"/> rather than from storage, so a saved
+    /// list keeps up when the engagement's people change under it.
+    /// <para>
+    /// Ordered for reading — shareholder, director, CSE, commission recipient, then anyone added by hand —
+    /// rather than in the order the ids happened to be collected. <c>OrderBy</c> is stable, so people
+    /// sharing a rank keep the order they came in: shareholders by name, commission recipients by their
+    /// split.
+    /// </para>
     /// </summary>
     private async Task<IReadOnlyList<(Guid UserId, RemsApproverRole Role)>> BuildApproverListAsync(
         REMSEngagement engagement, CancellationToken cancellationToken)
     {
+        var shareholders = await ShareholderIdsAsync(cancellationToken);
         var picked = await _engagements.ListApproversAsync(engagement.Id, cancellationToken);
 
         // Added approvers come ON TOP of the automatic ones — picking somebody never removes an approver
         // who holds their place by standing on the engagement.
-        var userIds = AutomaticApproverIds(engagement).Concat(picked.Select(a => a.UserId));
+        var userIds = AutomaticApproverIds(engagement, shareholders).Concat(picked.Select(a => a.UserId));
 
         return userIds
             .Distinct()
-            .Select(userId => (UserId: userId, Role: RoleFor(engagement, userId)))
+            .Select(userId => (UserId: userId, Role: RoleFor(engagement, shareholders, userId)))
+            .OrderBy(a => DisplayRank(a.Role))
             .ToList();
     }
+
+    /// <summary>Where each role sits in the approver list, most senior first.</summary>
+    private static int DisplayRank(RemsApproverRole role) => role switch
+    {
+        RemsApproverRole.Shareholder => 0,
+        RemsApproverRole.DepartmentDirector => 1,
+        RemsApproverRole.CSE => 2,
+        RemsApproverRole.CommissionRecipient => 3,
+        _ => 4,
+    };
 
     /// <summary>
     /// The users the Approval tab offers as EXTRA approvers: EVERY active user in the tenant.
@@ -789,7 +821,7 @@ public sealed class RemsApprovalController : ControllerBase
     /// the admin routing the round, and it is recorded as theirs.
     /// </para>
     /// <para>
-    /// The four automatic approvers are routed to whether or not they appear here, so picking one of them
+    /// The automatic approvers are routed to whether or not they appear here, so picking one of them
     /// changes nothing — the list is deduplicated before the round is built.
     /// </para>
     /// </summary>
@@ -800,7 +832,18 @@ public sealed class RemsApprovalController : ControllerBase
 
         return candidates
             .Select(u => new RemsApproverOption(
-                u.Id, names.TryGetValue(u.Id, out var n) ? n : u.DisplayName, u.Email))
+                u.Id,
+                names.TryGetValue(u.Id, out var n) ? n : u.DisplayName,
+                u.Email,
+                // The roles held HERE. The repository loads each user's assignments already filtered to
+                // this tenant, so another firm's roles cannot leak into the label. Legacy rows with no
+                // RoleEntity fall back to the enum name they were written with.
+                u.TenantRoles
+                    .Where(r => !r.Deleted && r.TenantId == tenantId)
+                    .Select(r => r.RoleEntity?.Name ?? r.Role.ToString())
+                    .Distinct()
+                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                    .ToList()))
             .OrderBy(o => o.Name)
             .ToList();
     }
@@ -814,20 +857,21 @@ public sealed class RemsApprovalController : ControllerBase
         => engagement.Rems?.Clients.FirstOrDefault(c => !c.Deleted);
 
     /// <summary>
-    /// The approvers every engagement routes to whatever is picked on the Approval tab: the Department
-    /// Director and CSE from the engagement's own setup, and every commission recipient. None of them is
-    /// a choice — each one is already on this engagement, and the tab adds people to them rather than
-    /// deciding them. Anyone missing (no CSE named, no director on the chosen department) simply
-    /// contributes nobody.
+    /// The approvers every engagement routes to whatever is picked on the Approval tab: the firm's
+    /// shareholders, the Department Director and CSE from the engagement's own setup, and every commission
+    /// recipient. None of them is a choice — each one is on this engagement by standing, and the tab adds
+    /// people to them rather than deciding them. Anyone missing (no CSE named, no director on the chosen
+    /// department, no shareholder in the tenant) simply contributes nobody.
     /// <para>
-    /// The firm's managing shareholder used to head this list, added to every round whatever the
-    /// engagement said. That seat is gone: an engagement is signed off by the people it names, and a
-    /// signature it needs from anyone else is added on its Approval tab, which offers the whole tenant.
+    /// Shareholders sign off on every engagement the firm routes, so they are here rather than written onto
+    /// the editable picked list: being automatic is exactly what stops them being taken off. Several people
+    /// can hold the role — the single Managing Shareholder this replaced could not be shared, and could not
+    /// be told apart from the seat it occupied.
     /// </para>
     /// </summary>
-    private static List<Guid> AutomaticApproverIds(REMSEngagement engagement)
+    private static List<Guid> AutomaticApproverIds(REMSEngagement engagement, IReadOnlyList<Guid> shareholderIds)
     {
-        var ids = new List<Guid>();
+        var ids = new List<Guid>(shareholderIds);
         if (engagement.DepartmentDirectorId is { } director)
         {
             ids.Add(director);
@@ -844,8 +888,16 @@ public sealed class RemsApprovalController : ControllerBase
     /// The role a user acts under on this engagement, most specific first. Someone with no standing of their
     /// own — a hand-picked approver — reviews as a plain <see cref="RemsApproverRole.Approver"/>. Derived
     /// rather than stored so a saved list keeps up when the CSE or the commission recipients change.
+    /// <para>
+    /// Shareholder is tested LAST of the standings, which is the opposite of where it sits in the list (see
+    /// <see cref="DisplayRank"/>). Being a shareholder is firm-wide; being this engagement's director or
+    /// CSE is about the engagement in front of them, and it is what decides their checklist and whether
+    /// they see the fee. A shareholder who directs the department reviews as its director and keeps that
+    /// sight of the figures — reading them as a shareholder would take it away.
+    /// </para>
     /// </summary>
-    private static RemsApproverRole RoleFor(REMSEngagement engagement, Guid userId)
+    private static RemsApproverRole RoleFor(
+        REMSEngagement engagement, IReadOnlyList<Guid> shareholderIds, Guid userId)
     {
         if (engagement.Rems?.CSEId == userId)
         {
@@ -858,6 +910,10 @@ public sealed class RemsApprovalController : ControllerBase
         if (engagement.CommissionSplits.Any(s => !s.Deleted && s.EmployeeId == userId))
         {
             return RemsApproverRole.CommissionRecipient;
+        }
+        if (shareholderIds.Contains(userId))
+        {
+            return RemsApproverRole.Shareholder;
         }
         return RemsApproverRole.Approver;
     }
@@ -872,7 +928,9 @@ public sealed class RemsApprovalController : ControllerBase
                 new RemsUserRef(a.UserId, names.TryGetValue(a.UserId, out var n) ? n : string.Empty), a.Role.ToString()))
             .ToList();
 
-        // Only the ADDED approvers — the picker must not show back the people who are on the list anyway.
+        // Only the approvers somebody ADDED. The automatic ones — shareholders, director, CSE, commission
+        // recipients — are left out: the picker must not show back somebody who is on the list anyway, and
+        // binding them here would imply they could be unpicked.
         var selected = (await _engagements.ListApproversAsync(engagement.Id, cancellationToken))
             .Select(a => a.UserId)
             .ToList();

@@ -396,8 +396,7 @@ import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import {
-  useRemsMeta, useRemsOptionSets, useRemsEngagementOptionSets, useRemsIndustryGroups,
-  REMS_TYPE_SUBSIDIARY, REMS_SEAT_ROLES
+  useRemsMeta, useRemsOptionSets, useRemsEngagementOptionSets, useRemsIndustryGroups, REMS_SEAT_ROLES
 } from "modules/rems/useRemsMeta";
 import { useAutoSave } from "modules/rems/useAutoSave";
 import { REMS_STATUS } from "modules/rems/remsStatus";
@@ -855,7 +854,7 @@ const clientRows = computed(() => [
   { label: "Client Email Address", value: clientForm.customerEmail },
   { label: "Client Phone Number", value: clientForm.customerMobileNumber },
   { label: "Relationship to THF", value: labelOf(typeOptions.value, clientForm.type) },
-  // Only on a subsidiary — on any other type there is no parent, and a blank row would suggest one is
+  // Only where one was named — most referrals have no parent, and a blank row would suggest one is
   // missing rather than not applicable.
   { label: "Parent Client", value: clientForm.parentClientName, hideWhenEmpty: true },
   { label: "Entity Type", value: labelOf(industryGroupOptions.value, setupForm.industryGroup) },
@@ -985,12 +984,10 @@ const clientProblem = () => {
   if (!clientForm.customerEmail?.trim()) {
     return "Give the client's email address — the intake form is emailed to them.";
   }
-  // A subsidiary with no parent is the one answer the type does not finish. Required here rather than on
-  // the server, so a request raised before this field existed can still be saved by somebody editing it
-  // for an unrelated reason — but not left half-answered by anyone filling the form now.
-  if (clientForm.type === REMS_TYPE_SUBSIDIARY && !clientForm.parentClientReferenceId) {
-    return "Pick the client this one is a subsidiary of.";
-  }
+  // No parent-client check. It used to be required, because "Subsidiary / Child of Existing Client" was a
+  // type of its own and a subsidiary with no parent left that answer unfinished. The type is gone: the
+  // parent is asked on "New Engagement, Existing Client", where most referrals genuinely have none, and
+  // requiring it there would demand an answer that does not exist.
   return "";
 };
 
@@ -1004,7 +1001,7 @@ const clientPayload = () => ({
   customerMobileNumber: clientForm.customerMobileNumber || null,
   existingClientReferenceId: clientForm.existingClientReferenceId || null,
   // Always sent, even as null — unlike the fields above, the server derives this from the TYPE, so a null
-  // here on a non-subsidiary is what clears a parent left behind by a change of answer.
+  // here on a brand-new client is what clears a parent left behind by a change of answer.
   parentClientReferenceId: clientForm.parentClientReferenceId || null
 });
 

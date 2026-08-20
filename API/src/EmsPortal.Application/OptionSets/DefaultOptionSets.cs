@@ -42,19 +42,19 @@ public static class DefaultOptionSets
     {
         new Definition(EntityType.Rems, "REMS.Type", "REMS Type", OptionItemSortMode.Custom, new[]
         {
-            // Three ways a referral can relate to THF's records. "New Engagement" and "Existing Client"
-            // used to be separate values, which asked the partner to split a hair nobody could: every
-            // new engagement for a client we already have is both. They are one value now — the code
-            // `existing_client` survived the merge (see MergeRemsExistingClientTypes), so the rows and
-            // the REMS_EXISTING_CLIENT_TYPES marking rule that read it need no translation.
+            // Two ways a referral can relate to THF's records. It was four: "New Engagement" and
+            // "Existing Client" asked the partner to split a hair nobody could, since every new engagement
+            // for a client we already have is both, and were merged into the code `existing_client` (see
+            // MergeRemsExistingClientTypes). "Subsidiary / Child of Existing Client" then folded into the
+            // same answer (RetireRemsSubsidiaryType): a child of a client on file is an engagement for a
+            // client we already have, and the PARENT CLIENT field — asked on this answer now — is what
+            // actually says the referral is a child.
             new ItemDefinition("brand_new_client", "Brand-New Client", 1, Description:
                 "The client/company is working with THF for the first time. No prior record exists in the system."),
             new ItemDefinition("existing_client", "New Engagement, Existing Client", 2, Description:
                 "The person or company already has an active client record with THF, and this request " +
-                "creates an additional engagement under that same client."),
-            new ItemDefinition("subsidiary_child_of_existing_client", "Subsidiary / Child of Existing Client", 3, Description:
-                "When the client is a child of an already present parent client. All the billing goes to " +
-                "the parent client in this situation."),
+                "creates an additional engagement under that same client. Name the parent client if this " +
+                "one is a subsidiary or child of it."),
         }),
         // How the client heard about THF, asked on the public EMS form. The descriptions double as the
         // examples the client needs to place themselves, so they carry the "Friend, Family, or Colleague"

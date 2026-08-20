@@ -44,9 +44,14 @@ public class REMS : AuditableEntity
 
     /// <summary>
     /// The THF client this one is a subsidiary or child of — a <see cref="Person"/> stamped as a client,
-    /// referenced loosely like <see cref="ExistingClientReferenceId"/> rather than by foreign key. Set only
-    /// where <see cref="Type"/> is the subsidiary code; choosing any other type clears it, because a parent
-    /// on a request that is not a child is a claim nothing on the form is making.
+    /// referenced loosely like <see cref="ExistingClientReferenceId"/> rather than by foreign key.
+    /// <para>
+    /// Naming one is what makes a referral a subsidiary; there is no separate type saying so any more (see
+    /// <c>RetireRemsSubsidiaryType</c>). Asked, and optional, where <see cref="Type"/> is
+    /// <see cref="RemsRequestTypes.ExistingClient"/> — a child of a client on file is an engagement for a
+    /// client we already have. On a brand-new client it is cleared: nobody THF has on file can be the
+    /// parent of a company THF has never heard of.
+    /// </para>
     /// </summary>
     public Guid? ParentClientReferenceId { get; set; }
 

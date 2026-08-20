@@ -219,7 +219,7 @@ const editBlocked = (row) => viewBlocked(row) || engagementOwnerDenial(row);
 const columns = computed(() => [
   { name: "remsNumber", label: "Request ID", field: "remsNumber", align: "left", sortable: true, default: true, filterable: false },
   { name: "clientName", label: "Client", field: "clientName", align: "left", sortable: true, default: true, filterable: false },
-  // Populated only on a subsidiary, so it is off by default like the other context columns.
+  // Populated only where a parent was named, so it is off by default like the other context columns.
   { name: "parentClientName", label: "Parent Client", field: (r) => r.parentClientName || "—", align: "left", default: false, filterable: false },
   { name: "submitted", label: "Form", field: "submitted", align: "left", sortable: true, default: true, filterOptions: REMS_FORM_SUBMITTED_OPTIONS },
   // On by default now. It is where a row says "Waiting for pickup", which is the one thing an admin

@@ -1,9 +1,14 @@
 namespace EmsPortal.Domain.Entities;
 
 /// <summary>
-/// A user picked to approve a <see cref="REMSEngagement"/> (WO-114, AC-REMS-018). The selection is made on
-/// the workspace's Approval tab before the round is sent, defaulting to the CSE and the commission
-/// recipients, and stays editable until the engagement is routed.
+/// A user picked to approve a <see cref="REMSEngagement"/> (WO-114, AC-REMS-018). Chosen on the workspace's
+/// Approval tab, and editable there until the engagement is routed.
+/// <para>
+/// It holds only the approvers somebody CHOSE. The firm's shareholders, the CSE, the department director
+/// and the commission recipients are on every round by standing — read from the role or the engagement
+/// each time the list is built — and are never written here, which is what makes everything in this table
+/// removable and everything routing by standing not.
+/// </para>
 /// <para>
 /// Only the user is stored. The <see cref="Enums.RemsApproverRole"/> each approver acts under is derived
 /// from their relationship to the engagement when the round is created, so a saved list cannot go stale if

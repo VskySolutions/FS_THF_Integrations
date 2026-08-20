@@ -180,10 +180,14 @@ internal sealed class UserRepository : IUserRepository
         // The same shape as ListByTenantRolesAsync without the role filter — holding ANY role in the
         // tenant is what puts a user in it. Unpaged on purpose: its caller is a picker that has to offer
         // the whole tenant at once, and a firm's staff list is that size.
+        //
+        // The assignments come with them, filtered to THIS tenant, so a picker can say what each person is
+        // to the firm without a query per row — and cannot show a role they hold somewhere else.
         => await _dbContext.Users
             .IgnoreQueryFilters()
             .Where(u => !u.Deleted && u.IsActive)
             .Include(u => u.Person)
+            .Include(u => u.TenantRoles.Where(r => !r.Deleted && r.TenantId == tenantId)).ThenInclude(r => r.RoleEntity)
             .Where(u => u.TenantRoles.Any(r => !r.Deleted && r.TenantId == tenantId))
             .OrderBy(u => u.DisplayName)
             .ToListAsync(cancellationToken);

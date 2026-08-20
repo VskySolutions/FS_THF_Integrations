@@ -110,13 +110,16 @@ public static class BootstrapSeeder
             // REMS operational roles (WO-122). Assigned per (user, tenant), stackable with other roles.
             (Roles.Partner, "REMS Partner: create and manage their own requests.", Permissions.ForPartner()),
             (Roles.Admin, "REMS Admin: full request lifecycle, EMS Review, forms, engagements, approvals routing and email log, plus deciding approval tasks assigned to them (as CSE or commission recipient).", Permissions.ForAdmin()),
-            // The three REMS seats. They grant nothing (Permissions.ForSeatRole) — holding one makes the
-            // user offerable in the picker that fills that seat on an engagement, which is what the user
-            // GROUPS of the same names used to do. Seeded here so the pickers have something to offer in
-            // every tenant without anyone building three lists by hand first.
+            // The REMS seats. They grant nothing (Permissions.ForSeatRole) — holding one makes the user
+            // offerable in the picker that fills that seat on an engagement, which is what the user GROUPS
+            // of the same names used to do. Seeded here so the pickers have something to offer in every
+            // tenant without anyone building the lists by hand first.
             (Roles.Cse, "REMS CSE: offerable as the Client Service Executive on an engagement, and as a commission recipient.", Permissions.ForSeatRole()),
             (Roles.EngagementExecutive, "REMS Engagement Executive: offerable as the Engagement Executive on an engagement.", Permissions.ForSeatRole()),
             (Roles.BillingManager, "REMS Billing Manager: offerable as the Billing Manager on an engagement.", Permissions.ForSeatRole()),
+            // Not a seat an engagement names: a shareholder is on every engagement's approver list
+            // automatically, like the director and the CSE, and cannot be taken off it.
+            (Roles.Shareholder, "REMS Shareholder: approves every engagement the firm routes, automatically and without being added to it.", Permissions.ForSeatRole()),
         };
 
         foreach (var (name, description, permissions) in definitions)

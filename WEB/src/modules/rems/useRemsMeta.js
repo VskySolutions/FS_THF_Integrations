@@ -36,24 +36,30 @@ export const REMS_STATUS_OPTIONS = REMS_OPTION_SEED.status;
 export const REMS_TYPE_BRAND_NEW_CLIENT = "brand_new_client";
 export const REMS_TYPE_EXISTING_CLIENT = "existing_client";
 
-export const REMS_TYPE_SUBSIDIARY = "subsidiary_child_of_existing_client";
+// REMS_TYPE_SUBSIDIARY stood here — "Subsidiary / Child of Existing Client", the third answer. It is gone
+// (RetireRemsSubsidiaryType): a child of a client on file is a new engagement for a client THF already
+// has, and the PARENT CLIENT field — asked on that answer now — is what says the referral is a child.
 
-// The four seats an engagement names, as ROLE names — the value each people-picker scopes itself by
+// The three seats an engagement names, as ROLE names — the value each people-picker scopes itself by
 // (remsApi.admins(role)). They mirror EmsPortal.Shared.Security.Roles exactly, spaces and all, because the
 // role name IS what the API matches on and what the roles UI displays.
 //
 // Each was a user GROUP of the same name until the seats became roles. The names did not change, so a firm
 // reads the same words; what changed is where the people are maintained — a user's own page, beside
 // Partner and Admin, rather than a separate list in Administration → User Groups.
+//
+// Shareholder is NOT here. It is a REMS role too, but no engagement names a shareholder — holding it puts
+// somebody on every engagement's approver list by default — so there is no picker to scope by it.
 export const REMS_SEAT_ROLES = Object.freeze({
   CSE: "CSE",
   ENGAGEMENT_EXECUTIVE: "Engagement Executive",
   BILLING_MANAGER: "Billing Manager"
 });
 
-// Type codes that mean "an existing client is referenced" (drives the client-lookup type marking).
-// A subsidiary is one too, so picking a client never overrides a partner who already chose it.
-export const REMS_EXISTING_CLIENT_TYPES = [REMS_TYPE_EXISTING_CLIENT, REMS_TYPE_SUBSIDIARY];
+// Type codes that mean "an existing client is referenced" (drives the client-lookup type marking). One
+// code since the subsidiary answer folded into it; kept as a list because that is what the marking rule
+// reads, and because the answer has already been split and merged twice.
+export const REMS_EXISTING_CLIENT_TYPES = [REMS_TYPE_EXISTING_CLIENT];
 
 export const REMS_INDUSTRY_GROUP_OPTIONS = REMS_OPTION_SEED.industryGroup;
 
@@ -90,8 +96,9 @@ export const REMS_FORM_SUBMITTED_OPTIONS = [
 
 // Approval-task filters (RemsApproverRole / RemsApprovalTaskStatus names, matched server-side).
 export const REMS_APPROVER_ROLE_OPTIONS = [
-  { label: "CSE", value: "CSE" },
+  { label: "Shareholder", value: "Shareholder" },
   { label: "Department Director", value: "DepartmentDirector" },
+  { label: "CSE", value: "CSE" },
   { label: "Commission Recipient", value: "CommissionRecipient" },
   { label: "Approver", value: "Approver" }
 ];
@@ -135,6 +142,8 @@ const SUBMISSION_STATE_LABELS = { Submitted: "Received", AwaitingCustomer: "Awai
 // Approval-task metadata (WO-117 Part B). Approver roles mirror the backend RemsApproverRole enum; the
 // task/round status strings mirror RemsApprovalTaskStatus / RemsApprovalRoundStatus.
 const APPROVER_ROLE_LABELS = {
+  // A holder of the Shareholder role: on every engagement's list by standing, and not removable.
+  Shareholder: "Shareholder",
   CSE: "CSE",
   DepartmentDirector: "Department Director",
   CommissionRecipient: "Commission Recipient",
@@ -142,6 +151,7 @@ const APPROVER_ROLE_LABELS = {
   Approver: "Approver"
 };
 const APPROVER_ROLE_ICONS = {
+  Shareholder: "o_workspace_premium",
   CSE: "o_support_agent",
   DepartmentDirector: "o_account_tree",
   CommissionRecipient: "o_payments"

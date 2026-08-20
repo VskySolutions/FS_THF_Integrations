@@ -76,6 +76,12 @@ public class REMSEngagement : AuditableEntity
     /// <summary>Engagement approval lifecycle status.</summary>
     public RemsEngagementStatus Status { get; set; }
 
+    // DefaultApproversSeededOnUtc stood here, recording when the firm's shareholders had been written onto
+    // this engagement's approver list. It existed to make a REMOVAL stick — without it the list would be
+    // rebuilt on the next read and put back whoever had just been taken off. Shareholders are not
+    // removable any more: they route by standing, like the director and the CSE, so nothing is written and
+    // there is nothing to remember.
+
     // ---- Navigations ----
     // Note: the 0..1 detail relationships (audit/government/tax) and the engagement-per-request link are
     // modelled as one-to-many at the EF level (child holds the FK, no principal reference nav) so that

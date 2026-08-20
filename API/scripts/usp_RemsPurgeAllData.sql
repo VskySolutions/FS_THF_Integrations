@@ -1,3 +1,13 @@
+/* A procedure captures these at CREATE time and keeps them for every later execution, so they have
+   to be set HERE rather than left to whoever runs the file. SSMS connects with both ON and the
+   script worked by luck; sqlcmd connects with QUOTED_IDENTIFIER OFF, which compiles a procedure
+   whose every DELETE then fails with Msg 1934 — most of these tables carry a filtered index
+   (WHERE [Deleted] = 0), and SQL Server refuses to touch one under the wrong SET options. */
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
 /* ===============================================================================================
    usp_RemsPurgeAllData — empties REMS and everything hanging off it.
 
@@ -26,8 +36,8 @@
    @IncludeDelegations   (default ON)  REMSDelegation — who may act for whom. Request-scoped
                                        working state, so it goes with the requests by default.
    @IncludeSettings      RemsSettings + RemsDepartmentDirector. This is CONFIGURATION — the
-                         managing shareholder and the department→director map — not request data.
-                         Off, because clearing it means re-entering the firm's setup by hand.
+                         department→director map — not request data. Off, because clearing it means
+                         re-entering the firm's setup by hand.
    @IncludeClientPersons Persons REMS minted: the clients it captured at intake and the role
                          contacts from submitted forms. Off, because a client entered once is a
                          record the platform holds in its own right and other modules may point at
@@ -59,9 +69,9 @@ BEGIN
         RETURN;
     END;
 
-    /* -- The Universal Features key for a REMS request. Notes, tags, attachments, activity,
-          reminders, pins, colour codes and checklists all attach through (EntityType, EntityId),
-          so they are found by number rather than by foreign key. */
+    /* -- The Universal Features key for a REMS request. Conversation messages, tags, attachments,
+          activity, reminders, pins, colour codes and checklists all attach through
+          (EntityType, EntityId), so they are found by number rather than by foreign key. */
     DECLARE @EntityTypeRems int = 6;
 
     /* -- Person provenance: what a person IS (a client) and what created them (a REMS record).
@@ -86,7 +96,7 @@ BEGIN
     CREATE TABLE #Media      (Id uniqueidentifier PRIMARY KEY);
     CREATE TABLE #Person     (Id uniqueidentifier PRIMARY KEY);
     CREATE TABLE #PersonAddr (Id uniqueidentifier PRIMARY KEY);
-    CREATE TABLE #Note       (Id uniqueidentifier PRIMARY KEY);
+    CREATE TABLE #Message    (Id uniqueidentifier PRIMARY KEY);
     CREATE TABLE #Checklist  (Id uniqueidentifier PRIMARY KEY);
 
     INSERT INTO #Rems (Id)
@@ -161,8 +171,11 @@ BEGIN
     END;
 
     -- Universal Features attached to a REMS request, found through the shared (EntityType, EntityId) key.
-    INSERT INTO #Note (Id)
-    SELECT n.Id FROM dbo.Notes n JOIN #Rems r ON r.Id = n.EntityId WHERE n.EntityType = @EntityTypeRems;
+    -- The request's Conversation thread. The tables were Notes/NoteMentions until the feature was
+    -- renamed (RenameNotesToConversationMessages); the rows are the same ones.
+    INSERT INTO #Message (Id)
+    SELECT n.Id FROM dbo.ConversationMessages n JOIN #Rems r ON r.Id = n.EntityId
+    WHERE n.EntityType = @EntityTypeRems;
 
     INSERT INTO #Checklist (Id)
     SELECT c.Id FROM dbo.Checklists c JOIN #Rems r ON r.Id = c.EntityId WHERE c.EntityType = @EntityTypeRems;
@@ -210,8 +223,8 @@ BEGIN
         ('Addresses (entity)',              (SELECT COUNT(*) FROM #Address)),
         ('Persons (REMS-minted)',           (SELECT COUNT(*) FROM #Person)),
         ('Media',                           (SELECT COUNT(*) FROM #Media)),
-        ('UF: Notes',                       (SELECT COUNT(*) FROM #Note)),
-        ('UF: NoteMentions',                (SELECT COUNT(*) FROM dbo.NoteMentions m JOIN #Note n ON n.Id = m.NoteId)),
+        ('UF: ConversationMessages',        (SELECT COUNT(*) FROM #Message)),
+        ('UF: ConversationMessageMentions', (SELECT COUNT(*) FROM dbo.ConversationMessageMentions m JOIN #Message n ON n.Id = m.ConversationMessageId)),
         ('UF: EntityTags',                  (SELECT COUNT(*) FROM dbo.EntityTags x JOIN #Rems r ON r.Id = x.EntityId WHERE x.EntityType = @EntityTypeRems)),
         ('UF: Attachments',                 (SELECT COUNT(*) FROM dbo.Attachments x JOIN #Rems r ON r.Id = x.EntityId WHERE x.EntityType = @EntityTypeRems)),
         ('UF: ActivityEvents',              (SELECT COUNT(*) FROM dbo.ActivityEvents x JOIN #Rems r ON r.Id = x.EntityId WHERE x.EntityType = @EntityTypeRems)),
@@ -240,8 +253,8 @@ BEGIN
 
         -- Universal Features first: they reference REMS by number, not by key, so nothing forces
         -- this order — but a failure here should not have already taken the records they describe.
-        DELETE m FROM dbo.NoteMentions m JOIN #Note n ON n.Id = m.NoteId;
-        DELETE n FROM dbo.Notes n JOIN #Note t ON t.Id = n.Id;
+        DELETE m FROM dbo.ConversationMessageMentions m JOIN #Message n ON n.Id = m.ConversationMessageId;
+        DELETE n FROM dbo.ConversationMessages n JOIN #Message t ON t.Id = n.Id;
         DELETE i FROM dbo.ChecklistItems i JOIN #Checklist c ON c.Id = i.ChecklistId;
         DELETE c FROM dbo.Checklists c JOIN #Checklist t ON t.Id = c.Id;
         DELETE x FROM dbo.EntityTags        x JOIN #Rems r ON r.Id = x.EntityId WHERE x.EntityType = @EntityTypeRems;

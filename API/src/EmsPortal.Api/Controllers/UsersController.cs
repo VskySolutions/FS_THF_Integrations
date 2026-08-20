@@ -719,91 +719,14 @@ public sealed class UsersController : ControllerBase
         var departments = await ResolveDepartmentOptionsAsync(cancellationToken);
 
         var heads = await _departments.ListHeadsAsync(cancellationToken);
-        var settings = await _remsSettings.GetAsync(cancellationToken);
-        var shareholderId = settings?.ManagingShareholderUserId;
-
-        var names = await _users.GetFullNamesAsync(
-            heads.Select(h => h.UserId).Concat(shareholderId is { } s ? new[] { s } : Array.Empty<Guid>()),
-            cancellationToken);
+        var names = await _users.GetFullNamesAsync(heads.Select(h => h.UserId), cancellationToken);
 
         var headDtos = heads
             .Select(h => new DepartmentHeadDto(h.Department, h.UserId, NameOf(names, h.UserId) ?? string.Empty))
             .ToList();
-        var shareholder = shareholderId is { } msId
-            ? new UserRefDto(msId, NameOf(names, msId) ?? string.Empty)
-            : null;
 
         return Ok(ApiResponseFactory.Success(
-            new DepartmentOptionsResponse(departments, headDtos, shareholder), "Departments retrieved."));
-    }
-
-    /// <summary>
-    /// Makes this user the tenant's REMS managing shareholder — the firm-wide approver required on every
-    /// engagement (WO-114) — or clears the role. Exactly one user holds it, so granting it displaces the
-    /// incumbent; clearing only ever revokes this user's own role, never someone else's.
-    /// </summary>
-    [HttpPut("/api/admin/users/{id:guid}/managing-shareholder")]
-    [RequirePermission(Permissions.UsersWrite)]
-    [ProducesResponseType<ApiResponse<SetManagingShareholderResponse>>(StatusCodes.Status200OK)]
-    public async Task<IActionResult> SetManagingShareholder(
-        Guid id, [FromBody] SetManagingShareholderRequest request, CancellationToken cancellationToken)
-    {
-        if (User.GetActiveTenantId() is not { } tenantId)
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden("No active tenant context."));
-        }
-
-        var user = await _users.GetByIdAsync(id, cancellationToken);
-        if (user is null || !CanCallerSee(user))
-        {
-            return NotFound(ApiResponseFactory.NotFound("User not found."));
-        }
-
-        var targetIsSuperAdmin = user.TenantRoles.Any(r => r.Role == UserRole.SuperAdmin);
-        if (!User.IsSuperAdmin() && targetIsSuperAdmin)
-        {
-            return StatusCode(StatusCodes.Status403Forbidden,
-                ApiResponseFactory.Forbidden("Not permitted to manage this user."));
-        }
-
-        // The role approves this tenant's engagements, so its holder has to belong to this tenant.
-        if (!user.TenantRoles.Any(r => r.TenantId == tenantId))
-        {
-            return BadRequest(ApiResponseFactory.Error(
-                ApiErrorCodes.ValidationFailed, "Validation failed.", "The user has no assignment in the active tenant."));
-        }
-
-        var settings = await _remsSettings.GetAsync(cancellationToken);
-        var incumbentId = settings?.ManagingShareholderUserId;
-
-        // Clearing is scoped to this user — someone else's role is left alone (and there is nothing to do).
-        if (!request.IsManagingShareholder && incumbentId != id)
-        {
-            return Ok(ApiResponseFactory.Success(
-                new SetManagingShareholderResponse(false, null), "Managing shareholder unchanged."));
-        }
-
-        if (settings is null)
-        {
-            // Only reachable when granting: clearing without a settings row returned above.
-            settings = new RemsSettings { Id = Guid.NewGuid() };
-            await _remsSettings.AddAsync(settings, cancellationToken);
-        }
-
-        settings.ManagingShareholderUserId = request.IsManagingShareholder ? id : null;
-        _remsSettings.Update(settings);
-
-        var displacedName = request.IsManagingShareholder && incumbentId is { } previous && previous != id
-            ? NameOf(await _users.GetFullNamesAsync(new[] { previous }, cancellationToken), previous)
-            : null;
-
-        await _audit.AddAsync(nameof(User), id.ToString(), "ManagingShareholderUpdated",
-            details: $"isManagingShareholder={request.IsManagingShareholder}", cancellationToken: cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        return Ok(ApiResponseFactory.Success(
-            new SetManagingShareholderResponse(request.IsManagingShareholder, displacedName),
-            "Managing shareholder updated."));
+            new DepartmentOptionsResponse(departments, headDtos), "Departments retrieved."));
     }
 
     /// <summary>
@@ -1075,7 +998,7 @@ public sealed class UsersController : ControllerBase
                     ApiErrorCodes.ValidationFailed, "Validation failed.", $"Unknown roleId {roleId}.")));
             }
 
-            resolved.Add(new ResolvedRole(entity.Id, entity, MapLegacyRole(entity, null)));
+            resolved.Add(new ResolvedRole(entity.Id, entity, RoleAssignment.MapLegacyRole(entity, null)));
         }
 
         // Legacy single-role-by-name fallback (only when no ids were supplied).
@@ -1141,58 +1064,16 @@ public sealed class UsersController : ControllerBase
     private async Task<IActionResult?> CheckAssignmentCapacityAsync(
         Guid userId, bool userIsActive, Guid tenantId, IReadOnlyList<Guid> addedRoleIds, CancellationToken cancellationToken)
     {
-        // Inactive users never count toward usage, and no new roles means no growth.
-        if (!userIsActive || addedRoleIds.Count == 0)
+        var block = await RoleAssignment.FindCapacityBlockAsync(
+            _permissionGroups, _audit, userId, userIsActive, tenantId, addedRoleIds, cancellationToken);
+        if (block is null)
         {
             return null;
         }
 
-        var groups = await _permissionGroups.GetGroupsByRolesAsync(addedRoleIds, cancellationToken);
-        foreach (var group in groups.Where(g => g.TenantId == tenantId && g.CapacityLimit.HasValue))
-        {
-            var limit = group.CapacityLimit!.Value;
-
-            // Already a member (via a role they keep) → not a new distinct user → no growth.
-            if (await _permissionGroups.IsUserActiveMemberAsync(group.Id, tenantId, userId, cancellationToken))
-            {
-                continue;
-            }
-
-            var projected = await _permissionGroups.CountActiveMembersAsync(group.Id, tenantId, null, cancellationToken) + 1;
-            if (projected > limit)
-            {
-                await _audit.AddAsync(nameof(PermissionGroup), group.Id.ToString(), "CapacityLimitReached",
-                    details: $"Assigning a role composing '{group.Name}' to user {userId} would raise usage to {projected}, above the limit of {limit}.",
-                    cancellationToken: cancellationToken);
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-                return BadRequest(ApiResponseFactory.Error(
-                    ApiErrorCodes.CapacityLimitReached,
-                    $"Cannot assign this role: permission group '{group.Name}' is at its capacity limit ({limit}).",
-                    group.Name));
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Maps an RBAC role to a legacy fixed-tier enum for the transition period: system roles map by
-    /// name; custom roles fall back to an explicit enum if given, otherwise the neutral
-    /// <see cref="UserRole.Custom"/> sentinel (the enum is superseded by permission-based authorization).
-    /// </summary>
-    private static UserRole MapLegacyRole(Role roleEntity, string? explicitRole)
-    {
-        if (roleEntity.IsSystem && Enum.TryParse<UserRole>(roleEntity.Name, ignoreCase: false, out var system))
-        {
-            return system;
-        }
-
-        if (!string.IsNullOrWhiteSpace(explicitRole) && Enum.TryParse<UserRole>(explicitRole, ignoreCase: false, out var explicitEnum))
-        {
-            return explicitEnum;
-        }
-
-        return UserRole.Custom;
+        // The helper audited the rejection; persist that much before refusing.
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return BadRequest(ApiResponseFactory.Error(ApiErrorCodes.CapacityLimitReached, block.Message, block.GroupName));
     }
 
     /// <summary>The tenant whose SMTP account should send a user's email: the caller's active tenant, else the user's first assignment.</summary>
@@ -1211,23 +1092,21 @@ public sealed class UsersController : ControllerBase
     }
 
     /// <summary>
-    /// The user detail plus their tenant-scoped REMS roles: the department placement/headship, and whether
-    /// they are the tenant's managing shareholder. Both are meaningless outside a tenant, so a caller with
-    /// no active tenant (a Super Admin who has not switched into one) sees neither.
+    /// The user detail plus their department placement and headship in the active tenant. A department is
+    /// meaningless outside a tenant, so a caller with no active tenant (a Super Admin who has not switched
+    /// into one) sees none.
     /// </summary>
     private async Task<UserDetail> MapAsync(User user, CancellationToken cancellationToken)
     {
         if (User.GetActiveTenantId() is null)
         {
-            return Map(user, null, isManagingShareholder: false);
+            return Map(user, null);
         }
 
-        var department = await _departments.GetForUserAsync(user.Id, cancellationToken);
-        var settings = await _remsSettings.GetAsync(cancellationToken);
-        return Map(user, department, settings?.ManagingShareholderUserId == user.Id);
+        return Map(user, await _departments.GetForUserAsync(user.Id, cancellationToken));
     }
 
-    private static UserDetail Map(User user, UserDepartment? department, bool isManagingShareholder)
+    private static UserDetail Map(User user, UserDepartment? department)
     {
         var p = user.Person;
         return new UserDetail(
@@ -1252,7 +1131,7 @@ public sealed class UsersController : ControllerBase
             GroupsFor(user, null),
             department?.Department,
             department?.IsHead ?? false,
-            isManagingShareholder);
+            p?.ProfileMedia?.PublicUrl);
     }
 
     /// <summary>The user's group memberships as DTOs, optionally restricted to a specific tenant.</summary>

@@ -173,13 +173,13 @@
                     <div class="rems-value">{{ item.value }}</div>
                   </div>
 
-                  <!-- Fee + realization are reserved to the Department Director / Managing Shareholder
-                       (AC-REMS-019.10). Saying so beats an empty field that reads as "never filled in". -->
+                  <!-- Fee + realization are reserved to the Department Director (AC-REMS-019.10).
+                       Saying so beats an empty field that reads as "never filled in". -->
                   <div v-if="engagement.financialsRestricted" class="col-12">
                     <div class="rems-label">First-Year Fee Estimate · % Realization</div>
                     <div class="rems-value text-grey-6">
                       <q-icon name="o_lock" size="16px" class="q-mr-xs" />
-                      Reserved for the Department Director and Managing Shareholder.
+                      Reserved for the Department Director.
                     </div>
                   </div>
                 </div>

@@ -33,7 +33,12 @@ public static class Roles
     public const string Cse = "CSE";
     public const string EngagementExecutive = "Engagement Executive";
     public const string BillingManager = "Billing Manager";
-    public const string ManagingShareholder = "Managing Shareholder";
+
+    // Managing Shareholder stood here. It was a seat and a signature: whoever held it was added to EVERY
+    // approval round the firm routed, on top of the CSE, the department director and the commission
+    // recipients. The firm does not work that way — an engagement is signed off by the people it names —
+    // so the seat is gone, and with it the tenant-wide setting behind it. Anyone whose signature a
+    // particular engagement genuinely needs is added on its Approval tab, which offers everyone.
 
     // Approver stood here. It marked somebody as offerable in the REMS "add approvers" picker, and that
     // picker now offers every user in the tenant — an engagement can need a signature from anyone, and

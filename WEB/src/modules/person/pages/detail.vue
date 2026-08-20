@@ -64,8 +64,6 @@
           <q-card-section class="text-subtitle1 text-weight-medium">Professional</q-card-section>
           <q-separator />
           <q-card-section class="row q-col-gutter-md">
-            <app-text-field v-model="form.department" label="Department" class="col-12 col-sm-6" :disable="!canWrite" />
-            <app-text-field v-model="form.organization" label="Organization" class="col-12 col-sm-6" :disable="!canWrite" />
             <app-text-field v-model="form.employeeCode" label="Employee Code" class="col-12 col-sm-6" :disable="!canWrite" />
           </q-card-section>
         </q-card>
@@ -123,8 +121,6 @@ const form = reactive({
   mobileNumber: "",
   countryCode: null,
   alternateMobileNumber: "",
-  department: "",
-  organization: "",
   employeeCode: ""
 });
 
@@ -151,8 +147,6 @@ const load = async () => {
     form.mobileNumber = p.mobileNumber || "";
     form.countryCode = p.countryCode || null;
     form.alternateMobileNumber = p.alternateMobileNumber || "";
-    form.department = p.department || "";
-    form.organization = p.organization || "";
     form.employeeCode = p.employeeCode || "";
   } catch (err) {
     notify.error(getApiErrorMessage(err));

@@ -2,6 +2,7 @@
   <q-page padding>
     <app-detail-header
       :items="[
+        { label: 'Home', icon: 'o_home', to: '/' },
         { label: 'Permission Groups', to: { name: 'permission_groups' } },
         { label: detail?.name || 'Permission Group' }
       ]"

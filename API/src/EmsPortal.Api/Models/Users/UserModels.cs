@@ -100,33 +100,19 @@ public sealed class SetUserDepartmentRequest
     public bool IsHead { get; set; }
 }
 
-/// <summary>Makes (or clears) this user the tenant's REMS managing shareholder — a firm-wide singleton.</summary>
-public sealed class SetManagingShareholderRequest
-{
-    /// <summary>True to hand this user the role (displacing the incumbent); false to clear it.</summary>
-    public bool IsManagingShareholder { get; set; }
-}
-
 /// <summary>One selectable department for the picker.</summary>
 public sealed record DepartmentOptionDto(string Value, string Label);
 
 /// <summary>The current head of a department in the active tenant.</summary>
 public sealed record DepartmentHeadDto(string Department, Guid UserId, string FullName);
 
-/// <summary>A minimal user reference (who currently holds a role).</summary>
-public sealed record UserRefDto(Guid UserId, string FullName);
-
 /// <summary>
-/// Picker data for the user's approval-role section: the tenant's departments, the head of each, and the
-/// tenant's managing shareholder — everything needed to name an incumbent before a role is taken over.
+/// Picker data for the user's department section: the tenant's departments and the head of each — what
+/// the UI needs to name the incumbent before a headship is taken over.
 /// </summary>
 public sealed record DepartmentOptionsResponse(
     IReadOnlyList<DepartmentOptionDto> Departments,
-    IReadOnlyList<DepartmentHeadDto> Heads,
-    UserRefDto? ManagingShareholder);
-
-/// <summary>The saved role, plus the name of the user it displaced (null when nobody held it).</summary>
-public sealed record SetManagingShareholderResponse(bool IsManagingShareholder, string? DisplacedName);
+    IReadOnlyList<DepartmentHeadDto> Heads);
 
 /// <summary>
 /// The saved placement, plus the name of the head this change displaced (null when nobody was demoted)
@@ -183,7 +169,8 @@ public sealed record UserDetail(
     IReadOnlyList<TenantAssignmentDto> Assignments,
     IReadOnlyList<UserGroupDto> Groups,
     // The department held in the active tenant (null when unassigned), and whether the user heads it —
-    // a head is also the department's REMS director. IsManagingShareholder is the tenant-wide REMS role.
+    // a head is also the department's REMS director.
     string? Department,
     bool IsDepartmentHead,
-    bool IsManagingShareholder);
+    // The profile picture from the person's own record, or null — in which case the UI shows initials.
+    string? ProfileMediaUrl);

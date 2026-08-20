@@ -68,6 +68,7 @@ public sealed record RoleUsingGroupResponse(Guid RoleId, string RoleName);
 
 public sealed record PermissionGroupAuditEntryResponse(
     string Action,
+    /// <summary>Who did it, by name — the stored user id resolved through AuditActorNames.</summary>
     string? PerformedBy,
     DateTime PerformedOnUtc,
     string? Details);

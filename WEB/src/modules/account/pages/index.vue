@@ -24,7 +24,6 @@
             </q-badge>
           </div>
           <div class="text-body2 text-grey-7">{{ email }}</div>
-          <div v-if="jobLine" class="text-body2 text-grey-7">{{ jobLine }}</div>
           <div v-if="roleChips.length" class="q-mt-sm row q-gutter-xs">
             <q-chip
               v-for="r in roleChips" :key="r" dense color="primary" text-color="white" class="text-capitalize"
@@ -145,10 +144,9 @@ const initials = computed(() => {
   return (a + b).toUpperCase() || "U";
 });
 
-// The line under the name. It used to read "Job Title · Organization"; the job title is gone from the
-// platform, so the organization is the whole of it — and the line disappears for anyone without one,
-// which is what the v-if on it has always done.
-const jobLine = computed(() => profile.value?.organization || "");
+// The line under the name has gone with the fields that fed it: it read "Job Title · Organization", and
+// both are off the person record now — the job title first, then the organization, which was the firm
+// running the portal and therefore the same for everyone reading it.
 
 // Assignments come from the tenant store (kept in sync with the auth profile).
 const assignments = computed(() => tenantStore.assignments || authStore.user?.tenants || []);
@@ -157,8 +155,7 @@ const roleChips = computed(() => [...new Set(assignments.value.flatMap((t) => t.
 
 const contactRows = computed(() => [
   { icon: "o_mail", label: "Email", value: email.value },
-  { icon: "o_smartphone", label: "Phone Number", value: profile.value?.mobileNumber },
-  { icon: "o_business", label: "Organization", value: profile.value?.organization }
+  { icon: "o_smartphone", label: "Phone Number", value: profile.value?.mobileNumber }
 ]);
 
 onMounted(load);

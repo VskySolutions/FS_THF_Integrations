@@ -51,7 +51,7 @@ public static class Permissions
     public const string OptionSetsManage = "optionSets.manage";
 
     // REMS — Real Estate Management System (WO-110+). The operational roles Partner/Admin are composed of
-    // these keys (see ForPartner/ForAdmin). The four seat roles are composed of none of them, deliberately.
+    // these keys (see ForPartner/ForAdmin). The three seat roles are composed of none of them, deliberately.
     /// <summary>View REMS requests.</summary>
     public const string RemsRequestsRead = "rems.requests.read";
     /// <summary>Create REMS requests.</summary>
@@ -85,6 +85,22 @@ public static class Permissions
     /// <summary>Read the REMS email log.</summary>
     public const string RemsEmailLogRead = "rems.emailLog.read";
 
+    /// <summary>
+    /// Configure REMS for the tenant: which user directs each department, and whatever else becomes
+    /// tenant-wide REMS setup. Separate from <see cref="RemsEngagementsManage"/> on purpose — working the
+    /// engagements that flow through a configuration is not the same right as deciding the configuration,
+    /// and every REMS Admin holds the former.
+    /// </summary>
+    public const string RemsSettingsManage = "rems.settings.manage";
+
+    /// <summary>
+    /// Arrange REMS delegation on somebody ELSE's behalf — naming who may prepare and send a person's
+    /// requests while they are away. Naming your OWN delegates is self-service and needs no permission.
+    /// Its own key rather than users.write: handing one person another's work is a REMS decision, and
+    /// the right to edit an account says nothing about it.
+    /// </summary>
+    public const string RemsDelegationsManage = "rems.delegations.manage";
+
     /// <summary>Every defined permission key.</summary>
     public static readonly IReadOnlyList<string> All = new[]
     {
@@ -98,7 +114,7 @@ public static class Permissions
         OptionSetsRead, OptionSetsManage,
         RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsDelete, RemsRequestsAssign,
         RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
-        RemsApprovalsSend, RemsEmailLogRead
+        RemsApprovalsSend, RemsEmailLogRead, RemsSettingsManage, RemsDelegationsManage
     };
 
     /// <summary>Permission sets for the seeded system roles.</summary>
@@ -129,7 +145,7 @@ public static class Permissions
         // applies: this widens WHAT they can do in their tenant, never WHICH tenant.
         RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsDelete, RemsRequestsAssign,
         RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
-        RemsApprovalsSend, RemsEmailLogRead
+        RemsApprovalsSend, RemsEmailLogRead, RemsSettingsManage, RemsDelegationsManage
     };
 
     /// <summary>REMS Partner: works their own requests (read/create/update) and sends them to the client.</summary>
@@ -154,17 +170,19 @@ public static class Permissions
     {
         RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsDelete, RemsRequestsAssign,
         RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
-        RemsApprovalsSend, RemsEmailLogRead, OptionSetsRead
+        RemsApprovalsSend, RemsEmailLogRead, OptionSetsRead,
+        // The firm's REMS setup and its cover arrangements are run by the people who run REMS.
+        RemsSettingsManage, RemsDelegationsManage
     };
 
     /// <summary>
-    /// The REMS seat roles — CSE, Engagement Executive, Billing Manager, Managing Shareholder. They grant
+    /// The REMS seat roles — CSE, Engagement Executive and Billing Manager. They grant
     /// nothing, and that is the point: each one marks somebody as offerable in the picker that fills that
     /// seat on an engagement, and what they may then do follows from the engagement naming them, not from
     /// a permission key. A CSE approves because they are this engagement's CSE; requiring a permission to
     /// do it could only ever lock a genuine one out.
     /// <para>
-    /// One set for all four because there is nothing to tell apart — they are directories, not
+    /// One set for all three because there is nothing to tell apart — they are directories, not
     /// capabilities. The retired Approver role was the same idea and the same empty set.
     /// </para>
     /// </summary>
@@ -172,7 +190,7 @@ public static class Permissions
 
     /// <summary>
     /// The seeded permission set for a system role name (SuperAdmin/TenantAdmin, the REMS operational
-    /// roles Partner/Admin, and the four seat roles), or an empty set for any other name (including custom
+    /// roles Partner/Admin, and the three seat roles), or an empty set for any other name (including custom
     /// roles). Used as the fallback when an assignment carries no explicit permission keys and when a
     /// caller holds only a role claim (API-key callers, pre-RBAC tokens).
     /// </summary>
@@ -184,8 +202,7 @@ public static class Permissions
         Roles.Admin => ForAdmin(),
         // Listed rather than left to fall through, so the seat roles are visibly a decision — they grant
         // nothing on purpose, which reads very differently from a name nobody thought about.
-        Roles.Cse or Roles.EngagementExecutive or Roles.BillingManager or Roles.ManagingShareholder
-            => ForSeatRole(),
+        Roles.Cse or Roles.EngagementExecutive or Roles.BillingManager => ForSeatRole(),
         _ => Array.Empty<string>(),
     };
 }

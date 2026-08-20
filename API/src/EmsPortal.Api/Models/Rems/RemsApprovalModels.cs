@@ -80,7 +80,7 @@ public sealed record RemsChecklistItemView(Guid Id, int DisplayOrder, string Lab
 /// approver is being asked to sign off on exactly what staff filled in.
 /// <para>
 /// One thing stays role-scoped: the first-year fee estimate and % realization are reserved to the
-/// Department Director and Managing Shareholder (AC-REMS-019.10). For every other role they arrive null
+/// Department Director (AC-REMS-019.10). For every other role they arrive null
 /// with <see cref="RemsApprovalEngagementView.FinancialsRestricted"/> set, so the UI can say the figures
 /// are withheld rather than render them as blank.
 /// </para>
@@ -265,7 +265,7 @@ public sealed class RejectApprovalTaskRequest
 
 /// <summary>
 /// The per-role approval checklist labels (AC-REMS-019.4/5/6): CSE = 2, DepartmentDirector = 3,
-/// ManagingShareholder = 3, CommissionRecipient = 2. Defined as constants here (they could become
+/// CommissionRecipient = 2. Defined as constants here (they could become
 /// option-set-driven later). Rows are created in order as <c>REMSApprovalChecklistItem</c>s.
 /// </summary>
 public static class RemsApprovalChecklistCatalog
@@ -281,13 +281,6 @@ public static class RemsApprovalChecklistCatalog
         "First-year fee estimate reviewed",
         "Realization percentage acceptable",
         "Engagement team and department placement appropriate",
-    };
-
-    private static readonly IReadOnlyList<string> ManagingShareholder = new[]
-    {
-        "Firm risk and independence reviewed",
-        "Fee and realization approved",
-        "Final engagement acceptance",
     };
 
     private static readonly IReadOnlyList<string> CommissionRecipient = new[]
@@ -309,7 +302,6 @@ public static class RemsApprovalChecklistCatalog
     {
         RemsApproverRole.CSE => Cse,
         RemsApproverRole.DepartmentDirector => DepartmentDirector,
-        RemsApproverRole.ManagingShareholder => ManagingShareholder,
         RemsApproverRole.CommissionRecipient => CommissionRecipient,
         RemsApproverRole.Approver => Approver,
         _ => Array.Empty<string>(),

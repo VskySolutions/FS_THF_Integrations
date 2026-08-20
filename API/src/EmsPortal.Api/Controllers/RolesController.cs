@@ -137,9 +137,11 @@ public sealed class RolesController : ControllerBase
     {
         var role = await _roles.GetByIdAsync(id, cancellationToken);
         // Another tenant's role is not "forbidden" to this caller — it is nothing they can know exists.
-        return role is null || !RoleAccess.CanSee(User, role)
-            ? NotFound(ApiResponseFactory.NotFound("Role not found."))
-            : Ok(ApiResponseFactory.Success(ToResponse(role), "Role retrieved."));
+        if (role is null || !RoleAccess.CanSee(User, role))
+        {
+            return NotFound(ApiResponseFactory.NotFound("Role not found."));
+        }
+        return Ok(ApiResponseFactory.Success(await ToResponseAsync(role, cancellationToken), "Role retrieved."));
     }
 
     [HttpPost("/api/admin/roles")]
@@ -196,7 +198,7 @@ public sealed class RolesController : ControllerBase
             details: $"name={role.Name}; scope={ScopeOf(role)}", cancellationToken: cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return StatusCode(StatusCodes.Status201Created, ApiResponseFactory.Success(ToResponse(role), "Role created."));
+        return StatusCode(StatusCodes.Status201Created, ApiResponseFactory.Success(await ToResponseAsync(role, cancellationToken), "Role created."));
     }
 
     [HttpPut("/api/admin/roles/{id:guid}")]
@@ -247,7 +249,7 @@ public sealed class RolesController : ControllerBase
         _roles.Update(role);
         await _audit.AddAsync(nameof(Role), role.Id.ToString(), "Updated", cancellationToken: cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-        return Ok(ApiResponseFactory.Success(ToResponse(role), "Role updated."));
+        return Ok(ApiResponseFactory.Success(await ToResponseAsync(role, cancellationToken), "Role updated."));
     }
 
     [HttpDelete("/api/admin/roles/{id:guid}")]
@@ -438,9 +440,19 @@ public sealed class RolesController : ControllerBase
 
     private static string ScopeOf(Role role) => role.TenantId?.ToString() ?? "platform";
 
-    private RoleResponse ToResponse(Role r) => new(
-        r.Id, r.Name, r.Description, r.IsSystem, r.TenantId, RoleAccess.CanManage(User, r),
-        r.Permissions, r.CreatedOnUtc, r.UpdatedOnUtc);
+    /// <summary>
+    /// The single-role view. Async because it names the owning tenant: the detail page says where a role
+    /// comes from, and a guid is not that.
+    /// </summary>
+    private async Task<RoleResponse> ToResponseAsync(Role r, CancellationToken cancellationToken)
+    {
+        var tenantName = r.TenantId is { } owner
+            ? (await _tenants.GetByIdAsync(owner, cancellationToken))?.Name
+            : null;
+        return new RoleResponse(
+            r.Id, r.Name, r.Description, r.IsSystem, r.TenantId, tenantName, RoleAccess.CanManage(User, r),
+            r.Permissions, r.CreatedOnUtc, r.UpdatedOnUtc);
+    }
 
     private RoleSummary ToSummary(Role r, Func<Guid?, string?> nameOf, Func<Guid?, string?> tenantNameOf) => new(
         r.Id, r.Name, r.Description, r.IsSystem, r.TenantId, tenantNameOf(r.TenantId), RoleAccess.CanManage(User, r),

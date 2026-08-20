@@ -48,8 +48,7 @@ export const REMS_TYPE_SUBSIDIARY = "subsidiary_child_of_existing_client";
 export const REMS_SEAT_ROLES = Object.freeze({
   CSE: "CSE",
   ENGAGEMENT_EXECUTIVE: "Engagement Executive",
-  BILLING_MANAGER: "Billing Manager",
-  MANAGING_SHAREHOLDER: "Managing Shareholder"
+  BILLING_MANAGER: "Billing Manager"
 });
 
 // Type codes that mean "an existing client is referenced" (drives the client-lookup type marking).
@@ -93,7 +92,6 @@ export const REMS_FORM_SUBMITTED_OPTIONS = [
 export const REMS_APPROVER_ROLE_OPTIONS = [
   { label: "CSE", value: "CSE" },
   { label: "Department Director", value: "DepartmentDirector" },
-  { label: "Managing Shareholder", value: "ManagingShareholder" },
   { label: "Commission Recipient", value: "CommissionRecipient" },
   { label: "Approver", value: "Approver" }
 ];
@@ -139,7 +137,6 @@ const SUBMISSION_STATE_LABELS = { Submitted: "Received", AwaitingCustomer: "Awai
 const APPROVER_ROLE_LABELS = {
   CSE: "CSE",
   DepartmentDirector: "Department Director",
-  ManagingShareholder: "Managing Shareholder",
   CommissionRecipient: "Commission Recipient",
   // A hand-picked approver with no other standing on the engagement (RemsApproverRole.Approver).
   Approver: "Approver"
@@ -147,7 +144,6 @@ const APPROVER_ROLE_LABELS = {
 const APPROVER_ROLE_ICONS = {
   CSE: "o_support_agent",
   DepartmentDirector: "o_account_tree",
-  ManagingShareholder: "o_workspace_premium",
   CommissionRecipient: "o_payments"
 };
 const APPROVAL_STATUS_LABELS = { Pending: "Pending", Approved: "Approved", Rejected: "Rejected" };

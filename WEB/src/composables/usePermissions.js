@@ -36,7 +36,12 @@ export const Permissions = Object.freeze({
   RemsFormsSend: "rems.forms.send",
   RemsEmailLogRead: "rems.emailLog.read",
   RemsEngagementsManage: "rems.engagements.manage",
-  RemsApprovalsSend: "rems.approvals.send"
+  RemsApprovalsSend: "rems.approvals.send",
+  // Tenant-wide REMS setup (the department-to-director map), kept apart from working the engagements
+  // that flow through it.
+  RemsSettingsManage: "rems.settings.manage",
+  // Arranging cover for somebody ELSE. Naming your own delegates is self-service and needs no key.
+  RemsDelegationsManage: "rems.delegations.manage"
   // No "approvals.act" key: deciding an approval task is authorised by owning the task, not by a
   // permission, so the Approvals inbox and task detail are open to every authenticated user and the
   // server returns only the caller's own tasks. Mirrors EmsPortal.Shared.Security.Permissions.

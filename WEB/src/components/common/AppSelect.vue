@@ -47,6 +47,28 @@
         </q-chip>
       </template>
 
+      <!-- Category labels in a grouped list — options carrying `header: true`, as the role picker's
+           System / Operational / REMS Seats / Custom do. Quasar has no option groups, so the labels
+           travel as rows in the list; left to the default rendering they come out as DISABLED OPTIONS,
+           which reads as "a choice you cannot have" rather than as a heading. Only lists that declare a
+           header take this path — every other select keeps Quasar's own option rendering untouched. -->
+      <template v-if="hasHeaders" #option="scope">
+        <q-item-label v-if="scope.opt.header" header class="app-select__group">
+          {{ scope.opt.label }}
+        </q-item-label>
+        <q-item v-else v-bind="scope.itemProps">
+          <q-item-section v-if="multiple" side>
+            <q-checkbox
+              :model-value="scope.selected" dense
+              @update:model-value="scope.toggleOption(scope.opt)"
+            />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label>{{ scope.opt.label }}</q-item-label>
+          </q-item-section>
+        </q-item>
+      </template>
+
       <template v-if="loading" #append>
         <q-spinner size="20px" color="primary" />
       </template>
@@ -155,6 +177,10 @@ const isSelectedOption = (opt) => {
   return key !== undefined && selectedKeys.value.includes(key);
 };
 
+// True when the list carries category headers (see useRoleOptions). Only then is the option slot taken
+// over, so every other select in the app keeps Quasar's default rendering.
+const hasHeaders = computed(() => props.options.some((o) => o && o.header === true));
+
 const visibleOptions = computed(() => {
   const needle = searchable.value ? search.value.trim().toLowerCase() : "";
   if (needle === "") return props.options;
@@ -177,5 +203,15 @@ const ariaLabel = computed(() => labelText.value || props.ariaLabel);
 }
 .app-select__chip {
   margin: 2px 4px 2px 0;
+}
+/* A category heading inside the options list: reads as a label rather than as a greyed-out choice. */
+.app-select__group {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--q-primary);
+  padding: 10px 16px 2px;
+  min-height: 0;
 }
 </style>

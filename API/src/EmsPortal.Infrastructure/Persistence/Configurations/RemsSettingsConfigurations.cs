@@ -15,7 +15,6 @@ internal sealed class RemsSettingsConfiguration : IEntityTypeConfiguration<RemsS
         builder.HasKey(s => s.Id);
 
         builder.HasOne<Tenant>().WithMany().HasForeignKey(s => s.TenantId).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne<User>().WithMany().HasForeignKey(s => s.ManagingShareholderUserId).OnDelete(DeleteBehavior.Restrict);
 
         // Exactly one active settings row per tenant.
         builder.HasIndex(s => s.TenantId).IsUnique().HasFilter("[Deleted] = 0");

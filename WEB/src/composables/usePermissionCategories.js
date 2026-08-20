@@ -2,14 +2,20 @@
 // form, detail page and role panel group/label permission keys identically.
 //
 // Category derivation (by key prefix):
-//   tenants.*    → Tenants
-//   users.* / persons.* → Users
-//   roles.* / groups.*  → Access
-//   (anything else)     → Other
+//   tenants.*                              → Tenants
+//   users.* / persons.*                    → Users
+//   roles.* / groups.*                     → Access
+//   rems.*                                 → REMS
+//   settings.* / optionSets.* / records.* / email.*  → Settings
+//   (anything else)                        → Other
+//
+// REMS earns a section of its own: it is what the portal is for, and its keys were landing in "Other"
+// beside the tenant-configuration ones — a dozen unrelated things in one bucket, and nothing in the
+// bucket a person looking for "the REMS permissions" would open.
 
 // Display order for the rendered category sections.
 export const CATEGORY_ORDER = Object.freeze([
-  "Tenants", "Users", "Access", "Other"
+  "Tenants", "Users", "Access", "REMS", "Settings", "Other"
 ]);
 
 // Super-admin-only / elevated keys that a Tenant Admin cannot typically grant. Used as a
@@ -25,6 +31,11 @@ export function categoryForKey (key) {
     case "persons": return "Users";
     case "roles":
     case "groups": return "Access";
+    case "rems": return "REMS";
+    case "settings":
+    case "optionSets":
+    case "records":
+    case "email": return "Settings";
     default: return "Other";
   }
 }

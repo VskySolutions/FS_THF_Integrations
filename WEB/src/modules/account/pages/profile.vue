@@ -174,7 +174,7 @@
     <!-- REMS delegation is self-service — the principal names their own delegates — so it belongs on
          their own profile rather than in an admin screen. Shown only to people who work REMS requests;
          for everyone else there is nothing to delegate. -->
-    <my-delegates-panel v-if="canUseRems" class="q-mt-md" />
+    <rems-delegates-panel v-if="canUseRems" class="q-mt-md" />
 
   </q-page>
 </template>
@@ -189,7 +189,7 @@ import { useNotify } from "composables/useNotify";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import AppSelect from "components/common/AppSelect.vue";
-import MyDelegatesPanel from "modules/rems/components/MyDelegatesPanel.vue";
+import RemsDelegatesPanel from "modules/rems/components/RemsDelegatesPanel.vue";
 import AppTextField from "components/common/AppTextField.vue";
 import AppDateField from "components/common/AppDateField.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";

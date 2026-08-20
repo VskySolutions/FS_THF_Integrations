@@ -132,9 +132,8 @@ export const userApi = {
     api.delete(`/api/admin/users/${id}/tenant-assignments/${tenantId}`).then(envelope),
   // Replace the user's group memberships with the given set of group ids.
   setGroups: (id, groupIds) => api.put(`/api/admin/users/${id}/groups`, { groupIds }).then(unwrap),
-  // Picker data for the approval-roles section: the tenant's REMS.Department list, the current head of
-  // each, and the tenant's managing shareholder → { departments: [{ value, label }],
-  // heads: [{ department, userId, fullName }], managingShareholder: { userId, fullName } | null }.
+  // Picker data for the department section: the tenant's REMS.Department list and the current head of
+  // each → { departments: [{ value, label }], heads: [{ department, userId, fullName }] }.
   departments: () => api.get("/api/admin/users/departments").then(unwrap),
   // No `jobTitles`: job title is gone from the platform (the picker, its User.JobTitle option list and the
   // Person.JobTitle column behind it were dropped together), and so is the endpoint that filled it.
@@ -142,10 +141,6 @@ export const userApi = {
   // demotes the incumbent and repoints the REMS department-director mapping (WO-114), so the response
   // carries { department, isHead, demotedHeadName } for reporting the handover.
   setDepartment: (id, payload) => api.put(`/api/admin/users/${id}/department`, payload).then(unwrap),
-  // payload: { isManagingShareholder } — the tenant-wide REMS approver (one holder). Granting it displaces
-  // the incumbent; clearing only revokes this user's own role. → { isManagingShareholder, displacedName }
-  setManagingShareholder: (id, isManagingShareholder) =>
-    api.put(`/api/admin/users/${id}/managing-shareholder`, { isManagingShareholder }).then(unwrap)
 };
 
 // Tenant-scoped user groups (segmentation/tagging, independent of RBAC roles).
@@ -176,6 +171,13 @@ export const roleApi = {
     api.post(`/api/admin/tenants/${tenantId}/roles`, { roleId }).then(unwrap),
   unassignFromTenant: (tenantId, roleId) =>
     api.delete(`/api/admin/tenants/${tenantId}/roles/${roleId}`).then(envelope),
+  // ---- Role membership: who holds the role in the caller's active tenant (roles.assign) ----
+  // Membership is tenant data even when the role is not, so these work on a platform role too.
+  users: (roleId) => api.get(`/api/admin/roles/${roleId}/users`).then(unwrap),
+  userCandidates: (roleId) => api.get(`/api/admin/roles/${roleId}/users/candidates`).then(unwrap),
+  // The envelope, not just the data: the message says how many were granted, or that they already held it.
+  addUsers: (roleId, userIds) => api.post(`/api/admin/roles/${roleId}/users`, { userIds }).then(envelope),
+  removeUser: (roleId, userId) => api.delete(`/api/admin/roles/${roleId}/users/${userId}`).then(envelope),
   // ---- Role ↔ Permission Group composition (WO-70) ----
   // The role's assigned groups + the role's effective permission set.
   getGroups: (roleId) => api.get(`/api/admin/roles/${roleId}/groups`).then(unwrap),
@@ -510,6 +512,14 @@ export const remsApi = {
   // The delegates I have named: [{ id, delegateUserId, delegateName, canPrepare, canSend, startsOn,
   //   endsOn, isActive }]. A dated grant stays listed outside its window with isActive false.
   myDelegates: () => api.get("/api/rems/delegations/mine").then(unwrap),
+  // The administrative door onto the same rows: a Tenant Admin arranging cover from a user's own page.
+  userDelegates: (userId) => api.get(`/api/admin/users/${userId}/rems-delegates`).then(unwrap),
+  userDelegateCandidates: (userId) =>
+    api.get(`/api/admin/users/${userId}/rems-delegates/candidates`).then(unwrap),
+  saveUserDelegate: (userId, payload) =>
+    api.put(`/api/admin/users/${userId}/rems-delegates`, payload).then(unwrap),
+  removeUserDelegate: (userId, id) =>
+    api.delete(`/api/admin/users/${userId}/rems-delegates/${id}`).then(envelope),
   // Who I may act for TODAY: [{ principalUserId, principalName, canPrepare, canSend }].
   actingFor: () => api.get("/api/rems/delegations/acting-for").then(unwrap),
   // payload: { delegateUserId, canPrepare, canSend, startsOn?, endsOn? } — upserts on the pair.
@@ -685,7 +695,7 @@ export const remsApi = {
   //       decisions:[{ taskId, approver, role, status, decidedOnUtc, rejectionReason, isYou }] } }.
   // Option-set references arrive resolved to labels — the approver roles do not carry optionSets.read.
   // `firstYearFeeEstimate`/`realizationPercentage` are null with `financialsRestricted` true for roles
-  // other than Department Director / Managing Shareholder (AC-REMS-019.10).
+  // other than Department Director (AC-REMS-019.10).
   approvalTask: (taskId) => api.get(`/api/rems/approval-tasks/${taskId}`).then(unwrap),
   // Check / uncheck one checklist item on the caller's own task. Returns the updated item view.
   setChecklistItem: (taskId, itemId, isCompleted) =>

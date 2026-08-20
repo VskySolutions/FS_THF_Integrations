@@ -34,8 +34,6 @@ public sealed class CreatePersonRequest
 
     // Professional
     public string? EmployeeCode { get; set; }
-    public string? Department { get; set; }
-    public string? Organization { get; set; }
 
     public string? Notes { get; set; }
 
@@ -72,8 +70,6 @@ public sealed class UpdatePersonRequest
 
     // Professional
     public string? EmployeeCode { get; set; }
-    public string? Department { get; set; }
-    public string? Organization { get; set; }
 
     public string? Notes { get; set; }
     public bool? IsActive { get; set; }

@@ -7,6 +7,7 @@ using EmsPortal.Domain.Enums;
 using EmsPortal.Shared.Configuration;
 using EmsPortal.Shared.Contracts;
 using EmsPortal.Shared.Security;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
@@ -73,8 +74,12 @@ public sealed class RemsRequestsController : ControllerBase
 
     // -------------------- Dashboard list --------------------
 
+    // Open to every authenticated caller, like the approvals inbox. What comes back is decided by the
+    // records, not by a permission: RemsRequestListOptions carries the caller and the repository scopes
+    // to what they raised or are named on, unless they are privileged (Super Admin / REMS Admin), who
+    // see the tenant. A permission gate here only ever hid the page from somebody with work in it.
     [HttpGet]
-    [RequirePermission(Permissions.RemsRequestsRead)]
+    [Authorize]
     [ProducesResponseType<ApiResponse<IEnumerable<RemsRequestRow>>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> List(
         [FromQuery] int page = 1,
@@ -119,8 +124,10 @@ public sealed class RemsRequestsController : ControllerBase
     // me / All). Every request names its reviewing admin at intake, so there is no unassigned bucket to
     // count and nothing to pick up.
 
+    // Ungated with the list that leads here, and for the same reason. CanSee below is the real boundary:
+    // a request that is not the caller's to read is a 403 whatever permissions they hold.
     [HttpGet("{id:guid}")]
-    [RequirePermission(Permissions.RemsRequestsRead)]
+    [Authorize]
     [ProducesResponseType<ApiResponse<RemsRequestDetail>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {

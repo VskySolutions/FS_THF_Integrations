@@ -2,9 +2,9 @@
   <div>
     <div class="row items-center q-mb-md">
       <div class="text-body2 text-grey-8 col">
-        Who this engagement routes to (AC-REMS-018): the managing shareholder, the Department Director and
-        CSE from the setup, and every commission recipient — all four automatically — plus any approvers
-        you add below. Sending for approval locks the list.
+        Who this engagement routes to (AC-REMS-018): the Department Director and CSE from the setup, and
+        every commission recipient — all automatically — plus any approvers you add below. Sending for
+        approval locks the list.
       </div>
       <q-badge :color="statusMeta.color" class="q-pa-sm text-body2">{{ statusMeta.label }}</q-badge>
     </div>
@@ -33,13 +33,13 @@
     </q-banner>
 
     <template v-else>
-      <!-- Extra approvers only: the four automatic ones already route and are shown in the list below.
+      <!-- Extra approvers only: the automatic ones already route and are shown in the list below.
            Selecting saves immediately and the person appears in the list — then Send. -->
       <div v-if="canPick" class="q-mb-md">
         <app-select
           v-model="picked" :options="approverOptions" label="Add approvers" multiple use-input
           :loading="loadingOptions || savingPicks"
-          info="Lists every user in this tenant, shown as Full Name — email: an engagement can need a signature from anyone. They are ADDED to the four below — the managing shareholder, Department Director, CSE and commission recipients — who approve regardless."
+          info="Lists every user in this tenant, shown as Full Name — email: an engagement can need a signature from anyone. They are ADDED to the ones below — the Department Director, the CSE and the commission recipients — who approve regardless."
           @update:model-value="savePicks"
         />
       </div>
@@ -56,9 +56,8 @@
         </q-item>
       </q-list>
       <div v-else class="text-grey-6 q-pa-sm">
-        No approvers yet. The four automatic ones come from the engagement itself — name a CSE, pick a
-        department with a director, add commission recipients, or give somebody the "Managing Shareholder"
-        role. You can also add approvers above.
+        No approvers yet. The automatic ones come from the engagement itself — name a CSE, pick a
+        department that has a director, or add commission recipients. You can also add approvers above.
       </div>
 
       <div v-if="canShowSend" class="row justify-end q-mt-md">
@@ -107,14 +106,12 @@ const { engagementStatusMeta } = useRemsMeta();
 const ROLE_LABELS = {
   CSE: "CSE",
   DepartmentDirector: "Department Director",
-  ManagingShareholder: "Managing Shareholder",
   CommissionRecipient: "Commission Recipient",
   Approver: "Approver"
 };
 const ROLE_ICONS = {
   CSE: "o_support_agent",
   DepartmentDirector: "o_account_tree",
-  ManagingShareholder: "o_workspace_premium",
   CommissionRecipient: "o_payments",
   Approver: "o_how_to_reg"
 };

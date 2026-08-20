@@ -56,9 +56,12 @@ public class Person : AuditableEntity
     public string? EmergencyContactNumber { get; set; }
 
     // ---- Professional information ----
+    //
+    // Department and Organization stood here as free text on the person. The department a person works in
+    // is held per tenant on their USER account (UserDepartment, which also names the REMS Department
+    // Director), so the person-level copy was a second answer nothing read; the organization is the firm
+    // running the portal, which is the same for everybody in it.
     public string? EmployeeCode { get; set; }
-    public string? Department { get; set; }
-    public string? Organization { get; set; }
     public Guid? ManagerPersonId { get; set; }
 
     // ---- Social information ----

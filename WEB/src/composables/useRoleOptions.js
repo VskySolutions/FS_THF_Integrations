@@ -9,13 +9,11 @@ export const SYSTEM_ROLE_NAMES = Object.freeze(["SuperAdmin", "TenantAdmin"]);
 // What a person DOES in REMS. "Approver" was here and is gone — the add-approvers picker offers every
 // user in the tenant now, so there is no role to hold.
 export const OPERATIONAL_ROLE_NAMES = Object.freeze(["Partner", "Admin"]);
-// The four seats an engagement names. They grant nothing; holding one makes the user offerable in the
+// The seats an engagement names. They grant nothing; holding one makes the user offerable in the
 // picker that fills that seat. Each replaced a user group of the same name, which is why they read as
 // phrases rather than as PascalCase — they are the words on the picker. Kept apart from Operational so a
 // long role list still separates "what they can do" from "what they can be picked for".
-export const SEAT_ROLE_NAMES = Object.freeze([
-  "CSE", "Engagement Executive", "Billing Manager", "Managing Shareholder"
-]);
+export const SEAT_ROLE_NAMES = Object.freeze(["CSE", "Engagement Executive", "Billing Manager"]);
 
 export const RoleCategory = Object.freeze({
   System: "System Roles",

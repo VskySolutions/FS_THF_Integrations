@@ -56,8 +56,8 @@ public sealed class RemsApprovalController : ControllerBase
     private const string TaxFormSetKey = "REMS.TaxForm";
 
     // ManagingShareholderGroup stood here — the name of the user GROUP the shareholders were read from.
-    // The four seats are roles now (see Roles.ManagingShareholder), so there is no name to look a group up
-    // by any more.
+    // The group became a role, and then the seat itself went: nobody signs off on every engagement by
+    // standing, so there is neither a group nor a role to look up.
 
     private readonly IRemsRepository _rems;
     private readonly IRemsEngagementRepository _engagements;
@@ -245,7 +245,7 @@ public sealed class RemsApprovalController : ControllerBase
         var approvers = await BuildApproverListAsync(engagement, cancellationToken);
         if (approvers.Count == 0)
         {
-            return ConflictResult(CodeNoApprovers, "There are no approvers for this engagement; assign a CSE, director, managing shareholder or commission recipient first.");
+            return ConflictResult(CodeNoApprovers, "There are no approvers for this engagement; name a CSE, a department director or a commission recipient first, or add approvers on the Approval tab.");
         }
 
         await CreateRoundAsync(engagement, approvers, me, isResubmission: false, cancellationToken);
@@ -451,8 +451,7 @@ public sealed class RemsApprovalController : ControllerBase
     /// client, the entity under review, the complete engagement setup with its audit/government/tax detail,
     /// the marketing tags, the commission splits, the round's other decisions, and the caller's checklist —
     /// the same case staff assembled in the engagement workspace, since that is what is being approved.
-    /// The fee estimate and realization remain reserved to the Department Director and Managing Shareholder
-    /// (AC-REMS-019.10). Not the caller's own task =&gt; 404.
+    /// The fee estimate and realization remain reserved to the Department Director (AC-REMS-019.10). Not the caller's own task =&gt; 404.
     /// </summary>
     [HttpGet("approval-tasks/{taskId:guid}")]
     [Authorize]
@@ -761,7 +760,7 @@ public sealed class RemsApprovalController : ControllerBase
     // -------------------- Approver-list generation --------------------
 
     /// <summary>
-    /// The approver set to route to (AC-REMS-018): the four automatic approvers, plus whoever was added on
+    /// The approver set to route to (AC-REMS-018): the automatic approvers, plus whoever was added on
     /// the Approval tab. Each user's role comes from <see cref="RoleFor"/> rather than from storage, so a
     /// saved list keeps up when the engagement's people change under it.
     /// </summary>
@@ -769,46 +768,15 @@ public sealed class RemsApprovalController : ControllerBase
         REMSEngagement engagement, CancellationToken cancellationToken)
     {
         var picked = await _engagements.ListApproversAsync(engagement.Id, cancellationToken);
-        var shareholders = await ManagingShareholderIdsAsync(cancellationToken);
 
         // Added approvers come ON TOP of the automatic ones — picking somebody never removes an approver
         // who holds their place by standing on the engagement.
-        var userIds = AutomaticApproverIds(engagement, shareholders).Concat(picked.Select(a => a.UserId));
+        var userIds = AutomaticApproverIds(engagement).Concat(picked.Select(a => a.UserId));
 
         return userIds
             .Distinct()
-            .Select(userId => (UserId: userId, Role: RoleFor(engagement, shareholders, userId)))
+            .Select(userId => (UserId: userId, Role: RoleFor(engagement, userId)))
             .ToList();
-    }
-
-    /// <summary>
-    /// The firm's managing shareholder(s): the holders of the <c>Managing Shareholder</c> ROLE in the
-    /// tenant — the same way the CSE, Engagement Executive and Billing Manager pickers are scoped, so who
-    /// signs off on every engagement is maintained beside the rest of a user's standing, and more than one
-    /// person can hold the seat.
-    /// <para>
-    /// A tenant with nobody in the role falls back to the single shareholder on <c>RemsSettings</c>, which
-    /// is set from a user's own detail page. Both are kept because they are the same fact recorded two
-    /// ways, and losing the fallback would stop approvals routing in a tenant that only ever used it.
-    /// </para>
-    /// </summary>
-    private async Task<IReadOnlyList<Guid>> ManagingShareholderIdsAsync(CancellationToken cancellationToken)
-    {
-        if (User.GetActiveTenantId() is { } tenantId)
-        {
-            var ids = (await _users.ListByTenantRolesAsync(
-                    tenantId, new[] { Roles.ManagingShareholder }, cancellationToken))
-                .Select(u => u.Id)
-                .Distinct()
-                .ToList();
-            if (ids.Count > 0)
-            {
-                return ids;
-            }
-        }
-
-        var settings = await _settings.GetAsync(cancellationToken);
-        return settings?.ManagingShareholderUserId is { } shareholder ? new[] { shareholder } : Array.Empty<Guid>();
     }
 
     /// <summary>
@@ -846,16 +814,20 @@ public sealed class RemsApprovalController : ControllerBase
         => engagement.Rems?.Clients.FirstOrDefault(c => !c.Deleted);
 
     /// <summary>
-    /// The approvers every engagement routes to whatever is picked on the Approval tab: the managing
-    /// shareholder, the Department Director and CSE from the engagement's own setup, and every commission
-    /// recipient. None of the four is a choice — each one is already on this engagement, and the tab adds
-    /// people to them rather than deciding them. Anyone missing (no CSE named, no director on the chosen
-    /// department, no shareholder anywhere) simply contributes nobody.
+    /// The approvers every engagement routes to whatever is picked on the Approval tab: the Department
+    /// Director and CSE from the engagement's own setup, and every commission recipient. None of them is
+    /// a choice — each one is already on this engagement, and the tab adds people to them rather than
+    /// deciding them. Anyone missing (no CSE named, no director on the chosen department) simply
+    /// contributes nobody.
+    /// <para>
+    /// The firm's managing shareholder used to head this list, added to every round whatever the
+    /// engagement said. That seat is gone: an engagement is signed off by the people it names, and a
+    /// signature it needs from anyone else is added on its Approval tab, which offers the whole tenant.
+    /// </para>
     /// </summary>
-    private static List<Guid> AutomaticApproverIds(
-        REMSEngagement engagement, IReadOnlyList<Guid> managingShareholderIds)
+    private static List<Guid> AutomaticApproverIds(REMSEngagement engagement)
     {
-        var ids = new List<Guid>(managingShareholderIds);
+        var ids = new List<Guid>();
         if (engagement.DepartmentDirectorId is { } director)
         {
             ids.Add(director);
@@ -873,8 +845,7 @@ public sealed class RemsApprovalController : ControllerBase
     /// own — a hand-picked approver — reviews as a plain <see cref="RemsApproverRole.Approver"/>. Derived
     /// rather than stored so a saved list keeps up when the CSE or the commission recipients change.
     /// </summary>
-    private static RemsApproverRole RoleFor(
-        REMSEngagement engagement, IReadOnlyList<Guid> managingShareholderIds, Guid userId)
+    private static RemsApproverRole RoleFor(REMSEngagement engagement, Guid userId)
     {
         if (engagement.Rems?.CSEId == userId)
         {
@@ -883,10 +854,6 @@ public sealed class RemsApprovalController : ControllerBase
         if (engagement.DepartmentDirectorId == userId)
         {
             return RemsApproverRole.DepartmentDirector;
-        }
-        if (managingShareholderIds.Contains(userId))
-        {
-            return RemsApproverRole.ManagingShareholder;
         }
         if (engagement.CommissionSplits.Any(s => !s.Deleted && s.EmployeeId == userId))
         {
@@ -1212,12 +1179,12 @@ public sealed class RemsApprovalController : ControllerBase
     }
 
     /// <summary>
-    /// Whether a role sees the first-year fee estimate and % realization. Reserved to the Department Director
-    /// and the Managing Shareholder (AC-REMS-019.10) — the ONE thing an approver's role still scopes now that
-    /// the rest of the engagement setup is shown to everyone on the round. Open it up by returning true.
+    /// Whether a role sees the first-year fee estimate and % realization. Reserved to the Department
+    /// Director (AC-REMS-019.10) — the ONE thing an approver's role still scopes now that the rest of the
+    /// engagement setup is shown to everyone on the round. Open it up by returning true.
     /// </summary>
     private static bool MaySeeFinancials(RemsApproverRole role)
-        => role is RemsApproverRole.DepartmentDirector or RemsApproverRole.ManagingShareholder;
+        => role is RemsApproverRole.DepartmentDirector;
 
     /// <summary>
     /// Resolves option-set item ids to their labels (and, for marketing, the group tag from MetadataJson),

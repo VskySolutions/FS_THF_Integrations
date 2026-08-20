@@ -1,0 +1,38 @@
+<template>
+  <q-icon :name="icon" :size="size" :color="color" class="app-info-tip">
+    <q-tooltip anchor="top middle" self="bottom middle" :max-width="maxWidth" class="text-body2">
+      <slot>{{ text }}</slot>
+    </q-tooltip>
+  </q-icon>
+</template>
+
+<script setup>
+// The standard place to put a note that explains rather than instructs: an info icon beside a heading,
+// with the note on its tooltip.
+//
+// A paragraph of explanation under a section title reads as content on first sight and as noise on every
+// sight after it — the people who need it need it once, and everyone else scrolls past it forever. Behind
+// an icon it stays one hover away and costs the layout a line height instead of three. The same idea
+// AppFieldLabel already applies to a field's `info`, at section scale.
+//
+// Use it for background ("what this list is", "how these people are chosen"), not for anything the user
+// must read to work the screen: a state explanation (why Save is missing), a warning, or a required step
+// stays on the page in the open.
+defineProps({
+  // The note. Multi-paragraph or marked-up notes can go in the default slot instead.
+  text: { type: String, default: "" },
+  icon: { type: String, default: "o_info" },
+  // A shade bigger than the 14px on a field label — this one sits beside a section title.
+  size: { type: String, default: "16px" },
+  color: { type: String, default: "grey-6" },
+  maxWidth: { type: String, default: "320px" }
+});
+</script>
+
+<style scoped>
+.app-info-tip {
+  margin-left: 4px;
+  cursor: help;
+  vertical-align: text-bottom;
+}
+</style>

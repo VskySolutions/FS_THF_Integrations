@@ -88,8 +88,6 @@ public sealed class PersonsController : ControllerBase
             EmergencyContactRelationship = request.EmergencyContactRelationship,
             EmergencyContactNumber = request.EmergencyContactNumber,
             EmployeeCode = request.EmployeeCode,
-            Department = request.Department,
-            Organization = request.Organization,
             Notes = request.Notes,
             IsActive = true,
             LastProfileUpdatedOn = DateTime.UtcNow,
@@ -203,8 +201,6 @@ public sealed class PersonsController : ControllerBase
 
         // Professional
         Apply(request.EmployeeCode, v => person.EmployeeCode = v);
-        Apply(request.Department, v => person.Department = v);
-        Apply(request.Organization, v => person.Organization = v);
         Apply(request.Notes, v => person.Notes = v);
         if (request.IsActive.HasValue)
         {
@@ -334,7 +330,7 @@ public sealed class PersonsController : ControllerBase
         var fields = new[]
         {
             p.FirstName, p.LastName, p.DisplayName, p.PreferredName, p.Gender,
-            p.PrimaryEmail, p.MobileNumber, p.Nationality, p.Organization
+            p.PrimaryEmail, p.MobileNumber, p.Nationality
         };
         var filled = fields.Count(f => !string.IsNullOrWhiteSpace(f));
         var total = fields.Length + 2; // + date of birth + address

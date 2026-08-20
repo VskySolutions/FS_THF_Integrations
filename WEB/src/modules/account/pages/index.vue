@@ -145,8 +145,10 @@ const initials = computed(() => {
   return (a + b).toUpperCase() || "U";
 });
 
-const jobLine = computed(() =>
-  [profile.value?.jobTitle, profile.value?.organization].filter(Boolean).join(" · "));
+// The line under the name. It used to read "Job Title · Organization"; the job title is gone from the
+// platform, so the organization is the whole of it — and the line disappears for anyone without one,
+// which is what the v-if on it has always done.
+const jobLine = computed(() => profile.value?.organization || "");
 
 // Assignments come from the tenant store (kept in sync with the auth profile).
 const assignments = computed(() => tenantStore.assignments || authStore.user?.tenants || []);
@@ -156,7 +158,6 @@ const roleChips = computed(() => [...new Set(assignments.value.flatMap((t) => t.
 const contactRows = computed(() => [
   { icon: "o_mail", label: "Email", value: email.value },
   { icon: "o_smartphone", label: "Phone Number", value: profile.value?.mobileNumber },
-  { icon: "o_work", label: "Job title", value: profile.value?.jobTitle },
   { icon: "o_business", label: "Organization", value: profile.value?.organization }
 ]);
 

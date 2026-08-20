@@ -10,7 +10,7 @@
       <app-select
         v-model="pick" :options="availableRecipients" label="Add recipient" class="col-12 col-sm"
         use-input :disable="splits.length >= 10" :hint="recipientHint"
-        info="Lists members of the &quot;CSE&quot; user group, maintained in Administration → User Groups. Recipients already added are excluded."
+        info="Lists users holding the &quot;CSE&quot; role, assigned on a user's page in Administration → Users. Recipients already added are excluded."
         @update:model-value="addRecipient"
       />
       <div class="col-auto text-caption text-grey-6 q-pb-sm">{{ splits.length }} / 10</div>
@@ -51,7 +51,7 @@
 </template>
 
 <script setup>
-// The engagement commission splits (AC-REMS-016): up to ten recipients from the CSE user group, each with
+// The engagement commission splits (AC-REMS-016): up to ten recipients holding the CSE role, each with
 // an editable percentage (> 0 and ≤ 100), individually removable.
 //
 // Controlled by the page: it holds the splits, announces every change (`change`), and the page's auto-save
@@ -65,7 +65,7 @@ import AppTextField from "components/common/AppTextField.vue";
 
 const props = defineProps({
   engagement: { type: Object, required: true },
-  // Selectable recipients — the "CSE" user group's members, as [{ label, value }].
+  // Selectable recipients — the holders of the "CSE" role, as [{ label, value }].
   recipientOptions: { type: Array, default: () => [] },
   editable: { type: Boolean, default: true }
 });
@@ -98,7 +98,7 @@ const availableRecipients = computed(() =>
 // just being blank (mirrors the setup form's executive / billing-manager hints).
 const recipientHint = computed(() => (props.recipientOptions.length
   ? ""
-  : "No members in the \"CSE\" group — add them in Administration → User Groups."));
+  : "Nobody holds the \"CSE\" role — assign it on a user's page in Administration → Users."));
 
 const addRecipient = (value) => {
   if (!value || splits.value.length >= 10) { pick.value = null; return; }

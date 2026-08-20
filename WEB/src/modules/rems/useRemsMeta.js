@@ -4,6 +4,7 @@ import { optionSetApi, EntityType } from "services/api";
 import {
   useRemsOptionCatalog, ensureRemsOptionsLoaded, REMS_OPTION_SEED
 } from "modules/rems/useRemsOptionCatalog";
+import { REMS_STATUS } from "modules/rems/remsStatus";
 
 // Type / Status / Entity Type / Department / Service Line are TENANT-CONFIGURABLE option
 // sets, so their labels come from useRemsOptionCatalog — a tenant that renames a status in Administration
@@ -37,6 +38,20 @@ export const REMS_TYPE_EXISTING_CLIENT = "existing_client";
 
 export const REMS_TYPE_SUBSIDIARY = "subsidiary_child_of_existing_client";
 
+// The four seats an engagement names, as ROLE names — the value each people-picker scopes itself by
+// (remsApi.admins(role)). They mirror EmsPortal.Shared.Security.Roles exactly, spaces and all, because the
+// role name IS what the API matches on and what the roles UI displays.
+//
+// Each was a user GROUP of the same name until the seats became roles. The names did not change, so a firm
+// reads the same words; what changed is where the people are maintained — a user's own page, beside
+// Partner and Admin, rather than a separate list in Administration → User Groups.
+export const REMS_SEAT_ROLES = Object.freeze({
+  CSE: "CSE",
+  ENGAGEMENT_EXECUTIVE: "Engagement Executive",
+  BILLING_MANAGER: "Billing Manager",
+  MANAGING_SHAREHOLDER: "Managing Shareholder"
+});
+
 // Type codes that mean "an existing client is referenced" (drives the client-lookup type marking).
 // A subsidiary is one too, so picking a client never overrides a partner who already chose it.
 export const REMS_EXISTING_CLIENT_TYPES = [REMS_TYPE_EXISTING_CLIENT, REMS_TYPE_SUBSIDIARY];
@@ -57,20 +72,21 @@ export const REMS_BUSINESS_INDUSTRY_GROUPS = Object.freeze([
 
 export const isBusinessIndustryGroup = (group) => REMS_BUSINESS_INDUSTRY_GROUPS.includes(group);
 
-// EMS form-state codes (RemsFormStatus) used to filter the EMS Inbox by form state.
+// EMS form-state codes (RemsFormStatus) used to filter the EMS Inbox by form state. The codes are the
+// server's enum names and never change; only the wording below is ours — see the note on the labels.
 export const REMS_FORM_STATE_OPTIONS = [
   { label: "Draft", value: "Draft" },
   { label: "Saved", value: "Saved" },
   { label: "Sent", value: "Sent" },
-  { label: "Submitted", value: "Submitted" },
+  { label: "Received", value: "Submitted" },
   { label: "Cancelled", value: "Cancelled" }
 ];
 
-// Whether the client has returned their form — the Client Forms list's "Form" column. Sent as a string
-// and parsed to a bool server-side, because a column filter's value is always a string.
+// Whether the client has returned their form — EMS Review's "Form" column. Sent as a string and parsed to
+// a bool server-side, because a column filter's value is always a string.
 export const REMS_FORM_SUBMITTED_OPTIONS = [
-  { label: "Submitted", value: "true" },
-  { label: "Not submitted", value: "false" }
+  { label: "Received", value: "true" },
+  { label: "Not received", value: "false" }
 ];
 
 // Approval-task filters (RemsApproverRole / RemsApprovalTaskStatus names, matched server-side).
@@ -88,26 +104,35 @@ export const REMS_APPROVAL_STATUS_OPTIONS = [
   { label: "Rejected", value: "Rejected" }
 ];
 
-// Awaiting Customer borrows the EMS "Sent" teal — it is the same moment seen from the request — and the
-// approval stages borrow ENGAGEMENT_STATUS_META's colours, so a request badge and the engagement badge
-// underneath it never disagree about what pending/approved looks like.
+// One entry per live stage — a missing one falls back to grey, which reads as "draft" on a request that is
+// anything but. Awaiting Customer borrows the EMS "Sent" teal (it is the same moment seen from the
+// request); the approval stages borrow ENGAGEMENT_STATUS_META's colours, so a request badge and the
+// engagement badge underneath it never disagree about what pending/approved looks like; and the two the
+// initiator-first rebuild added take the send-back orange and a lighter shade of the admin purple, so a
+// badge says both whose desk a request is on and which visit it is. The retired `submitted` is gone — no
+// request can hold it.
 const STATUS_COLORS = {
   draft: "grey-6",
-  submitted: "primary",
   awaiting_customer: "teal-7",
   customer_submitted: "deep-purple-6",
+  returned_to_initiator: "orange-9",
+  awaiting_admin_confirmation: "deep-purple-4",
   pending_approval: "orange-8",
   changes_requested: "negative",
   approved: "positive"
 };
+// The client's form, seen from the FIRM's side: a form that has come back reads "Received", not
+// "Submitted". Submitting is the client's act and it is over; what a member of staff reading a REMS
+// surface wants to know is whether the answers are in hand. The code stays `Submitted` — it is the
+// server's RemsFormStatus enum name — so only the wording moved.
 const EMS_STATE_LABELS = {
-  NotStarted: "Not started", Draft: "Draft", Saved: "Saved", Sent: "Sent", Submitted: "Submitted", Cancelled: "Cancelled"
+  NotStarted: "Not started", Draft: "Draft", Saved: "Saved", Sent: "Sent", Submitted: "Received", Cancelled: "Cancelled"
 };
 // Colour the EMS form-state chips consistently with the request-status palette.
 const EMS_STATE_COLORS = {
   NotStarted: "grey-5", Draft: "grey-6", Saved: "primary", Sent: "teal-7", Submitted: "positive", Cancelled: "negative"
 };
-const SUBMISSION_STATE_LABELS = { Submitted: "Submitted", AwaitingCustomer: "Awaiting customer" };
+const SUBMISSION_STATE_LABELS = { Submitted: "Received", AwaitingCustomer: "Awaiting customer" };
 
 // Approval-task metadata (WO-117 Part B). Approver roles mirror the backend RemsApproverRole enum; the
 // task/round status strings mirror RemsApprovalTaskStatus / RemsApprovalRoundStatus.
@@ -149,11 +174,15 @@ const labelFrom = (options, value) => options.find((o) => o.value === value)?.la
 // Unlike labelFrom there is no falling back to the raw value: a code is not an explanation.
 const hintFrom = (options, value) => (value ? (options.find((o) => o.value === value)?.description || "") : "");
 
-// "Submitted" is the status of every request sitting in the Admin Pool, which on its own says nothing
-// about the one thing anyone wants to know at that stage: has somebody taken it? The backend already draws
-// that line — a request is pickable while it is Submitted with no assigned admin — so the badge spells it
-// out. Every other status reads exactly as it does elsewhere.
-const awaitingPickUp = (row) => row?.status === "submitted" && !row?.assignedAdmin;
+// Once a request has left its initiator it is with "the admins", which on its own says nothing about the
+// one thing anyone wants to know at that stage: has somebody actually taken it? Nobody is named at intake
+// any more, so until an admin picks it up the request is nobody's in particular — and that is worth saying
+// on the badge rather than leaving a status that reads as though somebody is already on it.
+//
+// Confined to the stages where an admin is the one expected to act. A request in a rework state is with
+// its initiator and is not waiting for anybody to pick anything up, even while unclaimed.
+const AWAITING_ADMIN_STATUSES = [REMS_STATUS.ADMIN_REVIEW, REMS_STATUS.AWAITING_ADMIN_CONFIRMATION];
+const awaitingPickUp = (row) => AWAITING_ADMIN_STATUSES.includes(row?.status) && !row?.assignedAdmin;
 
 // Label/colour helpers for rendering REMS rows and detail cards. The option-set-backed labels read the
 // shared catalogue, so a tenant's rename shows up on every badge and cell rather than only in the picker
@@ -191,15 +220,12 @@ export function useRemsMeta () {
   const approvalStatusColor = (v) => APPROVAL_STATUS_COLORS[v] || "grey-6";
   const engagementStatusMeta = (v) => ENGAGEMENT_STATUS_META[v] || { label: v || "—", color: "grey-6" };
 
-  // Status badge for a request ROW (or detail) rather than a bare code: same as statusLabel/statusColor
-  // except that `submitted` splits on whether an admin has picked it up. Every surface showing a request
-  // — the Admin Pool, the Partner Dashboard, the request detail — uses these, so all three say the same
-  // thing about the same request. Surfaces whose rows carry no assignment (the EMS Inbox, the Build EMS
-  // screen) stay on the plain code helpers; they have no way to tell the two apart.
-  const requestStatusLabel = (row) => {
-    if (row?.status !== "submitted") return statusLabel(row?.status);
-    return awaitingPickUp(row) ? "Waiting For Pickup" : "Picked Up";
-  };
+  // Status badge for a request ROW (or detail) rather than a bare code: the status, except that a request
+  // sitting with the admins says whether one has actually taken it. Every surface showing a request — EMS
+  // Review, the Partner Dashboard, the request detail — uses these, so all three say the same thing about
+  // the same request. `row` needs `status` and `assignedAdmin`; a list whose rows name the status
+  // differently (EMS Review calls it `requestStatus`) passes a shape rather than its raw row.
+  const requestStatusLabel = (row) => (awaitingPickUp(row) ? "Waiting For Pickup" : statusLabel(row?.status));
   const requestStatusColor = (row) => (awaitingPickUp(row) ? "amber-8" : statusColor(row?.status));
 
   // The EMS engagement/detail action becomes available only once the customer has submitted their
@@ -209,10 +235,13 @@ export function useRemsMeta () {
   // Why engagement setup is closed to this user on this row, or null when it is theirs to work.
   // Setup belongs to whoever picked the request up, so an unclaimed request has no owner and someone
   // else's is not yours to take over. The server enforces the same rule — the workspace is a URL — but
-  // saying WHY on the button beats letting the click end in a 403.
+  // saying WHY on the button beats letting the click end in a 403. Super Admins and Tenant Admins are
+  // exempt from the whole rule there (RemsSetupAccess.IsElevated), so they are exempt here too.
+  const isElevated = () => auth.roles.includes("SuperAdmin") || auth.roles.includes("TenantAdmin");
   const engagementOwnerDenial = (row) => {
+    if (isElevated()) return null;
     const assignee = row?.assignedAdmin?.id;
-    if (!assignee) return "Pick this request up first — engagement setup belongs to the assigned Admin";
+    if (!assignee) return "Waiting for pickup — pick this request up to work its engagement setup";
     if (assignee !== auth.user?.userId) {
       return `Picked up by ${row.assignedAdmin?.name || "another Admin"} — only they can work its engagement setup`;
     }
@@ -223,9 +252,9 @@ export function useRemsMeta () {
     !!row?.clientSubmissionState || ["Sent", "Submitted"].includes(row?.emsFormState);
 
   // Live option lists for pickers and column filters. Reactive, so a screen built before the catalogue
-  // resolved picks up the tenant's own wording without reloading. The status FILTER carries the pool's
-  // extra wording: it still filters on the `submitted` code, so its label names both of the states that
-  // one code shows up as in a row rather than just the waiting one.
+  // resolved picks up the tenant's own wording without reloading. The status FILTER carries the queue's
+  // extra wording: Admin Review is one code but shows up in a row as two states — waiting for pickup, and
+  // picked up — so its label names both rather than just the one somebody happens to be hunting for.
   const typeOptions = computed(() => options.type);
   const referralSourceOptions = computed(() => options.referralSource);
   const statusOptions = computed(() => options.status);
@@ -234,7 +263,9 @@ export function useRemsMeta () {
   const subServiceLineOptions = computed(() => options.subServiceLine);
   const subIndustryOptions = computed(() => options.subIndustry);
   const statusFilterOptions = computed(() => options.status.map((option) =>
-    (option.value === "submitted" ? { ...option, label: "Submitted/Waiting For Pickup" } : option)));
+    (option.value === REMS_STATUS.ADMIN_REVIEW
+      ? { ...option, label: `${option.label}/Waiting For Pickup` }
+      : option)));
 
   return {
     typeLabel,

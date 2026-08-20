@@ -39,7 +39,6 @@ internal sealed class PersonConfiguration : IEntityTypeConfiguration<Person>
 
         // Professional information
         builder.Property(p => p.EmployeeCode).HasMaxLength(64);
-        builder.Property(p => p.JobTitle).HasMaxLength(128);
         builder.Property(p => p.Department).HasMaxLength(128);
         builder.Property(p => p.Organization).HasMaxLength(128);
 

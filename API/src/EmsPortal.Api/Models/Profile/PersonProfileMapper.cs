@@ -11,7 +11,7 @@ public static class PersonProfileMapper
         p.PreferredName, p.Gender, p.DateOfBirth, p.MaritalStatus, p.Nationality, p.TimeZone, p.Language,
         p.PrimaryEmail, p.SecondaryEmail, p.MobileNumber, p.CountryCode, p.AlternateMobileNumber,
         p.EmergencyContactName, p.EmergencyContactRelationship, p.EmergencyContactNumber,
-        p.EmployeeCode, p.JobTitle, p.Department, p.Organization,
+        p.EmployeeCode, p.Department, p.Organization,
         p.LinkedInUrl, p.TwitterUrl, p.FacebookUrl, p.InstagramUrl, p.WebsiteUrl,
         p.ProfileCompletionPercentage, p.IsProfileVerified, p.LastProfileUpdatedOn, p.Notes,
         p.ProfileMediaId, p.ProfileMedia?.PublicUrl,

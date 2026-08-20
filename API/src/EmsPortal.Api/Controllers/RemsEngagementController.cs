@@ -86,8 +86,14 @@ public sealed class RemsEngagementController : ControllerBase
     // -------------------- Part A: submitted-form view + workspace read --------------------
 
     /// <summary>
-    /// The client-forms list (AC-REMS-013.1): every request that has an EMS form, indicating
+    /// EMS Review (AC-REMS-013.1): every submitted request that has an EMS form, indicating
     /// submitted/not-submitted, client name, submission date and the assigned Admin/CSE.
+    /// <para>
+    /// This is the admins' shared queue, not one admin's own list — a request nobody has picked up yet
+    /// comes back with a null <c>assignedAdmin</c>, which is what the list renders as "Waiting for
+    /// pickup". <paramref name="assignment"/> is the quick filter over that: <c>mine</c> narrows to the
+    /// requests this caller holds, anything else (the default) is the whole queue.
+    /// </para>
     /// </summary>
     [HttpGet("client-forms")]
     [RequirePermission(Permissions.RemsEngagementsManage)]
@@ -98,13 +104,23 @@ public sealed class RemsEngagementController : ControllerBase
         [FromQuery] string? search = null,
         [FromQuery] bool? submitted = null,
         [FromQuery] string? requestStatus = null,
+        [FromQuery] string? assignment = null,
         CancellationToken cancellationToken = default)
     {
+        if (User.GetUserId() is not { } me)
+        {
+            return Unauthorized(ApiResponseFactory.Unauthorized("No user context."));
+        }
+
         page = Math.Max(1, page);
         limit = Math.Clamp(limit, 1, 100);
 
+        var slice = string.Equals(assignment?.Trim(), "mine", StringComparison.OrdinalIgnoreCase)
+            ? RemsClientFormAssignment.Mine
+            : RemsClientFormAssignment.All;
+
         var (items, total) = await _forms.ListClientFormsAsync(
-            new RemsClientFormQuery(search, submitted, requestStatus, page, limit), cancellationToken);
+            new RemsClientFormQuery(search, submitted, requestStatus, me, slice, page, limit), cancellationToken);
         var names = await _users.GetFullNamesAsync(
             items.SelectMany(i => new[] { i.AdminAssignedToId, i.CSEId, i.CreatedById, i.UpdatedById })
                 .Where(id => id.HasValue).Select(id => id!.Value),
@@ -112,10 +128,15 @@ public sealed class RemsEngagementController : ControllerBase
 
         string? NameOf(Guid? id) => id is { } uid && names.TryGetValue(uid, out var n) ? n : null;
 
+        // Asked once for the whole page: the permission is the caller's, so only the row's own claimed/
+        // unclaimed state varies. Drafts cannot reach this list, so being unclaimed is the whole test.
+        var mayPickUp = User.HasPermission(Permissions.RemsRequestsAssign);
+
         var rows = items.Select(i => new RemsClientFormRow(
             i.RemsId, i.RemsNumber, i.ClientName, i.ParentClientName, i.RequestStatus,
             HasForm: true, i.Submitted, i.SubmittedOnUtc,
             RemsWorkspaceMapper.UserRef(i.AdminAssignedToId, names), RemsWorkspaceMapper.UserRef(i.CSEId, names),
+            CanPickUp: mayPickUp && i.AdminAssignedToId is null,
             NameOf(i.CreatedById), i.CreatedOnUtc, NameOf(i.UpdatedById), i.UpdatedOnUtc));
 
         return Ok(ApiResponseFactory.Paginated(rows, "REMS client forms retrieved.", page, limit, total));

@@ -136,9 +136,8 @@ export const userApi = {
   // each, and the tenant's managing shareholder → { departments: [{ value, label }],
   // heads: [{ department, userId, fullName }], managingShareholder: { userId, fullName } | null }.
   departments: () => api.get("/api/admin/users/departments").then(unwrap),
-  // The selectable job titles (the User.JobTitle option list) → ["Partner", "Tax Manager", …]. The chosen
-  // title is stored verbatim, so these strings are both the option and the value.
-  jobTitles: () => api.get("/api/admin/users/job-titles").then(unwrap),
+  // No `jobTitles`: job title is gone from the platform (the picker, its User.JobTitle option list and the
+  // Person.JobTitle column behind it were dropped together), and so is the endpoint that filled it.
   // payload: { department: code|null, isHead } — a null department unassigns the user. Marking a head
   // demotes the incumbent and repoints the REMS department-director mapping (WO-114), so the response
   // carries { department, isHead, demotedHeadName } for reporting the handover.
@@ -462,8 +461,8 @@ export const dashboardApi = {
   saveLayout: (payload) => api.put("/api/dashboard/layout", payload).then(unwrap)
 };
 
-// REMS (Phase 15, WO-111/115). Request lifecycle: the Partner Dashboard + Admin Pool lists, the
-// create/edit/assign/duplicate/delete actions, and the client + admin pickers. Row visibility and the
+// REMS (Phase 15, WO-111/115). Request lifecycle: the Partner Dashboard + EMS Review lists, the
+// create/edit/pick-up/duplicate/delete actions, and the client + people pickers. Row visibility and the
 // per-row `actions` flags are enforced server-side; the UI additionally gates on permission keys.
 // The conversation thread / activity / attachments reuse the Universal Features endpoints keyed on
 // EntityType.Rems (see ufConversationApi) — this object deliberately does not duplicate them.
@@ -475,20 +474,18 @@ export const remsApi = {
   // instants (a date-only picker must convert its own day boundaries — see zonedDayBoundaryUtc).
   // Returns the standard envelope.
   list: (params) => api.get("/api/rems/requests", { params }).then(envelope),
-  // poolCounts is gone with the Admin Pool. Every request names its reviewing admin at intake, so there
-  // is no unassigned bucket to size and nothing waiting to be picked up.
+  // poolCounts is gone with the Admin Pool view switcher it fed. EMS Review is the queue now, and its own
+  // "Assigned to me" / "All" buttons are the switcher — see clientForms below.
   get: (id) => api.get(`/api/rems/requests/${id}`).then(unwrap),
   // payload: { existingClientReferenceId?, clientName, type, description?,
-  //            customerEmail?, customerMobileNumber?, mediaId?, assignAdminUserId }
-  // assignAdminUserId is REQUIRED — every request names the admin who will review it once the client
-  // answers. There is no `submit`: a request is always created as a draft, and what moves it on is the
-  // initiator sending the intake link (sendForm below).
+  //            customerEmail?, customerMobileNumber?, mediaId? }
+  // No reviewing admin is named: a request is raised for the admins as a body, and it stays unassigned
+  // until one picks it up (pickUp below). There is no `submit` either — a request is always created as a
+  // draft, and what moves it on is the initiator sending the intake link (sendForm below).
   create: (payload) => api.post("/api/rems/requests", payload).then(unwrap),
   // payload: any subset of { description, type, clientName, customerEmail,
   //            customerMobileNumber, existingClientReferenceId } — null fields are unchanged.
-  // Assignment travels here too: `assignAdminUserId` re-points the reviewer (open to both the initiator
-  // and the admin), `unassignAdmin: true` clears it, and omitting both leaves it alone. Changing it needs
-  // rems.requests.assign on top of rems.requests.update.
+  // Assignment does NOT travel here. Who reviews a request changes only through pickUp / handBack.
   update: (id, payload) => api.put(`/api/rems/requests/${id}`, payload).then(unwrap),
   // Attach already-uploaded media (POST /api/media first) to an existing request. Media the request
   // already carries is ignored, so a retried save cannot file the same document twice. Returns the detail.
@@ -518,19 +515,27 @@ export const remsApi = {
   // payload: { delegateUserId, canPrepare, canSend, startsOn?, endsOn? } — upserts on the pair.
   saveDelegate: (payload) => api.put("/api/rems/delegations", payload).then(unwrap),
   removeDelegate: (id) => api.delete(`/api/rems/delegations/${id}`).then(envelope),
-  // No `assign` wrapper: the reviewing admin is named at intake and re-pointed by `update`
-  // (assignAdminUserId), so nothing in the SPA calls POST /requests/{id}/assign any more.
+
+  // ---- Pick up / hand back (who reviews a request) ----
+  // The calling admin claims the request. No body: the caller IS the assignee — there is no assigning
+  // somebody else, which is why the "Assign to Admin" picker is gone from the request form. Needs
+  // rems.requests.assign. 409s on a draft, and on one another admin holds. Returns the refreshed detail.
+  pickUp: (id) => api.post(`/api/rems/requests/${id}/pick-up`).then(unwrap),
+  // The holding admin returns it to the queue, where it reads "Waiting for pickup" again and any admin may
+  // take it. The only way a request loses its reviewing admin.
+  handBack: (id) => api.post(`/api/rems/requests/${id}/hand-back`).then(unwrap),
+
   duplicate: (id) => api.post(`/api/rems/requests/${id}/duplicate`).then(unwrap),
   remove: (id) => api.delete(`/api/rems/requests/${id}`).then(envelope),
   // Client picker (2+ chars): [{ id, name, email, phone, parentCompany:null, pastWork:null }].
   // parentCompany/pastWork are always null — no external client directory exists in this platform.
   clientLookup: (q) => api.get("/api/rems/clients/lookup", { params: { q } }).then(unwrap),
-  // Users holding the REMS Admin role in the active tenant: [{ id, name, email }]. Reused as the CSE
-  // picker source (WO-116) — there is no dedicated CSE endpoint, so the staff/Admin list stands in.
-  // Without `group`: Admin + Super Admin users in the tenant (the assign/CSE pickers). With `group`: the
-  // members of that user group — how the Engagement Executive / Billing Manager pickers are scoped. An
-  // unknown or empty group returns [] rather than falling back to every admin.
-  admins: (group) => api.get("/api/rems/admins", { params: group ? { group } : undefined }).then(unwrap),
+  // Users in the active tenant, by role: [{ id, name, email }].
+  // Without `role`: Admin + Super Admin users. With `role`: the holders of that role — how the CSE /
+  // Engagement Executive / Billing Manager pickers are scoped (see REMS_SEAT_ROLES). A role nobody holds
+  // returns [] rather than falling back to every admin, so the picker can say the role needs somebody in
+  // it. This took a user GROUP name until the four seats became roles.
+  admins: (role) => api.get("/api/rems/admins", { params: role ? { role } : undefined }).then(unwrap),
 
   // ---- EMS form build / send (WO-112, WO-116) ----
   // The build screen read (`getForm`) and the EMS Inbox list (`inbox`) are gone with the screens that
@@ -563,11 +568,17 @@ export const remsApi = {
   // showing — the request's state, or its being with somebody else.
   emailLog: (remsId) => api.get(`/api/rems/requests/${remsId}/email-log`).then(unwrap),
 
-  // ---- Client forms + submitted-form review (WO-114, WO-116) ----
-  // Client Forms list (paginated envelope). params: { page?, limit?, search?, submitted?, requestStatus? } —
-  // search covers the REMS number and client name; `submitted` is a bool. Filtering is server-side. Rows:
+  // ---- EMS Review + submitted-form review (WO-114, WO-116) ----
+  // The admins' shared queue (paginated envelope), NOT one admin's own list — every request whose
+  // initiator has sent it to their client, whoever holds it. Drafts never appear: they are still their
+  // author's private working copy.
+  // params: { page?, limit?, search?, submitted?, requestStatus?, assignment? } — search covers the REMS
+  // number and client name; `submitted` is a bool; `assignment` is the quick filter, "mine" for the
+  // requests this caller has picked up and anything else (the default) for the whole queue. Filtering is
+  // server-side. Rows:
   //   { remsId, remsNumber, clientName, requestStatus, hasForm,
-  //     submitted, submittedOnUtc, assignedAdmin:{id,name}|null, cse:{id,name}|null }.
+  //     submitted, submittedOnUtc, assignedAdmin:{id,name}|null, cse:{id,name}|null, canPickUp }.
+  // A null `assignedAdmin` is a request waiting for pickup; `canPickUp` is whether THIS caller may take it.
   clientForms: (params) => api.get("/api/rems/client-forms", { params }).then(envelope),
   // The immutable submitted-form snapshot: { submissionId, remsId, remsNumber, industryGroup, lockedEmail,
   //   submittedOnUtc, payload } — payload is the RemsFormPayloadV1 wire shape, rendered read-only, grouped.
@@ -630,7 +641,7 @@ export const remsApi = {
   // selectedApproverIds }. approvers = the automatic ones (CSE + commission recipients) plus the added
   // ones; selectedApproverIds = only the added ones, which is what the picker binds to.
   approvers: (id) => api.get(`/api/rems/engagements/${id}/approvers`).then(unwrap),
-  // Users selectable as EXTRA approvers — the tenant's Approver-role users → [{ userId, name, jobTitle, email }].
+  // Users selectable as EXTRA approvers — the tenant's Approver-role users → [{ userId, name, email }].
   approverOptions: (id) => api.get(`/api/rems/engagements/${id}/approver-options`).then(unwrap),
   // Replace the ADDED approvers. An empty array removes the additions; the automatic ones always route.
   setApprovers: (id, userIds) => api.put(`/api/rems/engagements/${id}/approvers`, { userIds }).then(unwrap),

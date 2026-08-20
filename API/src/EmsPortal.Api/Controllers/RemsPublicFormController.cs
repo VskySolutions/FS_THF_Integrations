@@ -9,6 +9,7 @@ using EmsPortal.Domain.Entities;
 using EmsPortal.Domain.Enums;
 using EmsPortal.Shared.Configuration;
 using EmsPortal.Shared.Contracts;
+using EmsPortal.Shared.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
@@ -619,7 +620,8 @@ public sealed class RemsPublicFormController : ControllerBase
     {
         var rems = form.Rems!;
         // Assigned admin, CSE, and the requester — the customer coming back is the milestone the person who
-        // raised the request is waiting on.
+        // raised the request is waiting on. The admin half is empty on a request nobody has picked up yet,
+        // which is the ordinary case: the broadcast below is what tells the admins about those.
         var recipients = new[] { rems.AdminAssignedToId, rems.CSEId, rems.CreatedById }
             .Where(id => id.HasValue)
             .Select(id => id!.Value)
@@ -637,6 +639,26 @@ public sealed class RemsPublicFormController : ControllerBase
                     $"{rems.REMSNumber} — {rems.RequestedClientName}",
                     EntityType.Rems,
                     rems.Id), cancellationToken);
+            }
+
+            // Nobody has claimed this request, so the answers that just landed are on no admin's desk in
+            // particular. Every admin in the tenant is told it is waiting, which is the in-app half of what
+            // EMS Review shows as "Waiting for pickup" — without it a submission on an unclaimed request
+            // would reach the initiator and the CSE and no admin at all.
+            if (rems.AdminAssignedToId is null)
+            {
+                var admins = await _users.ListByTenantRolesAsync(
+                    form.TenantId, new[] { Roles.Admin, Roles.SuperAdmin }, cancellationToken);
+                foreach (var admin in admins.Where(a => !recipients.Contains(a.Id)))
+                {
+                    await _notifications.DispatchAsync(new CreateNotificationDto(
+                        admin.Id,
+                        NotificationType.RemsRequestAssigned,
+                        "A REMS request is waiting for pickup",
+                        $"{rems.REMSNumber} — {rems.RequestedClientName}",
+                        EntityType.Rems,
+                        rems.Id), cancellationToken);
+                }
             }
 
             await _activity.WriteAsync(

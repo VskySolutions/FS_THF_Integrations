@@ -138,7 +138,6 @@ public sealed class ProfileController : ControllerBase
 
         // Professional
         Apply(request.EmployeeCode, v => person.EmployeeCode = v);
-        Apply(request.JobTitle, v => person.JobTitle = v);
         Apply(request.Department, v => person.Department = v);
         Apply(request.Organization, v => person.Organization = v);
 
@@ -230,7 +229,7 @@ public sealed class ProfileController : ControllerBase
         var fields = new[]
         {
             p.FirstName, p.LastName, p.DisplayName, p.PreferredName, p.Gender,
-            p.PrimaryEmail, p.MobileNumber, p.Nationality, p.JobTitle, p.Organization
+            p.PrimaryEmail, p.MobileNumber, p.Nationality, p.Organization
         };
         var filled = fields.Count(f => !string.IsNullOrWhiteSpace(f));
         var total = fields.Length + 2; // + date of birth + address

@@ -25,7 +25,12 @@ public enum NotificationType
     /// <summary>A reminder the user set has reached its due time.</summary>
     ReminderDue = 2,
 
-    /// <summary>A REMS request was assigned to the user (in-app only — no email template, REMS WO-111).</summary>
+    /// <summary>
+    /// A REMS request is waiting for an admin to pick it up: the client's answers have landed on a request
+    /// nobody has claimed, so this goes to EVERY admin in the tenant (in-app only — no email template).
+    /// Minted for "a REMS request was assigned to you", back when an initiator named one admin at intake;
+    /// nobody is named at intake now, and the number is kept because rows carry it.
+    /// </summary>
     RemsRequestAssigned = 7,
 
     /// <summary>The user was assigned as the CSE on a REMS request/form (in-app only — no email template, REMS WO-112).</summary>

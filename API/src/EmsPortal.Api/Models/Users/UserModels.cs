@@ -20,8 +20,6 @@ public sealed class CreateUserRequest
     public string Role { get; set; } = string.Empty;
     /// <summary>When true, email the new user an invitation with their temporary password (via the tenant's active SMTP account).</summary>
     public bool SendInvitation { get; set; }
-    /// <summary>Required job title, from the <c>User.JobTitle</c> option list. Written to the person record.</summary>
-    public string? JobTitle { get; set; }
 }
 
 public sealed class UpdateUserRequest
@@ -31,8 +29,6 @@ public sealed class UpdateUserRequest
     public string? PhoneNumber { get; set; }
     public string? DisplayName { get; set; }
     public string? Email { get; set; }
-    /// <summary>Job title, from the <c>User.JobTitle</c> option list. Null leaves it unchanged.</summary>
-    public string? JobTitle { get; set; }
 }
 
 public sealed class UpdateProfileRequest
@@ -159,7 +155,6 @@ public sealed record UserSummary(
     string LastName,
     string FullName,
     string? PhoneNumber,
-    string? JobTitle,
     string? TenantName,
     IReadOnlyList<string> Roles,
     IReadOnlyList<UserGroupDto> Groups,
@@ -183,8 +178,6 @@ public sealed record UserDetail(
     string FullName,
     string? PhoneNumber,
     string DisplayName,
-    // From the person record, chosen from the User.JobTitle option list (the label is what is stored).
-    string? JobTitle,
     bool IsActive,
     bool MustChangePassword,
     IReadOnlyList<TenantAssignmentDto> Assignments,

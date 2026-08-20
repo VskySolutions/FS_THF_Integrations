@@ -371,12 +371,7 @@ public sealed class PermissionGroupsController : ControllerBase
             return null;
         }
 
-        var ceiling = new HashSet<string>(Permissions.ForTenantAdmin(), StringComparer.Ordinal);
-        foreach (var role in await _roles.ListByTenantAsync(tenantId, cancellationToken))
-        {
-            ceiling.UnionWith(role.Permissions);
-            ceiling.UnionWith(role.EffectivePermissions);
-        }
+        var ceiling = await RoleAccess.CeilingAsync(_roles, tenantId, cancellationToken);
 
         var disallowed = keys.Where(k => !ceiling.Contains(k)).ToList();
         return disallowed.Count == 0

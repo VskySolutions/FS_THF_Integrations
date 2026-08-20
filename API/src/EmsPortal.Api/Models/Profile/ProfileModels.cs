@@ -50,7 +50,6 @@ public sealed class UpdatePersonProfileRequest
 
     // Professional
     public string? EmployeeCode { get; set; }
-    public string? JobTitle { get; set; }
     public string? Department { get; set; }
     public string? Organization { get; set; }
 
@@ -121,7 +120,6 @@ public sealed record PersonProfileResponse(
     string? EmergencyContactRelationship,
     string? EmergencyContactNumber,
     string? EmployeeCode,
-    string? JobTitle,
     string? Department,
     string? Organization,
     string? LinkedInUrl,

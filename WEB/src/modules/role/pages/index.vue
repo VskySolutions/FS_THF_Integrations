@@ -41,15 +41,21 @@
         </q-td>
       </template>
 
+      <!-- A role the caller does not own opens read-only: seeing what a platform role grants is part of
+           deciding who to give it to, changing it is a Super Admin's call. -->
       <template #body-cell-actions="cell">
         <q-td :props="cell" class="text-right">
-          <q-btn flat round dense color="primary" icon="o_edit" @click="openEdit(cell.row)">
-            <q-tooltip>{{ cell.row.isSystem ? "Edit permissions" : "Edit" }}</q-tooltip>
+          <q-btn
+            flat round dense color="primary" :icon="cell.row.canManage ? 'o_edit' : 'o_visibility'"
+            @click="openEdit(cell.row)"
+          >
+            <q-tooltip>{{ actionTooltip(cell.row) }}</q-tooltip>
           </q-btn>
-          <q-btn v-if="!cell.row.isSystem" flat round dense icon="o_more_vert">
+          <q-btn v-if="cell.row.canManage && !cell.row.isSystem" flat round dense icon="o_more_vert">
             <q-menu auto-close>
               <q-list style="min-width: 180px;">
-                <q-item clickable @click="openTenants(cell.row)">
+                <!-- Availability spans tenants, so it is the platform owner's to set. -->
+                <q-item v-if="isSuperAdmin && !cell.row.tenantId" clickable @click="openTenants(cell.row)">
                   <q-item-section avatar><q-icon name="o_apartment" /></q-item-section>
                   <q-item-section>Manage Tenants</q-item-section>
                 </q-item>
@@ -68,26 +74,48 @@
       v-if="canManageDeleted" :entity-type="EntityType.Role" :show="showDeleted" @restored="load"
     />
 
-    <!-- Create / edit role -->
+    <!-- Create / edit role, or view one that belongs to somebody else -->
     <app-form-drawer
-      v-model="formOpen" :title="editingId ? 'Edit Role' : 'Create Role'"
+      v-model="formOpen" :title="drawerTitle" :hide-save="viewOnly"
       :saving="saving" save-label="Save" @submit="submitForm" @cancel="resetForm"
     >
+      <div v-if="viewOnly" class="text-body2 text-grey-7 q-mb-md">
+        This role belongs to the platform and is offered in every tenant, so only a Super Admin can
+        change it. Create a role of your own to grant a different set of permissions.
+      </div>
+
       <q-form ref="formRef" greedy>
         <q-input
           v-model="form.name" outlined stack-label hide-bottom-space label="Name *" class="q-mb-md"
-          :readonly="nameLocked" :hint="nameLocked ? 'System role names are fixed; permissions can still be tuned.' : undefined"
+          :readonly="nameLocked || viewOnly" :hint="nameHint"
           :rules="[(v) => !!v || 'Name is required']"
         />
-        <app-rich-text-field v-model="form.description" label="Description" class="q-mb-md" />
+        <app-rich-text-field
+          v-model="form.description" label="Description" class="q-mb-md" :readonly="viewOnly"
+        />
+        <!-- Read-only, the keys are listed rather than put in a picker: the catalogue a tenant admin is
+             offered stops at their ceiling, so a platform role's wider set has no options to map to. -->
+        <div v-if="viewOnly">
+          <div class="text-caption text-grey-7 q-mb-xs">Permissions</div>
+          <div v-if="form.permissions.length" class="row q-gutter-xs">
+            <q-chip
+              v-for="permission in form.permissions" :key="permission"
+              dense square color="grey-3" text-color="grey-9"
+            >
+              {{ prettyPermission(permission) }}
+            </q-chip>
+          </div>
+          <div v-else class="text-body2 text-grey-6">This role grants no permissions of its own.</div>
+        </div>
         <app-select
-          v-model="form.permissions" :options="permissionOptions" label="Permissions" multiple
+          v-else v-model="form.permissions" :options="permissionOptions" label="Permissions" multiple
           :loading="loadingPermissions"
+          :info="isSuperAdmin ? '' : 'The list stops at what your own tenant can hand out.'"
         />
       </q-form>
 
-      <!-- Role ↔ Permission Group composition (WO-70): only for an existing role. -->
-      <template v-if="editingId">
+      <!-- Role ↔ Permission Group composition (WO-70): only for an existing role you may change. -->
+      <template v-if="editingId && !viewOnly">
         <q-separator class="q-my-md" />
         <role-permission-groups-panel :role-id="editingId" />
       </template>
@@ -105,9 +133,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch } from "vue";
+import { ref, reactive, computed, watch } from "vue";
 import { debounce } from "quasar";
 import { roleApi, tenantApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes, EntityType } from "services/api";
+import { useAuthStore } from "stores/auth";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
@@ -130,6 +159,12 @@ const auditColumns = useAuditColumns();
 const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
 const { confirm } = useConfirm();
+const authStore = useAuthStore();
+
+// The list shows every role this caller may see: the platform ones (theirs to read, a Super Admin's to
+// change) and the ones their own tenant created. Which of the two a row is comes from the server as
+// `canManage` — the same rule it enforces on save, rather than a second copy of it here.
+const isSuperAdmin = computed(() => authStore.roles.includes("SuperAdmin"));
 
 const columns = [
   { name: "name", label: "Name", field: "name", align: "left", sortable: true, default: true },
@@ -143,6 +178,16 @@ const columns = [
     sortable: true,
     default: true,
     filterOptions: [{ label: "System", value: true }, { label: "Custom", value: false }]
+  },
+  // Who the role belongs to. A platform role is offered in every tenant and only a Super Admin may
+  // change it; the rest were created by a tenant for itself and are its own to maintain.
+  {
+    name: "scope",
+    label: "Scope",
+    field: (r) => r.tenantName || "Platform",
+    align: "left",
+    sortable: true,
+    default: true
   },
   { name: "permissionCount", label: "Permissions", field: "permissionCount", align: "left", sortable: true, default: true, filterable: false },
   ...auditColumns(),
@@ -186,11 +231,26 @@ const saving = ref(false);
 const formRef = ref(null);
 const editingId = ref(null);
 const nameLocked = ref(false); // system role names are fixed, but permissions are still editable
+const viewOnly = ref(false); // a platform role opened by someone who may read it but not change it
 const form = reactive({ name: "", description: "", permissions: [] });
+
+const drawerTitle = computed(() => {
+  if (viewOnly.value) return "Role";
+  return editingId.value ? "Edit Role" : "Create Role";
+});
+
+const nameHint = computed(() =>
+  nameLocked.value && !viewOnly.value ? "System role names are fixed; permissions can still be tuned." : undefined);
+
+const actionTooltip = (row) => {
+  if (!row.canManage) return "View";
+  return row.isSystem ? "Edit permissions" : "Edit";
+};
 
 const resetForm = () => {
   editingId.value = null;
   nameLocked.value = false;
+  viewOnly.value = false;
   form.name = "";
   form.description = "";
   form.permissions = [];
@@ -204,7 +264,11 @@ const openCreate = async () => {
 
 const openEdit = async (row) => {
   resetForm();
-  await loadPermissions();
+  viewOnly.value = !row.canManage;
+  // Nothing to pick from in view mode: the keys are listed as they are.
+  if (!viewOnly.value) {
+    await loadPermissions();
+  }
   editingId.value = row.id;
   nameLocked.value = !!row.isSystem; // system role names are fixed; permissions stay editable
   try {
@@ -220,6 +284,7 @@ const openEdit = async (row) => {
 };
 
 const submitForm = async ({ clearDraft } = {}) => {
+  if (viewOnly.value) return; // no Save is rendered in view mode; this is the belt to that brace
   if (!(await formRef.value?.validate())) return;
   saving.value = true;
   try {

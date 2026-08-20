@@ -11,7 +11,6 @@ export const blankPersonForm = () => ({
   primaryEmail: "",
   mobileNumber: "",
   countryCode: null,
-  jobTitle: "",
   department: "",
   organization: ""
 });

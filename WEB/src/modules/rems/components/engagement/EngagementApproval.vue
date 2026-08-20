@@ -39,7 +39,7 @@
         <app-select
           v-model="picked" :options="approverOptions" label="Add approvers" multiple use-input
           :loading="loadingOptions || savingPicks"
-          info="Lists users holding the Approver role in this tenant, shown as Full Name — Job Title. They are ADDED to the four below — the managing shareholder, Department Director, CSE and commission recipients — who approve regardless."
+          info="Lists every user in this tenant, shown as Full Name — email: an engagement can need a signature from anyone. They are ADDED to the four below — the managing shareholder, Department Director, CSE and commission recipients — who approve regardless."
           @update:model-value="savePicks"
         />
       </div>
@@ -57,8 +57,8 @@
       </q-list>
       <div v-else class="text-grey-6 q-pa-sm">
         No approvers yet. The four automatic ones come from the engagement itself — name a CSE, pick a
-        department with a director, add commission recipients, or put somebody in the "Managing Shareholder"
-        user group. You can also add approvers above.
+        department with a director, add commission recipients, or give somebody the "Managing Shareholder"
+        role. You can also add approvers above.
       </div>
 
       <div v-if="canShowSend" class="row justify-end q-mt-md">
@@ -167,9 +167,11 @@ const loadOptions = async () => {
   loadingOptions.value = true;
   try {
     const rows = await remsApi.approverOptions(props.engagement.id);
-    // "Full Name — Job Title", falling back to the name alone when the person has no title on file.
+    // "Full Name — email", falling back to the name alone. The job title used to be the qualifier here;
+    // it is gone from the platform, and the email is what is left that separates two people who share a
+    // name — which is the only thing this label has to do.
     approverOptions.value = (rows || []).map((r) => ({
-      label: r.jobTitle ? `${r.name} — ${r.jobTitle}` : r.name,
+      label: r.email ? `${r.name} — ${r.email}` : r.name,
       value: r.userId
     }));
   } catch (err) {

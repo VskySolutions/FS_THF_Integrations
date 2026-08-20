@@ -24,9 +24,10 @@ public sealed record RemsApproverList(
 
 /// <summary>
 /// A user selectable as an extra approver: someone holding the Approver role in the active tenant. The
-/// job title travels with them so the picker can read "Full Name — Job Title".
+/// email travels with them because the name alone does not separate two people who share one — the job
+/// title used to do that job, and it is gone from the platform.
 /// </summary>
-public sealed record RemsApproverOption(Guid UserId, string Name, string? JobTitle, string? Email);
+public sealed record RemsApproverOption(Guid UserId, string Name, string? Email);
 
 /// <summary>
 /// Replaces the engagement's ADDED approvers with exactly these users (AC-REMS-018). An empty list removes

@@ -25,12 +25,6 @@
             :readonly="!canEdit" hint="Used to sign in. Changing it signs the user out of their sessions."
           />
           <q-input v-model="phoneNumber" outlined dense stack-label label="Phone Number" class="col-12 col-sm-6" :readonly="!canEdit" />
-          <!-- Mandatory, from the User.JobTitle option list. The chosen label is what gets stored. -->
-          <app-select
-            v-model="jobTitle" :options="jobTitleOptions" label="Job Title *" class="col-12 col-sm-6"
-            :loading="loadingJobTitles" :readonly="!canEdit" :clearable="false" use-input
-            info="From the Job Title option list (Administration → Option Sets), where the values can be added, renamed and re-ordered."
-          />
         </q-card-section>
         <q-card-actions v-if="canEdit" align="right">
           <q-btn unelevated no-caps color="primary" label="Save" :loading="saving" @click="save" />
@@ -262,9 +256,6 @@ const firstName = ref("");
 const lastName = ref("");
 const email = ref("");
 const phoneNumber = ref("");
-const jobTitle = ref(null);
-const jobTitleOptions = ref([]);
-const loadingJobTitles = ref(false);
 const saving = ref(false);
 const tenantOptions = ref([]);
 const loadingTenants = ref(false);
@@ -321,7 +312,6 @@ const load = async () => {
     lastName.value = user.value.lastName || "";
     phoneNumber.value = user.value.phoneNumber || "";
     email.value = user.value.email;
-    jobTitle.value = user.value.jobTitle || null;
     department.value = user.value.department || null;
     isDepartmentHead.value = !!user.value.isDepartmentHead;
     isManagingShareholder.value = !!user.value.isManagingShareholder;
@@ -332,24 +322,7 @@ const load = async () => {
   }
 };
 
-const loadJobTitles = async () => {
-  loadingJobTitles.value = true;
-  try {
-    jobTitleOptions.value = (await userApi.jobTitles()) || [];
-  } catch (err) {
-    notify.error(getApiErrorMessage(err));
-  } finally {
-    loadingJobTitles.value = false;
-  }
-};
-
 const save = async () => {
-  // Job title is mandatory, so this blocks on users created before the field existed until one is picked.
-  if (!jobTitle.value) {
-    notify.error("Select a job title.");
-    return;
-  }
-
   // The username is the sign-in credential: the API only rejects duplicates, so the format is checked here
   // rather than letting an unusable address be saved.
   const nextEmail = (email.value || "").trim();
@@ -377,8 +350,7 @@ const save = async () => {
       firstName: firstName.value,
       lastName: lastName.value,
       phoneNumber: phoneNumber.value,
-      email: nextEmail,
-      jobTitle: jobTitle.value
+      email: nextEmail
     });
     notify.success("User updated.");
     load();
@@ -708,7 +680,7 @@ const saveGroups = async () => {
 };
 
 onMounted(async () => {
-  await Promise.all([loadTenants(), loadDepartments(), loadJobTitles()]);
+  await Promise.all([loadTenants(), loadDepartments()]);
   await load();
 });
 </script>

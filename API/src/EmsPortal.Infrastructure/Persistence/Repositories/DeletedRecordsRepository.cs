@@ -15,7 +15,7 @@ namespace EmsPortal.Infrastructure.Persistence.Repositories;
 /// switch statements. The four operations are the same query in every case — filter by id, honour the
 /// tenant scope, act — and differ only in the DbSet, the column that names a record to a human, and how
 /// that type is tenant-scoped (a required <c>TenantId</c>, a nullable one for rows that can be
-/// platform-wide, or none at all for a global type like Role). Those three things are what a registration
+/// platform-wide, or none at all for a global type like User). Those three things are what a registration
 /// supplies, checked by the compiler against the concrete entity.
 /// </para>
 /// </summary>
@@ -72,10 +72,13 @@ internal sealed class DeletedRecordsRepository : IDeletedRecordsRepository
         // a projection is not reliably translatable — the subject is a plain string column and reads
         // better to a human anyway.
         AddNullableTenant(map, EntityType.EmailTemplate, _dbContext.EmailTemplates, t => t.Subject, t => t.TenantId);
+        // A role is either the platform's or one tenant's own, so a tenant admin only ever sees, restores
+        // and purges the roles their own tenant created — another tenant's are not theirs to touch, and a
+        // platform role is the Super Admin's to put back.
+        AddNullableTenant(map, EntityType.Role, _dbContext.Roles, r => r.Name, r => r.TenantId);
 
         // Global, with no tenant column at all: visible to whoever may manage them. A user belongs to
         // tenants through their role assignments rather than by a column, and a tenant is the scope.
-        AddGlobal(map, EntityType.Role, _dbContext.Roles, r => r.Name);
         AddGlobal(map, EntityType.User, _dbContext.Users, u => u.DisplayName);
         AddGlobal(map, EntityType.Tenant, _dbContext.Tenants, t => t.Name);
 

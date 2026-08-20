@@ -124,23 +124,23 @@ const sections = [
     ]
   },
   {
+    key: "administration",
+    label: "Administration",
+    icon: "o_corporate_fare",
+    items: [
+      { label: "Tenants", icon: "o_apartment", to: "/tenants", permissions: [Permissions.TenantsWrite] },
+      { label: "Person", icon: "o_badge", to: "/persons", permissions: [Permissions.PersonsRead] },
+    ]
+  },
+  {
     key: "access-management",
     label: "Access Management",
     icon: "o_lock",
     items: [
       { label: "Permission Groups", icon: "o_workspaces", to: "/permission-groups", permissions: [Permissions.GroupsManage] },
-      { label: "Person", icon: "o_badge", to: "/persons", permissions: [Permissions.PersonsRead] },
       { label: "Roles", icon: "o_admin_panel_settings", to: "/roles", permissions: [Permissions.RolesWrite] },
       { label: "Users", icon: "o_group", to: "/users", permissions: [Permissions.UsersRead] },
       { label: "User Groups", icon: "o_groups", to: "/user-groups", permissions: [Permissions.UsersGroupManagement] }
-    ]
-  },
-  {
-    key: "administration",
-    label: "Administration",
-    icon: "o_corporate_fare",
-    items: [
-      { label: "Tenants", icon: "o_apartment", to: "/tenants", permissions: [Permissions.TenantsWrite] }
     ]
   },
   {

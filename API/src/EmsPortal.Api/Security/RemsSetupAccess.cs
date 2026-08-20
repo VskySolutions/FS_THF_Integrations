@@ -23,8 +23,8 @@ internal static class RemsSetupAccess
 {
     /// <summary>
     /// A Super Admin or Tenant Admin, who are exempt from the stage rules so an assignment can be worked
-    /// around in an emergency. The ordinary remedy is to re-point the reviewing admin, which both lists
-    /// already offer.
+    /// around in an emergency. The ordinary remedy is for the holding admin to hand the request back, after
+    /// which any admin may pick it up again.
     /// </summary>
     public static bool IsElevated(ClaimsPrincipal user)
         => user.IsSuperAdmin() || user.GetRoles().Any(r => string.Equals(r, Roles.TenantAdmin, StringComparison.Ordinal));
@@ -54,7 +54,8 @@ internal static class RemsSetupAccess
     /// <summary>
     /// May WRITE the setup: whoever the request is with at this stage. Before the client has answered (and
     /// during either rework state) that is the initiator and the CSE working it with them; once the client
-    /// has answered it is the Admin named on the request, and only them.
+    /// has answered it is the Admin who picked the request up, and only them — which is why a request
+    /// nobody has picked up is nobody's to work until somebody does.
     /// <para>
     /// Says nothing about the engagement being locked for approval — that is the engagement's own status,
     /// checked separately where it applies.
@@ -80,6 +81,6 @@ internal static class RemsSetupAccess
         => RemsRequestStatuses.IsWithInitiator(rems.Status)
             ? "This request is with the person who raised it; only they (or the CSE named on it) can work its engagement setup."
             : rems.AdminAssignedToId is null
-                ? "This request has no reviewing admin. Name one before working its engagement setup."
+                ? "This request is waiting for pickup. Pick it up from EMS Review to work its engagement setup."
                 : "This request is being reviewed by another admin; only they can work its engagement setup.";
 }

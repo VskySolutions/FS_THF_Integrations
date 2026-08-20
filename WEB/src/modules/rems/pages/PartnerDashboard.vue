@@ -142,6 +142,7 @@ import { useDeletedRecords } from "composables/useDeletedRecords";
 import { useDateFormat } from "composables/useDateFormat";
 import { useAuditColumns } from "composables/useAuditColumns";
 import { useRemsMeta } from "modules/rems/useRemsMeta";
+import { REMS_STATUS } from "modules/rems/remsStatus";
 
 import AppListHeader from "components/common/AppListHeader.vue";
 import ActingAsBanner from "modules/rems/components/ActingAsBanner.vue";
@@ -170,10 +171,11 @@ const {
 const canCreate = computed(() => has(Permissions.RemsRequestsCreate));
 const canReadEmailLog = computed(() => has(Permissions.RemsEmailLogRead));
 
-// The Assigned Admin filter needs the admin list, so it is offered only to callers who may read it.
-// Re-pointing the admin is no longer an action on this list — every request names one at intake, and
-// correcting that is done on the request form itself.
-const canSeeAdmins = computed(() => has(Permissions.RemsRequestsAssign));
+// The Assigned Admin filter needs the admin list, so it is offered only to callers who may read it —
+// which is the same right as reading requests, since the endpoint stopped being gated on assigning when
+// the "Assign to Admin" picker it fed was removed. Nothing on this list re-points an admin: a request
+// gains one by that admin picking it up from EMS Review.
+const canSeeAdmins = computed(() => has(Permissions.RemsRequestsRead));
 const adminFilterOptions = ref([]);
 onMounted(async () => {
   if (!canSeeAdmins.value) return;
@@ -200,7 +202,9 @@ const columns = computed(() => [
   {
     name: "assignedAdmin",
     label: "Assigned Admin",
-    field: (r) => r.assignedAdmin?.name || "—",
+    // Says which of the two silences an empty cell is: nobody has taken the request yet, versus there
+    // being no admin stage in sight because it is still with its initiator or the client.
+    field: (r) => r.assignedAdmin?.name || (r.status === REMS_STATUS.ADMIN_REVIEW ? "Waiting for pickup" : "—"),
     align: "left",
     default: true,
     ...(canSeeAdmins.value ? { filterOptions: adminFilterOptions.value } : { filterable: false })

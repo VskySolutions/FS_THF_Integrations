@@ -11,10 +11,13 @@ using Microsoft.AspNetCore.Mvc;
 namespace EmsPortal.Api.Controllers;
 
 /// <summary>
-/// RBAC role management (Phase 1 foundation). Super Admins CRUD roles and assign
-/// them to tenants; Tenant Admins read the roles available to their tenant so they
-/// can assign them to users. Authorization still uses the base-level policies during
-/// the RBAC rollout.
+/// RBAC role management. Roles come in two scopes and keeping them apart is this controller's whole
+/// job: PLATFORM roles (<see cref="Role.TenantId"/> null) are the Super Admin's — every tenant is
+/// offered them, and only a Super Admin may change one, because a change lands in every tenant at once
+/// — while a Tenant Admin creates and maintains roles inside their OWN tenant, which no other tenant
+/// ever sees. What a tenant admin may put in one is held to their tenant's permission ceiling
+/// (<see cref="RoleAccess.CeilingAsync"/>), so a role can never hand out authority the tenant itself
+/// does not have.
 /// </summary>
 [ApiController]
 [Produces("application/json")]
@@ -60,16 +63,59 @@ public sealed class RolesController : ControllerBase
         return id => id is { } uid && names.TryGetValue(uid, out var n) ? n : null;
     }
 
+    /// <summary>
+    /// Names the tenants owning the rows on this page, so the list can say where each role comes from.
+    /// Costs nothing when every row is a platform role, which is the usual case.
+    /// </summary>
+    private async Task<Func<Guid?, string?>> TenantNamesAsync(
+        IEnumerable<Role> rows, CancellationToken cancellationToken)
+    {
+        var owners = rows.Where(r => r.TenantId.HasValue).Select(r => r.TenantId!.Value).ToHashSet();
+        if (owners.Count == 0)
+        {
+            return _ => null;
+        }
+
+        var names = (await _tenants.ListAsync(cancellationToken))
+            .Where(t => owners.Contains(t.Id))
+            .ToDictionary(t => t.Id, t => t.Name);
+        return id => id is { } tid && names.TryGetValue(tid, out var n) ? n : null;
+    }
+
+    /// <summary>
+    /// The permission catalogue the caller may actually build a role from: everything for a Super Admin,
+    /// the tenant's ceiling for anyone else. Filtering it here is what keeps the picker honest — offering
+    /// a key whose save would then be refused is a poor way to say "you may not grant this".
+    /// </summary>
     [HttpGet("/api/admin/permissions")]
     [RequirePermission(Permissions.RolesRead)]
-    public IActionResult Catalog()
-        => Ok(ApiResponseFactory.Success(Permissions.All, "Permissions retrieved."));
+    public async Task<IActionResult> Catalog(CancellationToken cancellationToken)
+    {
+        if (User.IsSuperAdmin())
+        {
+            return Ok(ApiResponseFactory.Success(Permissions.All, "Permissions retrieved."));
+        }
+
+        if (User.GetActiveTenantId() is not { } tenantId)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden("No active tenant for the caller."));
+        }
+
+        var ceiling = await RoleAccess.CeilingAsync(_roles, tenantId, cancellationToken);
+        // Filtered through Permissions.All rather than returned as the set, so the catalogue order holds.
+        return Ok(ApiResponseFactory.Success(Permissions.All.Where(ceiling.Contains).ToList(), "Permissions retrieved."));
+    }
 
     [HttpGet("/api/admin/roles")]
     [RequirePermission(Permissions.RolesWrite)]
     public async Task<IActionResult> List([FromQuery] string? search = null, CancellationToken cancellationToken = default)
     {
-        var roles = await _roles.ListAsync(cancellationToken);
+        var (roles, scopeError) = await VisibleRolesAsync(cancellationToken);
+        if (scopeError is not null)
+        {
+            return scopeError;
+        }
+
         IEnumerable<Role> result = roles;
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -80,7 +126,8 @@ public sealed class RolesController : ControllerBase
         }
         var page = result.ToList();
         var nameOf = await AuditNamesAsync(page, cancellationToken);
-        return Ok(ApiResponseFactory.Success(page.Select(r => ToSummary(r, nameOf)), "Roles retrieved."));
+        var tenantNameOf = await TenantNamesAsync(page, cancellationToken);
+        return Ok(ApiResponseFactory.Success(page.Select(r => ToSummary(r, nameOf, tenantNameOf)), "Roles retrieved."));
     }
 
     [HttpGet("/api/admin/roles/{id:guid}")]
@@ -89,7 +136,8 @@ public sealed class RolesController : ControllerBase
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
         var role = await _roles.GetByIdAsync(id, cancellationToken);
-        return role is null
+        // Another tenant's role is not "forbidden" to this caller — it is nothing they can know exists.
+        return role is null || !RoleAccess.CanSee(User, role)
             ? NotFound(ApiResponseFactory.NotFound("Role not found."))
             : Ok(ApiResponseFactory.Success(ToResponse(role), "Role retrieved."));
     }
@@ -99,27 +147,53 @@ public sealed class RolesController : ControllerBase
     [ProducesResponseType<ApiResponse<RoleResponse>>(StatusCodes.Status201Created)]
     public async Task<IActionResult> Create([FromBody] CreateRoleRequest request, CancellationToken cancellationToken)
     {
+        var name = request.Name?.Trim() ?? string.Empty;
+        if (name.Length == 0)
+        {
+            return BadRequest(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, "Validation failed.", "A role name is required."));
+        }
+
         var invalid = InvalidPermissions(request.Permissions);
         if (invalid is not null)
         {
             return invalid;
         }
 
-        if (await _roles.NameExistsAsync(request.Name, cancellationToken))
+        // A Super Admin writes a platform role; everybody else writes one owned by their own tenant, and
+        // may only put keys in it that their tenant already holds.
+        Guid? owner = null;
+        if (!User.IsSuperAdmin())
         {
-            return Conflict(ApiResponseFactory.Error(ApiErrorCodes.DuplicateIdentifier, "Role name already in use.", request.Name));
+            if (User.GetActiveTenantId() is not { } tenantId)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden("No active tenant for the caller."));
+            }
+            owner = tenantId;
+
+            var ceiling = await CheckCeilingAsync(tenantId, request.Permissions, cancellationToken);
+            if (ceiling is not null)
+            {
+                return ceiling;
+            }
+        }
+
+        if (await _roles.NameExistsAsync(name, owner, cancellationToken: cancellationToken))
+        {
+            return Conflict(ApiResponseFactory.Error(ApiErrorCodes.DuplicateIdentifier, "Role name already in use.", name));
         }
 
         var role = new Role
         {
             Id = Guid.NewGuid(),
-            Name = request.Name,
+            TenantId = owner,
+            Name = name,
             Description = request.Description,
             IsSystem = false,
             Permissions = Normalize(request.Permissions),
         };
         await _roles.AddAsync(role, cancellationToken);
-        await _audit.AddAsync(nameof(Role), role.Id.ToString(), "Created", details: role.Name, cancellationToken: cancellationToken);
+        await _audit.AddAsync(nameof(Role), role.Id.ToString(), "Created",
+            details: $"name={role.Name}; scope={ScopeOf(role)}", cancellationToken: cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, ApiResponseFactory.Success(ToResponse(role), "Role created."));
@@ -129,10 +203,10 @@ public sealed class RolesController : ControllerBase
     [RequirePermission(Permissions.RolesWrite)]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateRoleRequest request, CancellationToken cancellationToken)
     {
-        var role = await _roles.GetByIdAsync(id, cancellationToken);
+        var (role, accessError) = await LoadForWriteAsync(id, cancellationToken);
         if (role is null)
         {
-            return NotFound(ApiResponseFactory.NotFound("Role not found."));
+            return accessError!;
         }
 
         if (request.Permissions is not null)
@@ -142,13 +216,28 @@ public sealed class RolesController : ControllerBase
             {
                 return invalid;
             }
+            // Only a tenant's own roles reach here for a non-Super-Admin, so the ceiling is that tenant's.
+            if (!User.IsSuperAdmin() && role.TenantId is { } tenantId)
+            {
+                var ceiling = await CheckCeilingAsync(tenantId, request.Permissions, cancellationToken);
+                if (ceiling is not null)
+                {
+                    return ceiling;
+                }
+            }
             role.Permissions = Normalize(request.Permissions);
         }
 
         // System role names are fixed; their permission sets may still be tuned.
         if (!role.IsSystem && !string.IsNullOrWhiteSpace(request.Name))
         {
-            role.Name = request.Name;
+            var name = request.Name.Trim();
+            if (!string.Equals(name, role.Name, StringComparison.OrdinalIgnoreCase)
+                && await _roles.NameExistsAsync(name, role.TenantId, role.Id, cancellationToken))
+            {
+                return Conflict(ApiResponseFactory.Error(ApiErrorCodes.DuplicateIdentifier, "Role name already in use.", name));
+            }
+            role.Name = name;
         }
         if (request.Description is not null)
         {
@@ -165,10 +254,10 @@ public sealed class RolesController : ControllerBase
     [RequirePermission(Permissions.RolesWrite)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        var role = await _roles.GetByIdAsync(id, cancellationToken);
+        var (role, accessError) = await LoadForWriteAsync(id, cancellationToken);
         if (role is null)
         {
-            return NotFound(ApiResponseFactory.NotFound("Role not found."));
+            return accessError!;
         }
         if (role.IsSystem)
         {
@@ -185,6 +274,10 @@ public sealed class RolesController : ControllerBase
     [RequirePermission(Permissions.RolesWrite)]
     public async Task<IActionResult> ListRoleTenants(Guid id, CancellationToken cancellationToken)
     {
+        if (!User.IsSuperAdmin())
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden(PlatformOnly));
+        }
         if (await _roles.GetByIdAsync(id, cancellationToken) is null)
         {
             return NotFound(ApiResponseFactory.NotFound("Role not found."));
@@ -194,7 +287,7 @@ public sealed class RolesController : ControllerBase
         return Ok(ApiResponseFactory.Success(tenantIds, "Role tenants retrieved."));
     }
 
-    // ---- Tenant ↔ role availability ----
+    // ---- Tenant availability (platform roles only, Super Admin only) ----
 
     [HttpGet("/api/admin/tenants/{tenantId:guid}/roles")]
     [RequirePermission(Permissions.RolesRead)]
@@ -205,30 +298,43 @@ public sealed class RolesController : ControllerBase
             return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden("Not permitted for this tenant."));
         }
 
-        // Every role is assignable (all system + all custom roles) — this is the authoritative source
-        // for the user role pickers. The only exception is the platform-wide Super Admin system role,
-        // which stays hidden from non-Super-Admin callers.
-        var all = await _roles.ListAsync(cancellationToken);
-        var assignable = all
-            .Where(r => User.IsSuperAdmin() || !(r.IsSystem && r.Name == Roles.SuperAdmin))
-            .OrderBy(r => r.Name);
+        // Everything this tenant's users can hold — the platform roles plus the ones the tenant made for
+        // itself — and the authoritative source for the user role pickers. Another tenant's roles are not
+        // in it: they exist only where they were created. The one further exclusion is the platform-wide
+        // Super Admin system role, which stays hidden from non-Super-Admin callers.
+        var rows = (await _roles.ListVisibleToTenantAsync(tenantId, cancellationToken))
+            .Where(r => RoleAccess.CanSee(User, r))
+            .OrderBy(r => r.Name)
+            .ToList();
 
-        var rows = assignable.ToList();
         var nameOf = await AuditNamesAsync(rows, cancellationToken);
-        return Ok(ApiResponseFactory.Success(rows.Select(r => ToSummary(r, nameOf)), "Tenant roles retrieved."));
+        var tenantNameOf = await TenantNamesAsync(rows, cancellationToken);
+        return Ok(ApiResponseFactory.Success(rows.Select(r => ToSummary(r, nameOf, tenantNameOf)), "Tenant roles retrieved."));
     }
 
     [HttpPost("/api/admin/tenants/{tenantId:guid}/roles")]
     [RequirePermission(Permissions.RolesWrite)]
     public async Task<IActionResult> AssignToTenant(Guid tenantId, [FromBody] AssignRoleToTenantRequest request, CancellationToken cancellationToken)
     {
+        if (!User.IsSuperAdmin())
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden(PlatformOnly));
+        }
         if (await _tenants.GetByIdAsync(tenantId, cancellationToken) is null)
         {
             return NotFound(ApiResponseFactory.Error(ApiErrorCodes.TenantNotFound, "Tenant not found.", tenantId.ToString()));
         }
-        if (await _roles.GetByIdAsync(request.RoleId, cancellationToken) is null)
+        var role = await _roles.GetByIdAsync(request.RoleId, cancellationToken);
+        if (role is null)
         {
             return NotFound(ApiResponseFactory.NotFound("Role not found."));
+        }
+        // Availability is a platform-role idea. A role a tenant owns is already available there and
+        // nowhere else, and lending it out would contradict the ownership that keeps it private.
+        if (role.TenantId is not null)
+        {
+            return BadRequest(ApiResponseFactory.Error(
+                ApiErrorCodes.ValidationFailed, "Validation failed.", "A role owned by a tenant is available only within that tenant."));
         }
 
         if (await _roles.GetTenantRoleAsync(tenantId, request.RoleId, cancellationToken) is null)
@@ -245,6 +351,11 @@ public sealed class RolesController : ControllerBase
     [RequirePermission(Permissions.RolesWrite)]
     public async Task<IActionResult> UnassignFromTenant(Guid tenantId, Guid roleId, CancellationToken cancellationToken)
     {
+        if (!User.IsSuperAdmin())
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden(PlatformOnly));
+        }
+
         var existing = await _roles.GetTenantRoleAsync(tenantId, roleId, cancellationToken);
         if (existing is null)
         {
@@ -259,6 +370,47 @@ public sealed class RolesController : ControllerBase
 
     // ---- helpers ----
 
+    private const string PlatformOnly = "Only a Super Admin manages which tenants a role is available in.";
+
+    /// <summary>The roles the caller may see at all: every role for a Super Admin, the platform roles plus
+    /// their own tenant's for anyone else.</summary>
+    private async Task<(IReadOnlyList<Role> Roles, IActionResult? Error)> VisibleRolesAsync(CancellationToken cancellationToken)
+    {
+        if (User.IsSuperAdmin())
+        {
+            return (await _roles.ListAsync(cancellationToken), null);
+        }
+        if (User.GetActiveTenantId() is not { } tenantId)
+        {
+            return (Array.Empty<Role>(), StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden("No active tenant for the caller.")));
+        }
+
+        var visible = (await _roles.ListVisibleToTenantAsync(tenantId, cancellationToken))
+            .Where(r => RoleAccess.CanSee(User, r))
+            .ToList();
+        return (visible, null);
+    }
+
+    /// <summary>
+    /// Loads a role for editing or deletion. A role the caller cannot see reads as missing; a platform
+    /// role they can see but not change is a plain refusal, since pretending it is absent would
+    /// contradict their own list, which shows it.
+    /// </summary>
+    private async Task<(Role? Role, IActionResult? Error)> LoadForWriteAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var role = await _roles.GetByIdAsync(id, cancellationToken);
+        if (role is null || !RoleAccess.CanSee(User, role))
+        {
+            return (null, NotFound(ApiResponseFactory.NotFound("Role not found.")));
+        }
+        if (!RoleAccess.CanManage(User, role))
+        {
+            return (null, StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden(
+                "This role belongs to the platform; only a Super Admin can change it. Create a role of your own instead.")));
+        }
+        return (role, null);
+    }
+
     private IActionResult? InvalidPermissions(IEnumerable<string> permissions)
     {
         var unknown = permissions.Where(p => !Permissions.All.Contains(p)).ToList();
@@ -267,12 +419,30 @@ public sealed class RolesController : ControllerBase
             : BadRequest(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, "Unknown permission(s).", string.Join(", ", unknown)));
     }
 
+    /// <summary>
+    /// Holds a tenant admin to their tenant's permission ceiling (ADR-003): a role they write can only
+    /// hand out authority the tenant already has. Returns a 403 when a key escapes it; null when allowed.
+    /// </summary>
+    private async Task<IActionResult?> CheckCeilingAsync(Guid tenantId, IEnumerable<string> keys, CancellationToken cancellationToken)
+    {
+        var ceiling = await RoleAccess.CeilingAsync(_roles, tenantId, cancellationToken);
+        var disallowed = keys.Where(k => !ceiling.Contains(k)).Distinct(StringComparer.Ordinal).ToList();
+        return disallowed.Count == 0
+            ? null
+            : StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Error(
+                ApiErrorCodes.PermissionCeilingExceeded, "One or more permissions are outside your tenant's permission ceiling.", string.Join(", ", disallowed)));
+    }
+
     private static List<string> Normalize(IEnumerable<string> permissions)
         => permissions.Where(Permissions.All.Contains).Distinct().ToList();
 
-    private static RoleResponse ToResponse(Role r) => new(r.Id, r.Name, r.Description, r.IsSystem, r.Permissions, r.CreatedOnUtc, r.UpdatedOnUtc);
+    private static string ScopeOf(Role role) => role.TenantId?.ToString() ?? "platform";
 
-    private static RoleSummary ToSummary(Role r, Func<Guid?, string?> nameOf) => new(
-        r.Id, r.Name, r.Description, r.IsSystem, r.Permissions.Count,
-        nameOf(r.CreatedById), r.CreatedOnUtc, nameOf(r.UpdatedById), r.UpdatedOnUtc);
+    private RoleResponse ToResponse(Role r) => new(
+        r.Id, r.Name, r.Description, r.IsSystem, r.TenantId, RoleAccess.CanManage(User, r),
+        r.Permissions, r.CreatedOnUtc, r.UpdatedOnUtc);
+
+    private RoleSummary ToSummary(Role r, Func<Guid?, string?> nameOf, Func<Guid?, string?> tenantNameOf) => new(
+        r.Id, r.Name, r.Description, r.IsSystem, r.TenantId, tenantNameOf(r.TenantId), RoleAccess.CanManage(User, r),
+        r.Permissions.Count, nameOf(r.CreatedById), r.CreatedOnUtc, nameOf(r.UpdatedById), r.UpdatedOnUtc);
 }

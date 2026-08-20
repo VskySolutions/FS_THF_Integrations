@@ -220,7 +220,7 @@ public sealed class OptionSetService : IOptionSetService
     /// <summary>
     /// Guards against DELETING a platform-standard (seeded) list. Their values are editable — a standard
     /// list is a starting point, not a fixed one — but removing the list itself is not offered: the key is
-    /// referenced by feature code (REMS.Department, User.JobTitle …), and the seeder would simply recreate
+    /// referenced by feature code (REMS.Department, REMS.Status …), and the seeder would simply recreate
     /// it on the next restart.
     /// </summary>
     private static void EnsureDeletable(OptionSet set)

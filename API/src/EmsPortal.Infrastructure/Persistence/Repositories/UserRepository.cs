@@ -158,6 +158,19 @@ internal sealed class UserRepository : IUserRepository
             .OrderBy(u => u.DisplayName)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<User>> ListActiveByTenantAsync(
+        Guid tenantId, CancellationToken cancellationToken = default)
+        // The same shape as ListByTenantRolesAsync without the role filter — holding ANY role in the
+        // tenant is what puts a user in it. Unpaged on purpose: its caller is a picker that has to offer
+        // the whole tenant at once, and a firm's staff list is that size.
+        => await _dbContext.Users
+            .IgnoreQueryFilters()
+            .Where(u => !u.Deleted && u.IsActive)
+            .Include(u => u.Person)
+            .Where(u => u.TenantRoles.Any(r => !r.Deleted && r.TenantId == tenantId))
+            .OrderBy(u => u.DisplayName)
+            .ToListAsync(cancellationToken);
+
     public async Task AddAsync(User user, CancellationToken cancellationToken = default)
         => await _dbContext.Users.AddAsync(user, cancellationToken);
 

@@ -37,14 +37,31 @@ internal sealed class RemsFormRepository : IRemsFormRepository
     public async Task<(IReadOnlyList<RemsClientFormItem> Items, int Total)> ListClientFormsAsync(
         RemsClientFormQuery query, CancellationToken cancellationToken = default)
     {
-        // Every request that has a form. Inner-join REMS (tenant + not-deleted) to its form so both ambient
-        // query filters apply; project the submitted state and the request's assigned Admin/CSE.
+        // Every SUBMITTED request that has a form. Inner-join REMS (tenant + not-deleted) to its form so
+        // both ambient query filters apply; project the submitted state and the request's assigned
+        // Admin/CSE.
         // Order on the SOURCE columns before projecting — EF cannot translate an OrderBy over the
         // projected record. SubmittedOnUtc DESC puts submitted forms first, not-yet-submitted (null) last.
+        //
+        // Drafts are excluded. A form record exists from the moment the initiator saves a CSE and an entity
+        // type, which is well before the request is anybody's but theirs, and this list is the admins'
+        // queue: a draft here would read "Waiting for pickup" over a referral its author is still writing,
+        // and would 403 for every admin who tried to open it (drafts are creator-only — see
+        // RemsRequestsController.CanSee).
+        const string draft = RemsRequestStatuses.Draft;
         var rows =
             from r in _dbContext.Rems
             join f in _dbContext.RemsForms on r.Id equals f.REMSId
+            where r.Status != draft
             select new { Rems = r, Form = f };
+
+        // The list's two quick filters. "All" is every row an admin's queue holds, waiting-for-pickup ones
+        // included, so it needs no clause of its own.
+        if (query.Assignment == RemsClientFormAssignment.Mine)
+        {
+            var me = query.CallerUserId;
+            rows = rows.Where(x => x.Rems.AdminAssignedToId == me);
+        }
 
         if (!string.IsNullOrWhiteSpace(query.Search))
         {

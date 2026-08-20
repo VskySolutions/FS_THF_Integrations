@@ -235,16 +235,9 @@
         info="From the REMS Industry option list (Administration → Option Sets). The client's trade. Every trade is offered whichever entity type is chosen."
         @update:model-value="$emit('update:subIndustry', $event)"
       />
-      <!-- Completing the trio rather than standing in a row of its own at the foot of the tab, where a
-           single picker after the attachments read as an afterthought. Note it obeys THIS tab's edit
-           right, not the setup's like the two beside it — who reviews the request is part of the request,
-           not of its engagement. -->
-      <app-select
-        v-model="model.assignAdminUserId" :options="adminOptions" label="Assign to Admin" required
-        class="col-12 col-sm-6 col-md-4" :readonly="readonly" :clearable="false"
-        :error="attempted && !model.assignAdminUserId"
-        info="The admin who reviews this request once the client's intake comes back. They have nothing to do until then. Either of you can change who it is later."
-      />
+      <!-- "Assign to Admin" completed this row. It is gone: an initiator names nobody, because they have
+           no way of knowing which admin has capacity for this one. The request reaches every admin's EMS
+           Review as "Waiting for pickup", and whoever takes it owns it from there. -->
     </div>
 
     <!-- "Message from Partner" stood here — a rich-text box for context to the admin and the client.
@@ -272,9 +265,6 @@
       hint="Up to 15 files, 100 MB in total. These stay internal to the request — the client never sees them."
       :error-message="attachmentError"
     />
-
-    <!-- Assign to Admin stood here in a row of its own. It has moved up beside Entity Type and Industry,
-         so the tab now ends on the attachments rather than on a lone picker below them. -->
   </div>
 </template>
 
@@ -307,7 +297,6 @@ const props = defineProps({
   // emailed to, and the number on file for them. One flag for the three because they lock together: the
   // invite was issued naming this client and sent to these details.
   clientLocked: { type: Boolean, default: false },
-  adminOptions: { type: Array, default: () => [] },
   typeOptions: { type: Array, default: () => [] },
   // What the request already carries — [{ id, fileName, url }] off the request detail.
   files: { type: Array, default: () => [] },

@@ -61,12 +61,16 @@ const SEED = {
     },
     { label: "Other", value: "other", description: "Anything not covered above." }
   ],
-  // Stage order, matching the backend RemsRequestStatuses lifecycle.
+  // Stage order and wording, matching the backend RemsRequestStatuses lifecycle and the labels the
+  // AlignRemsStatusOptionsToInitiatorFirst migration put in every tenant's own list. This is only the
+  // fallback for a caller who cannot resolve the tenant's copy, so it is worth keeping true: a stale seed
+  // shows a badge the same user sees differently elsewhere.
   status: [
     { label: "Draft", value: "draft" },
-    { label: "Submitted", value: "submitted" },
     { label: "Awaiting Customer", value: "awaiting_customer" },
-    { label: "Engagement Setup", value: "customer_submitted" },
+    { label: "Admin Review", value: "customer_submitted" },
+    { label: "Returned to Initiator", value: "returned_to_initiator" },
+    { label: "Awaiting Admin Confirmation", value: "awaiting_admin_confirmation" },
     { label: "Pending Approval", value: "pending_approval" },
     { label: "Changes Requested", value: "changes_requested" },
     { label: "Approved", value: "approved" }

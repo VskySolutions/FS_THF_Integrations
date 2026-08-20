@@ -45,7 +45,6 @@
 
     <div class="section-subhead">Professional</div>
     <div class="row q-col-gutter-md">
-      <app-text-field v-model="form.jobTitle" label="Job Title" class="col-12 col-sm-6" :disable="disable" />
       <app-text-field v-model="form.department" label="Department" class="col-12 col-sm-6" :disable="disable" />
       <app-text-field v-model="form.organization" label="Organization" class="col-12" :disable="disable" />
     </div>

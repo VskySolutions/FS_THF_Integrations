@@ -34,25 +34,25 @@
         />
 
         <!-- ── The three people who run it ──────────────────────────────────────────────────────── -->
-        <!-- Each is scoped to the user group of its own name. When a group has no members the picker is
-             empty on purpose and the hint names the group to populate. -->
+        <!-- Each is scoped to the ROLE of its own name. When nobody holds the role the picker is empty on
+             purpose and the hint names the role to assign. -->
         <app-select
           :model-value="cseUserId" :options="cseOptions" label="CSE" required
           class="col-12 col-sm-4" :readonly="!editable" :clearable="false" :hint="cseHint"
-          info="Members of the &quot;CSE&quot; user group. The CSE becomes an approver on this engagement."
+          info="Users holding the &quot;CSE&quot; role. The CSE becomes an approver on this engagement."
           @update:model-value="$emit('update:cseUserId', $event)"
         />
         <app-select
           v-model="core.engagementExecutiveId" :options="executiveOptions" label="Engagement Executive"
           required class="col-12 col-sm-4" :readonly="!editable"
           :rules="[requiredRule('an Engagement Executive')]" :hint="executiveHint"
-          info="Lists members of the &quot;Engagement Executive&quot; user group, maintained in Administration → User Groups."
+          info="Lists users holding the &quot;Engagement Executive&quot; role, assigned on a user's page in Administration → Users."
         />
         <app-select
           v-model="core.billingManagerId" :options="billingManagerOptions" label="Billing Manager"
           required class="col-12 col-sm-4" :readonly="!editable"
           :rules="[requiredRule('a Billing Manager')]" :hint="billingManagerHint"
-          info="Lists members of the &quot;Billing Manager&quot; user group, maintained in Administration → User Groups."
+          info="Lists users holding the &quot;Billing Manager&quot; role, assigned on a user's page in Administration → Users."
         />
 
         <!-- ── What it is worth ─────────────────────────────────────────────────────────────────── -->
@@ -220,8 +220,8 @@ const props = defineProps({
   // Tenant department → director map: [{ department, director: { userId, name } }]. A department's
   // director is its department head, set on the user's detail page.
   departmentDirectors: { type: Array, default: () => [] },
-  // Members of the "Engagement Executive" / "Billing Manager" user groups — these two pickers are scoped
-  // to their group rather than to every admin.
+  // Holders of the "Engagement Executive" / "Billing Manager" roles — these two pickers are scoped to the
+  // seat they fill rather than to every admin.
   executiveOptions: { type: Array, default: () => [] },
   billingManagerOptions: { type: Array, default: () => [] },
   editable: { type: Boolean, default: true },
@@ -374,12 +374,12 @@ const realizationRules = [
   (v) => (Number(v) >= 0 && Number(v) <= 100) || "Enter 0–100"
 ];
 
-// An empty picker means the group has no members; say which group so the fix is obvious.
-const groupHint = (options, group) => (options.length
+// An empty picker means nobody holds the role; say which role so the fix is obvious.
+const seatHint = (options, role) => (options.length
   ? ""
-  : `No members in the "${group}" group — add them in Administration → User Groups.`);
-const executiveHint = computed(() => groupHint(props.executiveOptions, "Engagement Executive"));
-const billingManagerHint = computed(() => groupHint(props.billingManagerOptions, "Billing Manager"));
+  : `Nobody holds the "${role}" role — assign it on a user's page in Administration → Users.`);
+const executiveHint = computed(() => seatHint(props.executiveOptions, "Engagement Executive"));
+const billingManagerHint = computed(() => seatHint(props.billingManagerOptions, "Billing Manager"));
 
 const toNum = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
 

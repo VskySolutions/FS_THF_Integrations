@@ -88,7 +88,6 @@ public sealed class PersonsController : ControllerBase
             EmergencyContactRelationship = request.EmergencyContactRelationship,
             EmergencyContactNumber = request.EmergencyContactNumber,
             EmployeeCode = request.EmployeeCode,
-            JobTitle = request.JobTitle,
             Department = request.Department,
             Organization = request.Organization,
             Notes = request.Notes,
@@ -135,7 +134,7 @@ public sealed class PersonsController : ControllerBase
             search, scopeTenant, isUser, isActive, page, limit, cancellationToken: cancellationToken);
         var names = await ResolveActorNamesAsync(items.SelectMany(p => new[] { p.CreatedById, p.UpdatedById }), cancellationToken);
         var summaries = items.Select(p => new PersonSummary(
-            p.Id, p.PersonCode, p.FullName, p.PrimaryEmail, p.MobileNumber, p.JobTitle,
+            p.Id, p.PersonCode, p.FullName, p.PrimaryEmail, p.MobileNumber,
             p.TenantId, p.Tenant?.Name,
             p.UserId is not null, p.IsActive,
             p.SourceEntityType?.ToString(), p.SourceEntityId,
@@ -204,7 +203,6 @@ public sealed class PersonsController : ControllerBase
 
         // Professional
         Apply(request.EmployeeCode, v => person.EmployeeCode = v);
-        Apply(request.JobTitle, v => person.JobTitle = v);
         Apply(request.Department, v => person.Department = v);
         Apply(request.Organization, v => person.Organization = v);
         Apply(request.Notes, v => person.Notes = v);
@@ -336,7 +334,7 @@ public sealed class PersonsController : ControllerBase
         var fields = new[]
         {
             p.FirstName, p.LastName, p.DisplayName, p.PreferredName, p.Gender,
-            p.PrimaryEmail, p.MobileNumber, p.Nationality, p.JobTitle, p.Organization
+            p.PrimaryEmail, p.MobileNumber, p.Nationality, p.Organization
         };
         var filled = fields.Count(f => !string.IsNullOrWhiteSpace(f));
         var total = fields.Length + 2; // + date of birth + address

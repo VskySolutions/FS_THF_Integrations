@@ -34,7 +34,6 @@ public sealed class CreatePersonRequest
 
     // Professional
     public string? EmployeeCode { get; set; }
-    public string? JobTitle { get; set; }
     public string? Department { get; set; }
     public string? Organization { get; set; }
 
@@ -73,7 +72,6 @@ public sealed class UpdatePersonRequest
 
     // Professional
     public string? EmployeeCode { get; set; }
-    public string? JobTitle { get; set; }
     public string? Department { get; set; }
     public string? Organization { get; set; }
 
@@ -91,7 +89,6 @@ public sealed record PersonSummary(
     string FullName,
     string? PrimaryEmail,
     string? MobileNumber,
-    string? JobTitle,
     Guid? TenantId,
     string? TenantName,
     bool IsUser,

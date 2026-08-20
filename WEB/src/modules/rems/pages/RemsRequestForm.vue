@@ -10,8 +10,10 @@
              Stepping through the form is the one thing NOT here: Prev / Next / the finish actions sit on
              the tab strip, because they act on the tabs rather than on the request. -->
         <div class="rf-head">
-          <q-badge v-if="request" :color="statusColor(request.status)">
-            {{ statusLabel(request.status) }}
+          <!-- The row helper rather than the bare code, so a request nobody has picked up says so here
+               exactly as it does in EMS Review instead of reading as though an admin is already on it. -->
+          <q-badge v-if="request" :color="requestStatusColor(request)">
+            {{ requestStatusLabel(request) }}
           </q-badge>
 
           <!-- What the page is doing with what has been typed. It stands in for the Save button it
@@ -56,6 +58,16 @@
             label="Email log" @click="emailLogOpen = true"
           />
 
+          <!-- Claiming the request. Filled and first among the workflow moves on a request nobody holds,
+               because on that request it is the ONLY thing an admin can do — every other admin action
+               below belongs to whoever picked it up. -->
+          <q-btn
+            v-if="canPickUp" unelevated no-caps color="amber-8" icon="o_pan_tool_alt"
+            label="Pick up" :loading="acting" @click="pickUp"
+          >
+            <q-tooltip>Take this request on — its engagement setup becomes yours to work</q-tooltip>
+          </q-btn>
+
           <!-- The workflow moves: each one hands the request to somebody else. -->
           <!-- Submitting to the client belongs at the end of the tabs, where the work it completes is.
                This is the fallback for a request with no Commission tab to put it on — one raised before
@@ -89,6 +101,14 @@
             v-if="canSendBack" outline no-caps color="orange-9" icon="o_assignment_return"
             label="Send back" @click="sendBackOpen = true"
           />
+          <!-- Giving the request back to the queue. Last, and outlined: it is the undo of Pick up, not
+               a step in the work. -->
+          <q-btn
+            v-if="canHandBack" outline no-caps color="grey-8" icon="o_undo"
+            label="Hand back" :loading="acting" @click="handBack"
+          >
+            <q-tooltip>Return this to EMS Review for another admin to pick up</q-tooltip>
+          </q-btn>
         </div>
       </template>
     </app-detail-header>
@@ -219,7 +239,6 @@
               :industry-group-options="industryGroupOptions"
               :industry-locked="industryLocked"
               :sub-industry-options="subIndustryOptions"
-              :admin-options="adminOptions"
               :type-options="typeOptions"
               :files="request?.files || []"
               :attempted="attempted"
@@ -378,10 +397,11 @@ import { useConfirm } from "composables/useConfirm";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import {
   useRemsMeta, useRemsOptionSets, useRemsEngagementOptionSets, useRemsIndustryGroups,
-  REMS_TYPE_SUBSIDIARY
+  REMS_TYPE_SUBSIDIARY, REMS_SEAT_ROLES
 } from "modules/rems/useRemsMeta";
 import { useAutoSave } from "modules/rems/useAutoSave";
 import { REMS_STATUS } from "modules/rems/remsStatus";
+import { useAuthStore } from "stores/auth";
 
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import ActingAsBanner from "modules/rems/components/ActingAsBanner.vue";
@@ -404,7 +424,8 @@ const router = useRouter();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const { has } = usePermissions();
-const { statusLabel, statusColor, emsFormActivity } = useRemsMeta();
+const auth = useAuthStore();
+const { emsFormActivity, requestStatusLabel, requestStatusColor } = useRemsMeta();
 const { typeOptions, load: loadTypes } = useRemsOptionSets();
 const { industryGroupOptions, load: loadIndustryGroups } = useRemsIndustryGroups();
 const {
@@ -440,7 +461,6 @@ const engagementLive = ref(null);
 const workspaceDenied = ref(false);
 const sendBacks = ref([]);
 const additionalEntities = ref([]);
-const adminOptions = ref([]);
 const cseOptions = ref([]);
 const executiveOptions = ref([]);
 const billingManagerOptions = ref([]);
@@ -466,8 +486,7 @@ const blankClient = () => ({
   // The client a subsidiary hangs off. The name rides along with the id so the picker can show it back
   // without a lookup, and so the read view has something to print.
   parentClientReferenceId: null,
-  parentClientName: "",
-  assignAdminUserId: null
+  parentClientName: ""
 });
 const clientForm = reactive(blankClient());
 // The fields the page owns rather than a tab: each is written by an endpoint of its own, and two of the
@@ -540,16 +559,35 @@ const frozen = computed(() =>
 
 const isAdmin = computed(() => has(Permissions.RemsEngagementsManage));
 
+// THE admin on this request, not just an admin. A request is nobody's until one picks it up, and it stays
+// that one's while they hold it — so holding the permission is not the same as being the person this
+// request is with. The server draws exactly this line (RemsSetupAccess.CanWork); asking it here is what
+// stops an Edit button that opens a form every save 403s on.
+const assignedAdminId = computed(() => request.value?.assignedAdmin?.id || null);
+// Super Admins and Tenant Admins are exempt from the whole ownership rule, so a request can be worked
+// around when the admin holding it is away. Mirrors RemsSetupAccess.IsElevated, which is what the server
+// actually enforces — the SPA only has to agree with it or the page hides what a save would accept.
+const isElevated = computed(() =>
+  auth.roles.includes("SuperAdmin") || auth.roles.includes("TenantAdmin"));
+const isHoldingAdmin = computed(() =>
+  isElevated.value ||
+  (isAdmin.value && !!assignedAdminId.value && assignedAdminId.value === auth.user?.userId));
+// Nobody has taken this one. Any stage but draft, which is not out with anybody yet — an admin may claim a
+// request while the client is still filling their form, and often should: it settles who will handle the
+// answers before they arrive rather than after.
+const awaitingPickUp = computed(() =>
+  !isNew.value && status.value !== REMS_STATUS.DRAFT && !assignedAdminId.value);
+
 // The client tab belongs to the initiator while the request is theirs, and to the admin while it is his.
 // In the two REWORK states it is read-only even to the initiator: only the setup was sent back.
 const canEditClient = computed(() => {
   if (frozen.value) return false;
-  if (isAdminStage.value) return isAdmin.value;
+  if (isAdminStage.value) return isHoldingAdmin.value;
   return [REMS_STATUS.DRAFT, REMS_STATUS.AWAITING_CUSTOMER].includes(status.value);
 });
 const canEditSetup = computed(() => {
   if (frozen.value) return false;
-  if (isAdminStage.value) return isAdmin.value;
+  if (isAdminStage.value) return isHoldingAdmin.value;
   return isInitiatorStage.value;
 });
 // Whether there is anything on this page this user could change at this stage — what decides if the Edit
@@ -575,6 +613,14 @@ const lockedReason = computed(() => {
   if (status.value === REMS_STATUS.APPROVED) return "This engagement is approved and permanently read-only.";
   if (status.value === REMS_STATUS.AWAITING_CUSTOMER && !canEditClient.value) {
     return "The intake form is with the client.";
+  }
+  // The state this whole page is read-only in for a reason the reader can do something about. Only said to
+  // the admins: to the initiator it is simply a request they have handed on, and to an elevated caller it
+  // is not read-only at all.
+  if (isAdminStage.value && isAdmin.value && !isHoldingAdmin.value) {
+    return assignedAdminId.value
+      ? `${request.value?.assignedAdmin?.name || "Another admin"} picked this request up. Only they can work it.`
+      : "Nobody has picked this request up yet. Pick it up to work its engagement setup.";
   }
   return "";
 });
@@ -610,9 +656,54 @@ const copyClientFormLink = async () => {
 };
 const canReturnToAdmin = computed(() =>
   [REMS_STATUS.RETURNED_TO_INITIATOR, REMS_STATUS.CHANGES_REQUESTED].includes(status.value));
-const canSendBack = computed(() => isAdminStage.value && isAdmin.value);
+// Both are moves only the admin HOLDING the request can make — returning it for rework and routing it to
+// the approvers are the two ways it leaves their desk.
+const canSendBack = computed(() => isAdminStage.value && isHoldingAdmin.value);
 const canRouteForApproval = computed(() =>
-  isAdminStage.value && has(Permissions.RemsApprovalsSend));
+  isAdminStage.value && isHoldingAdmin.value && has(Permissions.RemsApprovalsSend));
+
+// Claiming the request, and giving it back. Pick-up is offered on any unclaimed request an admin can
+// reach; handing back is the holder's own move, and it is what puts a request taken by mistake back in
+// front of everybody. Both ask for the admin's own permission on top of the stage, so the buttons never
+// appear to the initiator reading their own request.
+const canPickUp = computed(() =>
+  awaitingPickUp.value && isAdmin.value && has(Permissions.RemsRequestsAssign));
+const canHandBack = computed(() => isHoldingAdmin.value && has(Permissions.RemsRequestsAssign));
+
+const pickUp = async () => {
+  acting.value = true;
+  try {
+    await remsApi.pickUp(remsId.value);
+    notify.success(`${request.value?.remsNumber || "This request"} is yours. Its engagement setup is now open to you.`);
+  } catch (err) {
+    // Most often "somebody else got there first" — the reload below is what shows who.
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    acting.value = false;
+    await load();
+  }
+};
+
+const handBack = async () => {
+  const ok = await confirm({
+    title: "Hand back to the queue",
+    message: "This puts the request back in EMS Review as waiting for pickup, and its engagement setup " +
+      "goes read-only to you. Any admin can take it from there — including you. Continue?",
+    confirmLabel: "Hand back"
+  });
+  if (!ok) return;
+  acting.value = true;
+  try {
+    await flushSaves();
+    await remsApi.handBack(remsId.value);
+    notify.success("Handed back. It is waiting for pickup again.");
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    acting.value = false;
+    await load();
+  }
+};
 
 // The lighter of the two completeness bars: enough to ask the client for their details. The full one —
 // the engagement team, realization, a marketing method, the signed CAF on an audit — is enforced when the
@@ -636,7 +727,7 @@ const declinedReasons = ref([]);
 
 const cseHint = computed(() => (cseOptions.value.length
   ? ""
-  : "No members in the \"CSE\" group — add them in Administration → User Groups."));
+  : "Nobody holds the \"CSE\" role — assign it on a user's page in Administration → Users."));
 
 // ---- The Approval tab ----
 // Reading the approver list is gated on managing engagements. The initiator does not hold that, so the
@@ -769,7 +860,9 @@ const clientRows = computed(() => [
   { label: "Parent Client", value: clientForm.parentClientName, hideWhenEmpty: true },
   { label: "Entity Type", value: labelOf(industryGroupOptions.value, setupForm.industryGroup) },
   { label: "Industry", value: labelOf(subIndustryOptions.value, setupForm.subIndustry) },
-  { label: "Reviewing Admin", value: nameOf(adminOptions.value, clientForm.assignAdminUserId) },
+  // Read off the request rather than a picker: nobody chooses this, an admin claims it. Blank until one
+  // does, and the badge in the header is what says the request is waiting for that.
+  { label: "Reviewing Admin", value: request.value?.assignedAdmin?.name || "Waiting for pickup" },
   // The retired "Message from Partner". Shown only where an older request actually carries one — the
   // field is gone from the form, so this never appears on anything raised since, but deleting the row
   // outright would hide text somebody wrote and nothing else displays.
@@ -820,24 +913,19 @@ const marketingRows = computed(() => [{ label: "Marketing", value: marketingLabe
 const commissionRows = computed(() => [{ label: "Commission", value: commissionLabels.value, wide: true }]);
 
 // ---- Load ----
-// Every people picker here is scoped to a user group of the same name, kept in Administration → User
-// Groups. An absent or empty group yields an empty list on purpose rather than quietly offering everyone.
-const GROUPS = {
-  cse: "CSE",
-  executive: "Engagement Executive",
-  billingManager: "Billing Manager"
-};
+// Every people picker here is scoped to the ROLE of the same name, held on the user's own page. A role
+// nobody holds yields an empty list on purpose rather than quietly offering everyone.
 
 const toOptions = (rows) => (rows || []).map((r) => ({ label: r.name, value: r.id }));
 
+// The unscoped admin list is not fetched any more: it fed the "Assign to Admin" picker, and every picker
+// left here names the seat it fills.
 const loadPickers = async () => {
-  const [admins, cse, execs, billing] = await Promise.all([
-    remsApi.admins().catch(() => []),
-    remsApi.admins(GROUPS.cse).catch(() => []),
-    remsApi.admins(GROUPS.executive).catch(() => []),
-    remsApi.admins(GROUPS.billingManager).catch(() => [])
+  const [cse, execs, billing] = await Promise.all([
+    remsApi.admins(REMS_SEAT_ROLES.CSE).catch(() => []),
+    remsApi.admins(REMS_SEAT_ROLES.ENGAGEMENT_EXECUTIVE).catch(() => []),
+    remsApi.admins(REMS_SEAT_ROLES.BILLING_MANAGER).catch(() => [])
   ]);
-  adminOptions.value = toOptions(admins);
   cseOptions.value = toOptions(cse);
   executiveOptions.value = toOptions(execs);
   billingManagerOptions.value = toOptions(billing);
@@ -858,7 +946,6 @@ const seedForms = (detail, ws) => {
   clientForm.existingClientReferenceId = detail.existingClientReferenceId || null;
   clientForm.parentClientReferenceId = detail.parentClientReferenceId || null;
   clientForm.parentClientName = detail.parentClientName || "";
-  clientForm.assignAdminUserId = detail.assignedAdmin?.id || null;
   setupForm.cseUserId = detail.cse?.id || null;
   setupForm.industryGroup =
     ws?.industryGroup || detail.industryGroup || pendingSetupPick?.industryGroup || null;
@@ -904,7 +991,6 @@ const clientProblem = () => {
   if (clientForm.type === REMS_TYPE_SUBSIDIARY && !clientForm.parentClientReferenceId) {
     return "Pick the client this one is a subsidiary of.";
   }
-  if (!clientForm.assignAdminUserId) return "Name the admin who will review this request.";
   return "";
 };
 
@@ -936,8 +1022,7 @@ const autoSaveOn = computed(() =>
 // What the request said last time the page read or wrote it. Compared before a write so opening a record,
 // touching nothing, and switching tabs does not file a save of the identical thing.
 let clientBaseline = "";
-const clientSnapshot = () =>
-  JSON.stringify({ ...clientPayload(), assignAdminUserId: clientForm.assignAdminUserId });
+const clientSnapshot = () => JSON.stringify(clientPayload());
 
 const {
   state: saveState, message: saveMessage, pending: savePending,
@@ -955,13 +1040,7 @@ const {
     // The fields and the attachments are marked by the same flag but are two different writes, and
     // either can be the only one there is — a file picked with nothing retyped must still upload.
     if (clientSnapshot() !== clientBaseline) {
-      request.value = await remsApi.update(remsId.value, {
-        ...clientPayload(),
-        // Said only when it changed: a null on its own means "leave the assignment alone".
-        ...(clientForm.assignAdminUserId !== (request.value?.assignedAdmin?.id || null)
-          ? { assignAdminUserId: clientForm.assignAdminUserId }
-          : {})
-      });
+      request.value = await remsApi.update(remsId.value, clientPayload());
       clientBaseline = clientSnapshot();
     }
     // Uploaded now rather than on selection, so the files land on a request that exists.
@@ -1128,10 +1207,7 @@ const createDraft = async () => {
   // afterwards, or a second attempt would file a second copy of it.
   let created = null;
   try {
-    created = await remsApi.create({
-      ...clientPayload(),
-      assignAdminUserId: clientForm.assignAdminUserId
-    });
+    created = await remsApi.create(clientPayload());
     const mediaIds = (await clientFieldsRef.value?.uploadAttachments(created.id)) || [];
     if (mediaIds.length) await remsApi.addFiles(created.id, mediaIds);
     notify.success(`${created.remsNumber} saved as a draft. Everything from here saves itself.`);
@@ -1231,7 +1307,6 @@ const createFollowUp = async (row) => {
       customerEmail: row.emailAddress || undefined,
       customerMobileNumber: row.phoneNumber || undefined,
       type: clientForm.type,
-      assignAdminUserId: clientForm.assignAdminUserId,
       fromAdditionalEntityId: row.id
     });
     notify.success(`${follow.remsNumber} created for ${row.fullName}.`);

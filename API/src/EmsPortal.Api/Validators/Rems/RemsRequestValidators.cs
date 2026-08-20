@@ -5,9 +5,8 @@ using FluentValidation;
 namespace EmsPortal.Api.Validators.Rems;
 
 /// <summary>
-/// Validates a REMS request create payload (WO-111): client name and reviewing admin are required; at least one
-/// of customer email / mobile is required (AC-REMS-004.7); type and priority must be known option-set
-/// codes.
+/// Validates a REMS request create payload (WO-111): the client name is required; at least one of customer
+/// email / mobile is required (AC-REMS-004.7); the type must be a known option-set code.
 /// </summary>
 public sealed class CreateRemsRequestRequestValidator : AbstractValidator<CreateRemsRequestRequest>
 {
@@ -16,9 +15,8 @@ public sealed class CreateRemsRequestRequestValidator : AbstractValidator<Create
         RuleFor(x => x.ClientName).NotEmpty().WithMessage("clientName is required.").MaximumLength(200);
         // The partner's message is client-facing now and holds pasted correspondence; the column is
         // nvarchar(max), so nothing is capped here either.
-        RuleFor(x => x.AssignAdminUserId)
-            .NotEmpty()
-            .WithMessage("assignAdminUserId is required — every request names the admin who will review it.");
+        // No reviewing admin is asked for. A request is raised for the admins as a body, not for one of
+        // them, and it stays unassigned until one picks it up.
         RuleFor(x => x.CustomerEmail).EmailAddress().MaximumLength(256).When(x => !string.IsNullOrWhiteSpace(x.CustomerEmail));
         RuleFor(x => x.CustomerMobileNumber).MaximumLength(32).When(x => !string.IsNullOrWhiteSpace(x.CustomerMobileNumber));
 
@@ -44,12 +42,6 @@ public sealed class UpdateRemsRequestRequestValidator : AbstractValidator<Update
         RuleFor(x => x.Type).Must(RemsRequestOptionCodes.IsKnownType)
             .WithMessage($"type must be one of: {string.Join(", ", RemsRequestOptionCodes.Types)}.")
             .When(x => x.Type is not null);
-
-        // Naming an admin and handing the request back to the pool are opposite instructions; sending
-        // both leaves the endpoint to guess which one was meant.
-        RuleFor(x => x)
-            .Must(x => !(x.UnassignAdmin && x.AssignAdminUserId.HasValue))
-            .WithMessage("assignAdminUserId and unassignAdmin cannot both be set.");
     }
 }
 
@@ -63,14 +55,8 @@ public sealed class AddRemsFilesRequestValidator : AbstractValidator<AddRemsFile
     }
 }
 
-/// <summary>Validates an assign payload (WO-111).</summary>
-public sealed class AssignRemsRequestRequestValidator : AbstractValidator<AssignRemsRequestRequest>
-{
-    public AssignRemsRequestRequestValidator()
-    {
-        RuleFor(x => x.AdminUserId).NotEmpty().WithMessage("adminUserId is required.");
-    }
-}
+// AssignRemsRequestRequestValidator stood here. Pick-up and hand-back carry no body — the caller is the
+// assignee, and the request in the URL is the whole instruction — so there is nothing left to validate.
 
 /// <summary>
 /// The seeded <c>REMS.Type</c> option-set codes (see <c>DefaultOptionSets</c>). Type is trivially closed

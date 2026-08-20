@@ -6,21 +6,32 @@ import { useAuthStore } from "stores/auth";
 // anything unrecognised is a Custom role) so both the grouped assignment picker and the
 // category-distinguished role chips in the displays agree on how a role is classified.
 export const SYSTEM_ROLE_NAMES = Object.freeze(["SuperAdmin", "TenantAdmin"]);
-export const OPERATIONAL_ROLE_NAMES = Object.freeze(["Partner", "Admin", "Approver"]);
+// What a person DOES in REMS. "Approver" was here and is gone — the add-approvers picker offers every
+// user in the tenant now, so there is no role to hold.
+export const OPERATIONAL_ROLE_NAMES = Object.freeze(["Partner", "Admin"]);
+// The four seats an engagement names. They grant nothing; holding one makes the user offerable in the
+// picker that fills that seat. Each replaced a user group of the same name, which is why they read as
+// phrases rather than as PascalCase — they are the words on the picker. Kept apart from Operational so a
+// long role list still separates "what they can do" from "what they can be picked for".
+export const SEAT_ROLE_NAMES = Object.freeze([
+  "CSE", "Engagement Executive", "Billing Manager", "Managing Shareholder"
+]);
 
 export const RoleCategory = Object.freeze({
   System: "System Roles",
   Operational: "Operational",
+  Seat: "REMS Seats",
   Custom: "Custom"
 });
 
-// The picker lists categories in this order (System → Operational → Custom).
-const CATEGORY_ORDER = [RoleCategory.System, RoleCategory.Operational, RoleCategory.Custom];
+// The picker lists categories in this order (System → Operational → Seats → Custom).
+const CATEGORY_ORDER = [RoleCategory.System, RoleCategory.Operational, RoleCategory.Seat, RoleCategory.Custom];
 
 // The category a role name belongs to (drives the picker grouping and the display chips).
 export function categoryForRoleName (name) {
   if (SYSTEM_ROLE_NAMES.includes(name)) return RoleCategory.System;
   if (OPERATIONAL_ROLE_NAMES.includes(name)) return RoleCategory.Operational;
+  if (SEAT_ROLE_NAMES.includes(name)) return RoleCategory.Seat;
   return RoleCategory.Custom;
 }
 
@@ -29,6 +40,7 @@ export function roleCategoryChip (name) {
   const category = categoryForRoleName(name);
   if (category === RoleCategory.System) return { category, color: "blue-grey", textColor: "white" };
   if (category === RoleCategory.Operational) return { category, color: "primary", textColor: "white" };
+  if (category === RoleCategory.Seat) return { category, color: "deep-purple-6", textColor: "white" };
   return { category, color: "teal", textColor: "white" };
 }
 

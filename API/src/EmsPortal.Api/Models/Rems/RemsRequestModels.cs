@@ -35,16 +35,12 @@ public sealed class CreateRemsRequestRequest
     /// <summary>Optional single attachment: a previously-uploaded media id (POST /api/media).</summary>
     public Guid? MediaId { get; set; }
 
-    // There is no Submit flag any more. A request is always created as a draft: the Admin Pool it used to
-    // be submitted into is gone, and what moves a request on is the initiator sending the intake link to
-    // the client (POST /api/rems/{id}/form/send).
+    // There is no Submit flag any more. A request is always created as a draft, and what moves it on is
+    // the initiator sending the intake link to the client (POST /api/rems/{id}/form/send).
 
-    /// <summary>
-    /// The admin who will review this request once the client's intake comes back. REQUIRED — every
-    /// request names its reviewer up front, even though that admin has nothing to do until the client has
-    /// answered. Reassignment afterwards is open to both sides.
-    /// </summary>
-    public Guid AssignAdminUserId { get; set; }
+    // AssignAdminUserId stood here: the one admin the initiator had to name as the reviewer. It is gone.
+    // An initiator submits to the admins, not to one of them — the request reaches every admin's EMS
+    // Review unassigned, and whichever of them picks it up owns it (POST /api/rems/requests/{id}/pick-up).
 
     /// <summary>
     /// The <c>REMSAdditionalEntity</c> row this request was raised from, when the initiator used the
@@ -75,20 +71,9 @@ public sealed class UpdateRemsRequestRequest
     /// </summary>
     public Guid? ParentClientReferenceId { get; set; }
 
-    /// <summary>
-    /// The admin to own this request. A null on its own means "leave the assignment alone", exactly like
-    /// every other field on this payload — handing a request back to the pool is said with
-    /// <see cref="UnassignAdmin"/>. Changing the assignment additionally requires
-    /// <c>rems.requests.assign</c>: editing a request and choosing who works it are separate rights.
-    /// </summary>
-    public Guid? AssignAdminUserId { get; set; }
-
-    /// <summary>
-    /// Clears the assignment. Retained for the rare correction, but a request with no admin has nobody to
-    /// review it when the client answers — reassigning to somebody else is almost always what is meant.
-    /// Mutually exclusive with <see cref="AssignAdminUserId"/>.
-    /// </summary>
-    public bool UnassignAdmin { get; set; }
+    // AssignAdminUserId / UnassignAdmin stood here. Saving a request no longer re-points who reviews it:
+    // an admin gains a request by picking it up and loses it by handing it back, and both of those are
+    // actions of their own rather than a field somebody else can write on an edit.
 }
 
 /// <summary>
@@ -134,11 +119,8 @@ public sealed record RemsSendBackView(
     /// <summary>Who the admin addressed it to, or null on returns made before they were asked to choose.</summary>
     string? ReturnedTo);
 
-/// <summary>Assign (or re-assign) a request to an admin (WO-111, AC-REMS-005).</summary>
-public sealed class AssignRemsRequestRequest
-{
-    public Guid AdminUserId { get; set; }
-}
+// AssignRemsRequestRequest stood here — the body of "assign this request to that admin". Pick-up names
+// nobody: the caller is the assignee, so the endpoint takes no body at all.
 
 /// <summary>A user reference (id + display name) for the assigned admin / CSE columns.</summary>
 public sealed record RemsUserRef(Guid Id, string Name);
@@ -147,7 +129,12 @@ public sealed record RemsUserRef(Guid Id, string Name);
 public sealed record RemsRowActions(
     bool CanView,
     bool CanEdit,
-    bool CanAssign,
+    /// <summary>
+    /// The caller may claim this request as its reviewing admin. True only while nobody holds it — a
+    /// request already picked up is never offered to a second admin, so this is "take it", not "take it
+    /// off them".
+    /// </summary>
+    bool CanPickUp,
     bool CanDuplicate,
     bool CanDelete);
 

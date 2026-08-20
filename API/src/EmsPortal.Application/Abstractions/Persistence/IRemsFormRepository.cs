@@ -16,14 +16,28 @@ public sealed record RemsInboxQuery(
     int Page,
     int Limit);
 
+/// <summary>Which slice of EMS Review the caller is looking at (the list's quick-filter buttons).</summary>
+public enum RemsClientFormAssignment
+{
+    /// <summary>Every request in the queue, whoever holds it — including the ones waiting for pickup.</summary>
+    All = 0,
+
+    /// <summary>Only the requests this admin has picked up.</summary>
+    Mine = 1,
+}
+
 /// <summary>
 /// The Client-Forms list query (WO-114): quick search over REMS number / client name, plus optional
-/// narrowing by whether the client has submitted and by the request's status.
+/// narrowing by whether the client has submitted, by the request's status, and by whether the caller is
+/// the admin holding it.
 /// </summary>
 public sealed record RemsClientFormQuery(
     string? Search,
     bool? Submitted,
     string? RequestStatus,
+    // Who is asking. Only read by the Mine slice, which is "assigned to whoever is looking".
+    Guid CallerUserId,
+    RemsClientFormAssignment Assignment,
     int Page,
     int Limit);
 

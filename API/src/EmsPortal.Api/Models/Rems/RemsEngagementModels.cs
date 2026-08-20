@@ -22,8 +22,15 @@ public sealed record RemsClientFormRow(
     bool HasForm,
     bool Submitted,
     DateTime? SubmittedOnUtc,
+    /// <summary>The admin holding this request, or null while it is still waiting for one to pick it up.</summary>
     RemsUserRef? AssignedAdmin,
     RemsUserRef? Cse,
+    /// <summary>
+    /// This caller may claim the request. True only on an unclaimed one, and only for a caller holding
+    /// <c>rems.requests.assign</c> — the same pair <c>RemsRequestsController.PickUp</c> enforces, asked
+    /// ahead of the click so the list can offer the button rather than let it 409.
+    /// </summary>
+    bool CanPickUp,
     // The owning REQUEST's audit trail — the row is keyed on it, and it is what the actions open.
     string? CreatedBy,
     DateTime CreatedOnUtc,

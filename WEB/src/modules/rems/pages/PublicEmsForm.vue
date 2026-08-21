@@ -246,7 +246,14 @@
                       class="col-12 col-sm-4"
                       :error="!!entityErr(i, 'emailAddress')" :error-message="entityErr(i, 'emailAddress')"
                     />
-                    <app-text-field v-model="entity.phoneNumber" label="Phone Number" class="col-12 col-sm-4" />
+                    <!-- The same dial-code + number control the client's own phone above uses, rather than
+                         the plain box this was. These numbers are dialled by staff chasing an entity that
+                         has not answered, and a bare string gave no country to read them against — the
+                         component stores E.164, which carries it. Wrapped in the grid cell rather than
+                         given the column classes itself, matching the phone field above. -->
+                    <div class="col-12 col-sm-4">
+                      <app-phone-input v-model="entity.phoneNumber" label="Phone Number" />
+                    </div>
                   </div>
                 </q-card-section>
               </q-card>

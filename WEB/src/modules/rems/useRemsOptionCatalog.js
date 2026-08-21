@@ -18,7 +18,8 @@ const SEED = {
   // Two answers, down from four. "New Engagement" and "Existing Client" merged, since every new engagement
   // for a client we already have is both (MergeRemsExistingClientTypes); "Subsidiary / Child of Existing
   // Client" then folded into the same value (RetireRemsSubsidiaryType), because a child of a client on file
-  // is one of those too — what marks it as a child is the Parent Client named on it.
+  // is one of those too. The Parent Client field that briefly carried the difference is gone as well
+  // (DropRemsParentClient), which is why the description no longer asks for one.
   // `description` mirrors the option item's own Description column — it is what the tooltip renders
   // wherever the value is offered or displayed, so the seed carries it too and a resolve failure does
   // not silently strip the explanation.
@@ -32,8 +33,7 @@ const SEED = {
       label: "New Engagement, Existing Client",
       value: "existing_client",
       description: "The person or company already has an active client record with THF, and this request " +
-        "creates an additional engagement under that same client. Name the parent client if this one is " +
-        "a subsidiary or child of it."
+        "creates an additional engagement under that same client."
     }
   ],
   // How the client heard about THF, asked on the public EMS form.

@@ -424,7 +424,7 @@ const notify = useNotify();
 const { confirm } = useConfirm();
 const { has } = usePermissions();
 const auth = useAuthStore();
-const { emsFormActivity, requestStatusLabel, requestStatusColor } = useRemsMeta();
+const { emsFormActivity, requestStatusLabel, requestStatusColor, approverRoleLabel } = useRemsMeta();
 const { typeOptions, load: loadTypes } = useRemsOptionSets();
 const { industryGroupOptions, load: loadIndustryGroups } = useRemsIndustryGroups();
 const {
@@ -481,11 +481,7 @@ const blankClient = () => ({
   customerEmail: "",
   customerMobileNumber: "",
   type: "",
-  existingClientReferenceId: null,
-  // The client a subsidiary hangs off. The name rides along with the id so the picker can show it back
-  // without a lookup, and so the read view has something to print.
-  parentClientReferenceId: null,
-  parentClientName: ""
+  existingClientReferenceId: null
 });
 const clientForm = reactive(blankClient());
 // The fields the page owns rather than a tab: each is written by an endpoint of its own, and two of the
@@ -854,9 +850,6 @@ const clientRows = computed(() => [
   { label: "Client Email Address", value: clientForm.customerEmail },
   { label: "Client Phone Number", value: clientForm.customerMobileNumber },
   { label: "Relationship to THF", value: labelOf(typeOptions.value, clientForm.type) },
-  // Only where one was named — most referrals have no parent, and a blank row would suggest one is
-  // missing rather than not applicable.
-  { label: "Parent Client", value: clientForm.parentClientName, hideWhenEmpty: true },
   { label: "Entity Type", value: labelOf(industryGroupOptions.value, setupForm.industryGroup) },
   { label: "Industry", value: labelOf(subIndustryOptions.value, setupForm.subIndustry) },
   // Read off the request rather than a picker: nobody chooses this, an admin claims it. Blank until one
@@ -943,8 +936,6 @@ const seedForms = (detail, ws) => {
   clientForm.customerMobileNumber = detail.customerMobileNumber || "";
   clientForm.type = detail.type || "";
   clientForm.existingClientReferenceId = detail.existingClientReferenceId || null;
-  clientForm.parentClientReferenceId = detail.parentClientReferenceId || null;
-  clientForm.parentClientName = detail.parentClientName || "";
   setupForm.cseUserId = detail.cse?.id || null;
   setupForm.industryGroup =
     ws?.industryGroup || detail.industryGroup || pendingSetupPick?.industryGroup || null;
@@ -952,13 +943,17 @@ const seedForms = (detail, ws) => {
 };
 
 // The reasons behind the LAST failed round, so the initiator sees what to fix without opening history.
+// The history comes back newest round first, so the first Rejected one IS the latest — this used to
+// reverse the list to reach it, back when the server returned the rounds oldest first. Reversing now would
+// quietly surface the reasons from the FIRST failed round instead, which on a request that has been round
+// three times is somebody else's objection, already answered.
 const loadDeclineReasons = async (id) => {
   if (!id || status.value !== REMS_STATUS.CHANGES_REQUESTED) return [];
   const rounds = await remsApi.approvalHistory(id).catch(() => []);
-  const last = [...rounds].reverse().find((r) => r.status === "Rejected");
+  const last = rounds.find((r) => r.status === "Rejected");
   return (last?.decisions || [])
     .filter((d) => d.status === "Rejected" && d.reason)
-    .map((d) => `${d.approver} (${d.role}): ${d.reason}`);
+    .map((d) => `${d.approver} (${approverRoleLabel(d.role)}): ${d.reason}`);
 };
 
 // The engagement as the server now holds it, WITHOUT re-seeding the tabs from it — read after the page's
@@ -999,10 +994,7 @@ const clientPayload = () => ({
   clientName: clientForm.clientName,
   customerEmail: clientForm.customerEmail || null,
   customerMobileNumber: clientForm.customerMobileNumber || null,
-  existingClientReferenceId: clientForm.existingClientReferenceId || null,
-  // Always sent, even as null — unlike the fields above, the server derives this from the TYPE, so a null
-  // here on a brand-new client is what clears a parent left behind by a change of answer.
-  parentClientReferenceId: clientForm.parentClientReferenceId || null
+  existingClientReferenceId: clientForm.existingClientReferenceId || null
 });
 
 // ---- Auto-save ----

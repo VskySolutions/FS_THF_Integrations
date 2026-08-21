@@ -52,13 +52,33 @@ internal sealed class RemsApprovalRepository : IRemsApprovalRepository
             .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
 
     // The round's sibling tasks come along so the inbox can show how far the round has got (n of m
-    // approved). The caller's checklist is deliberately NOT loaded: the inbox lists rounds, not checkboxes,
-    // and a second collection include would multiply the result set for nothing.
+    // approved). The caller's checklist is deliberately NOT loaded: the inbox lists requests, not
+    // checkboxes, and a second collection include would multiply the result set for nothing.
     public async Task<(IReadOnlyList<REMSApprovalTask> Items, int Total)> ListTasksByApproverAsync(
         RemsApprovalTaskQuery query, CancellationToken cancellationToken = default)
     {
-        var tasks = _dbContext.RemsApprovalTasks.Where(t => t.ApproverId == query.ApproverId);
+        var mine = _dbContext.RemsApprovalTasks.Where(t => t.ApproverId == query.ApproverId);
 
+        // ONE row per request, not one per round. A request re-routed after a rejection opens a new round
+        // with a new task, so an approver asked three times held three tasks and the inbox listed all
+        // three — burying the round that actually wanted them between two that were finished. Only their
+        // task on the newest round survives; the rounds before it are read on the task detail.
+        //
+        // Newest of THEIR OWN tasks, and deliberately not the request's newest round: an approver dropped
+        // from a later round — a commission recipient taken off the split — holds no task on it, and
+        // measuring against the request's newest round would drop that request out of their inbox
+        // altogether instead of leaving them the last round they were actually on.
+        //
+        // Written as "no task of mine on this request outranks this one" so it translates to a correlated
+        // NOT EXISTS rather than a grouped projection. The Id tie-break is insurance only: the approver
+        // list is de-duplicated per user before a round is built, so no round hands one person two tasks.
+        var tasks = mine.Where(t => !mine.Any(other =>
+            other.Round!.Engagement!.REMSId == t.Round!.Engagement!.REMSId
+            && (other.Round!.RoundNumber > t.Round!.RoundNumber
+                || (other.Round!.RoundNumber == t.Round!.RoundNumber && other.Id > t.Id))));
+
+        // Filtered AFTER the collapse, so role and status narrow on what the caller is to the request now
+        // rather than resurrecting a superseded round that happens to match.
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
             var t = query.Search.Trim();
@@ -77,7 +97,8 @@ internal sealed class RemsApprovalRepository : IRemsApprovalRepository
             tasks = tasks.Where(t => t.Status == status);
         }
 
-        // Counted AFTER the filters so the pager reflects the filtered set.
+        // Counted AFTER the filters so the pager reflects the filtered set — and, since the collapse above
+        // is part of the same query, it counts REQUESTS rather than every round of every one of them.
         var total = await tasks.CountAsync(cancellationToken);
         var items = await tasks
             .Include(t => t.Round).ThenInclude(r => r!.Tasks)
@@ -92,6 +113,12 @@ internal sealed class RemsApprovalRepository : IRemsApprovalRepository
 
         return (items, total);
     }
+
+    // Every round on every engagement of the request, so a superseded or historical task counts as much as
+    // a live one. Tenant scope and soft-deletes come from the ambient query filters on all three entities.
+    public Task<bool> IsApproverOnRequestAsync(Guid remsId, Guid userId, CancellationToken cancellationToken = default)
+        => _dbContext.RemsApprovalTasks
+            .AnyAsync(t => t.ApproverId == userId && t.Round!.Engagement!.REMSId == remsId, cancellationToken);
 
     public async Task AddRoundAsync(REMSApprovalRound round, CancellationToken cancellationToken = default)
         => await _dbContext.RemsApprovalRounds.AddAsync(round, cancellationToken);

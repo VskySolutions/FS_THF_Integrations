@@ -4,7 +4,7 @@
       :breadcrumbs="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'REMS Approvals' }]"
       :search="search"
       show-search
-      search-placeholder="Search REMS number, client or entity"
+      search-placeholder="Search REMS number or client"
       show-filters
       :filter-count="filterChips.length"
       show-back
@@ -18,14 +18,14 @@
     </app-filter-drawer>
 
     <div class="text-body2 text-grey-8 q-mb-md">
-      Your approval tasks — the engagements routed to you to review. You only ever see your own tasks; a
-      decision is final once made.
+      The requests routed to you to review — one row each, showing where the latest round stands. You only
+      ever see your own tasks; a decision is final once made.
     </div>
 
     <app-data-table
       page-key="rems-approvals"
-      row-key="taskId"
-      title="My Approval Tasks"
+      row-key="remsId"
+      title="My Approvals"
       :rows="rows"
       :columns="columns"
       :loading="loading"
@@ -36,17 +36,15 @@
       @refresh="load"
       @row-click="(_, row) => openTask(row)"
     >
+      <!-- The round number only where it says something. Every request has a Round 1, so printing it under
+           every REMS number was a caption that never varied; a request on its second or third round is the
+           one worth flagging, because the row is a repeat of a review that already failed once. -->
       <template #body-cell-remsNumber="cell">
         <q-td :props="cell">
           <div class="text-weight-medium">{{ cell.row.remsNumber || "—" }}</div>
-          <div class="text-caption text-grey-7">Round {{ cell.row.roundNumber }}</div>
-        </q-td>
-      </template>
-
-      <template #body-cell-client="cell">
-        <q-td :props="cell">
-          <div class="text-weight-medium">{{ cell.row.clientName || "—" }}</div>
-          <div class="text-caption text-grey-7">{{ cell.row.entityName || "—" }}</div>
+          <div v-if="cell.row.roundNumber > 1" class="text-caption text-orange-9">
+            Round {{ cell.row.roundNumber }} · re-routed
+          </div>
         </q-td>
       </template>
 
@@ -92,7 +90,7 @@
       <template #body-cell-actions="cell">
         <q-td :props="cell" class="text-right">
           <q-btn flat round dense color="primary" icon="o_visibility" @click.stop="openTask(cell.row)">
-            <q-tooltip>Open task</q-tooltip>
+            <q-tooltip>Open for review</q-tooltip>
           </q-btn>
           <q-btn flat round dense color="primary" icon="o_forum" @click.stop="openConversation(cell.row)">
             <q-tooltip>Conversation</q-tooltip>
@@ -103,8 +101,8 @@
       <template #no-data>
         <div class="full-width column flex-center q-pa-xl text-grey-6">
           <q-icon name="o_task_alt" size="40px" class="q-mb-sm" />
-          <div class="text-subtitle1 q-mb-xs">No approval tasks</div>
-          <div>You have no engagements awaiting your review right now.</div>
+          <div class="text-subtitle1 q-mb-xs">No approvals</div>
+          <div>You have no requests awaiting your review right now.</div>
         </div>
       </template>
     </app-data-table>
@@ -114,9 +112,15 @@
 </template>
 
 <script setup>
-// The task-isolated REMS Approval Inbox (WO-117 Part B, AC-REMS-019): the caller's OWN approval tasks
-// (pending + historical). The backend returns only the caller's tasks, so this surface never exposes another
+// The task-isolated REMS Approval Inbox (WO-117 Part B, AC-REMS-019): the REQUESTS routed to the caller,
+// one row each. The backend returns only the caller's own tasks, so this surface never exposes another
 // approver's work, an approver picker, or impersonation. Clicking a row opens the role-scoped task detail.
+//
+// One row per request, not per round. A rejected request is re-routed as a NEW round with a new task, and
+// listing every round gave a request that had been round three times three rows — the one still wanting an
+// answer sitting between two that were long since finished. The row carries the caller's task on the
+// LATEST round (the server picks it); the rounds before it are on the task detail, which lists them under
+// the round being decided.
 import { ref, watch } from "vue";
 import { debounce } from "quasar";
 import { useRouter } from "vue-router";
@@ -146,7 +150,7 @@ const { approverRoleLabel, approverRoleIcon, approvalStatusLabel, approvalStatus
 // opt out of the filter drawer; role and decision state are the two worth filtering on.
 const columns = [
   { name: "remsNumber", label: "Request ID", field: "remsNumber", align: "left", sortable: true, default: true, filterable: false },
-  { name: "client", label: "Client / Entity", field: "clientName", align: "left", sortable: true, default: true, filterable: false },
+  { name: "client", label: "Client", field: "clientName", align: "left", sortable: true, default: true, filterable: false },
   { name: "role", label: "Your Role", field: "role", align: "left", sortable: true, default: true, filterOptions: REMS_APPROVER_ROLE_OPTIONS },
   { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true, filterOptions: REMS_APPROVAL_STATUS_OPTIONS },
   // Sorts on how much of the round is still outstanding, so the ones closest to done rise together.
@@ -160,9 +164,10 @@ const columns = [
     filterable: false
   },
   { name: "sentOnUtc", label: "Sent", field: "sentOnUtc", align: "left", sortable: true, default: true, filterable: false },
-  // Off by default — the composite cells above already carry the entity and round number — but offered
-  // in the Columns menu so nothing the row returns is unreachable.
-  { name: "entityName", label: "Entity", field: "entityName", align: "left", sortable: true, default: false, filterable: false },
+  // Off by default, but offered in the Columns menu so nothing the row returns is unreachable. The Entity
+  // column went with the field behind it: an approval is about a request and its one engagement, the row
+  // stopped carrying an entity name to put here, and the column had been rendering "—" on every row.
+  // Round is the caller's CURRENT round on the request — the cell above flags it only past the first.
   { name: "roundNumber", label: "Round", field: (r) => `#${r.roundNumber}`, align: "left", sortable: true, default: false, filterable: false },
   { name: "roundStatus", label: "Round Status", field: (r) => approvalStatusLabel(r.roundStatus), align: "left", default: false, filterable: false },
   { name: "decidedOnUtc", label: "Decided", field: (r) => (r.decidedOnUtc ? fmt.formatDateTime(r.decidedOnUtc) : "—"), align: "left", sortable: true, default: false, filterable: false },

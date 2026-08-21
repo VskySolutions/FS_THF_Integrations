@@ -464,7 +464,7 @@ export const dashboardApi = {
 };
 
 // REMS (Phase 15, WO-111/115). Request lifecycle: the Partner Dashboard + EMS Review lists, the
-// create/edit/pick-up/duplicate/delete actions, and the client + people pickers. Row visibility and the
+// create/edit/pick-up/delete actions, and the client + people pickers. Row visibility and the
 // per-row `actions` flags are enforced server-side; the UI additionally gates on permission keys.
 // The conversation thread / activity / attachments reuse the Universal Features endpoints keyed on
 // EntityType.Rems (see ufConversationApi) — this object deliberately does not duplicate them.
@@ -535,7 +535,8 @@ export const remsApi = {
   // take it. The only way a request loses its reviewing admin.
   handBack: (id) => api.post(`/api/rems/requests/${id}/hand-back`).then(unwrap),
 
-  duplicate: (id) => api.post(`/api/rems/requests/${id}/duplicate`).then(unwrap),
+  // `duplicate` stood here, on POST {id}/duplicate. Both are gone: a request is raised for one client and
+  // one engagement, and a copy arrived pre-answered with another request's answers.
   remove: (id) => api.delete(`/api/rems/requests/${id}`).then(envelope),
   // Client picker (2+ chars): [{ id, name, email, phone, parentCompany:null, pastWork:null }].
   // parentCompany/pastWork are always null — no external client directory exists in this platform.

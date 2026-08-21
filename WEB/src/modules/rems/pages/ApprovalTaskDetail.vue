@@ -5,9 +5,9 @@
         <q-badge v-if="task" :color="engagementStatus.color" class="q-pa-sm text-body2 q-mr-sm">
           {{ engagementStatus.label }}
         </q-badge>
-        <q-badge v-if="task" :color="approvalStatusColor(task.status)" class="q-pa-sm text-body2">
+        <!-- <q-badge v-if="task" :color="approvalStatusColor(task.status)" class="q-pa-sm text-body2">
           {{ approvalStatusLabel(task.status) }}
-        </q-badge>
+        </q-badge> -->
       </template>
     </app-detail-header>
 
@@ -311,15 +311,33 @@
                   </q-banner>
                 </div>
 
-                <!-- Server order: decided first, oldest decision leading, undecided at the bottom. -->
+                <!-- Server order: by role — shareholder, director, CSE, commission recipient, then anyone
+                     added by hand — so the list reads the same way every time, and a row does not move
+                     under the reader each time somebody signs.
+                     A round asks everybody at once rather than one after another, so "whose turn is it" is
+                     answered by every row still waiting, not by one of them. Those are the rows marked
+                     here; the reader's own is marked hardest, because it is the only one they can act
+                     on. -->
                 <div class="rems-label q-mb-xs">Approvers on this round</div>
                 <q-list bordered separator class="rounded-borders">
-                  <q-item v-for="d in round.decisions" :key="d.taskId">
-                    <q-item-section avatar><q-icon :name="approverRoleIcon(d.role)" color="primary" /></q-item-section>
+                  <q-item
+                    v-for="d in round.decisions" :key="d.taskId"
+                    :class="{ 'ar--awaiting': awaitingDecision(d), 'ar--you': d.isYou }"
+                  >
+                    <q-item-section avatar>
+                      <q-icon
+                        :name="approverRoleIcon(d.role)"
+                        :color="awaitingDecision(d) ? 'amber-9' : 'primary'"
+                      />
+                    </q-item-section>
                     <q-item-section>
                       <q-item-label class="text-weight-medium">
                         {{ d.approver?.name || "—" }}
                         <q-badge v-if="d.isYou" color="primary" class="q-ml-xs">You</q-badge>
+                        <q-badge
+                          v-if="awaitingDecision(d)" color="amber-9" class="q-ml-xs"
+                          :label="d.isYou ? 'Your turn' : 'Awaiting decision'"
+                        />
                       </q-item-label>
                       <q-item-label caption>
                         {{ approverRoleLabel(d.role) }}
@@ -335,12 +353,16 @@
                   </q-item>
                 </q-list>
 
-                <!-- Every round on this engagement, not only the one being decided. A resubmission opens
-                     a NEW round rather than reopening the last, so what the previous approvers objected
-                     to is readable nowhere else on this page. Open on arrival: an approver looking at a
-                     repeat round needs the round it repeats in front of them, not behind a toggle. -->
+                <!-- The rounds BEFORE this one. A resubmission opens a NEW round rather than reopening the
+                     last, so what the previous approvers objected to is readable nowhere else on this page.
+                     This round is left out of it: the list above already gives it in full, and the history
+                     leads with the newest, which put the same round twice in a row down the page.
+                     Open on arrival — an approver looking at a repeat round needs the round it repeats in
+                     front of them, not behind a toggle — and absent entirely on a first round, where there
+                     is nothing before this one to read. -->
                 <approval-history
                   v-if="engagement.engagementId" :engagement-id="engagement.engagementId"
+                  :exclude-round-id="round.id" label="Earlier rounds"
                   default-opened class="q-mt-md"
                 />
               </q-tab-panel>
@@ -508,6 +530,11 @@ const engagement = computed(() => task.value?.engagement || {});
 const client = computed(() => engagement.value.client || {});
 const round = computed(() => task.value?.round || {});
 const engagementStatus = computed(() => engagementStatusMeta(engagement.value.status));
+
+// Whose signature the round is still waiting on. Only meaningful while the round is open: once it closes,
+// a task left undecided is Superseded rather than Pending, and a closed round is waiting on nobody — so
+// nothing on a finished round should read as somebody's turn.
+const awaitingDecision = (d) => round.value.status === "Pending" && d?.status === "Pending";
 const entityContacts = computed(() => engagement.value.entity?.contacts || []);
 const commissionSplits = computed(() => engagement.value.commissionSplits || []);
 const commissionTotal = computed(() =>
@@ -545,9 +572,6 @@ const requestRows = computed(() => {
     // No Title row: a request has no title of its own any more — the client it is for is what names it.
     { label: "Requested Client", value: text(r.requestedClientName) },
     { label: "Type", value: typeLabel(r.type), hint: typeHint(r.type) },
-    // Directly under the Type that raises the question. Present only where a parent was named, which is
-    // what says the approver is signing off work for a client that belongs to another one on THF's books.
-    ...(r.parentClientName ? [{ label: "Parent Client", value: r.parentClientName }] : []),
     { label: "Request Status", type: "status" },
     { label: "Customer Email", value: text(r.customerEmail) },
     { label: "Customer Phone Number", value: text(r.customerMobileNumber) },
@@ -751,6 +775,17 @@ onMounted(load);
   margin-bottom: 2px;
 }
 .rems-value { font-size: 14px; color: #2c3540; word-break: break-word; }
+/* The approvers the round is still waiting on. A tint plus a left edge rather than a badge alone: the
+   list is scanned down its left side, and the point is to find the waiting rows without reading each. */
+.ar--awaiting {
+  background: #fff8e1;
+  box-shadow: inset 3px 0 0 #ff8f00;
+}
+/* The reader's own waiting row — the one they can actually act on — carries the accent in full. */
+.ar--awaiting.ar--you {
+  background: #fff3d6;
+  box-shadow: inset 4px 0 0 var(--q-primary);
+}
 /* Marks a value that carries an explanation on hover; muted so it hints rather than competes. */
 .rems-value__info { margin-left: 4px; color: var(--ink-300); cursor: help; vertical-align: text-bottom; }
 /* Rich-text description: keep the request editor's paragraphs and lists readable inside the panel. */

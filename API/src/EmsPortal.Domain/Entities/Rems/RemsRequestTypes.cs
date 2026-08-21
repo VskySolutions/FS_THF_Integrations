@@ -22,10 +22,10 @@ public static class RemsRequestTypes
     /// <c>MergeRemsExistingClientTypes</c>).
     /// <para>
     /// It absorbed a third answer afterwards, "Subsidiary / Child of Existing Client"
-    /// (<c>RetireRemsSubsidiaryType</c>). A child of a client on file is an engagement for a client we
-    /// already have, and what actually made a request a subsidiary was the PARENT CLIENT named on it —
-    /// which is now asked on this answer. Naming a parent says the referral is a child; a separate code
-    /// only asked the partner to say so twice.
+    /// (<c>RetireRemsSubsidiaryType</c>): a child of a client on file is an engagement for a client we
+    /// already have, so the two answers were never distinguishable. The Parent Client field that briefly
+    /// carried the distinction has since gone too (<c>DropRemsParentClient</c>) — REMS records who the
+    /// engagement is for, and nothing about how that client relates to another one.
     /// </para>
     /// </summary>
     public const string ExistingClient = "existing_client";

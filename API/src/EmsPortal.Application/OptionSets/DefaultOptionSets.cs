@@ -47,14 +47,13 @@ public static class DefaultOptionSets
             // for a client we already have is both, and were merged into the code `existing_client` (see
             // MergeRemsExistingClientTypes). "Subsidiary / Child of Existing Client" then folded into the
             // same answer (RetireRemsSubsidiaryType): a child of a client on file is an engagement for a
-            // client we already have, and the PARENT CLIENT field — asked on this answer now — is what
-            // actually says the referral is a child.
+            // client we already have. The Parent Client field that briefly carried the difference is gone
+            // too (DropRemsParentClient), which is why this description no longer mentions it.
             new ItemDefinition("brand_new_client", "Brand-New Client", 1, Description:
                 "The client/company is working with THF for the first time. No prior record exists in the system."),
             new ItemDefinition("existing_client", "New Engagement, Existing Client", 2, Description:
                 "The person or company already has an active client record with THF, and this request " +
-                "creates an additional engagement under that same client. Name the parent client if this " +
-                "one is a subsidiary or child of it."),
+                "creates an additional engagement under that same client."),
         }),
         // How the client heard about THF, asked on the public EMS form. The descriptions double as the
         // examples the client needs to place themselves, so they carry the "Friend, Family, or Colleague"

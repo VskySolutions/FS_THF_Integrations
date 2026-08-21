@@ -42,26 +42,10 @@ public class REMS : AuditableEntity
     /// <summary>Loose reference to an existing client record (not a foreign key).</summary>
     public Guid? ExistingClientReferenceId { get; set; }
 
-    /// <summary>
-    /// The THF client this one is a subsidiary or child of — a <see cref="Person"/> stamped as a client,
-    /// referenced loosely like <see cref="ExistingClientReferenceId"/> rather than by foreign key.
-    /// <para>
-    /// Naming one is what makes a referral a subsidiary; there is no separate type saying so any more (see
-    /// <c>RetireRemsSubsidiaryType</c>). Asked, and optional, where <see cref="Type"/> is
-    /// <see cref="RemsRequestTypes.ExistingClient"/> — a child of a client on file is an engagement for a
-    /// client we already have. On a brand-new client it is cleared: nobody THF has on file can be the
-    /// parent of a company THF has never heard of.
-    /// </para>
-    /// </summary>
-    public Guid? ParentClientReferenceId { get; set; }
-
-    /// <summary>
-    /// The parent's name as it stood when the referral was raised. Denormalised for the same reason
-    /// <see cref="RequestedClientName"/> is: every list that shows a request would otherwise join out to
-    /// Person for one column. It is a snapshot — a parent later renamed keeps its old name here, and
-    /// <see cref="ParentClientReferenceId"/> is what anything needing the live record follows.
-    /// </summary>
-    public string? ParentClientName { get; set; }
+    // ParentClientReferenceId / ParentClientName stood here — the THF client a referral was a subsidiary
+    // or child of, asked on "New Engagement, Existing Client" and denormalised so the lists could show the
+    // name without joining out to Person. Both are gone with the field itself (DropRemsParentClient): REMS
+    // no longer records a parent-child relationship between clients at all.
 
     /// <summary>
     /// The <see cref="Person"/> master record this request's client is, set on every save. Where

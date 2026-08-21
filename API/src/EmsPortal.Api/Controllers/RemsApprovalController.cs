@@ -331,28 +331,38 @@ public sealed class RemsApprovalController : ControllerBase
     // -------------------- Approver's own tasks --------------------
 
     /// <summary>
-    /// The caller's own approval tasks (pending and historical), newest round first (AC-REMS-019), paged and
-    /// filtered server-side: <paramref name="search"/> over the REMS number, client and entity name, plus
-    /// optional <paramref name="role"/> / <paramref name="status"/>. Each row carries the round's
-    /// approved/rejected/total counts so the inbox can show its progress — the row is still the caller's own
-    /// task, and no other approver's identity is exposed here.
-    /// </summary>
-    /// <summary>
-    /// Every approval round on an engagement, oldest first — who sent it, what each approver decided, why
+    /// Every approval round on an engagement, newest first — who sent it, what each approver decided, why
     /// they declined, how far their checklist got, and how the declines stood against the threshold.
     /// <para>
-    /// Gated on reading REMS requests rather than on managing engagements: the initiator has to be able to
-    /// see why a round came back, and reworking the setup is now their job.
+    /// Two readers, not one. Reading REMS requests gets you here — the initiator has to see why a round came
+    /// back, since reworking the setup is now their job. So does being an APPROVER on the engagement, which
+    /// no permission can stand in for: the seat roles (CSE, Shareholder, and the rest) grant no permissions
+    /// at all, so a shareholder gated on <c>rems.requests.read</c> was refused the history of the very round
+    /// they were asked to sign — on their own task page, where this panel sits open by default.
     /// </para>
     /// </summary>
     [HttpGet("engagements/{id:guid}/approval/history")]
-    [RequirePermission(Permissions.RemsRequestsRead)]
+    [Authorize]
     [ProducesResponseType<ApiResponse<IEnumerable<RemsApprovalRoundHistory>>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> History(Guid id, CancellationToken cancellationToken)
     {
-        if (await _engagements.GetByIdAsync(id, cancellationToken) is null)
+        if (User.GetUserId() is not { } me)
+        {
+            return Unauthorized(ApiResponseFactory.Unauthorized("No user context."));
+        }
+
+        if (await _engagements.GetByIdAsync(id, cancellationToken) is not { } engagement)
         {
             return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
+        }
+
+        // The permission first: it is free, and it is what the staff reading this hold. The approver check
+        // is a query, so only a caller the permission did not cover pays for it.
+        if (!User.HasPermission(Permissions.RemsRequestsRead)
+            && !await _approvals.IsApproverOnRequestAsync(engagement.REMSId, me, cancellationToken))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseFactory.Forbidden("Not permitted to view this engagement's approval history."));
         }
 
         var rounds = await _approvals.GetRoundsByEngagementAsync(id, cancellationToken);
@@ -362,8 +372,13 @@ public sealed class RemsApprovalController : ControllerBase
 
         string Name(Guid userId) => names.TryGetValue(userId, out var n) ? n : "Unknown user";
 
+        // Newest round first — 3, 2, 1. A resubmission opens a NEW round rather than reopening the last, so
+        // the highest number is the one live (or last) and every round below it is what it was raised to
+        // answer. Reading down the panel is reading backwards through the argument, which is the direction
+        // anybody opening it is going: what is happening now, then why. It also matches what the repository
+        // already returns — this re-sorted it into the other order on the way out.
         var history = rounds
-            .OrderBy(r => r.RoundNumber)
+            .OrderByDescending(r => r.RoundNumber)
             .Select(r =>
             {
                 var tasks = r.Tasks.Where(t => !t.Deleted).ToList();
@@ -372,7 +387,11 @@ public sealed class RemsApprovalController : ControllerBase
                     RemsApprovalThreshold.EffectiveFor(tasks.Count),
                     tasks.Count(t => t.Status == RemsApprovalTaskStatus.Rejected),
                     tasks
-                        .OrderBy(t => t.ApproverRole)
+                        // The firm's own order — shareholder, director, CSE, commission recipient, then
+                        // anyone added by hand — and NOT the enum's declaration order, which happens to
+                        // start at CSE. The same rank the Approval tab lists by, so a round reads the same
+                        // way before it is sent and ever after.
+                        .OrderBy(t => DisplayRank(t.ApproverRole))
                         .ThenBy(t => t.CreatedOnUtc)
                         .Select(t =>
                         {
@@ -389,6 +408,25 @@ public sealed class RemsApprovalController : ControllerBase
         return Ok(ApiResponseFactory.Success(history, "REMS approval history retrieved."));
     }
 
+    /// <summary>
+    /// The caller's approvals inbox (AC-REMS-019): one row per REQUEST routed to them, paged and filtered
+    /// server-side — <paramref name="search"/> over the REMS number and client name, plus optional
+    /// <paramref name="role"/> / <paramref name="status"/>.
+    /// <para>
+    /// A request re-routed after a rejection opens a NEW round with a new task, so a caller asked three
+    /// times held three tasks and this listed all three — the round that wanted them buried between two
+    /// that were finished. The row is their task on the LATEST round of each request; the rounds before it
+    /// are read on the task detail, which lists them under the round being decided.
+    /// </para>
+    /// <para>
+    /// <paramref name="role"/> and <paramref name="status"/> therefore narrow on what the caller is to the
+    /// request NOW, not on anything they were on a round that has since been superseded.
+    /// </para>
+    /// <para>
+    /// Each row carries the round's approved/rejected/total counts so the inbox can show its progress — the
+    /// row is still the caller's own task, and no other approver's identity is exposed here.
+    /// </para>
+    /// </summary>
     [HttpGet("approval-tasks")]
     [Authorize]
     [ProducesResponseType<ApiResponse<IEnumerable<RemsApprovalTaskRow>>>(StatusCodes.Status200OK)]
@@ -709,6 +747,16 @@ public sealed class RemsApprovalController : ControllerBase
         if (rems.AdminAssignedToId is { } admin)
         {
             recipients.Add(admin);
+        }
+
+        // And everyone the round was routed to — the shareholders, the department director, the CSE and the
+        // commission recipients, plus anyone added by hand. They were each asked to sign this off; the round
+        // ending is the answer to that question, and it is not one they should have to go looking for. The
+        // same set full approval notifies, so an approver hears how a round ended either way rather than
+        // only when it ends well. A HashSet, so the CSE who is also an approver is told once.
+        foreach (var approverId in round.Tasks.Select(t => t.ApproverId))
+        {
+            recipients.Add(approverId);
         }
         foreach (var userId in recipients)
         {
@@ -1104,7 +1152,7 @@ public sealed class RemsApprovalController : ControllerBase
 
         var (emsFormState, clientSubmissionState) = RemsWorkspaceMapper.FormState(formState);
         var requestView = new RemsApprovalRequestView(
-            rems.Id, rems.REMSNumber, rems.Description, rems.RequestedClientName, rems.ParentClientName,
+            rems.Id, rems.REMSNumber, rems.Description, rems.RequestedClientName,
             rems.Type, rems.Status, rems.CustomerEmail, rems.CustomerMobileNumber,
             formState?.IndustryGroup, emsFormState, clientSubmissionState,
             RemsWorkspaceMapper.UserRef(rems.AdminAssignedToId, names),
@@ -1119,13 +1167,14 @@ public sealed class RemsApprovalController : ControllerBase
         var engagementView = await BuildApprovalEngagementViewAsync(
             task, engagement, client, entity, audit, government, tax, names, cancellationToken);
 
-        // Decided first, oldest decision at the top, so the list reads as the round's history: who signed
-        // off first, then next, with whoever has yet to decide gathered at the bottom. Role only breaks
-        // ties among the undecided, who share a null timestamp.
+        // By ROLE — shareholder, director, CSE, commission recipient, then anyone added by hand — which is
+        // the order the Approval tab lists and the order the history reads in. It used to lead with whoever
+        // decided first and gather the undecided at the bottom; that sorted the same round differently
+        // every time somebody signed, and moved the row an approver was looking for while they looked at
+        // it. Who has yet to decide is what the status badge says, not what the position says.
         var decisions = round.Tasks
-            .OrderBy(t => t.DecidedOnUtc.HasValue ? 0 : 1)
-            .ThenBy(t => t.DecidedOnUtc)
-            .ThenBy(t => t.ApproverRole)
+            .OrderBy(t => DisplayRank(t.ApproverRole))
+            .ThenBy(t => t.CreatedOnUtc)
             .Select(t => new RemsApprovalDecisionView(
                 t.Id, RemsWorkspaceMapper.UserRef(t.ApproverId, names)!, t.ApproverRole.ToString(),
                 t.Status.ToString(), t.DecidedOnUtc, t.RejectionReason, t.Id == task.Id))

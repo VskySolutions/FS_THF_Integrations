@@ -38,7 +38,8 @@ export const REMS_TYPE_EXISTING_CLIENT = "existing_client";
 
 // REMS_TYPE_SUBSIDIARY stood here — "Subsidiary / Child of Existing Client", the third answer. It is gone
 // (RetireRemsSubsidiaryType): a child of a client on file is a new engagement for a client THF already
-// has, and the PARENT CLIENT field — asked on that answer now — is what says the referral is a child.
+// has. The Parent Client field that briefly carried the difference has gone too (DropRemsParentClient),
+// so a referral no longer says anything about a parent at all.
 
 // The three seats an engagement names, as ROLE names — the value each people-picker scopes itself by
 // (remsApi.admins(role)). They mirror EmsPortal.Shared.Security.Roles exactly, spaces and all, because the
@@ -156,8 +157,15 @@ const APPROVER_ROLE_ICONS = {
   DepartmentDirector: "o_account_tree",
   CommissionRecipient: "o_payments"
 };
-const APPROVAL_STATUS_LABELS = { Pending: "Pending", Approved: "Approved", Rejected: "Rejected" };
-const APPROVAL_STATUS_COLORS = { Pending: "orange-8", Approved: "positive", Rejected: "negative" };
+// Superseded is a real decision state, not a missing one: the round closed on somebody else's decline
+// while this approver still had it open. Without it here the badge fell through to the raw enum name in
+// grey, which is the one row on a failed round most in need of saying what happened.
+const APPROVAL_STATUS_LABELS = {
+  Pending: "Pending", Approved: "Approved", Rejected: "Rejected", Superseded: "No longer required"
+};
+const APPROVAL_STATUS_COLORS = {
+  Pending: "orange-8", Approved: "positive", Rejected: "negative", Superseded: "grey-6"
+};
 
 // Engagement lifecycle status (REMSEngagement.Status) — label + badge colour in one lookup, shared by
 // every surface that shows it (workspace tab strip, entity panel, approval panel).

@@ -85,12 +85,6 @@
           >
             <q-tooltip>Edit</q-tooltip>
           </q-btn>
-          <q-btn
-            v-if="cell.row.actions?.canDuplicate"
-            flat round dense color="primary" icon="o_content_copy" @click="duplicate(cell.row)"
-          >
-            <q-tooltip>Duplicate</q-tooltip>
-          </q-btn>
           <!-- What has been emailed to the client about this request, and the way to chase them again.
                Only once something has actually gone out: before the intake link is sent there is no
                history to read and nobody to remind. -->
@@ -135,7 +129,6 @@ import { useRouter } from "vue-router";
 import { remsApi, getApiErrorMessage, EntityType } from "services/api";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import { useNotify } from "composables/useNotify";
-import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
 import { useDeletedRecords } from "composables/useDeletedRecords";
@@ -158,7 +151,6 @@ import EmailLogDialog from "modules/rems/components/EmailLogDialog.vue";
 const router = useRouter();
 const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
-const { confirm } = useConfirm();
 const { has } = usePermissions();
 const fmt = useDateFormat();
 const auditColumns = useAuditColumns();
@@ -218,9 +210,6 @@ const columns = computed(() => [
   // unreachable.
   { name: "customerEmail", label: "Client Email", field: (r) => r.customerEmail || "—", align: "left", default: false, filterable: false },
   { name: "customerMobileNumber", label: "Client Phone Number", field: (r) => r.customerMobileNumber || "—", align: "left", default: false, filterable: false },
-  // Populated only where a parent was named, so it reads as "—" on most rows — which is why it is off by
-  // default like the other context columns rather than sitting in everyone's way.
-  { name: "parentClientName", label: "Parent Client", field: (r) => r.parentClientName || "—", align: "left", default: false, filterable: false },
   { name: "cse", label: "CSE", field: (r) => r.cse?.name || "—", align: "left", default: false, filterable: false },
   { name: "industryGroup", label: "Entity Type", field: (r) => r.industryGroup || "—", align: "left", default: false, filterable: false },
   { name: "clientSubmissionState", label: "Client Submission", field: (r) => submissionStateLabel(r.clientSubmissionState), align: "left", default: false, filterable: false },
@@ -319,20 +308,7 @@ const openEmailLog = (row) => {
 // How a request names itself in a dialog title bar.
 const rowLabel = (row) => [row.remsNumber, row.clientName].filter(Boolean).join(" — ");
 
-// ---- Duplicate ----
-const duplicate = async (row) => {
-  const ok = await confirm({
-    title: "Duplicate request",
-    message: `Create a new draft copy of ${row.remsNumber} — ${row.clientName}?`,
-    confirmLabel: "Duplicate"
-  });
-  if (!ok) return;
-  try {
-    await remsApi.duplicate(row.id);
-    notify.success("Request duplicated as a new draft.");
-    load();
-  } catch (err) {
-    notify.error(getApiErrorMessage(err));
-  }
-};
+// A Duplicate action stood here — it copied a request's intake fields into a fresh draft. A request is
+// raised for one client and one engagement, and a copy arrived pre-answered with another request's
+// answers; New Request is the way to raise the next one.
 </script>

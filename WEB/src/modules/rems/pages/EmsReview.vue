@@ -114,12 +114,14 @@
           <!-- View and Edit are the same page in two modes. Separate actions because they are separate
                intentions: reading a request should never put a form on screen — and they are gated apart
                for the same reason. Every admin may READ any request in this queue, including one nobody
-               has picked up; that is how you decide whether to take it. Editing is the holder's. -->
+               has picked up; that is how you decide whether to take it. Editing is the holder's.
+               Neither waits on the client: the page opens on the intake the initiator filled in, and the
+               client's answers land in it when they arrive. -->
           <q-btn
             flat round dense color="primary" icon="o_visibility"
-            :disable="!!viewBlocked(cell.row)" @click="openRequest(cell.row, 'view')"
+            @click="openRequest(cell.row, 'view')"
           >
-            <q-tooltip>{{ viewBlocked(cell.row) || "View" }}</q-tooltip>
+            <q-tooltip>View</q-tooltip>
           </q-btn>
           <q-btn
             flat round dense color="primary" icon="o_edit"
@@ -205,22 +207,22 @@ const canReadEmailLog = computed(() => has(Permissions.RemsEmailLogRead));
 // `requestStatus`, because the row is about the client's form and the request's status is context on it.
 const statusRow = (row) => ({ status: row?.requestStatus, assignedAdmin: row?.assignedAdmin });
 
-// Why the row's two ways into the request are shut, or null when they are open.
+// Why the row's way into the request is shut, or null when it is open. Editing is the holder's alone,
+// which is the rule the server enforces on the setup; saying so on the button beats letting the click end
+// in a 403. Reading is open to every admin whoever holds the request — this is a shared queue, and
+// deciding whether to pick something up means being able to look at it first.
 //
-// Reading is open to every admin as soon as the client has answered, whoever holds the request — this is a
-// shared queue, and deciding whether to pick something up means being able to look at it first. Editing is
-// the holder's alone, which is the rule the server enforces on the setup; saying so on the button beats
-// letting the click end in a 403.
-const viewBlocked = (row) => (row?.submitted ? null : "The client's form has not come back yet");
-const editBlocked = (row) => viewBlocked(row) || engagementOwnerDenial(row);
+// Neither waits on the client any more. Both used to be shut until the form came back, which left an admin
+// unable to open — or correct — a request whose intake was already there to read, at exactly the point in
+// its life when a mistake in it is still cheap to fix. What genuinely needs a submission is the button
+// beside these, which shows the client's own answers, and that one is still gated on it.
+const editBlocked = (row) => engagementOwnerDenial(row);
 
 // REMS number and client are covered by the quick search, so they get no duplicate filter box of their
 // own; the name/date columns the server cannot narrow on opt out entirely.
 const columns = computed(() => [
   { name: "remsNumber", label: "Request ID", field: "remsNumber", align: "left", sortable: true, default: true, filterable: false },
   { name: "clientName", label: "Client", field: "clientName", align: "left", sortable: true, default: true, filterable: false },
-  // Populated only where a parent was named, so it is off by default like the other context columns.
-  { name: "parentClientName", label: "Parent Client", field: (r) => r.parentClientName || "—", align: "left", default: false, filterable: false },
   { name: "submitted", label: "Form", field: "submitted", align: "left", sortable: true, default: true, filterOptions: REMS_FORM_SUBMITTED_OPTIONS },
   // On by default now. It is where a row says "Waiting for pickup", which is the one thing an admin
   // opening this list is looking for.
@@ -295,9 +297,9 @@ const openView = (row) => {
 // ---- The request itself ----
 // The review surface IS the form: it opens both the client's answers and the engagement setup, with the
 // admin's send-back and route-for-approval actions on it. `mode` picks which of the two routes it lands
-// on — a record to read, or a form to change.
+// on — a record to read, or a form to change. Open whether or not the client has answered: the page shows
+// the intake either way, and the parts that need a submission are disabled on the page itself.
 const openRequest = (row, mode) => {
-  if (!row.submitted) return;
   router.push({
     name: mode === "edit" ? "rems_request_edit" : "rems_request",
     params: { id: row.remsId }

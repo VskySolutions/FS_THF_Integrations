@@ -15,7 +15,7 @@ namespace EmsPortal.Api.Controllers;
 
 /// <summary>
 /// REMS request lifecycle backend (WO-111): the partner dashboard, Admin Pool, and the create/edit/
-/// assign/duplicate/delete actions on a REMS request. Endpoints are permission-gated; row visibility is
+/// assign/delete actions on a REMS request. Endpoints are permission-gated; row visibility is
 /// additionally record-level (drafts are creator-only; a partner sees requests they created or are
 /// involved in; an Admin/Super Admin sees the whole tenant pool). The conversation thread, activity
 /// timeline, and attachments reuse the Universal Features (Conversations/Activity/Attachments) endpoints keyed
@@ -38,6 +38,7 @@ public sealed class RemsRequestsController : ControllerBase
 
     private readonly IRemsRepository _rems;
     private readonly IRemsEngagementRepository _engagements;
+    private readonly IRemsApprovalRepository _approvals;
     private readonly IRemsDelegationRepository _delegations;
     private readonly IRemsNumberGenerator _numberGenerator;
     private readonly IUserRepository _users;
@@ -51,6 +52,7 @@ public sealed class RemsRequestsController : ControllerBase
     public RemsRequestsController(
         IRemsRepository rems,
         IRemsEngagementRepository engagements,
+        IRemsApprovalRepository approvals,
         IRemsDelegationRepository delegations,
         IRemsNumberGenerator numberGenerator,
         IUserRepository users,
@@ -62,6 +64,7 @@ public sealed class RemsRequestsController : ControllerBase
     {
         _rems = rems;
         _engagements = engagements;
+        _approvals = approvals;
         _delegations = delegations;
         _numberGenerator = numberGenerator;
         _users = users;
@@ -143,7 +146,13 @@ public sealed class RemsRequestsController : ControllerBase
         }
 
         var privileged = IsPrivileged();
-        if (!CanSee(rems, me, privileged))
+        // An approver is the one reader the list rule cannot name: they are not the initiator, not the
+        // reviewing admin and usually not the CSE — a shareholder or a commission recipient is on the
+        // request because the engagement routed to them. Their notifications deep-link HERE (a REMS
+        // notification carries the request id), so without this a rejected round mails four people a link
+        // that 403s. Asked only after CanSee says no, so the ordinary reader still costs no query.
+        if (!CanSee(rems, me, privileged)
+            && !await _approvals.IsApproverOnRequestAsync(rems.Id, me, cancellationToken))
         {
             return StatusCode(StatusCodes.Status403Forbidden,
                 ApiResponseFactory.Forbidden("Not permitted to view this request."));
@@ -191,16 +200,6 @@ public sealed class RemsRequestsController : ControllerBase
             return emailClash;
         }
 
-        // The parent, where one is named. Resolved from the type that was just settled above rather than
-        // the one the caller sent, so a request demoted to "brand-new client" does not keep a parent it no
-        // longer claims to have.
-        var (parentId, parentName, badParent) = await ResolveParentClientAsync(
-            type, request.ParentClientReferenceId, cancellationToken);
-        if (badParent is not null)
-        {
-            return badParent;
-        }
-
         // Whose request this is. A delegate acting for a shareholder produces the shareholder's work, so it
         // is stamped with both: CreatedById (set automatically on save) keeps who did it, and
         // OnBehalfOfUserId keeps whose it is. Acting as yourself leaves the latter null.
@@ -226,8 +225,6 @@ public sealed class RemsRequestsController : ControllerBase
             CustomerMobileNumber = Normalize(request.CustomerMobileNumber),
             CSEId = request.CSEId,
             ExistingClientReferenceId = request.ExistingClientReferenceId,
-            ParentClientReferenceId = parentId,
-            ParentClientName = parentName,
             OnBehalfOfUserId = seat?.PrincipalUserId,
         };
 
@@ -338,19 +335,6 @@ public sealed class RemsRequestsController : ControllerBase
         if (request.CustomerMobileNumber is not null) rems.CustomerMobileNumber = Normalize(request.CustomerMobileNumber);
         if (request.CSEId.HasValue) rems.CSEId = request.CSEId;
         if (request.ExistingClientReferenceId.HasValue) rems.ExistingClientReferenceId = request.ExistingClientReferenceId;
-
-        // The parent, resolved against the type the request now holds — which is why it runs after Type has
-        // landed above. Assigned unconditionally rather than only-when-supplied: on a brand-new client this
-        // resolves to null, and that IS the clearing. `??` keeps a parent already on file when an edit
-        // simply does not mention it.
-        var (parentId, parentName, badParent) = await ResolveParentClientAsync(
-            rems.Type, request.ParentClientReferenceId ?? rems.ParentClientReferenceId, cancellationToken);
-        if (badParent is not null)
-        {
-            return badParent;
-        }
-        rems.ParentClientReferenceId = parentId;
-        rems.ParentClientName = parentName;
 
         // After the client fields land, so the person record follows what the request now says.
         rems.ClientPersonId = await ResolveClientPersonAsync(rems, rems.TenantId, cancellationToken);
@@ -704,65 +688,9 @@ public sealed class RemsRequestsController : ControllerBase
     private static IEnumerable<Guid> Recipients(params Guid?[] candidates)
         => candidates.Where(c => c.HasValue).Select(c => c!.Value).Distinct();
 
-    [HttpPost("{id:guid}/duplicate")]
-    [RequirePermission(Permissions.RemsRequestsCreate)]
-    [ProducesResponseType<ApiResponse<RemsRequestDetail>>(StatusCodes.Status201Created)]
-    public async Task<IActionResult> Duplicate(Guid id, CancellationToken cancellationToken)
-    {
-        if (User.GetUserId() is not { } me || User.GetActiveTenantId() is not { } tenantId)
-        {
-            return StatusCode(StatusCodes.Status403Forbidden,
-                ApiResponseFactory.Forbidden("No active tenant/user context."));
-        }
-
-        var source = await _rems.GetByIdAsync(id, cancellationToken);
-        if (source is null)
-        {
-            return NotFound(ApiResponseFactory.NotFound("REMS request not found."));
-        }
-
-        var privileged = IsPrivileged();
-        if (!CanSee(source, me, privileged))
-        {
-            return StatusCode(StatusCodes.Status403Forbidden,
-                ApiResponseFactory.Forbidden("Not permitted to duplicate this request."));
-        }
-
-        // Carry forward only the intake fields; a fresh draft with no assignment/form/submission/files.
-        var copy = new REMS
-        {
-            Id = Guid.NewGuid(),
-            Description = source.Description,
-            Type = source.Type,
-            Status = RemsRequestStatuses.Draft,
-            RequestedClientName = source.RequestedClientName,
-            CustomerEmail = source.CustomerEmail,
-            CustomerMobileNumber = source.CustomerMobileNumber,
-            ExistingClientReferenceId = source.ExistingClientReferenceId,
-            // Same client, so the same person — a duplicate is a second request for them, not a second
-            // client. Null only when the source predates the column and has not been saved since; the
-            // next save of the copy resolves it.
-            ClientPersonId = source.ClientPersonId,
-            // The type comes across, so the parent has to as well — a duplicated subsidiary that lost its
-            // parent would read as a child of nobody.
-            ParentClientReferenceId = source.ParentClientReferenceId,
-            ParentClientName = source.ParentClientName,
-            CSEId = source.CSEId,
-        };
-
-        await _unitOfWork.ExecuteInTransactionAsync(async ct =>
-        {
-            copy.REMSNumber = await _numberGenerator.GenerateAsync(tenantId, ct);
-            await _rems.AddAsync(copy, ct);
-            await _activity.WriteAsync(new CreateActivityEventDto(
-                EntityType.Rems, copy.Id, ActivityEventTypes.RemsDuplicated, source.REMSNumber, copy.REMSNumber), ct);
-            await _unitOfWork.SaveChangesAsync(ct);
-        }, cancellationToken);
-
-        var created = await _rems.GetByIdAsync(copy.Id, cancellationToken) ?? copy;
-        var detail = await BuildDetailAsync(created, me, privileged, cancellationToken);
-        return StatusCode(StatusCodes.Status201Created, ApiResponseFactory.Success(detail, "REMS request duplicated."));
-    }
+    // POST {id}/duplicate stood here — it minted a fresh draft carrying the source's intake fields. A
+    // request is raised for one client and one engagement, and a copy of one arrived pre-answered with
+    // somebody else's answers; what a partner actually needs is to raise the next one.
 
     [HttpDelete("{id:guid}")]
     [RequirePermission(Permissions.RemsRequestsDelete)]
@@ -905,6 +833,13 @@ public sealed class RemsRequestsController : ControllerBase
     /// named until one picks it up, and it is not submitted to anyone until its initiator sends the client
     /// their link. Mirrors <c>RemsRepository.ApplyVisibility</c>, which is the same rule in SQL; the two
     /// must agree or a row appears in a list and 403s when opened.
+    /// </para>
+    /// <para>
+    /// <c>GetById</c> admits one reader beyond this: an approver on the request (see
+    /// <c>IRemsApprovalRepository.IsApproverOnRequestAsync</c>). That is deliberately NOT mirrored into the
+    /// list rule, and the asymmetry runs the safe way — an extra reader who can open a request they hold a
+    /// deep link to, never a row offered in a list that then refuses to open. An approver's queue is the
+    /// Approval Inbox, which lists their tasks; the request lists stay what they are.
     /// </para>
     /// </summary>
     private static bool CanSee(REMS r, Guid me, bool privileged)
@@ -1098,6 +1033,10 @@ public sealed class RemsRequestsController : ControllerBase
                 + "Client box and pick them, rather than filing a second record for the same client."));
     }
 
+    // ResolveParentClientAsync stood alongside the reference check below — it validated the Parent Client
+    // id against the request's type and returned the name to denormalise. Gone with the field
+    // (DropRemsParentClient).
+
     /// <summary>
     /// The 400 for a client reference that does not name a client, or null to carry on. The picker offers
     /// none but persons stamped <see cref="EntityType.Client"/>, so no screen can produce this — but the
@@ -1114,43 +1053,6 @@ public sealed class RemsRequestsController : ControllerBase
     /// thing that fails the save.
     /// </para>
     /// </summary>
-    /// <summary>
-    /// The parent client to store, for a given request type: the named person and their name today, or
-    /// (null, null) on any type but "new engagement, existing client" — which is what clears a parent left
-    /// behind by a type change. The third element is a 400 when the id names somebody who is not a client
-    /// on file.
-    /// <para>
-    /// Optional on that type, not required. A parent is what marks the referral as a subsidiary or child;
-    /// most new engagements for an existing client are not one, and the answer to "who is the parent" is
-    /// then nobody rather than a question left unanswered.
-    /// </para>
-    /// <para>
-    /// The name is copied rather than joined at read time, matching <c>RequestedClientName</c>: the lists
-    /// that show it are paged over hundreds of requests and would otherwise reach into Person for one
-    /// column. It is refreshed on every save, so an edit picks up a renamed parent.
-    /// </para>
-    /// </summary>
-    private async Task<(Guid? Id, string? Name, IActionResult? Failure)> ResolveParentClientAsync(
-        string? type, Guid? parentClientReferenceId, CancellationToken cancellationToken)
-    {
-        if (!string.Equals(type, RemsRequestTypes.ExistingClient, StringComparison.Ordinal)
-            || parentClientReferenceId is not { } parentId)
-        {
-            return (null, null, null);
-        }
-
-        // Tenant-scoped and soft-delete-filtered by the ambient query filter, as the client reference is.
-        if (await _persons.GetByIdAsync(parentId, cancellationToken) is not { SourceEntityType: EntityType.Client } parent)
-        {
-            return (null, null, BadRequest(ApiResponseFactory.Error(
-                ApiErrorCodes.ValidationFailed, "Validation failed.",
-                "parentClientReferenceId must name a client on file. Search for the parent in the Parent "
-                    + "Client box and pick them from the results.")));
-        }
-
-        return (parentId, parent.FullName, null);
-    }
-
     private async Task<IActionResult?> RejectUnknownClientReferenceAsync(
         Guid? existingClientReferenceId, CancellationToken cancellationToken)
     {
@@ -1173,12 +1075,11 @@ public sealed class RemsRequestsController : ControllerBase
     }
 
     // The duplicate-title guard and the copy-title uniquifier lived here. Both went with Title itself:
-    // there is no per-client title left to clash on, and a duplicated request is told apart from the one
-    // it came from by its own REMS number.
+    // there is no per-client title left to clash on, and a request is told apart from every other by its
+    // own REMS number.
 
-    /// <summary>A Partner-role caller. Duplicating a request is their workflow, not an admin's.</summary>
-    private bool IsPartner()
-        => User.GetRoles().Any(r => string.Equals(r, Roles.Partner, StringComparison.Ordinal));
+    // IsPartner() stood here. It gated one thing — the Duplicate action, which was the partner's workflow
+    // rather than an admin's — and went with it.
 
     /// <summary>
     /// A request may still be withdrawn while it is a draft. Once the intake link has gone to the client
@@ -1203,7 +1104,6 @@ public sealed class RemsRequestsController : ControllerBase
             CanPickUp: User.HasPermission(Permissions.RemsRequestsAssign)
                 && r.Status != RemsRequestStatuses.Draft
                 && r.AdminAssignedToId is null,
-            CanDuplicate: IsPartner() && User.HasPermission(Permissions.RemsRequestsCreate),
             CanDelete: canAct && User.HasPermission(Permissions.RemsRequestsDelete) && IsDeletable(r));
     }
 
@@ -1216,7 +1116,7 @@ public sealed class RemsRequestsController : ControllerBase
         var (ems, submission) = MapFormState(form);
         return new RemsRequestRow(
             r.Id, r.REMSNumber, r.RequestedClientName, r.Type, r.CreatedOnUtc, r.Status,
-            r.CustomerEmail, r.CustomerMobileNumber, r.ParentClientName,
+            r.CustomerEmail, r.CustomerMobileNumber,
             UserRefOf(r.AdminAssignedToId, names), UserRefOf(r.CSEId, names),
             form?.IndustryGroup, ems, submission,
             NameOf(names, r.CreatedById), NameOf(names, r.UpdatedById), r.UpdatedOnUtc,
@@ -1241,7 +1141,6 @@ public sealed class RemsRequestsController : ControllerBase
             rems.Id, rems.REMSNumber, rems.Description, rems.RequestedClientName,
             rems.Type, rems.Status, rems.CustomerEmail, rems.CustomerMobileNumber,
             rems.ExistingClientReferenceId, rems.ClientPersonId,
-            rems.ParentClientReferenceId, rems.ParentClientName,
             UserRefOf(rems.AdminAssignedToId, names), UserRefOf(rems.CSEId, names),
             form?.IndustryGroup, ems, submission, files,
             NameOf(names, rems.CreatedById), rems.CreatedOnUtc, NameOf(names, rems.UpdatedById), rems.UpdatedOnUtc,

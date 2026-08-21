@@ -133,7 +133,7 @@ public sealed class RemsEngagementController : ControllerBase
         var mayPickUp = User.HasPermission(Permissions.RemsRequestsAssign);
 
         var rows = items.Select(i => new RemsClientFormRow(
-            i.RemsId, i.RemsNumber, i.ClientName, i.ParentClientName, i.RequestStatus,
+            i.RemsId, i.RemsNumber, i.ClientName, i.RequestStatus,
             HasForm: true, i.Submitted, i.SubmittedOnUtc,
             RemsWorkspaceMapper.UserRef(i.AdminAssignedToId, names), RemsWorkspaceMapper.UserRef(i.CSEId, names),
             CanPickUp: mayPickUp && i.AdminAssignedToId is null,

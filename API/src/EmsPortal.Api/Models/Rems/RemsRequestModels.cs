@@ -11,14 +11,6 @@ public sealed class CreateRemsRequestRequest
     /// <summary>Loose reference to an existing client (Person id) when the referral is for a client THF already has.</summary>
     public Guid? ExistingClientReferenceId { get; set; }
 
-    /// <summary>
-    /// The client this one is a subsidiary or child of (Person id, from the same lookup as the client
-    /// itself), and optional. Read only when <see cref="Type"/> is the existing-client code; on a
-    /// brand-new client it is ignored and the stored parent is cleared. Must name a person stamped as a
-    /// client — a parent THF has no record of is not a parent a request can point at.
-    /// </summary>
-    public Guid? ParentClientReferenceId { get; set; }
-
     /// <summary>Client name at intake (required — filled from the selected person or free text).</summary>
     public string ClientName { get; set; } = string.Empty;
 
@@ -63,13 +55,8 @@ public sealed class UpdateRemsRequestRequest
     public Guid? CSEId { get; set; }
     public Guid? ExistingClientReferenceId { get; set; }
 
-    /// <summary>
-    /// The client this one is a subsidiary or child of. Unlike every other field here, it is not left alone
-    /// when null: it is derived from <see cref="Type"/>, so a request no longer answering "new engagement,
-    /// existing client" has its parent cleared whatever this says. That is what stops a request switched to
-    /// "Brand-New Client" keeping a parent nothing on the form still shows.
-    /// </summary>
-    public Guid? ParentClientReferenceId { get; set; }
+    // ParentClientReferenceId stood here, alone in being derived from Type rather than left alone when
+    // null. It is gone with the Parent Client field (DropRemsParentClient).
 
     // AssignAdminUserId / UnassignAdmin stood here. Saving a request no longer re-points who reviews it:
     // an admin gains a request by picking it up and loses it by handing it back, and both of those are
@@ -135,7 +122,7 @@ public sealed record RemsRowActions(
     /// off them".
     /// </summary>
     bool CanPickUp,
-    bool CanDuplicate,
+    // CanDuplicate stood here, with the Duplicate action it gated.
     bool CanDelete);
 
 /// <summary>Dashboard list row for a REMS request (WO-111).</summary>
@@ -151,9 +138,6 @@ public sealed record RemsRequestRow(
     // them the contact line and the Client Email column could only ever render "—".
     string? CustomerEmail,
     string? CustomerMobileNumber,
-    // The client this one is a child of, for the list's Parent Client column. The name comes off the
-    // request row itself, so the column costs the list nothing.
-    string? ParentClientName,
     RemsUserRef? AssignedAdmin,
     RemsUserRef? Cse,
     string? IndustryGroup,
@@ -189,10 +173,6 @@ public sealed record RemsRequestDetail(
     // somebody already on file — unlike ExistingClientReferenceId, which stays null for a brand-new
     // client. Null only on requests not saved since the column was added.
     Guid? ClientPersonId,
-    // The client this one is a child of. Both null where the referral named none — see REMS.ParentClientName
-    // for why the name travels with the id instead of being joined at read time.
-    Guid? ParentClientReferenceId,
-    string? ParentClientName,
     RemsUserRef? AssignedAdmin,
     RemsUserRef? Cse,
     string? IndustryGroup,

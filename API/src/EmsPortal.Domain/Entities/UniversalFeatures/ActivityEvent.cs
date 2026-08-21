@@ -50,11 +50,13 @@ public static class ActivityEventTypes
     // ---- REMS request lifecycle (WO-111) ----
     public const string RemsCreated = "RemsCreated";
     public const string RemsAssigned = "RemsAssigned";
-    public const string RemsDuplicated = "RemsDuplicated";
     public const string RemsDeleted = "RemsDeleted";
 
     // RemsSubmitted is gone with the Admin Pool it recorded entry into. What takes a request out of draft
     // now is the initiator sending the intake link, which RemsFormSent already records.
+
+    // RemsDuplicated went with the Duplicate action itself. Nothing writes it any more; rows already
+    // recorded under it are left as they are, and the timeline renders an unmapped type by its own name.
 
     /// <summary>The Admin returned a request to its initiator for engagement-setup rework, with a reason.</summary>
     public const string RemsSentBack = "RemsSentBack";

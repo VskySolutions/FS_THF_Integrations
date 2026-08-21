@@ -46,11 +46,15 @@ public sealed class SetRemsApproversRequest
 }
 
 /// <summary>
-/// A row in the caller's own approval-task list (pending + historical). The three counts describe the
-/// whole ROUND, not just the caller's task, so the inbox can show how far along an engagement is —
-/// "1/4 approved" answers "is this waiting on me alone, or on five other people too?".
-/// Still awaiting = <c>ApproverCount - ApprovedCount - RejectedCount</c>; a rejection ends the round, so
-/// the remaining tasks stay pending and never decide.
+/// One REQUEST in the caller's approvals inbox, carried by their task on its latest round — so
+/// <see cref="Role"/>, <see cref="Status"/> and <see cref="RoundNumber"/> say what they are to it now, and
+/// the rounds before this one are read on the task detail rather than listed here as rows of their own.
+/// <para>
+/// The three counts describe the whole ROUND, not just the caller's task, so the inbox can show how far
+/// along an engagement is — "1/4 approved" answers "is this waiting on me alone, or on five other people
+/// too?". Still awaiting = <c>ApproverCount - ApprovedCount - RejectedCount</c>; a rejection ends the
+/// round, so the remaining tasks stay pending and never decide.
+/// </para>
 /// </summary>
 public sealed record RemsApprovalTaskRow(
     Guid TaskId,
@@ -115,8 +119,6 @@ public sealed record RemsApprovalRequestView(
     string RemsNumber,
     string? Description,
     string RequestedClientName,
-    /// <summary>The client this one is a subsidiary or child of, where the referral named one.</summary>
-    string? ParentClientName,
     string Type,
     string Status,
     string? CustomerEmail,

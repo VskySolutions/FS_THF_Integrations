@@ -48,6 +48,21 @@
       @request="onRequest"
       @refresh="load"
     >
+      <!-- The admins' second reading of this list, beside the column picker where EMS Review keeps the
+           same pair. Only they are offered it: for everybody else the two views return the same rows, so
+           a toggle that never changed anything would be a control asking to be pressed for nothing.
+           "Created By Me" leads because it is the default and this page is still their own work first;
+           "All" is the whole tenant, including the drafts colleagues have left half-written. Server-side,
+           like every other filter here, so it widens the whole set rather than the loaded page. -->
+      <template v-if="isRemsAdmin" #actions>
+        <q-btn-toggle
+          v-model="ownership"
+          no-caps unelevated dense
+          toggle-color="primary" color="grey-3" text-color="grey-8"
+          :options="OWNERSHIP_FILTERS"
+        />
+      </template>
+
       <template #body-cell-clientName="cell">
         <q-td :props="cell">{{ cell.row.clientName || "—" }}</q-td>
       </template>
@@ -104,7 +119,11 @@
         <div class="full-width column flex-center q-pa-xl text-grey-6">
           <q-icon name="o_assignment" size="40px" class="q-mb-sm" />
           <div class="text-subtitle1 q-mb-xs">No REMS requests yet</div>
-          <div class="q-mb-md">Create your first request to start onboarding a client.</div>
+          <div class="q-mb-md">
+            {{ isRemsAdmin && ownership === "mine"
+              ? "Create your first request, or switch to All to see everybody else's."
+              : "Create your first request to start onboarding a client." }}
+          </div>
           <q-btn v-if="canCreate" unelevated no-caps color="primary" icon="o_add" label="New REMS Request" @click="openCreate" />
         </div>
       </template>
@@ -127,6 +146,7 @@ import { ref, reactive, computed, watch, onMounted } from "vue";
 import { debounce } from "quasar";
 import { useRouter } from "vue-router";
 import { remsApi, getApiErrorMessage, EntityType } from "services/api";
+import { useAuthStore } from "stores/auth";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import { useNotify } from "composables/useNotify";
 import { useListTable } from "composables/useListTable";
@@ -149,6 +169,7 @@ import ConversationDialog from "modules/rems/components/ConversationDialog.vue";
 import EmailLogDialog from "modules/rems/components/EmailLogDialog.vue";
 
 const router = useRouter();
+const auth = useAuthStore();
 const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
 const { has } = usePermissions();
@@ -162,6 +183,24 @@ const {
 
 const canCreate = computed(() => has(Permissions.RemsRequestsCreate));
 const canReadEmailLog = computed(() => has(Permissions.RemsEmailLogRead));
+
+// Who gets the two views. A ROLE rather than a permission, deliberately: it mirrors the server's
+// RemsSetupAccess.IsRemsAdmin, which is what actually decides whether "All" returns anything more than
+// "Created By Me" — the SPA only has to agree with it, or it offers a button that does nothing.
+const isRemsAdmin = computed(() =>
+  auth.roles.includes("SuperAdmin") || auth.roles.includes("Admin"));
+
+// Which of the two readings of this list is on screen. NOT one of the drawer's column filters: those each
+// carry a chip and a Clear, and this is neither — there is always one of the two selected.
+//
+// "Created By Me" is authorship: what this admin raised, or had raised for them by a delegate. It does NOT
+// include the requests that merely name them as CSE or reviewing admin — those are colleagues' referrals
+// that landed on their desk, and the queue for them is EMS Review. "All" is the tenant.
+const OWNERSHIP_FILTERS = [
+  { label: "Created By Me", value: "mine" },
+  { label: "All", value: "all" }
+];
+const ownership = ref("mine");
 
 // The Assigned Admin filter needs the admin list, so it is offered only to callers who may read it —
 // which is the same right as reading requests, since the endpoint stopped being gated on assigning when
@@ -228,6 +267,10 @@ const { rows, loading, totalRecords, search, filterOpen, pagination, load, onReq
   fetcher: ({ page, limit }) =>
     remsApi.list({
       scope: "partner",
+      // Only the admins choose. Everybody else asks for "all", which for them is what this list has
+      // always been — what they raised plus what names them as CSE or reviewing admin. Sending "mine"
+      // for them would quietly drop the second half from a list nothing on screen offers to widen again.
+      ownership: isRemsAdmin.value ? ownership.value : "all",
       page,
       limit,
       clientName: search.value || undefined,
@@ -266,7 +309,7 @@ const onClearFilters = () => {
 };
 
 const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);
-watch([search, filters, extras], reload, { deep: true });
+watch([search, filters, extras, ownership], reload, { deep: true });
 
 // Straight to the form. A partner's request IS the form — there is no separate detail screen worth
 // landing on first now that client details and engagement setup live on one page. The mode decides

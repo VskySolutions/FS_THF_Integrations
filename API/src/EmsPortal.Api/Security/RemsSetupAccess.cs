@@ -30,6 +30,16 @@ internal static class RemsSetupAccess
         => user.IsSuperAdmin() || user.GetRoles().Any(r => string.Equals(r, Roles.TenantAdmin, StringComparison.Ordinal));
 
     /// <summary>
+    /// A REMS Admin (or a Super Admin): the operational role that runs the firm's pipeline. Distinct from
+    /// <see cref="IsElevated"/>, which is the platform's own administrators — this one is a job, not a
+    /// power, and it buys exactly two things: seeing every request in the tenant
+    /// (<c>RemsRepository.ApplyVisibility</c>) and finishing a DRAFT somebody else left behind
+    /// (<see cref="CanWork"/>). It does NOT let one admin work a request another has picked up.
+    /// </summary>
+    public static bool IsRemsAdmin(ClaimsPrincipal user)
+        => user.IsSuperAdmin() || user.GetRoles().Any(r => string.Equals(r, Roles.Admin, StringComparison.Ordinal));
+
+    /// <summary>
     /// Whose request this is: the person who raised it, or the principal they raised it for. A delegate
     /// preparing a request for a shareholder produces the shareholder's work, so both hold it.
     /// </summary>
@@ -57,6 +67,13 @@ internal static class RemsSetupAccess
     /// has answered it is the Admin who picked the request up, and only them — which is why a request
     /// nobody has picked up is nobody's to work until somebody does.
     /// <para>
+    /// One exception to "whoever it is with": a REMS Admin may work any DRAFT, whoever raised it. A draft
+    /// has not been sent to anybody, so there is no handover to cut across — and an admin who can now SEE
+    /// a colleague's unfinished referral needs to be able to finish and send it, which is the whole point
+    /// of their seeing it. The exception stops at draft: once the intake link is out, the stage rules below
+    /// decide, and no admin can take a request another admin is holding.
+    /// </para>
+    /// <para>
     /// Says nothing about the engagement being locked for approval — that is the engagement's own status,
     /// checked separately where it applies.
     /// </para>
@@ -64,6 +81,11 @@ internal static class RemsSetupAccess
     public static bool CanWork(ClaimsPrincipal user, REMS rems, Guid me)
     {
         if (IsElevated(user))
+        {
+            return true;
+        }
+
+        if (rems.Status == RemsRequestStatuses.Draft && IsRemsAdmin(user))
         {
             return true;
         }

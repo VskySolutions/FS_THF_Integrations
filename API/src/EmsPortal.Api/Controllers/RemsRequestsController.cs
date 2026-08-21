@@ -96,6 +96,11 @@ public sealed class RemsRequestsController : ControllerBase
         [FromQuery] DateTime? createdTo = null,
         [FromQuery] string? scope = null,
         [FromQuery] string? poolScope = null,
+        // "mine" or "all" (the default), the My Requests toggle. Not a permission of its own: "all" is
+        // bounded by the same visibility predicate as everything else, so it widens the list only for a
+        // caller who can already see past their own work. "mine" is authorship — what the caller raised,
+        // or had raised for them — and drops the requests that merely name them as CSE or reviewing admin.
+        [FromQuery] string? ownership = null,
         CancellationToken cancellationToken = default)
     {
         if (User.GetUserId() is not { } me)
@@ -109,7 +114,8 @@ public sealed class RemsRequestsController : ControllerBase
 
         var options = new RemsRequestListOptions(
             me, privileged, clientName, contact, status, type, assignedAdminUserId,
-            createdFrom, createdTo, ParseScope(scope), ParsePoolFilter(poolScope), page, limit);
+            createdFrom, createdTo, ParseScope(scope), ParsePoolFilter(poolScope),
+            ParseOwnership(ownership), page, limit);
         var (items, total) = await _rems.ListRequestsAsync(options, cancellationToken);
 
         var names = await _users.GetFullNamesAsync(
@@ -734,9 +740,15 @@ public sealed class RemsRequestsController : ControllerBase
     // -------------------- Pickers --------------------
 
     /// <summary>
-    /// Two-or-more-character search of existing <see cref="Person"/> records (by name, email, phone) for
-    /// the client picker. No external client directory exists in this platform, so
-    /// <c>parentCompany</c>/<c>pastWork</c> are always null.
+    /// Search of existing <see cref="Person"/> records (by name, email, phone) for the client picker. No
+    /// external client directory exists in this platform, so <c>parentCompany</c>/<c>pastWork</c> are
+    /// always null.
+    /// <para>
+    /// Any non-empty term searches. A two-character floor stood here and matched the picker's own, and
+    /// between them they made a client whose name IS two or three characters unfindable by typing it. What
+    /// bounds the work is the page limit below, not the length of the term; the picker debounces before it
+    /// asks. An empty term is the one thing that searches for nothing — there is nothing to look up.
+    /// </para>
     /// </summary>
     [HttpGet("/api/rems/clients/lookup")]
     [RequirePermission(Permissions.RemsRequestsCreate)]
@@ -744,10 +756,10 @@ public sealed class RemsRequestsController : ControllerBase
     public async Task<IActionResult> ClientLookup([FromQuery] string? q, CancellationToken cancellationToken)
     {
         var term = q?.Trim() ?? string.Empty;
-        if (term.Length < 2)
+        if (term.Length == 0)
         {
             return Ok(ApiResponseFactory.Success(
-                Array.Empty<RemsClientLookupItem>(), "Enter at least two characters to search."));
+                Array.Empty<RemsClientLookupItem>(), "Enter a name, email or phone number to search."));
         }
 
         // The ambient tenant filter pins the search to the caller's active tenant. Clients only: a
@@ -821,18 +833,19 @@ public sealed class RemsRequestsController : ControllerBase
             : StatusCode(StatusCodes.Status403Forbidden,
                 ApiResponseFactory.Forbidden("Only an admin who reviews REMS requests can pick one up."));
 
-    /// <summary>An Admin-role or Super Admin caller (sees the whole tenant pool; everyone else is record-scoped).</summary>
-    private bool IsPrivileged()
-        => User.IsSuperAdmin() || User.GetRoles().Any(r => string.Equals(r, Roles.Admin, StringComparison.Ordinal));
+    /// <summary>An Admin-role or Super Admin caller (sees the whole tenant; everyone else is record-scoped).</summary>
+    private bool IsPrivileged() => RemsSetupAccess.IsRemsAdmin(User);
 
     /// <summary>
-    /// Record-level VISIBILITY: a draft is its author's alone; non-drafts are pool-wide for privileged
-    /// callers, else created-or-involved.
+    /// Record-level VISIBILITY: privileged callers see the tenant, drafts included; everyone else sees
+    /// their own drafts and the non-drafts they created or are involved in.
     /// <para>
     /// A draft is a request nobody has been asked about yet — it has no reviewing admin because none is
     /// named until one picks it up, and it is not submitted to anyone until its initiator sends the client
-    /// their link. Mirrors <c>RemsRepository.ApplyVisibility</c>, which is the same rule in SQL; the two
-    /// must agree or a row appears in a list and 403s when opened.
+    /// their link. That kept it out of the admins' sight entirely, which is what changed: a referral left
+    /// half-written is exactly the one an admin needs to be able to find and finish. Mirrors
+    /// <c>RemsRepository.ApplyVisibility</c>, which is the same rule in SQL; the two must agree or a row
+    /// appears in a list and 403s when opened.
     /// </para>
     /// <para>
     /// <c>GetById</c> admits one reader beyond this: an approver on the request (see
@@ -844,7 +857,7 @@ public sealed class RemsRequestsController : ControllerBase
     /// </summary>
     private static bool CanSee(REMS r, Guid me, bool privileged)
         => r.Status == RemsRequestStatuses.Draft
-            ? IsMine(r, me)
+            ? privileged || IsMine(r, me)
             : privileged || IsMine(r, me) || r.AdminAssignedToId == me || r.CSEId == me;
 
     /// <summary>
@@ -1211,5 +1224,17 @@ public sealed class RemsRequestsController : ControllerBase
         "unassigned" => RemsPoolFilter.Unassigned,
         "mine" => RemsPoolFilter.Mine,
         _ => RemsPoolFilter.All,
+    };
+
+    /// <summary>
+    /// The My Requests view. Absent or unrecognised means <see cref="RemsListOwnership.All"/>, which is
+    /// the list this endpoint returned before the toggle existed — everything the caller may see, bounded
+    /// by the visibility predicate. Narrowing to authorship is the thing that has to be asked for, so a
+    /// client that has not been taught the toggle cannot silently lose rows it used to show.
+    /// </summary>
+    private static RemsListOwnership ParseOwnership(string? ownership) => ownership?.Trim().ToLowerInvariant() switch
+    {
+        "mine" => RemsListOwnership.Mine,
+        _ => RemsListOwnership.All,
     };
 }

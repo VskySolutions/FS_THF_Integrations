@@ -30,6 +30,28 @@ public enum RemsPoolFilter
 }
 
 /// <summary>
+/// Whose requests the "My Requests" list shows — the All / Created By Me toggle beside that list's
+/// column picker.
+/// <para>
+/// It is a VIEW, not a permission: <see cref="All"/> narrows nothing on top of the record-level
+/// visibility predicate, so what it reaches is still bounded by what the caller may see at all. Only a
+/// REMS Admin sees the toggle, because only for them do the two answers differ by other people's work;
+/// for everyone else "All" is the requests they created or are named on, which is all there is.
+/// </para>
+/// </summary>
+public enum RemsListOwnership
+{
+    /// <summary>
+    /// Authorship: raised BY the caller, or FOR them by a delegate acting in their seat. NOT the requests
+    /// that merely name them as CSE or reviewing admin — those are somebody else's referral.
+    /// </summary>
+    Mine = 0,
+
+    /// <summary>Everything the caller may see — for a REMS Admin the whole tenant, other people's drafts included.</summary>
+    All = 1,
+}
+
+/// <summary>
 /// The resolved query for a REMS request dashboard list (WO-111). Carries the caller identity and the
 /// caller's privilege (Admin role or Super Admin) so the repository can apply the record-level
 /// visibility predicate, plus the server-side filters and the view scope.
@@ -50,6 +72,10 @@ public sealed record RemsRequestListOptions(
     DateTime? CreatedToUtc,
     RemsListScope Scope,
     RemsPoolFilter PoolFilter,
+    /// <summary>Whose requests the Partner "My Requests" view shows. The other scopes ignore it.
+    /// Callers with no toggle on screen should send <see cref="RemsListOwnership.All"/>, which is the
+    /// list they had before there was one.</summary>
+    RemsListOwnership Ownership,
     int Page,
     int Limit);
 

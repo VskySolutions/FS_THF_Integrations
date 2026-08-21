@@ -469,9 +469,11 @@ export const dashboardApi = {
 // The conversation thread / activity / attachments reuse the Universal Features endpoints keyed on
 // EntityType.Rems (see ufConversationApi) — this object deliberately does not duplicate them.
 export const remsApi = {
-  // params: { scope?, poolScope?, clientName?, contact?, status?, type?,
+  // params: { scope?, poolScope?, ownership?, clientName?, contact?, status?, type?,
   //           assignedAdminUserId?, createdFrom?, createdTo?, page?, limit? }
-  // scope: "partner" | "pool"; poolScope: "unassigned" | "mine" | "all". type/status are
+  // scope: "partner" | "pool"; poolScope: "unassigned" | "mine" | "all". ownership is the My Requests
+  // toggle — "mine" (the default) or "all"; it is a view, not a right, so "all" widens the list only for
+  // a REMS Admin, who may see the tenant's requests including other people's drafts. type/status are
   // option-set CODES, matched exactly; clientName/contact are "contains"; createdFrom/To are UTC
   // instants (a date-only picker must convert its own day boundaries — see zonedDayBoundaryUtc).
   // Returns the standard envelope.

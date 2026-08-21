@@ -339,8 +339,12 @@ watch(() => props.modelValue.clientName, (name) => {
   if ((name || "") !== clientQuery.value) clientQuery.value = name || "";
 });
 
-const MIN_LOOKUP_CHARS = 2;
-const LOOKUP_DEBOUNCE_MS = 300;
+// Every term searches, however short. A two-character floor stood here, on the reasoning that one letter
+// matches half the tenant — but it also meant a client actually NAMED in two or three characters could not
+// be found by typing their name, and a box that answers nothing while you type reads as broken rather than
+// as protecting itself. The debounce is what keeps the traffic down instead, and the server caps the
+// result set at 20 whatever the term. Only an empty box searches for nothing: there is nothing to look up.
+const LOOKUP_DEBOUNCE_MS = 500;
 let lookupTimer = null;
 // Bumped on every query so a slow response for an abandoned term cannot land on top of a newer one.
 let lookupSeq = 0;
@@ -350,7 +354,7 @@ const runLookup = (term) => {
   lookupSeq += 1;
   const seq = lookupSeq;
   clientSearched.value = false;
-  if (term.length < MIN_LOOKUP_CHARS) {
+  if (!term) {
     clientLoading.value = false;
     clientOptions.value = [];
     clientMenu.value = false;
@@ -497,8 +501,7 @@ const chooseType = (value) => {
 // partner raising the referral was in a position to state.
 
 const openMenuIfResults = () => {
-  if (clientOptions.value.length ||
-    (clientSearched.value && clientQuery.value.trim().length >= MIN_LOOKUP_CHARS)) {
+  if (clientOptions.value.length || (clientSearched.value && !!clientQuery.value.trim())) {
     clientMenu.value = true;
   }
 };

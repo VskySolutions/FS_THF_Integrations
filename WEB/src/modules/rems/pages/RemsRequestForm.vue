@@ -86,21 +86,41 @@
           >
             <q-tooltip>Copy the client's intake form link</q-tooltip>
           </q-btn>
+          <!-- The reply to Send back, and the only one of these buttons the INITIATOR or the CSE presses:
+               it appears on a request that came back to them for rework. Named for where the request
+               goes, like the two below it, which is exactly why it says which move it is. -->
           <q-btn
             v-if="canReturnToAdmin" unelevated no-caps color="primary" icon="o_assignment_turned_in"
             label="Return to admin" :loading="acting" @click="returnToAdmin"
-          />
+          >
+            <q-tooltip max-width="300px">
+              Done with the changes — hand the request back to the admin reviewing it, who is told it is
+              waiting
+            </q-tooltip>
+          </q-btn>
+          <!-- Send back and Hand back are two different moves that sound like one, and they sit two
+               buttons apart. This one gives the WORK back to whoever it belongs to and keeps the request;
+               the other gives the REQUEST back to the queue and keeps nothing. Both say which, in as many
+               words, rather than leaving a new admin to find out by pressing one. -->
           <q-btn
             v-if="canSendBack" outline no-caps color="orange-9" icon="o_assignment_return"
             label="Send back" @click="sendBackOpen = true"
-          />
+          >
+            <q-tooltip max-width="300px">
+              Ask the partner or the CSE to change something — the request stays yours and comes back to
+              you once they have
+            </q-tooltip>
+          </q-btn>
           <!-- Giving the request back to the queue. Last, and outlined: it is the undo of Pick up, not
                a step in the work. -->
           <q-btn
             v-if="canHandBack" outline no-caps color="grey-8" icon="o_undo"
             label="Hand back" :loading="acting" @click="handBack"
           >
-            <q-tooltip>Return this to EMS Review for another admin to pick up</q-tooltip>
+            <q-tooltip max-width="300px">
+              Give this request up — it goes back to EMS Review for any admin to pick up, and stops being
+              yours
+            </q-tooltip>
           </q-btn>
         </div>
       </template>
@@ -234,20 +254,16 @@
 
                 <!-- Commission is where the initiator's own work ends: past it the tabs are the client's
                  answers and the approvers' round, neither of which they fill in. So instead of stepping
-                 on, this is where the two ways out live. -->
-                <template v-if="atFinishTab">
-                  <q-btn
-                    v-if="autoSaveOn" outline dense no-caps color="primary" icon="o_save"
-                    label="Save and Close" class="q-px-md" :loading="saveState === 'saving'"
-                    @click="saveAndClose"
-                  />
-                  <q-btn
-                    v-if="canSendToClient" unelevated dense no-caps color="teal-7" icon="o_send"
-                    label="Submit to Client" class="q-px-md" :disable="!readyToSend" @click="openSend"
-                  >
-                    <q-tooltip v-if="!readyToSend">{{ sendBlockedReason }}</q-tooltip>
-                  </q-btn>
-                </template>
+                 on, this is where the request goes to the client.
+                 "Save and Close" stood beside it and is gone. The form saves itself, so it was a button
+                 that mostly meant Close — and Back, which commits the debounce on its way out, is that
+                 already. -->
+                <q-btn
+                  v-if="atFinishTab" unelevated dense no-caps color="teal-7" icon="o_send"
+                  label="Submit to Client" class="q-px-md" :disable="!readyToSend" @click="openSend"
+                >
+                  <q-tooltip v-if="!readyToSend">{{ sendBlockedReason }}</q-tooltip>
+                </q-btn>
               </div>
             </div>
             <q-separator />
@@ -703,6 +719,16 @@ const canPickUp = computed(() =>
 const canHandBack = computed(() => isHoldingAdmin.value && has(Permissions.RemsRequestsAssign));
 
 const pickUp = async () => {
+  // Asked the same way Hand back is, and for the same reason: this moves the request from everybody to
+  // one person. Until it is handed back no other admin can work it, so it is worth a beat — and on a
+  // request opened from a notification or a link, the button is right where Edit would be.
+  const ok = await confirm({
+    title: "Pick this request up",
+    message: "The request becomes yours and its engagement setup opens for you to work. No other admin " +
+      "can take it while you hold it — Hand back is what returns it to the queue. Continue?",
+    confirmLabel: "Pick up"
+  });
+  if (!ok) return;
   acting.value = true;
   try {
     await remsApi.pickUp(remsId.value);
@@ -932,11 +958,13 @@ const nextTab = computed(() => stepTab(1));
 // Where the initiator's own work ends. What lies past Commission is somebody else's: the approvers' round.
 const FINISH_TAB = "commission";
 const hasFinishTab = computed(() => tabs.value.some((t) => t.name === FINISH_TAB && !t.disable));
-const atFinishTab = computed(() =>
-  tab.value === FINISH_TAB && (autoSaveOn.value || canSendToClient.value));
+// Only where there is something to finish WITH. It used to be true wherever the tab could be saved, which
+// was the "Save and Close" half of the corner; that button is gone and Submit to Client is all that is
+// left of it.
+const atFinishTab = computed(() => tab.value === FINISH_TAB && canSendToClient.value);
 // Finishing does not REPLACE stepping on. For the initiator in draft there is nothing past Commission, so
-// the two ways out are all there is — but once a round has been opened, Approval sits behind it and the
-// admin reviewing it still needs the step.
+// submitting is all there is — but once a round has been opened, Approval sits behind it and the admin
+// reviewing it still needs the step.
 const showNext = computed(() => !!nextTab.value);
 
 // ---- View mode: the same fields, as a record rather than a form ----
@@ -1351,16 +1379,8 @@ const openSend = async () => {
   sendOpen.value = true;
 };
 
-// Done for now: commit the debounce and go back to the list. It refuses to leave on anything the last
-// pass could not write — "Close" over unsaved work is the one thing auto-save must never do quietly.
-const saveAndClose = async () => {
-  await flushSaves();
-  if (savePending.value) {
-    notify.warning(saveMessage.value || "Some changes have not saved yet — they are still on this page.");
-    return;
-  }
-  router.push(backTo.value);
-};
+// "Save and Close" lived here. Leaving the page is Back's job and always was; the save half of it is what
+// the form does on its own now, and onBeforeRouteLeave below commits the debounce on the way out.
 
 const openReminder = async () => {
   await flushSaves();

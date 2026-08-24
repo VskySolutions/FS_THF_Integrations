@@ -112,10 +112,11 @@
             <q-tooltip>Take this request on — its engagement setup becomes yours to work</q-tooltip>
           </q-btn>
 
-          <!-- The undo of Pick up, on the row it was pressed on. Picking a request up is a single click
-               on a list of them, so taking the wrong one is easy — and until now the only way back was to
-               open that request and find Hand back in its header. Outlined, and only on a request this
-               caller actually holds: it is a correction, not a step in the work. -->
+          <!-- The undo of Pick up, on the row it was pressed on. Both are asked before they run, but a
+               dialog only catches the misclick that is noticed — and until this button existed the way
+               back from one that was not was to open the request and find Hand back in its header.
+               Outlined, and only on a request this caller actually holds: it is a correction, not a step
+               in the work. -->
           <q-btn
             v-if="cell.row.canHandBack"
             outline dense no-caps color="grey-8" icon="o_undo" label="Hand back"
@@ -276,8 +277,18 @@ watch([search, filters, assignment], reload, { deep: true });
 // ---- Picking a request up ----
 // The whole of the new assignment model from this list's side: nobody was named at intake, so a request
 // becomes an admin's by that admin taking it. Tracked per row so only the pressed button spins.
+//
+// Confirmed, the way Hand back is: one click on a list of near-identical rows is an easy click to make
+// on the wrong row, and the request stops being available to the other admins the moment it lands.
 const pickingUp = ref(null);
 const pickUp = async (row) => {
+  const ok = await confirm({
+    title: "Pick this request up",
+    message: `${row.remsNumber} becomes yours and its engagement setup opens for you to work. No other ` +
+      "admin can take it while you hold it — Hand back is what returns it to the queue. Continue?",
+    confirmLabel: "Pick up"
+  });
+  if (!ok) return;
   pickingUp.value = row.remsId;
   try {
     await remsApi.pickUp(row.remsId);
@@ -295,9 +306,9 @@ const pickUp = async (row) => {
 };
 
 // ---- Handing one back ----
-// The counterpart of Pick up, and the reason it can be pressed without a second thought: a request taken
-// by mistake goes straight back to the queue from the row it was taken on. Confirmed first — the setup
-// goes read-only to whoever gives it up, and another admin may take it immediately.
+// The counterpart of Pick up: a request taken by mistake goes straight back to the queue from the row it
+// was taken on. Confirmed like it — the setup goes read-only to whoever gives it up, and another admin
+// may take it immediately.
 const handingBack = ref(null);
 const handBack = async (row) => {
   const ok = await confirm({

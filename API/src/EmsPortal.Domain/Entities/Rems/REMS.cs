@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace EmsPortal.Domain.Entities;
 
 /// <summary>
@@ -59,8 +61,32 @@ public class REMS : AuditableEntity
     /// </summary>
     public Guid? ClientPersonId { get; set; }
 
-    /// <summary>Name of the client as requested at intake.</summary>
+    /// <summary>Name of the client as requested at intake, WITHOUT the generational suffix.</summary>
     public string RequestedClientName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The generational suffix on the client's name — Jr., Sr., II, III, IV — kept apart from the name
+    /// itself. Free text with those five offered as suggestions: the list is what most clients need, not
+    /// what any client may have, and a suffix nobody thought to seed is not a reason to file a client
+    /// under the wrong name.
+    /// <para>
+    /// Held separately rather than typed into the name box so that the two are separable afterwards: a
+    /// person record splits into first and last name, and "Jr." belongs to neither. <see
+    /// cref="ClientDisplayName"/> is what puts them back together for reading.
+    /// </para>
+    /// </summary>
+    public string? ClientNameSuffix { get; set; }
+
+    /// <summary>
+    /// The client's name as it reads — the requested name with the suffix appended. This is what every
+    /// list, notification and email shows; <see cref="RequestedClientName"/> on its own would drop the
+    /// suffix silently wherever it was used.
+    /// </summary>
+    [NotMapped]
+    public string ClientDisplayName =>
+        string.IsNullOrWhiteSpace(ClientNameSuffix)
+            ? RequestedClientName
+            : $"{RequestedClientName} {ClientNameSuffix.Trim()}".Trim();
 
     /// <summary>Customer email used to reach out; required together-or-with mobile at app level.</summary>
     public string? CustomerEmail { get; set; }

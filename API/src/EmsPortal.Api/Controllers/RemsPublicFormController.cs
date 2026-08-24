@@ -123,14 +123,14 @@ public sealed class RemsPublicFormController : ControllerBase
         return form.Status switch
         {
             RemsFormStatus.Submitted => Ok(ApiResponseFactory.Success(
-                new RemsPublicFormResponse(RemsPublicFormStates.Submitted, ClientName: rems.RequestedClientName),
+                new RemsPublicFormResponse(RemsPublicFormStates.Submitted, ClientName: rems.ClientDisplayName),
                 "REMS form resolved.")),
 
             RemsFormStatus.Sent => Ok(ApiResponseFactory.Success(
                 new RemsPublicFormResponse(
                     RemsPublicFormStates.Editable,
                     IndustryGroup: form.IndustryGroup,
-                    Prefill: new RemsPublicPrefill(rems.RequestedClientName, rems.CustomerEmail ?? string.Empty, rems.CustomerMobileNumber),
+                    Prefill: BuildPrefill(rems),
                     DraftPayload: RemsFormPayloadJson.TryDeserialize(CurrentDraft(form)?.DraftPayload),
                     ReferralSources: await ResolvePublicOptionsAsync(rems.TenantId, "REMS.ReferralSource", cancellationToken)),
                 "REMS form resolved.")),
@@ -283,7 +283,7 @@ public sealed class RemsPublicFormController : ControllerBase
         if (form.Status == RemsFormStatus.Submitted)
         {
             return Ok(ApiResponseFactory.Success(
-                new RemsPublicFormResponse(RemsPublicFormStates.Submitted, ClientName: rems.RequestedClientName),
+                new RemsPublicFormResponse(RemsPublicFormStates.Submitted, ClientName: rems.ClientDisplayName),
                 "REMS form already submitted."));
         }
         if (!IsEditable(form))
@@ -304,7 +304,9 @@ public sealed class RemsPublicFormController : ControllerBase
         await DispatchPostSubmitAsync(form, effective!, cancellationToken);
 
         return Ok(ApiResponseFactory.Success(
-            new RemsPublicFormResponse(RemsPublicFormStates.Submitted, ClientName: effective!.ClientName?.Trim() ?? rems.RequestedClientName),
+            new RemsPublicFormResponse(
+                RemsPublicFormStates.Submitted,
+                ClientName: NullIfBlank(effective!.EffectiveClientName) ?? rems.ClientDisplayName),
             "REMS form submitted."));
     }
 
@@ -433,7 +435,9 @@ public sealed class RemsPublicFormController : ControllerBase
             // Points at the same Person the request's client resolved to at intake, so the client the
             // form materialises and the client the picker knows are one record rather than two.
             ExternalClientReferenceId = form.Rems!.ClientPersonId,
-            Name = Clean(payload.ClientName) ?? string.Empty,
+            // EffectiveClientName, not ClientName: an individual gives their name in two boxes now, and
+            // the joined echo beside them is the client's to send rather than ours to trust.
+            Name = Clean(payload.EffectiveClientName) ?? string.Empty,
             Email = form.Rems!.CustomerEmail ?? string.Empty, // LOCKED to the request's customer email.
             MobileNumber = Clean(payload.MobileNumber),
             ReferralSource = Clean(payload.ReferralSource),
@@ -452,7 +456,7 @@ public sealed class RemsPublicFormController : ControllerBase
             TenantId = tenantId,
             REMSClientId = clientId,
             SourceEntityKey = "main",
-            Name = Clean(payload.ClientName) ?? string.Empty,
+            Name = Clean(payload.EffectiveClientName) ?? string.Empty,
             EIN = isBusiness ? Clean(payload.Ein) : null,
             IsMainEntity = true,
         });
@@ -537,7 +541,7 @@ public sealed class RemsPublicFormController : ControllerBase
             return;
         }
 
-        foreach (var (role, roleName, isRequired) in EnumerateRoles(industryGroup, roles))
+        foreach (var (role, roleName, isRequired) in EnumerateRoles(industryGroup, roles.Normalized()))
         {
             if (role is not { HasAny: true })
             {
@@ -572,7 +576,11 @@ public sealed class RemsPublicFormController : ControllerBase
     /// </summary>
     private static Person BuildContactPerson(Guid tenantId, Guid sourceRemsId, RemsRolePayload role)
     {
-        var (first, last) = SplitName(role.Name);
+        // The form asks for the two parts, so the Person is filed under what the client actually typed
+        // into them. Splitting on the first space is now only the fallback, for a payload written before
+        // the name was two boxes — see RemsRolePayload.EffectiveFirstName.
+        var first = role.EffectiveFirstName;
+        var last = role.EffectiveLastName;
         return new Person
         {
             Id = Guid.NewGuid(),
@@ -582,7 +590,7 @@ public sealed class RemsPublicFormController : ControllerBase
             SourceEntityId = sourceRemsId,
             FirstName = first,
             LastName = last,
-            DisplayName = Clean(role.Name) ?? first,
+            DisplayName = Clean(role.DisplayName) ?? first,
             PrimaryEmail = Clean(role.Email),
             MobileNumber = Clean(role.Phone),
             IsActive = true,
@@ -636,7 +644,7 @@ public sealed class RemsPublicFormController : ControllerBase
                     userId,
                     NotificationType.RemsFormSubmitted,
                     "A REMS onboarding form was submitted",
-                    $"{rems.REMSNumber} — {rems.RequestedClientName}",
+                    $"{rems.REMSNumber} — {rems.ClientDisplayName}",
                     EntityType.Rems,
                     rems.Id), cancellationToken);
             }
@@ -655,7 +663,7 @@ public sealed class RemsPublicFormController : ControllerBase
                         admin.Id,
                         NotificationType.RemsRequestAssigned,
                         "A REMS request is waiting for pickup",
-                        $"{rems.REMSNumber} — {rems.RequestedClientName}",
+                        $"{rems.REMSNumber} — {rems.ClientDisplayName}",
                         EntityType.Rems,
                         rems.Id), cancellationToken);
                 }
@@ -667,7 +675,7 @@ public sealed class RemsPublicFormController : ControllerBase
 
             // External "form submitted" email to the Admin + CSE. Enqueued on a worker; never throws/blocks.
             var model = new RemsFormSubmittedEmail(
-                Clean(payload.ClientName) ?? rems.RequestedClientName,
+                Clean(payload.EffectiveClientName) ?? rems.ClientDisplayName,
                 rems.REMSNumber,
                 $"{_baseUrl.TrimEnd('/')}/rems/requests/{rems.Id}",
                 (form.SubmittedOnUtc ?? DateTime.UtcNow).ToString("f", CultureInfo.InvariantCulture) + " UTC");
@@ -693,7 +701,8 @@ public sealed class RemsPublicFormController : ControllerBase
     private RemsReviewModel BuildReviewModel(REMS rems, RemsFormPayloadV1 payload, string industryGroup)
     {
         var contact = new RemsReviewContact(
-            Clean(payload.ClientName), rems.CustomerEmail ?? string.Empty, Clean(payload.MobileNumber), Clean(payload.ReferralSource));
+            Clean(payload.EffectiveClientName), Clean(payload.ClientFirstName), Clean(payload.ClientLastName),
+            rems.CustomerEmail ?? string.Empty, Clean(payload.MobileNumber), Clean(payload.ReferralSource));
 
         var contract = string.Equals(industryGroup, RemsFormPayloadValidator.Government, StringComparison.Ordinal)
             ? new RemsReviewContractDetails(
@@ -711,9 +720,12 @@ public sealed class RemsPublicFormController : ControllerBase
         var address = new RemsReviewAddressGroup(
             NonEmpty(payload.PhysicalAddress), NonEmpty(payload.MailingAddress), NonEmpty(payload.BillingAddress));
 
-        var additionalContacts = EnumerateRoles(industryGroup, payload.Roles ?? new RemsRolesPayload())
+        var additionalContacts = EnumerateRoles(industryGroup, payload.EffectiveRoles)
             .Where(t => t.Role is { HasAny: true })
-            .Select(t => new RemsReviewContactRow(t.RoleName, t.IsRequired, Clean(t.Role!.Name), Clean(t.Role.Email), Clean(t.Role.Phone)))
+            .Select(t => new RemsReviewContactRow(
+                t.RoleName, t.IsRequired,
+                Clean(t.Role!.EffectiveFirstName), Clean(t.Role.EffectiveLastName), Clean(t.Role.DisplayName),
+                Clean(t.Role.Email), Clean(t.Role.Phone)))
             .ToList();
 
         var billing = new RemsReviewBilling(Clean(payload.BillingContactName), Clean(payload.BillingEmail), NonEmpty(payload.BillingAddress));
@@ -737,6 +749,22 @@ public sealed class RemsPublicFormController : ControllerBase
         return form;
     }
 
+    /// <summary>
+    /// The locked prefill for the editable form. The client's name arrives both whole and split: staff
+    /// intake asks for it in one box, an individual's form asks for it in two, and doing the split here
+    /// keeps it the same split their Person record and their contacts already get.
+    /// </summary>
+    private static RemsPublicPrefill BuildPrefill(REMS rems)
+    {
+        // Off the DISPLAY name, so a client whose request names them "John Smith Jr." is not prefilled as
+        // plain "John Smith" — and the suffix lands on the last name, where a person's name carries it.
+        var (first, last) = RemsNameSplit.Split(rems.ClientDisplayName);
+        return new RemsPublicPrefill(
+            rems.ClientDisplayName, first, last, rems.CustomerEmail ?? string.Empty, rems.CustomerMobileNumber);
+    }
+
+    private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     /// <summary>The link is dead when the request is gone/deleted or the form was cancelled.</summary>
     private static bool IsUnavailable(REMSForm form)
         => form.Rems is null || form.Rems.Deleted || form.Status == RemsFormStatus.Cancelled;
@@ -759,6 +787,9 @@ public sealed class RemsPublicFormController : ControllerBase
     {
         // Mirrors RemsFormPayloadValidator's branches exactly — the roles staged here must be the roles it
         // required. if/else rather than a switch because the business branch matches a family of codes.
+        // Takes the roles already NORMALIZED (see RemsRolesPayload.Normalized) — a form filled in under
+        // the old business role names still stages its three contacts, under the names they are known by
+        // now.
         if (industryGroup == RemsFormPayloadValidator.Individual)
         {
             yield return (roles.Self, nameof(RemsContactRole.Self), true);
@@ -766,16 +797,20 @@ public sealed class RemsPublicFormController : ControllerBase
         }
         else if (RemsFormPayloadValidator.IsBusinessGroup(industryGroup))
         {
-            yield return (roles.Ceo, nameof(RemsContactRole.CEO), true);
-            yield return (roles.Cfo, nameof(RemsContactRole.CFO), true);
-            yield return (roles.AccountsPayable, nameof(RemsContactRole.AccountsPayable), true);
+            yield return (roles.PrimaryContact, nameof(RemsContactRole.PrimaryClientContact), true);
+            yield return (roles.FinancialContact, nameof(RemsContactRole.FinancialContact), true);
+            yield return (roles.BillingContact, nameof(RemsContactRole.BillingContact), true);
+            yield return (roles.OtherContact, nameof(RemsContactRole.OtherContact), false);
+            // Retired from the form. Still staged when an older payload carries one, because the contact
+            // the client gave is a contact whether or not the box is still on the page.
             yield return (roles.Banker, nameof(RemsContactRole.Banker), false);
             yield return (roles.Lawyer, nameof(RemsContactRole.Lawyer), false);
         }
         else if (industryGroup == RemsFormPayloadValidator.Government)
         {
             yield return (roles.FinanceDirector, nameof(RemsContactRole.FinanceDirector), true);
-            yield return (roles.AccountsPayable, nameof(RemsContactRole.AccountsPayable), false);
+            yield return (roles.BillingContact, nameof(RemsContactRole.BillingContact), false);
+            yield return (roles.OtherContact, nameof(RemsContactRole.OtherContact), false);
         }
     }
 
@@ -821,17 +856,9 @@ public sealed class RemsPublicFormController : ControllerBase
         AddressType = type,
     };
 
-    private static (string First, string Last) SplitName(string? name)
-    {
-        var trimmed = name?.Trim() ?? string.Empty;
-        if (trimmed.Length == 0)
-        {
-            return (string.Empty, string.Empty);
-        }
-
-        var space = trimmed.IndexOf(' ');
-        return space < 0 ? (trimmed, string.Empty) : (trimmed[..space], trimmed[(space + 1)..].Trim());
-    }
+    // SplitName stood here. The public form asks for a first and a last name in their own boxes now, so
+    // there is nothing left here to split; the one-box fallback for older payloads lives on the payload
+    // itself (RemsNameSplit, behind RemsRolePayload.EffectiveFirstName).
 
     private static RemsAddressPayload? NonEmpty(RemsAddressPayload? address) => address is { HasAny: true } ? address : null;
 

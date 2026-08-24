@@ -4,6 +4,11 @@ namespace EmsPortal.Domain.Enums;
 /// The role a person plays as a contact on a REMS entity (REMS WO-110). A known set that varies by
 /// industry group; persisted as a free string code on <c>REMSEntityContact.ContactRole</c> rather
 /// than an enum column, so this type documents the canonical values used by the application.
+/// <para>
+/// The business roles are named for what the firm needs from the person rather than for the office they
+/// hold: not every client has a CEO or a CFO, and asking a two-partner practice for both left the client
+/// guessing which of them to put where. <c>RenameRemsBusinessContactRoles</c> rewrote the stored codes.
+/// </para>
 /// </summary>
 public enum RemsContactRole
 {
@@ -13,21 +18,33 @@ public enum RemsContactRole
     /// <summary>The individual's spouse.</summary>
     Spouse,
 
-    /// <summary>Chief Executive Officer (Business industry group).</summary>
-    CEO,
+    /// <summary>
+    /// Who the firm speaks to about the engagement — the main person on the client's side. Was
+    /// <c>CEO</c>.
+    /// </summary>
+    PrimaryClientContact,
 
-    /// <summary>Chief Financial Officer (Business industry group).</summary>
-    CFO,
+    /// <summary>Who the firm speaks to about the client's finances. Was <c>CFO</c>.</summary>
+    FinancialContact,
 
-    /// <summary>Accounts Payable contact.</summary>
-    AccountsPayable,
+    /// <summary>Who the firm bills. Was <c>AccountsPayable</c>.</summary>
+    BillingContact,
 
-    /// <summary>Banking contact.</summary>
-    Banker,
-
-    /// <summary>Legal contact.</summary>
-    Lawyer,
+    /// <summary>Anyone else the client wants the firm to have — optional, and asked once.</summary>
+    OtherContact,
 
     /// <summary>Finance Director (Government industry group).</summary>
     FinanceDirector,
+
+    // ---- Retired ----
+    // Neither is asked for any more: a client's banker and lawyer are their advisers rather than the
+    // firm's contacts on the engagement, and the two boxes were left blank on almost every form. The
+    // members stay because rows written before RenameRemsBusinessContactRoles still carry these codes,
+    // and a stored string with nothing behind it fails every read of the contact it names.
+
+    /// <summary>Banking contact. RETIRED — no longer asked for; historical rows only.</summary>
+    Banker,
+
+    /// <summary>Legal contact. RETIRED — no longer asked for; historical rows only.</summary>
+    Lawyer,
 }

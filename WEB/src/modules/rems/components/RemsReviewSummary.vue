@@ -57,6 +57,9 @@
 import { computed } from "vue";
 import { addressText } from "modules/rems/remsAddress";
 import { isBusinessIndustryGroup } from "modules/rems/useRemsMeta";
+import {
+  answeredRoleKeys, groupKey, normalizeRoles, roleDefsFor, roleDisplayName, roleHasAny
+} from "modules/rems/remsContactRoles";
 
 const props = defineProps({
   payload: { type: Object, required: true },
@@ -87,42 +90,27 @@ const dateOnly = (v) => {
   return m ? `${m[2]}-${m[3]}-${m[1]}` : String(v);
 };
 
-const ROLE_LABELS = {
-  self: "Self",
-  spouse: "Spouse",
-  ceo: "CEO",
-  cfo: "CFO",
-  accountsPayable: "Accounts Payable",
-  banker: "Banker",
-  lawyer: "Lawyer",
-  financeDirector: "Finance Director"
-};
-// Required role per industry group — drives the "*" marker on the review contact rows.
-const REQUIRED_ROLES = {
-  individual: ["self"],
-  business: ["ceo", "cfo", "accountsPayable"],
-  government: ["financeDirector"]
-};
-// The roles relevant to each industry group, in display order.
-const GROUP_ROLES = {
-  individual: ["self", "spouse"],
-  business: ["ceo", "cfo", "accountsPayable", "banker", "lawyer"],
-  government: ["financeDirector", "accountsPayable"]
-};
-const roleHasAny = (r) => !!r && [r?.name, r?.email, r?.phone].some((x) => x && String(x).trim());
+// The role labels, order and required set come from modules/rems/remsContactRoles — the same definition
+// the form above is rendered from, so review shows the questions that were actually asked.
 
 const groups = computed(() => {
   const p = props.payload || {};
   const result = [];
 
-  // Contact
-  const contact = [
-    { label: "Client Name", value: val(p.clientName) },
+  // Contact. An individual's name is reviewed as the two parts they typed, so an error in either one is
+  // visible where it was made; every other entity type has the one name it gave.
+  const contact = isIndividual.value
+    ? [
+      { label: "First Name", value: val(p.clientFirstName) },
+      { label: "Last Name", value: val(p.clientLastName) }
+    ]
+    : [{ label: "Client/Entity Name", value: val(p.clientName) }];
+  contact.push(
     { label: "Email (locked)", value: val(props.lockedEmail || p.email) },
     { label: "Phone Number", value: val(p.mobileNumber) },
     { label: "Referral Source", value: referralSourceLabel(p.referralSource), hint: referralSourceHint(p.referralSource) },
     { label: "Referral Details", value: val(p.referralSourceDetail) }
-  ];
+  );
   if (isIndividual.value) {
     // The spouse is asked for once, in the Contacts card, and is reviewed there under "Spouse". These
     // three are retired, and appear only when a draft started before the change still carries one —
@@ -163,15 +151,19 @@ const groups = computed(() => {
     });
   }
 
-  // Additional Contacts (role contacts, in group order)
-  const roles = p.roles || {};
-  // The three business groups share one role set, so they all look up under "business".
-  const key = isBusinessIndustryGroup(props.industryGroup) ? "business" : props.industryGroup;
-  const order = GROUP_ROLES[key] || [];
-  const required = REQUIRED_ROLES[key] || [];
-  const contactRows = order
-    .filter((k) => roleHasAny(roles[k]))
-    .map((k) => ({ role: ROLE_LABELS[k], isRequired: required.includes(k), ...roles[k] }));
+  // Additional Contacts (role contacts, in group order). Any role the client answered that this group is
+  // no longer asked — a Banker on a form started before it was retired — is shown after the rest: the
+  // review step reports what will be submitted, and that contact will be.
+  const roles = normalizeRoles(p.roles);
+  const key = groupKey(props.industryGroup, isBusinessIndustryGroup(props.industryGroup));
+  const contactRows = roleDefsFor(key, answeredRoleKeys(roles))
+    .filter((def) => roleHasAny(roles[def.key]))
+    .map((def) => ({
+      role: def.label,
+      isRequired: def.required,
+      ...roles[def.key],
+      name: roleDisplayName(roles[def.key])
+    }));
   result.push({ title: "Additional Contacts", icon: "o_groups", kind: "contacts", rows: contactRows });
 
   // Other Entities — a contact each, not a second set of business details. Each becomes its own EMS.
@@ -187,15 +179,21 @@ const groups = computed(() => {
 
   // Billing — the person to bill, and nothing else. The billing ADDRESS lives with the other two in
   // Addresses, which is where the form asks for it; repeating it here showed one answer in two places.
-  result.push({
-    title: "Billing",
-    icon: "o_receipt_long",
-    kind: "fields",
-    rows: [
-      { label: "Billing Contact", value: val(p.billingContactName) },
-      { label: "Billing Email", value: val(p.billingEmail) }
-    ]
-  });
+  //
+  // Asked of individuals only: every other entity type names a Billing Contact among its contacts above,
+  // so this block would review the same person twice. Still shown on a non-individual form that carries
+  // an answer from before the change — this step reports what will be submitted.
+  if (isIndividual.value || p.billingContactName || p.billingEmail) {
+    result.push({
+      title: "Billing",
+      icon: "o_receipt_long",
+      kind: "fields",
+      rows: [
+        { label: "Billing Contact", value: val(p.billingContactName) },
+        { label: "Billing Email", value: val(p.billingEmail) }
+      ]
+    });
+  }
 
   return result;
 });

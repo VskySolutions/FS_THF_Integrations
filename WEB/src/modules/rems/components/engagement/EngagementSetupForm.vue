@@ -16,8 +16,9 @@
       <div class="row q-col-gutter-md">
         <!-- ── What the firm does, where the work sits, and who heads that ──────────────────────── -->
         <app-select
-          v-model="core.subServiceLine" :options="subServiceLineOptions" label="Service Line"
-          class="col-12 col-sm-4" :readonly="!editable"
+          v-model="core.subServiceLine" :options="subServiceLineOptions" label="Service Line" required
+          class="col-12 col-sm-4" :readonly="!editable" :clearable="false"
+          :rules="[requiredRule('a Service Line')]"
           info="From the REMS Service Line option list (Administration → Option Sets). What the firm is actually engaged to do."
         />
         <app-select
@@ -73,9 +74,9 @@
         <!-- How often, and how many bills over the engagement. The count is entered, not derived — a
              quarterly engagement is not automatically four bills. -->
         <app-select
-          v-model="core.billingPeriod" :options="billingPeriodOptions" label="Billing Period"
+          v-model="core.billingPeriod" :options="billingPeriodOptions" label="Billing Frequency"
           class="col-12 col-sm-6" :readonly="!editable"
-          info="From the REMS Billing Period option list (Administration → Option Sets)."
+          info="From the REMS Billing Frequency option list (Administration → Option Sets)."
         />
         <app-text-field
           v-model="core.numberOfBills" label="No. of Bills" type="number"
@@ -359,9 +360,12 @@ const dueDates = computed(() => {
   }
 });
 
-// Department, the engagement team and % Realization are mandatory (they are also the backend's
-// send-for-approval prerequisites), so Save & Next cannot pass with any of them blank. Service Line is
-// not among them: it kept the optional standing it had under its old name, and nothing branches on it.
+// Service Line, Department, the engagement team and % Realization are mandatory (they are also the
+// backend's send-for-approval prerequisites), so Save & Next cannot pass with any of them blank.
+//
+// Service Line joined them: it had kept the optional standing it inherited from the retired field whose
+// column it borrowed, but it is what the firm is actually engaged to DO — an engagement routed for
+// approval without one asks the approvers to sign off a piece of work nobody has named.
 const requiredRule = (what) => (v) => (v !== null && v !== undefined && v !== "") || `Select ${what}`;
 
 const feeRules = [(v) => v === "" || v === null || Number(v) >= 0 || "Enter a valid amount"];

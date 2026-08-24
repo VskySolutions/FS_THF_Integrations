@@ -14,6 +14,13 @@ public sealed class CreateRemsRequestRequest
     /// <summary>Client name at intake (required — filled from the selected person or free text).</summary>
     public string ClientName { get; set; } = string.Empty;
 
+    /// <summary>
+    /// The generational suffix on that name — Jr., Sr., II, III, IV — kept out of
+    /// <see cref="ClientName"/> so the two can be told apart afterwards. Optional and free text; the five
+    /// above are offered as suggestions rather than as the whole of what is allowed.
+    /// </summary>
+    public string? ClientNameSuffix { get; set; }
+
     /// <summary>Request type (option-set <c>REMS.Type</c> code, e.g. <c>brand_new_client</c>).</summary>
     public string Type { get; set; } = string.Empty;
     public string? Description { get; set; }
@@ -50,6 +57,10 @@ public sealed class UpdateRemsRequestRequest
     public string? Description { get; set; }
     public string? Type { get; set; }
     public string? ClientName { get; set; }
+
+    /// <summary>The client's generational suffix. Send <c>""</c> to clear it; omit it to leave it alone.</summary>
+    public string? ClientNameSuffix { get; set; }
+
     public string? CustomerEmail { get; set; }
     public string? CustomerMobileNumber { get; set; }
     public Guid? CSEId { get; set; }
@@ -163,7 +174,14 @@ public sealed record RemsRequestDetail(
     Guid Id,
     string RemsNumber,
     string? Description,
+    /// <summary>The client's name as it reads — the requested name with the suffix on it.</summary>
     string ClientName,
+    /// <summary>
+    /// The requested name WITHOUT the suffix, and the suffix itself. The form edits these two; every
+    /// other surface reads <see cref="ClientName"/>, which is the pair already joined.
+    /// </summary>
+    string RequestedClientName,
+    string? ClientNameSuffix,
     string Type,
     string Status,
     string? CustomerEmail,

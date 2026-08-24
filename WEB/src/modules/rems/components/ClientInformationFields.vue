@@ -86,6 +86,48 @@
         </div>
       </div>
 
+      <!-- The generational particle on the name — Jr., Sr., II, III, IV — in a box of its own rather
+           than typed into the search above. Two reasons it is separate: the search matches THF's client
+           records, and "John Smith Jr." finds nothing where "John Smith" finds the man; and a Person is
+           filed under a given name and a family name, neither of which "Jr." is. It is appended to the
+           name wherever the client is shown.
+           Free text with the five as suggestions: the list is what most clients need, not all any client
+           may have, and a suffix nobody thought to seed is not a reason to file somebody under the wrong
+           name. Locked with the rest of the client's identity once the intake form has gone out. -->
+      <app-text-field
+        v-model="model.clientNameSuffix" label="Suffix" class="col-12 col-sm-6 col-md-2"
+        placeholder="Jr." :readonly="readonly || clientLocked"
+        :error="suffixTooLong" error-message="A suffix is at most 16 characters."
+      >
+        <template #append>
+          <q-icon v-if="clientLocked" name="o_lock" size="18px" color="grey-6" />
+          <q-btn
+            v-else-if="!readonly" flat dense round size="sm" icon="o_arrow_drop_down" color="grey-7"
+            aria-label="Suffix suggestions"
+          >
+            <q-menu anchor="bottom end" self="top end" auto-close>
+              <q-list dense style="min-width: 150px;">
+                <q-item
+                  v-for="opt in SUFFIX_OPTIONS" :key="opt.value"
+                  clickable :active="model.clientNameSuffix === opt.value"
+                  active-class="bg-grey-2 text-primary"
+                  @click="model.clientNameSuffix = opt.value"
+                >
+                  <q-item-section>
+                    <q-item-label>{{ opt.label }}</q-item-label>
+                    <q-item-label caption>{{ opt.caption }}</q-item-label>
+                  </q-item-section>
+                </q-item>
+                <q-separator />
+                <q-item clickable :disable="!model.clientNameSuffix" @click="model.clientNameSuffix = ''">
+                  <q-item-section class="text-grey-7">No suffix</q-item-section>
+                </q-item>
+              </q-list>
+            </q-menu>
+          </q-btn>
+        </template>
+      </app-text-field>
+
       <!-- Required, not "one of email or mobile": the intake form is emailed, so a request without an
            address has nowhere to send the thing the whole request exists to collect. -->
       <app-text-field
@@ -106,10 +148,10 @@
         </template>
       </app-text-field>
 
-      <!-- Country + number: one component, two cells of the row it is given. -->
+      <!-- Country + number: one component, one cell of the row it is given. -->
       <app-phone-input
         v-model="model.customerMobileNumber" v-model:country="mobileCountry"
-        label="Client Phone Number" class="col-12 col-md-5" :readonly="readonly || clientLocked"
+        label="Client Phone Number" class="col-12 col-sm-6 col-md-3" :readonly="readonly || clientLocked"
       />
     </div>
 
@@ -207,6 +249,7 @@ import { useNotify } from "composables/useNotify";
 import {
   useRemsMeta, REMS_EXISTING_CLIENT_TYPES, REMS_TYPE_BRAND_NEW_CLIENT, REMS_TYPE_EXISTING_CLIENT
 } from "modules/rems/useRemsMeta";
+import { CLIENT_NAME_SUFFIXES } from "modules/rems/remsContactRoles";
 import { dialFromIso, DEFAULT_COUNTRY_ISO } from "composables/useCountries";
 
 import AppTextField from "components/common/AppTextField.vue";
@@ -301,6 +344,12 @@ const uploadAttachments = async (remsId = null) => {
 defineExpose({ uploadAttachments });
 
 const hasEmail = computed(() => !!model.customerEmail?.trim());
+
+// The suffix suggestions, and the one thing that can be wrong with a free-text suffix. Checked here so
+// the field says so while it is being typed rather than the save coming back with a 400 on a name
+// particle.
+const SUFFIX_OPTIONS = CLIENT_NAME_SUFFIXES;
+const suffixTooLong = computed(() => (model.clientNameSuffix?.trim().length || 0) > 16);
 
 // ---- Client lookup ----
 const clientQuery = ref(model.clientName || "");
@@ -460,6 +509,9 @@ const detachClient = () => {
 const clearClient = () => {
   clientQuery.value = "";
   model.clientName = "";
+  // The suffix belongs to the name it was typed beside, so it goes with it. Left standing, the next
+  // client typed into this box would inherit the last one's "Jr.".
+  model.clientNameSuffix = "";
   runLookup("");
   detachClient();
   if (!props.clientLocked) model.customerEmail = "";

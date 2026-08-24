@@ -13,6 +13,9 @@ public sealed class CreateRemsRequestRequestValidator : AbstractValidator<Create
     public CreateRemsRequestRequestValidator()
     {
         RuleFor(x => x.ClientName).NotEmpty().WithMessage("clientName is required.").MaximumLength(200);
+        // A name particle, not a second name field — the column is nvarchar(16). Free text rather than a
+        // closed set: the five offered in the picker are what most clients need, not all a client may have.
+        RuleFor(x => x.ClientNameSuffix).MaximumLength(16).When(x => !string.IsNullOrWhiteSpace(x.ClientNameSuffix));
         // The partner's message is client-facing now and holds pasted correspondence; the column is
         // nvarchar(max), so nothing is capped here either.
         // No reviewing admin is asked for. A request is raised for the admins as a body, not for one of
@@ -37,6 +40,8 @@ public sealed class UpdateRemsRequestRequestValidator : AbstractValidator<Update
     public UpdateRemsRequestRequestValidator()
     {
         RuleFor(x => x.ClientName).NotEmpty().MaximumLength(200).When(x => x.ClientName is not null);
+        // Not NotEmpty: "" is how the suffix is CLEARED, which an omitted field cannot say.
+        RuleFor(x => x.ClientNameSuffix).MaximumLength(16).When(x => x.ClientNameSuffix is not null);
         RuleFor(x => x.CustomerEmail).EmailAddress().MaximumLength(256).When(x => !string.IsNullOrWhiteSpace(x.CustomerEmail));
         RuleFor(x => x.CustomerMobileNumber).MaximumLength(32).When(x => !string.IsNullOrWhiteSpace(x.CustomerMobileNumber));
         RuleFor(x => x.Type).Must(RemsRequestOptionCodes.IsKnownType)

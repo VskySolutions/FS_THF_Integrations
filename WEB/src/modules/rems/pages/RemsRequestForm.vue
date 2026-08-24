@@ -46,10 +46,11 @@
             v-if="request" outline no-caps color="primary" icon="o_forum" label="Conversation"
             @click="conversationOpen = true"
           />
-          <q-btn
-            v-if="hasSubmission" outline no-caps color="primary" icon="o_description"
-            label="View submitted form" @click="submittedOpen = true"
-          />
+          <!-- "View submitted form" stood here, opening a modal over the page. The client's answers are
+               the thing the setup below is filled in AGAINST, and a modal made checking one against the
+               other a matter of opening it, reading, closing, and remembering. They are a pane of this
+               page now (see the splitter below), which appears as soon as the client has answered. -->
+
           <!-- What the client has actually been sent, and whether it landed. Beside Send Reminder rather
                than buried on a list, because "have we already chased them twice?" is the question asked
                immediately before pressing it. -->
@@ -150,196 +151,238 @@
         {{ lockedReason }}
       </q-banner>
 
-      <!-- ─── The form, one tab per part of the referral ──────────────────────────────────────────── -->
-      <q-card flat bordered class="rf-card">
-        <div class="rf-tabbar">
-          <q-tabs
-            v-model="tab" dense align="left" active-color="primary" indicator-color="primary"
-            class="text-grey-7 rf-tabs col" no-caps inline-label
-          >
-            <q-tab
-              v-for="t in tabs" :key="t.name" :name="t.name" :icon="t.icon" :label="t.label" :disable="t.disable"
-            />
-          </q-tabs>
+      <!-- ─── The workspace: the client's answers beside the referral being built from them ────────── -->
+      <!-- Once the client has submitted, this page is two things read against each other — what they
+           told us, and what the firm is filling in on the strength of it. So they sit side by side,
+           with a divider the reader can drag: 40 / 60 to start, because the left pane is a record to
+           consult and the right one is the work. Before the client answers there is nothing to put in
+           the left pane and the form has the page to itself. -->
+      <div ref="workRef" class="rf-work" :class="{ 'rf-work--split': showSubmittedPane }">
+        <template v-if="showSubmittedPane">
+          <div class="rf-work__pane" :style="{ flexBasis: `${splitPct}%` }">
+            <q-card flat bordered class="rf-card rf-submitted">
+              <div class="rf-submitted__head">
+                <q-icon name="o_description" size="18px" color="primary" class="q-mr-xs" />
+                <div class="col">
+                  <div class="text-subtitle2 text-weight-medium">Submitted EMS Form</div>
+                  <div class="text-caption text-grey-7">
+                    Read-only snapshot of exactly what the client submitted.
+                  </div>
+                </div>
+              </div>
+              <q-separator />
+              <div class="rf-submitted__body">
+                <submitted-form-panel :rems-id="remsId" />
+              </div>
+            </q-card>
+          </div>
 
-          <div class="rf-tabs__end">
-            <!-- The one thing the tab strip cannot say for itself — why the rest of it is greyed out —
+          <!-- Draggable, and reachable from the keyboard: the arrow keys move it in steps, Home puts it
+               back to the 40 / 60 it starts at. A divider that only answers a mouse is a divider some
+               readers cannot move. -->
+          <div
+            class="rf-work__gutter" role="separator" tabindex="0"
+            aria-label="Resize the submitted form pane"
+            aria-orientation="vertical"
+            :aria-valuenow="Math.round(splitPct)" :aria-valuemin="MIN_SPLIT" :aria-valuemax="MAX_SPLIT"
+            @pointerdown="startDrag" @dblclick="setSplit(DEFAULT_SPLIT)" @keydown="onGutterKey"
+          >
+            <span class="rf-work__grip" />
+          </div>
+        </template>
+
+        <div class="rf-work__pane rf-work__pane--main">
+          <q-card flat bordered class="rf-card">
+            <div class="rf-tabbar">
+              <q-tabs
+                v-model="tab" dense align="left" active-color="primary" indicator-color="primary"
+                class="text-grey-7 rf-tabs col" no-caps inline-label
+              >
+                <q-tab
+                  v-for="t in tabs" :key="t.name" :name="t.name" :icon="t.icon" :label="t.label" :disable="t.disable"
+                />
+              </q-tabs>
+
+              <div class="rf-tabs__end">
+                <!-- The one thing the tab strip cannot say for itself — why the rest of it is greyed out —
                  parked at the end of the strip it is about, and only while it is still true. A banner
                  over the form said it louder than it deserves and pushed the form down for everyone. -->
-            <q-icon v-if="tabsNote" name="o_info" size="20px" color="primary" class="rf-tabs__note">
-              <q-tooltip anchor="bottom right" self="top right" max-width="320px" :delay="200">
-                {{ tabsNote }}
-              </q-tooltip>
-            </q-icon>
+                <q-icon v-if="tabsNote" name="o_info" size="20px" color="primary" class="rf-tabs__note">
+                  <q-tooltip anchor="bottom right" self="top right" max-width="320px" :delay="200">
+                    {{ tabsNote }}
+                  </q-tooltip>
+                </q-icon>
 
-            <!-- Step back. Absent on the first tab, and on a new request, where there is nowhere behind
+                <!-- Step back. Absent on the first tab, and on a new request, where there is nowhere behind
                  the one tab that works. -->
-            <q-btn
-              v-if="prevTab" flat dense no-caps color="primary" icon="o_chevron_left" label="Prev"
-              class="q-px-sm" @click="goTab(prevTab.name)"
-            >
-              <q-tooltip>{{ prevTab.label }}</q-tooltip>
-            </q-btn>
+                <q-btn
+                  v-if="prevTab" flat dense no-caps color="primary" icon="o_chevron_left" label="Prev"
+                  class="q-px-sm" @click="goTab(prevTab.name)"
+                >
+                  <q-tooltip>{{ prevTab.label }}</q-tooltip>
+                </q-btn>
 
-            <!-- The ONE save left on the page — a request has to exist before anything can be auto-saved
+                <!-- The ONE save left on the page — a request has to exist before anything can be auto-saved
                  against it, so on a brand-new request the create IS the step forward. It is gone the
                  moment it has run, which is also when the strip wants its width back. -->
-            <q-btn
-              v-if="isNew" unelevated no-caps dense color="primary" icon-right="o_arrow_right"
-              label="Save as Draft &amp; Next" class="q-px-md" :loading="saving" @click="createDraft"
-            />
+                <q-btn
+                  v-if="isNew" unelevated no-caps dense color="primary" icon-right="o_arrow_right"
+                  label="Save as Draft &amp; Next" class="q-px-md" :loading="saving" @click="createDraft"
+                />
 
-            <!-- Filled while stepping on is the thing to do here, outlined where it shares the corner
+                <!-- Filled while stepping on is the thing to do here, outlined where it shares the corner
                  with the two ways out — on that tab they are the point and this is the aside. -->
-            <q-btn
-              v-else-if="showNext" dense no-caps color="primary" icon-right="o_chevron_right"
-              label="Next" class="q-px-md" :outline="atFinishTab" :unelevated="!atFinishTab"
-              @click="goTab(nextTab.name)"
-            >
-              <q-tooltip>{{ nextTab.label }}</q-tooltip>
-            </q-btn>
+                <q-btn
+                  v-else-if="showNext" dense no-caps color="primary" icon-right="o_chevron_right"
+                  label="Next" class="q-px-md" :outline="atFinishTab" :unelevated="!atFinishTab"
+                  @click="goTab(nextTab.name)"
+                >
+                  <q-tooltip>{{ nextTab.label }}</q-tooltip>
+                </q-btn>
 
-            <!-- Commission is where the initiator's own work ends: past it the tabs are the client's
+                <!-- Commission is where the initiator's own work ends: past it the tabs are the client's
                  answers and the approvers' round, neither of which they fill in. So instead of stepping
                  on, this is where the two ways out live. -->
-            <template v-if="atFinishTab">
-              <q-btn
-                v-if="autoSaveOn" outline dense no-caps color="primary" icon="o_save"
-                label="Save and Close" class="q-px-md" :loading="saveState === 'saving'"
-                @click="saveAndClose"
-              />
-              <q-btn
-                v-if="canSendToClient" unelevated dense no-caps color="teal-7" icon="o_send"
-                label="Submit to Client" class="q-px-md" :disable="!readyToSend" @click="openSend"
-              >
-                <q-tooltip v-if="!readyToSend">{{ sendBlockedReason }}</q-tooltip>
-              </q-btn>
-            </template>
-          </div>
-        </div>
-        <q-separator />
+                <template v-if="atFinishTab">
+                  <q-btn
+                    v-if="autoSaveOn" outline dense no-caps color="primary" icon="o_save"
+                    label="Save and Close" class="q-px-md" :loading="saveState === 'saving'"
+                    @click="saveAndClose"
+                  />
+                  <q-btn
+                    v-if="canSendToClient" unelevated dense no-caps color="teal-7" icon="o_send"
+                    label="Submit to Client" class="q-px-md" :disable="!readyToSend" @click="openSend"
+                  >
+                    <q-tooltip v-if="!readyToSend">{{ sendBlockedReason }}</q-tooltip>
+                  </q-btn>
+                </template>
+              </div>
+            </div>
+            <q-separator />
 
-        <q-tab-panels v-model="tab" keep-alive animated>
-          <!-- ---------- Client Information ---------- -->
-          <q-tab-panel name="client">
-            <detail-grid v-if="!isEditing" :rows="clientRows" />
-            <!-- Entity Type and Industry are the page's to save — one belongs to the request's EMS form
+            <q-tab-panels v-model="tab" keep-alive animated>
+              <!-- ---------- Client Information ---------- -->
+              <q-tab-panel name="client">
+                <detail-grid v-if="!isEditing" :rows="clientRows" />
+                <!-- Entity Type and Industry are the page's to save — one belongs to the request's EMS form
                  record and the other to its engagement, neither to the client row — but this tab's to
                  lay out, because both describe the client. They are v-modelled down rather than rendered
                  in a row of their own up here. -->
-            <client-information-fields
-              v-else
-              ref="clientFieldsRef"
-              v-model="clientForm"
-              v-model:industry-group="setupForm.industryGroup"
-              v-model:sub-industry="setupForm.subIndustry"
-              :readonly="!canEditClient"
-              :client-locked="clientLocked"
-              :setup-readonly="!canEditSetup"
-              :industry-group-options="industryGroupOptions"
-              :industry-locked="industryLocked"
-              :sub-industry-options="subIndustryOptions"
-              :type-options="typeOptions"
-              :files="request?.files || []"
-              :attempted="attempted"
-              @change="markDirty('client')"
-            />
+                <client-information-fields
+                  v-else
+                  ref="clientFieldsRef"
+                  v-model="clientForm"
+                  v-model:industry-group="setupForm.industryGroup"
+                  v-model:sub-industry="setupForm.subIndustry"
+                  :readonly="!canEditClient"
+                  :client-locked="clientLocked"
+                  :setup-readonly="!canEditSetup"
+                  :industry-group-options="industryGroupOptions"
+                  :industry-locked="industryLocked"
+                  :sub-industry-options="subIndustryOptions"
+                  :type-options="typeOptions"
+                  :files="request?.files || []"
+                  :attempted="attempted"
+                  @change="markDirty('client')"
+                />
 
-            <!-- The client's other businesses, and whether each has been turned into its own request yet.
+                <!-- The client's other businesses, and whether each has been turned into its own request yet.
                  Shown whether the tab is being read or edited: it is a list with one action, not a field
                  anybody fills in. -->
-            <additional-entities-panel
-              v-if="additionalEntities.length" :rows="additionalEntities" class="q-mt-md"
-              @create-ems="createFollowUp"
-            />
-          </q-tab-panel>
+                <additional-entities-panel
+                  v-if="additionalEntities.length" :rows="additionalEntities" class="q-mt-md"
+                  @create-ems="createFollowUp"
+                />
+              </q-tab-panel>
 
-          <!-- ---------- Engagement Setup ---------- -->
-          <q-tab-panel name="setup">
-            <div v-if="!setupEngagement" class="text-grey-7">{{ noEngagementNote }}</div>
+              <!-- ---------- Engagement Setup ---------- -->
+              <q-tab-panel name="setup">
+                <div v-if="!setupEngagement" class="text-grey-7">{{ noEngagementNote }}</div>
 
-            <detail-grid v-else-if="!isEditing" :rows="setupRows" />
+                <detail-grid v-else-if="!isEditing" :rows="setupRows" />
 
-            <!-- The CSE is the page's to save (it belongs to the request's EMS form record, not to the
+                <!-- The CSE is the page's to save (it belongs to the request's EMS form record, not to the
                  engagement) but the setup form's to lay out — it sits with the other two people who run
                  the engagement, so it is v-modelled down rather than rendered up here in a row of its
                  own. The entity type goes down read-only: the Government Audit card keys off it. -->
-            <engagement-setup-form
-              v-else
-              ref="setupRef"
-              v-model:cse-user-id="setupForm.cseUserId"
-              :engagement="setupEngagement"
-              :cse-options="cseOptions"
-              :cse-hint="cseHint"
-              :industry-group="setupForm.industryGroup"
-              :dept-options="departmentOptions"
-              :sub-service-line-options="subServiceLineOptions"
-              :tax-form-options="taxFormOptions"
-              :tax-form-unavailable="taxFormUnavailable"
-              :department-directors="workspace?.departmentDirectors || []"
-              :executive-options="executiveOptions"
-              :billing-manager-options="billingManagerOptions"
-              :billing-period-options="billingPeriodOptions"
-              :editable="canEditSetup"
-              @change="markDirty('setup')"
-            />
-          </q-tab-panel>
+                <engagement-setup-form
+                  v-else
+                  ref="setupRef"
+                  v-model:cse-user-id="setupForm.cseUserId"
+                  :engagement="setupEngagement"
+                  :cse-options="cseOptions"
+                  :cse-hint="cseHint"
+                  :industry-group="setupForm.industryGroup"
+                  :dept-options="departmentOptions"
+                  :sub-service-line-options="subServiceLineOptions"
+                  :tax-form-options="taxFormOptions"
+                  :tax-form-unavailable="taxFormUnavailable"
+                  :department-directors="workspace?.departmentDirectors || []"
+                  :executive-options="executiveOptions"
+                  :billing-manager-options="billingManagerOptions"
+                  :billing-period-options="billingPeriodOptions"
+                  :editable="canEditSetup"
+                  @change="markDirty('setup')"
+                />
+              </q-tab-panel>
 
-          <!-- ---------- Marketing ---------- -->
-          <q-tab-panel v-if="setupEngagement" name="marketing">
-            <detail-grid v-if="!isEditing" :rows="marketingRows" />
-            <engagement-marketing
-              v-else
-              ref="marketingRef"
-              :engagement="setupEngagement" :marketing-groups="marketingGroups"
-              :marketing-unavailable="marketingUnavailable" :editable="canEditSetup"
-              @change="markDirty('marketing')"
-            />
-          </q-tab-panel>
+              <!-- ---------- Marketing ---------- -->
+              <q-tab-panel v-if="setupEngagement" name="marketing">
+                <detail-grid v-if="!isEditing" :rows="marketingRows" />
+                <engagement-marketing
+                  v-else
+                  ref="marketingRef"
+                  :engagement="setupEngagement" :marketing-groups="marketingGroups"
+                  :marketing-unavailable="marketingUnavailable" :editable="canEditSetup"
+                  @change="markDirty('marketing')"
+                />
+              </q-tab-panel>
 
-          <!-- ---------- Commission ---------- -->
-          <q-tab-panel v-if="setupEngagement" name="commission">
-            <!-- On the panel rather than inside the form below it, so it is there whether the tab is being
+              <!-- ---------- Commission ---------- -->
+              <q-tab-panel v-if="setupEngagement" name="commission">
+                <!-- On the panel rather than inside the form below it, so it is there whether the tab is being
                  read or filled in. The number is ambiguous either way: "40%" beside a name says nothing
                  about what it is 40% OF, and the fee and the realization on the setup tab are both
                  percentages this could plausibly be read against. -->
-            <div class="rf-hint">The percentage represents percentage of commission.</div>
-            <detail-grid v-if="!isEditing" :rows="commissionRows" />
-            <engagement-commission
-              v-else
-              ref="commissionRef"
-              :engagement="setupEngagement" :recipient-options="cseOptions" :editable="canEditSetup"
-              @change="markDirty('commission')"
-            />
-          </q-tab-panel>
+                <div class="rf-hint">The percentage represents percentage of commission.</div>
+                <detail-grid v-if="!isEditing" :rows="commissionRows" />
+                <engagement-commission
+                  v-else
+                  ref="commissionRef"
+                  :engagement="setupEngagement" :recipient-options="cseOptions" :editable="canEditSetup"
+                  @change="markDirty('commission')"
+                />
+              </q-tab-panel>
 
-          <!-- The Client Intake tab stood here: the materialised client record and the main entity's
+              <!-- The Client Intake tab stood here: the materialised client record and the main entity's
                addresses, restated on a tab of their own. "View Submitted Form" in the header shows the
                client's answers already, from the immutable snapshot rather than from a second copy of
                them, so the tab was the same page twice. Its Other Entities list was not a restatement —
                it carries the Create EMS action — and moved up to the Client tab with the rest of what is
                known about the client. -->
 
-          <!-- ---------- Approval ---------- -->
-          <!-- Only ever reached by someone who may read it: the approver list is gated on managing
+              <!-- ---------- Approval ---------- -->
+              <!-- Only ever reached by someone who may read it: the approver list is gated on managing
                engagements, so for everyone else this tab does not exist until a round has actually been
                opened, and then shows the record of it rather than the controls for running one. -->
-          <q-tab-panel v-if="showApprovalTab" name="approval">
-            <template v-if="engagement">
-              <engagement-approval
-                v-if="canManageApproval"
-                :engagement="engagement" :can-send="canRouteForApproval"
-                :marketing-saved="marketingComplete" @status-changed="load"
-              />
-              <q-banner v-else dense class="rf-alert rf-alert--lock">
-                <template #avatar><q-icon name="o_gavel" color="blue-9" /></template>
-                {{ approvalNote }}
-              </q-banner>
-              <approval-history :engagement-id="engagement.id" class="q-mt-md" />
-            </template>
-          </q-tab-panel>
-        </q-tab-panels>
-      </q-card>
+              <q-tab-panel v-if="showApprovalTab" name="approval">
+                <template v-if="engagement">
+                  <engagement-approval
+                    v-if="canManageApproval"
+                    :engagement="engagement" :can-send="canRouteForApproval"
+                    :marketing-saved="marketingComplete" @status-changed="load"
+                  />
+                  <q-banner v-else dense class="rf-alert rf-alert--lock">
+                    <template #avatar><q-icon name="o_gavel" color="blue-9" /></template>
+                    {{ approvalNote }}
+                  </q-banner>
+                  <approval-history :engagement-id="engagement.id" class="q-mt-md" />
+                </template>
+              </q-tab-panel>
+            </q-tab-panels>
+          </q-card>
+        </div>
+      </div>
 
       <!-- No action bar. Every button that stood here is in one of the two corners at the top of the page
            — the workflow moves in the header, stepping through the form on the tab strip — so the page
@@ -357,7 +400,6 @@
       <send-ems-dialog
         v-model="reminderOpen" mode="reminder" :rems-id="remsId" :subtitle="subtitle" @sent="load"
       />
-      <submitted-form-dialog v-model="submittedOpen" :rems-id="remsId" />
       <conversation-dialog v-model="conversationOpen" :request-id="remsId" :subtitle="subtitle" />
       <email-log-dialog v-model="emailLogOpen" :rems-id="remsId" :subtitle="subtitle" @sent="load" />
     </template>
@@ -399,6 +441,7 @@ import {
   useRemsMeta, useRemsOptionSets, useRemsEngagementOptionSets, useRemsIndustryGroups, REMS_SEAT_ROLES
 } from "modules/rems/useRemsMeta";
 import { useAutoSave } from "modules/rems/useAutoSave";
+import { clientDisplayName } from "modules/rems/remsContactRoles";
 import { REMS_STATUS } from "modules/rems/remsStatus";
 import { useAuthStore } from "stores/auth";
 
@@ -414,7 +457,7 @@ import EngagementMarketing from "modules/rems/components/engagement/EngagementMa
 import EngagementCommission from "modules/rems/components/engagement/EngagementCommission.vue";
 import EngagementApproval from "modules/rems/components/engagement/EngagementApproval.vue";
 import SendEmsDialog from "modules/rems/components/SendEmsDialog.vue";
-import SubmittedFormDialog from "modules/rems/components/SubmittedFormDialog.vue";
+import SubmittedFormPanel from "modules/rems/components/SubmittedFormPanel.vue";
 import ConversationDialog from "modules/rems/components/ConversationDialog.vue";
 import EmailLogDialog from "modules/rems/components/EmailLogDialog.vue";
 
@@ -470,7 +513,6 @@ const marketingRef = ref(null);
 const commissionRef = ref(null);
 
 const conversationOpen = ref(false);
-const submittedOpen = ref(false);
 const emailLogOpen = ref(false);
 const sendOpen = ref(false);
 const reminderOpen = ref(false);
@@ -478,6 +520,8 @@ const sendBackOpen = ref(false);
 
 const blankClient = () => ({
   clientName: "",
+  // The generational suffix, kept apart from the name — see ClientInformationFields for why.
+  clientNameSuffix: "",
   customerEmail: "",
   customerMobileNumber: "",
   type: "",
@@ -714,8 +758,87 @@ const sendBlockedReason = computed(() => {
   return "";
 });
 
-// Whether the client has answered — what puts "View Submitted Form" in the header.
+// Whether the client has answered — what puts their form in the left pane.
 const hasSubmission = computed(() => !!workspace.value?.client);
+
+// ---- The submitted-form pane ----
+// Shown whenever there is a submission to show, in BOTH modes: reading a request and correcting one are
+// each done against what the client actually said, and the button that used to open it in a modal is
+// gone from the header. A request being composed has no client and no answers, so no pane.
+const showSubmittedPane = computed(() => !isNew.value && hasSubmission.value);
+// No ref on the panel. A submission is immutable and the pane mounts the moment one exists, so it loads
+// once and there is never anything to refresh it with.
+
+// 40 / 60 — the left pane is a record to consult, the right one is the work. Kept per browser once the
+// reader moves it: a preference about how somebody reads, not a fact about the request, so it is not
+// worth a round trip and it should not follow them onto a colleague's screen.
+const DEFAULT_SPLIT = 40;
+const MIN_SPLIT = 25;
+const MAX_SPLIT = 65;
+const SPLIT_KEY = "rems.request.splitPct";
+
+const clampSplit = (pct) => Math.min(MAX_SPLIT, Math.max(MIN_SPLIT, pct));
+
+const readStoredSplit = () => {
+  try {
+    const stored = Number(window.localStorage.getItem(SPLIT_KEY));
+    // Clamped on the way in as well as on the way out: what comes back is whatever is in that browser's
+    // storage, which a previous version's limits — or a person with the developer tools open — may not
+    // agree with.
+    return Number.isFinite(stored) && stored > 0 ? clampSplit(stored) : DEFAULT_SPLIT;
+  } catch {
+    // Private windows and blocked site data throw on the accessor itself. The default is a fine answer.
+    return DEFAULT_SPLIT;
+  }
+};
+
+const workRef = ref(null);
+const splitPct = ref(readStoredSplit());
+
+const setSplit = (pct) => {
+  splitPct.value = clampSplit(pct);
+  try {
+    window.localStorage.setItem(SPLIT_KEY, String(splitPct.value));
+  } catch { /* nothing to do — the pane simply starts at the default next time */ }
+};
+
+// Pointer events rather than mouse: the same handler then covers a trackpad, a touch screen and a pen,
+// and setPointerCapture keeps the drag alive when the pointer outruns the four-pixel gutter.
+const startDrag = (event) => {
+  const box = workRef.value?.getBoundingClientRect();
+  if (!box?.width) return;
+  event.preventDefault();
+  const target = event.currentTarget;
+  target.setPointerCapture?.(event.pointerId);
+
+  const move = (e) => setSplit(((e.clientX - box.left) / box.width) * 100);
+  const stop = () => {
+    // Throws NotFoundError when the pointer is already gone, which is exactly the case a pointercancel
+    // reports — and the listeners below still have to come off either way.
+    try { target.releasePointerCapture?.(event.pointerId); } catch { /* already released */ }
+    target.removeEventListener("pointermove", move);
+    target.removeEventListener("pointerup", stop);
+    target.removeEventListener("pointercancel", stop);
+    document.body.classList.remove("rf-dragging");
+  };
+
+  // On the gutter itself, which holds the capture — a listener on the document would keep firing after
+  // the page navigated away mid-drag.
+  target.addEventListener("pointermove", move);
+  target.addEventListener("pointerup", stop);
+  target.addEventListener("pointercancel", stop);
+  // Stops the drag from selecting the text it passes over, and keeps the resize cursor throughout.
+  document.body.classList.add("rf-dragging");
+};
+
+const onGutterKey = (event) => {
+  const step = event.shiftKey ? 10 : 2;
+  if (event.key === "ArrowLeft") setSplit(splitPct.value - step);
+  else if (event.key === "ArrowRight") setSplit(splitPct.value + step);
+  else if (event.key === "Home") setSplit(DEFAULT_SPLIT);
+  else return;
+  event.preventDefault();
+};
 const marketingComplete = computed(() => (engagement.value?.marketingMethodIds?.length || 0) > 0);
 const openSendBack = computed(() => sendBacks.value.find((s) => !s.resolvedOnUtc) || null);
 const declinedReasons = ref([]);
@@ -846,7 +969,9 @@ const commissionLabels = computed(() =>
     .map((s) => `${s.employee?.name || nameOf(cseOptions.value, s.employeeId)} — ${s.percentage}%`));
 
 const clientRows = computed(() => [
-  { label: "Client", value: clientForm.clientName },
+  // Read as one name, with the suffix on it — the pair is edited as two boxes because they are two
+  // different things to store, not because they are two things about the client.
+  { label: "Client", value: clientDisplayName(clientForm.clientName, clientForm.clientNameSuffix) },
   { label: "Client Email Address", value: clientForm.customerEmail },
   { label: "Client Phone Number", value: clientForm.customerMobileNumber },
   { label: "Relationship to THF", value: labelOf(typeOptions.value, clientForm.type) },
@@ -887,7 +1012,7 @@ const setupRows = computed(() => {
     { label: "Billing Manager", value: e.billingManager?.name },
     { label: "First-Year Fee Estimate", value: currency(e.firstYearFeeEstimate) },
     { label: "% Realization", value: e.realizationPercentage == null ? "" : `${e.realizationPercentage}%` },
-    { label: "Billing Period", value: labelOf(billingPeriodOptions.value, e.billingPeriod) },
+    { label: "Billing Frequency", value: labelOf(billingPeriodOptions.value, e.billingPeriod) },
     { label: "No. of Bills", value: e.numberOfBills },
     // The conditional blocks say nothing when they do not apply to this engagement, so they are hidden
     // rather than shown empty — unlike the fields above, where blank IS the record.
@@ -931,7 +1056,10 @@ const loadPickers = async () => {
 let pendingSetupPick = null;
 
 const seedForms = (detail, ws) => {
-  clientForm.clientName = detail.clientName || "";
+  // requestedClientName, not clientName: the latter is the pair already joined, and seeding it into the
+  // search box would put "John Smith Jr." into a field that looks its clients up by name.
+  clientForm.clientName = detail.requestedClientName ?? detail.clientName ?? "";
+  clientForm.clientNameSuffix = detail.clientNameSuffix || "";
   clientForm.customerEmail = detail.customerEmail || "";
   clientForm.customerMobileNumber = detail.customerMobileNumber || "";
   clientForm.type = detail.type || "";
@@ -992,6 +1120,9 @@ const clientProblem = () => {
 const clientPayload = () => ({
   type: clientForm.type,
   clientName: clientForm.clientName,
+  // "" rather than null, deliberately: the endpoint reads an omitted field as "leave it alone", so a
+  // suffix taken back off would otherwise stay on the record.
+  clientNameSuffix: clientForm.clientNameSuffix || "",
   customerEmail: clientForm.customerEmail || null,
   customerMobileNumber: clientForm.customerMobileNumber || null,
   existingClientReferenceId: clientForm.existingClientReferenceId || null
@@ -1327,6 +1458,96 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", warnOnUnload));
 .rf-card {
   border-radius: 12px;
 }
+
+/* ── The two panes ────────────────────────────────────────────────────────────────────────────────
+   With a submission to show this is a flex row: the submitted form on a flex-basis the reader drags, the
+   referral form taking whatever is left. WITHOUT one — a new request, a draft, anything the client has
+   not answered yet — it is an ordinary block and the form has the page, exactly as it did before the
+   pane existed.
+   The flex declarations belong to --split for that reason. Left on the wrapper unconditionally, a lone
+   pane is a flex item at its initial `flex: 0 1 auto`, which sizes it to its CONTENT rather than to the
+   row: the form came out about 60% wide on /rems/requests/new and narrower still on a short tab. */
+.rf-work {
+  min-width: 0;
+}
+.rf-work--split {
+  display: flex;
+  align-items: flex-start;
+}
+.rf-work__pane {
+  min-width: 0;   /* without it a wide table inside a pane sets the pane's width and the drag does nothing */
+}
+/* flex-basis is set inline from the split percentage; growing is the other pane's job. */
+.rf-work--split .rf-work__pane { flex: 0 0 auto; }
+.rf-work--split .rf-work__pane--main { flex: 1 1 0; }
+
+.rf-work__gutter {
+  flex: 0 0 12px;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  /* The hit area is twelve pixels; the line drawn inside it is two. A four-pixel target is a target
+     people miss. */
+  touch-action: none;
+}
+.rf-work__grip {
+  width: 2px;
+  height: 44px;
+  border-radius: 2px;
+  background: var(--line);
+  transition: background 0.15s, height 0.15s;
+}
+.rf-work__gutter:hover .rf-work__grip,
+.rf-work__gutter:focus-visible .rf-work__grip {
+  background: var(--q-primary);
+  height: 72px;
+}
+.rf-work__gutter:focus-visible {
+  outline: 2px solid var(--teal-500);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+/* The submitted form scrolls inside its own pane rather than making the page taller: the point of the
+   split is that both halves are on screen together. Sticky so the pane keeps pace as the form beside it
+   is scrolled. */
+.rf-submitted {
+  position: sticky;
+  top: 12px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 140px);
+}
+.rf-submitted__head {
+  display: flex;
+  align-items: flex-start;
+  padding: 12px 14px;
+}
+.rf-submitted__body {
+  overflow: auto;
+  padding: 14px;
+}
+
+/* Under a laptop there is no width to split: two panes of a 1024px page leave the left one too narrow to
+   read an address in and the right one too narrow to lay a form out in. They stack instead, the client's
+   answers first — they are what the rest is filled in against. */
+@media (max-width: 1023px) {
+  .rf-work--split {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  /* `auto` basis, !important, because the inline flex-basis from the drag would otherwise set the
+     HEIGHT of the stacked pane. */
+  .rf-work--split .rf-work__pane { flex: 1 1 auto !important; }
+  .rf-work__gutter { display: none; }
+  .rf-submitted {
+    position: static;
+    max-height: 60vh;
+    margin-bottom: 16px;
+  }
+}
 .rf-tabs {
   padding: 0 4px;
   /* col gives flex-basis 0; without this the strip cannot shrink past its tabs and its own overflow
@@ -1420,4 +1641,13 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", warnOnUnload));
 
 /* The action bar that used to close the page is gone — every button is in the header or on the tab strip
    now, so the form ends on its last field. */
+</style>
+
+<style>
+/* Unscoped, because it is set on <body>: while the divider is being dragged the pointer travels over
+   text, and without this every pass selects a paragraph and the cursor keeps flicking back to an I-beam. */
+body.rf-dragging {
+  cursor: col-resize;
+  user-select: none;
+}
 </style>

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace EmsPortal.Api.Models.Rems;
 
@@ -20,7 +21,23 @@ public sealed class RemsFormPayloadV1
     public int Version { get; set; } = 1;
 
     // ---- Common ----
+
+    /// <summary>
+    /// The client's name as one string. For a business or a government body this is the ENTITY name and
+    /// the only name asked for; for an individual it is <see cref="ClientFirstName"/> and
+    /// <see cref="ClientLastName"/> joined, written alongside them so that everything reading "the
+    /// client's name" — the materialised client, the entity, the thank-you page — keeps one field to read.
+    /// </summary>
     public string? ClientName { get; set; }
+
+    /// <summary>
+    /// An individual client's given name. Null for a business or government client, whose name is a
+    /// company's rather than a person's and does not divide into two.
+    /// </summary>
+    public string? ClientFirstName { get; set; }
+
+    /// <summary>An individual client's family name. Null for a business or government client.</summary>
+    public string? ClientLastName { get; set; }
 
     /// <summary>Echo of the client email. LOCKED — ignored on submit (the request's customer email wins).</summary>
     public string? Email { get; set; }
@@ -62,6 +79,28 @@ public sealed class RemsFormPayloadV1
 
     /// <summary>Related / subsidiary entities captured alongside the main entity.</summary>
     public List<RemsRelatedEntityPayload> RelatedEntities { get; set; } = new();
+
+    /// <summary>
+    /// The client's name as it should read: the two boxes joined where an individual gave them, and the
+    /// single box otherwise. Derived rather than trusted, so a payload whose <see cref="ClientName"/>
+    /// disagrees with its parts is filed under the parts the client actually typed.
+    /// </summary>
+    [JsonIgnore]
+    public string EffectiveClientName
+    {
+        get
+        {
+            var joined = string.Join(
+                " ",
+                new[] { ClientFirstName, ClientLastName }
+                    .Where(part => !string.IsNullOrWhiteSpace(part)).Select(part => part!.Trim()));
+            return joined.Length > 0 ? joined : ClientName?.Trim() ?? string.Empty;
+        }
+    }
+
+    /// <summary>The roles with the legacy keys folded in — always read the contacts through this.</summary>
+    [JsonIgnore]
+    public RemsRolesPayload EffectiveRoles => (Roles ?? new RemsRolesPayload()).Normalized();
 }
 
 /// <summary>
@@ -104,19 +143,69 @@ public sealed class RemsAddressPayload
         || !string.IsNullOrWhiteSpace(Zip);
 }
 
-/// <summary>A single role contact (name / email / phone). All three are required when the role is required.</summary>
+/// <summary>
+/// A single role contact. The name is asked as two boxes — <see cref="FirstName"/> and
+/// <see cref="LastName"/> — because a contact becomes a <c>Person</c>, and a Person is filed under a
+/// given name and a family name. <see cref="Name"/> is the two joined, written alongside them so that
+/// everything already reading "the contact's name" keeps one field to read.
+/// <para>
+/// On a payload saved before the split, <see cref="Name"/> is the ONLY name present. Read it through
+/// <see cref="EffectiveFirstName"/> / <see cref="EffectiveLastName"/>, which fall back to splitting it.
+/// </para>
+/// </summary>
 public sealed class RemsRolePayload
 {
+    public string? FirstName { get; set; }
+    public string? LastName { get; set; }
+
+    /// <summary>First and last joined. The single-box answer on payloads saved before the split.</summary>
     public string? Name { get; set; }
+
     public string? Email { get; set; }
     public string? Phone { get; set; }
 
-    /// <summary>True when any of the three fields carries content (an all-blank role is treated as absent).</summary>
+    /// <summary>The joined name, from the two boxes when they carry anything and from <see cref="Name"/> otherwise.</summary>
+    [JsonIgnore]
+    public string DisplayName
+    {
+        get
+        {
+            var joined = string.Join(
+                " ",
+                new[] { FirstName, LastName }.Where(part => !string.IsNullOrWhiteSpace(part)).Select(part => part!.Trim()));
+            return joined.Length > 0 ? joined : Name?.Trim() ?? string.Empty;
+        }
+    }
+
+    /// <summary>The given name, falling back to the first word of a pre-split <see cref="Name"/>.</summary>
+    [JsonIgnore]
+    public string EffectiveFirstName =>
+        !string.IsNullOrWhiteSpace(FirstName) ? FirstName.Trim() : RemsNameSplit.Split(Name).First;
+
+    /// <summary>The family name, falling back to the rest of a pre-split <see cref="Name"/>.</summary>
+    [JsonIgnore]
+    public string EffectiveLastName =>
+        !string.IsNullOrWhiteSpace(LastName) ? LastName.Trim() : RemsNameSplit.Split(Name).Last;
+
+    /// <summary>True when any field carries content (an all-blank role is treated as absent).</summary>
+    [JsonIgnore]
     public bool HasAny =>
-        !string.IsNullOrWhiteSpace(Name) || !string.IsNullOrWhiteSpace(Email) || !string.IsNullOrWhiteSpace(Phone);
+        !string.IsNullOrWhiteSpace(FirstName) || !string.IsNullOrWhiteSpace(LastName)
+        || !string.IsNullOrWhiteSpace(Name) || !string.IsNullOrWhiteSpace(Email)
+        || !string.IsNullOrWhiteSpace(Phone);
 }
 
-/// <summary>The role contacts, keyed by the canonical <c>RemsContactRole</c> names.</summary>
+/// <summary>
+/// The role contacts, keyed by the canonical <c>RemsContactRole</c> names.
+/// <para>
+/// The business roles are named for what the firm needs from the person rather than for the office they
+/// hold. The old keys — <c>ceo</c>, <c>cfo</c>, <c>accountsPayable</c> — are still READ, because every
+/// payload saved before the rename carries them and a client part-way through a form must not lose the
+/// contacts they have already typed; <see cref="Normalized"/> folds them into their successors. They are
+/// never written back: null legacy keys are dropped on serialize, so a draft re-saved after the rename
+/// comes back in the new shape.
+/// </para>
+/// </summary>
 public sealed class RemsRolesPayload
 {
     // Individual
@@ -124,14 +213,77 @@ public sealed class RemsRolesPayload
     public RemsRolePayload? Spouse { get; set; }
 
     // Business
-    public RemsRolePayload? Ceo { get; set; }
-    public RemsRolePayload? Cfo { get; set; }
-    public RemsRolePayload? AccountsPayable { get; set; }
-    public RemsRolePayload? Banker { get; set; }
-    public RemsRolePayload? Lawyer { get; set; }
+    public RemsRolePayload? PrimaryContact { get; set; }
+    public RemsRolePayload? FinancialContact { get; set; }
+    public RemsRolePayload? BillingContact { get; set; }
+
+    /// <summary>Anyone else the client wants the firm to have. Optional, and asked of every non-individual.</summary>
+    public RemsRolePayload? OtherContact { get; set; }
 
     // Government
     public RemsRolePayload? FinanceDirector { get; set; }
+
+    // ---- Legacy keys: read, never written ----
+
+    /// <summary>Legacy key for <see cref="PrimaryContact"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public RemsRolePayload? Ceo { get; set; }
+
+    /// <summary>Legacy key for <see cref="FinancialContact"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public RemsRolePayload? Cfo { get; set; }
+
+    /// <summary>Legacy key for <see cref="BillingContact"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public RemsRolePayload? AccountsPayable { get; set; }
+
+    /// <summary>Retired role, no longer asked for. Present on older payloads only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public RemsRolePayload? Banker { get; set; }
+
+    /// <summary>Retired role, no longer asked for. Present on older payloads only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public RemsRolePayload? Lawyer { get; set; }
+
+    /// <summary>
+    /// This node with the legacy keys folded into their successors, so everything downstream reads one
+    /// shape. A payload carrying BOTH keeps the current one: it was written later, by a form that offered
+    /// the legacy answer nowhere.
+    /// </summary>
+    public RemsRolesPayload Normalized() => new()
+    {
+        Self = Self,
+        Spouse = Spouse,
+        PrimaryContact = Pick(PrimaryContact, Ceo),
+        FinancialContact = Pick(FinancialContact, Cfo),
+        BillingContact = Pick(BillingContact, AccountsPayable),
+        OtherContact = OtherContact,
+        FinanceDirector = FinanceDirector,
+        Banker = Banker,
+        Lawyer = Lawyer,
+    };
+
+    private static RemsRolePayload? Pick(RemsRolePayload? current, RemsRolePayload? legacy)
+        => current is { HasAny: true } ? current : legacy ?? current;
+}
+
+/// <summary>
+/// First word is the given name, the rest the family name. The fallback for a name captured as one box —
+/// pre-split payloads on the public form, and the single client-name box the staff intake still uses.
+/// </summary>
+public static class RemsNameSplit
+{
+    public static (string First, string Last) Split(string? name)
+    {
+        var trimmed = name?.Trim() ?? string.Empty;
+        if (trimmed.Length == 0)
+        {
+            return (string.Empty, string.Empty);
+        }
+
+        var space = trimmed.IndexOf(' ');
+        return space < 0 ? (trimmed, string.Empty) : (trimmed[..space], trimmed[(space + 1)..].Trim());
+    }
 }
 
 /// <summary>A related / subsidiary entity node.</summary>
@@ -194,8 +346,14 @@ public sealed record RemsPublicFormResponse(
 /// </summary>
 public sealed record RemsPublicOption(string Value, string Label, string? Description);
 
-/// <summary>Prefill for the editable form. <see cref="Email"/> is display-locked (from the request, not editable).</summary>
-public sealed record RemsPublicPrefill(string? ClientName, string Email, string? MobileNumber);
+/// <summary>
+/// Prefill for the editable form. <see cref="Email"/> is display-locked (from the request, not editable).
+/// The name arrives both whole and split: staff intake asks for it in one box, and an individual's form
+/// asks for it in two, so the split is done here rather than in the browser — it is the same split the
+/// contacts and the client's Person record already get.
+/// </summary>
+public sealed record RemsPublicPrefill(
+    string? ClientName, string? ClientFirstName, string? ClientLastName, string Email, string? MobileNumber);
 
 /// <summary>Draft auto-save acknowledgement (WO-113 PUT draft).</summary>
 public sealed record RemsDraftSavedResponse(DateTime LastSavedOnUtc);
@@ -217,8 +375,17 @@ public sealed record RemsReviewModel(
     IReadOnlyList<RemsReviewContactRow> AdditionalContacts,
     RemsReviewBilling Billing);
 
-/// <summary>Primary client contact. <see cref="Email"/> is the locked request email.</summary>
-public sealed record RemsReviewContact(string? ClientName, string Email, string? MobileNumber, string? ReferralSource);
+/// <summary>
+/// The client themselves. <see cref="Email"/> is the locked request email; the two name parts are
+/// populated only for an individual, whose name is a person's rather than a company's.
+/// </summary>
+public sealed record RemsReviewContact(
+    string? ClientName,
+    string? ClientFirstName,
+    string? ClientLastName,
+    string Email,
+    string? MobileNumber,
+    string? ReferralSource);
 
 /// <summary>Government contract details block.</summary>
 public sealed record RemsReviewContractDetails(
@@ -242,8 +409,9 @@ public sealed record RemsReviewAddressGroup(
     RemsAddressPayload? Mailing,
     RemsAddressPayload? Billing);
 
-/// <summary>A role contact row on review.</summary>
-public sealed record RemsReviewContactRow(string Role, bool IsRequired, string? Name, string? Email, string? Phone);
+/// <summary>A role contact row on review. <see cref="Name"/> is the two parts joined, for reading.</summary>
+public sealed record RemsReviewContactRow(
+    string Role, bool IsRequired, string? FirstName, string? LastName, string? Name, string? Email, string? Phone);
 
 /// <summary>Billing block.</summary>
 public sealed record RemsReviewBilling(string? BillingContactName, string? BillingEmail, RemsAddressPayload? BillingAddress);

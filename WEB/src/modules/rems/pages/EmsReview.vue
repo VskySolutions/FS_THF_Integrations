@@ -43,16 +43,17 @@
         />
       </template>
 
+      <!-- The number opens the request. It used to open the client's form in a modal, which is where that
+           form USED to live; it is a pane of the request page now, so the request is the one place the
+           number can send you that has both. -->
       <template #body-cell-remsNumber="cell">
         <q-td :props="cell">
           <q-btn
-            v-if="cell.row.submitted"
             flat dense no-caps color="primary" class="text-weight-medium"
-            :label="cell.row.remsNumber" @click="openView(cell.row)"
+            :label="cell.row.remsNumber" @click="openRequest(cell.row, 'view')"
           >
-            <q-tooltip>View the client's form</q-tooltip>
+            <q-tooltip>Open the request</q-tooltip>
           </q-btn>
-          <span v-else class="text-weight-medium">{{ cell.row.remsNumber }}</span>
         </q-td>
       </template>
 
@@ -111,6 +112,18 @@
             <q-tooltip>Take this request on — its engagement setup becomes yours to work</q-tooltip>
           </q-btn>
 
+          <!-- The undo of Pick up, on the row it was pressed on. Picking a request up is a single click
+               on a list of them, so taking the wrong one is easy — and until now the only way back was to
+               open that request and find Hand back in its header. Outlined, and only on a request this
+               caller actually holds: it is a correction, not a step in the work. -->
+          <q-btn
+            v-if="cell.row.canHandBack"
+            outline dense no-caps color="grey-8" icon="o_undo" label="Hand back"
+            class="q-px-sm q-mr-xs" :loading="handingBack === cell.row.remsId" @click.stop="handBack(cell.row)"
+          >
+            <q-tooltip>Put this back in the queue for another admin to pick up</q-tooltip>
+          </q-btn>
+
           <!-- View and Edit are the same page in two modes. Separate actions because they are separate
                intentions: reading a request should never put a form on screen — and they are gated apart
                for the same reason. Every admin may READ any request in this queue, including one nobody
@@ -129,14 +142,10 @@
           >
             <q-tooltip>{{ editBlocked(cell.row) || "Edit" }}</q-tooltip>
           </q-btn>
-          <!-- The client's own submitted answers, verbatim and immutable — distinct from the working copy
-               the form above edits. -->
-          <q-btn
-            flat round dense color="primary" icon="o_description"
-            :disable="!cell.row.submitted" @click="openView(cell.row)"
-          >
-            <q-tooltip>{{ cell.row.submitted ? "View the client's form" : "The client's form has not come back yet" }}</q-tooltip>
-          </q-btn>
+          <!-- A "View the client's form" action stood here, opening the submission in a modal. The
+               submission is a pane of the request page now, beside the setup it is read against, so View
+               and Edit above both land on it. -->
+
           <!-- What the client has been emailed about this request and what came back, plus the reminder
                for one who still has not answered. Every row here has a form, so there is always a log to
                open — an empty one is itself the answer for a form nobody has sent yet. -->
@@ -167,7 +176,6 @@
       </template>
     </app-data-table>
 
-    <submitted-form-dialog v-model="viewOpen" :rems-id="viewRemsId" />
     <conversation-dialog v-model="conversationOpen" :request-id="conversationId" :subtitle="conversationSubtitle" />
     <email-log-dialog v-model="emailLogOpen" :rems-id="emailLogId" :subtitle="emailLogSubtitle" @sent="load" />
   </q-page>
@@ -179,6 +187,7 @@ import { debounce } from "quasar";
 import { useRouter } from "vue-router";
 import { remsApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
+import { useConfirm } from "composables/useConfirm";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
@@ -190,12 +199,12 @@ import AppListHeader from "components/common/AppListHeader.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppDataTable from "components/common/AppDataTable.vue";
-import SubmittedFormDialog from "modules/rems/components/SubmittedFormDialog.vue";
 import ConversationDialog from "modules/rems/components/ConversationDialog.vue";
 import EmailLogDialog from "modules/rems/components/EmailLogDialog.vue";
 
 const router = useRouter();
 const notify = useNotify();
+const { confirm } = useConfirm();
 const fmt = useDateFormat();
 const auditColumns = useAuditColumns();
 const { has } = usePermissions();
@@ -285,13 +294,31 @@ const pickUp = async (row) => {
   }
 };
 
-// ---- Read-only submitted-form review ----
-const viewOpen = ref(false);
-const viewRemsId = ref(null);
-const openView = (row) => {
-  if (!row.submitted) return;
-  viewRemsId.value = row.remsId;
-  viewOpen.value = true;
+// ---- Handing one back ----
+// The counterpart of Pick up, and the reason it can be pressed without a second thought: a request taken
+// by mistake goes straight back to the queue from the row it was taken on. Confirmed first — the setup
+// goes read-only to whoever gives it up, and another admin may take it immediately.
+const handingBack = ref(null);
+const handBack = async (row) => {
+  const ok = await confirm({
+    title: "Hand back to the queue",
+    message: `${row.remsNumber} goes back to EMS Review as waiting for pickup, and its engagement setup ` +
+      "goes read-only to you. Any admin can take it from there — including you. Continue?",
+    confirmLabel: "Hand back"
+  });
+  if (!ok) return;
+  handingBack.value = row.remsId;
+  try {
+    await remsApi.handBack(row.remsId);
+    notify.success(`${row.remsNumber} is waiting for pickup again.`);
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    handingBack.value = null;
+    // Reloaded either way: the row's status badge, its assigned admin and its actions all turn on the
+    // assignment, and a failure most often means somebody else has already changed it.
+    await load();
+  }
 };
 
 // ---- The request itself ----

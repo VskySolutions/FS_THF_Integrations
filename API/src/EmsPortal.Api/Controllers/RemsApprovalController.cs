@@ -455,8 +455,13 @@ public sealed class RemsApprovalController : ControllerBase
         var (tasks, total) = await _approvals.ListTasksByApproverAsync(
             new RemsApprovalTaskQuery(me, search, roleFilter, statusFilter, page, limit), cancellationToken);
 
+        // The audit actors AND each request's CSE, resolved in one read: the CSE is a column on this list
+        // now, and a name lookup per row would be one round trip per task.
         var auditNames = await _users.GetFullNamesAsync(
-            tasks.SelectMany(t => new[] { t.CreatedById, t.UpdatedById })
+            tasks.SelectMany(t => new[]
+                {
+                    t.CreatedById, t.UpdatedById, t.Round?.Engagement?.Rems?.CSEId,
+                })
                 .Where(id => id.HasValue).Select(id => id!.Value),
             cancellationToken);
         string? NameOf(Guid? id) => id is { } uid && auditNames.TryGetValue(uid, out var n) ? n : null;
@@ -472,7 +477,8 @@ public sealed class RemsApprovalController : ControllerBase
                 round.SentOnUtc, t.DecidedOnUtc, round.Status.ToString(),
                 // The client's name as they gave it on intake, falling back to the name the request was
                 // raised under when the row is somehow reached before a submission exists.
-                engagement.Id, rems.Id, rems.REMSNumber, client?.Name ?? rems.RequestedClientName,
+                engagement.Id, rems.Id, rems.REMSNumber, client?.Name ?? rems.ClientDisplayName,
+                RemsWorkspaceMapper.UserRef(rems.CSEId, auditNames),
                 round.Tasks.Count(x => x.Status == RemsApprovalTaskStatus.Approved),
                 round.Tasks.Count(x => x.Status == RemsApprovalTaskStatus.Rejected),
                 round.Tasks.Count,
@@ -627,7 +633,7 @@ public sealed class RemsApprovalController : ControllerBase
                 await _notifications.DispatchAsync(new CreateNotificationDto(
                     userId, NotificationType.RemsEngagementApproved,
                     "A REMS engagement was fully approved",
-                    $"{rems.REMSNumber} — {rems.RequestedClientName}", EntityType.Rems, rems.Id), cancellationToken);
+                    $"{rems.REMSNumber} — {rems.ClientDisplayName}", EntityType.Rems, rems.Id), cancellationToken);
             }
             await _activity.WriteAsync(new CreateActivityEventDto(EntityType.Rems, rems.Id, ActivityEventTypes.RemsFullyApproved), cancellationToken);
         }
@@ -763,7 +769,7 @@ public sealed class RemsApprovalController : ControllerBase
             await _notifications.DispatchAsync(new CreateNotificationDto(
                 userId, NotificationType.RemsEngagementRejected,
                 "A REMS engagement approval round was declined",
-                $"{rems.REMSNumber} — {rems.RequestedClientName}: {string.Join(" | ", reasons)}", EntityType.Rems, rems.Id), cancellationToken);
+                $"{rems.REMSNumber} — {rems.ClientDisplayName}: {string.Join(" | ", reasons)}", EntityType.Rems, rems.Id), cancellationToken);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -993,8 +999,10 @@ public sealed class RemsApprovalController : ControllerBase
         // on its Setup step too; this is the backstop for anything reaching the API another way.
         var missing = new List<string>();
         if (string.IsNullOrWhiteSpace(engagement.Department)) missing.Add("Department");
-        // The old Service Line is not among these any more: the field is gone from the setup form, so
-        // requiring it would block every engagement raised since on a question nobody is asked.
+        // The service the firm is actually engaged to do. Held on SubServiceLine — the column kept its old
+        // name when the original ServiceLine was retired, and THAT one is still not asked for anywhere, so
+        // it is still not required here.
+        if (string.IsNullOrWhiteSpace(engagement.SubServiceLine)) missing.Add("Service Line");
         if (engagement.EngagementExecutiveId is null) missing.Add("Engagement Executive");
         if (engagement.BillingManagerId is null) missing.Add("Billing Manager");
         if (engagement.RealizationPercentage is null) missing.Add("% Realization");
@@ -1096,7 +1104,7 @@ public sealed class RemsApprovalController : ControllerBase
             await _notifications.DispatchAsync(new CreateNotificationDto(
                 userId, NotificationType.RemsApprovalRequested,
                 isResubmission ? "A REMS engagement was resubmitted for your approval" : "A REMS engagement needs your approval",
-                $"{rems.REMSNumber} — {rems.RequestedClientName}", EntityType.Rems, rems.Id), cancellationToken);
+                $"{rems.REMSNumber} — {rems.ClientDisplayName}", EntityType.Rems, rems.Id), cancellationToken);
         }
 
         var listText = string.Join(", ", approvers.Select(a => $"{a.UserId}:{a.Role}"));
@@ -1152,7 +1160,7 @@ public sealed class RemsApprovalController : ControllerBase
 
         var (emsFormState, clientSubmissionState) = RemsWorkspaceMapper.FormState(formState);
         var requestView = new RemsApprovalRequestView(
-            rems.Id, rems.REMSNumber, rems.Description, rems.RequestedClientName,
+            rems.Id, rems.REMSNumber, rems.Description, rems.ClientDisplayName,
             rems.Type, rems.Status, rems.CustomerEmail, rems.CustomerMobileNumber,
             formState?.IndustryGroup, emsFormState, clientSubmissionState,
             RemsWorkspaceMapper.UserRef(rems.AdminAssignedToId, names),

@@ -75,8 +75,23 @@
           <q-separator />
           <q-card-section>
             <div class="row q-col-gutter-sm">
+              <!-- An individual is a person, so the name is asked as two boxes and stays two: the record
+                   we file you under has a given name and a family name, and one box left us guessing
+                   where to cut it. A business or a government body has ONE name — its legal name — which
+                   does not divide, so it keeps the single box. -->
+              <template v-if="isIndividual">
+                <app-text-field
+                  v-model="payload.clientFirstName" label="First Name" required class="col-12 col-sm-3"
+                  :error="!!errors.clientFirstName" :error-message="errors.clientFirstName"
+                />
+                <app-text-field
+                  v-model="payload.clientLastName" label="Last Name" required class="col-12 col-sm-3"
+                  :error="!!errors.clientLastName" :error-message="errors.clientLastName"
+                />
+              </template>
               <app-text-field
-                v-model="payload.clientName" label="Client Name" required class="col-12 col-sm-6"
+                v-else
+                v-model="payload.clientName" label="Client/Entity Name" required class="col-12 col-sm-6"
                 :error="!!errors.clientName" :error-message="errors.clientName"
               />
               <app-text-field
@@ -138,13 +153,35 @@
           </q-card-section>
           <q-separator />
           <q-card-section>
-            <div class="pef-subhead">Physical Address</div>
+            <!-- Each heading carries what that address IS. Three addresses under three similar names is
+                 the one place on this form where a client can reasonably give the right answer to the
+                 wrong question — a mailing address typed into the physical box sends nothing anywhere
+                 wrong, but a physical address typed into the billing box sends the invoice to a building
+                 nobody opens post in. The note is on the heading, a hover away, rather than as three
+                 caption lines the client reads once and never again. -->
+            <div class="pef-addr-head">
+              <div class="pef-subhead">
+                Physical Address
+                <q-icon name="o_info" size="15px" color="grey-6" class="pef-subhead__info">
+                  <q-tooltip anchor="top middle" self="bottom middle" max-width="300px" :delay="200">
+                    {{ ADDRESS_HINTS.physical }}
+                  </q-tooltip>
+                </q-icon>
+              </div>
+            </div>
             <app-address-fields
               v-model="payload.physicalAddress" required :errors="addressErrors(errors, 'physicalAddress')"
             />
 
             <div class="pef-addr-head q-mt-lg">
-              <div class="pef-subhead">Mailing Address</div>
+              <div class="pef-subhead">
+                Mailing Address
+                <q-icon name="o_info" size="15px" color="grey-6" class="pef-subhead__info">
+                  <q-tooltip anchor="top middle" self="bottom middle" max-width="300px" :delay="200">
+                    {{ ADDRESS_HINTS.mailing }}
+                  </q-tooltip>
+                </q-icon>
+              </div>
               <q-btn
                 flat dense no-caps size="sm" color="primary" icon="o_content_copy"
                 label="Copy from physical" :disable="!hasAny(payload.physicalAddress)"
@@ -156,7 +193,14 @@
             />
 
             <div class="pef-addr-head q-mt-lg">
-              <div class="pef-subhead">Billing Address</div>
+              <div class="pef-subhead">
+                Billing Address
+                <q-icon name="o_info" size="15px" color="grey-6" class="pef-subhead__info">
+                  <q-tooltip anchor="top middle" self="bottom middle" max-width="300px" :delay="200">
+                    {{ ADDRESS_HINTS.billing }}
+                  </q-tooltip>
+                </q-icon>
+              </div>
               <q-btn
                 flat dense no-caps size="sm" color="primary" icon="o_content_copy"
                 label="Copy from mailing" :disable="!hasAny(payload.mailingAddress)"
@@ -166,6 +210,31 @@
             <app-address-fields
               v-model="payload.billingAddress" :errors="addressErrors(errors, 'billingAddress')"
             />
+          </q-card-section>
+        </q-card>
+
+        <!-- Billing: who to send the invoice to, directly under the address it goes to. It used to sit at
+             the very bottom, three cards below the billing address, which put one answer's two halves at
+             opposite ends of the form.
+             INDIVIDUAL ONLY. Every other entity type names a Billing Contact in the Contacts card below,
+             with a first name, a last name, an email and a phone — asking the same person again here, in
+             two weaker boxes, invited two different answers for one billing contact. -->
+        <q-card v-if="isIndividual" flat bordered class="pef-card q-mb-md">
+          <q-card-section class="pef-card__head">
+            Billing
+            <div class="text-caption text-grey-7 text-weight-regular">
+              Who should receive our invoices, if it is not you.
+            </div>
+          </q-card-section>
+          <q-separator />
+          <q-card-section>
+            <div class="row q-col-gutter-sm">
+              <app-text-field v-model="payload.billingContactName" label="Billing Contact" class="col-12 col-sm-6" />
+              <app-text-field
+                v-model="payload.billingEmail" label="Billing Email" type="email" class="col-12 col-sm-6"
+                :error="!!errors.billingEmail" :error-message="errors.billingEmail"
+              />
+            </div>
           </q-card-section>
         </q-card>
 
@@ -190,7 +259,7 @@
           <q-card-section class="pef-card__head">
             Contacts
             <div class="text-caption text-grey-7 text-weight-regular">
-              Required contacts must include a name and an email. Phone is optional.
+              Required contacts need a first name, a last name and an email. Phone is optional.
             </div>
           </q-card-section>
           <q-separator />
@@ -198,7 +267,8 @@
             <role-contact-fields
               v-for="def in roleDefs" :key="def.key"
               v-model="payload.roles[def.key]"
-              :label="def.label" :required="def.required" :prefix="`roles.${def.key}`" :errors="errors"
+              :label="def.label" :hint="def.hint" :required="def.required"
+              :prefix="`roles.${def.key}`" :errors="errors"
             />
           </q-card-section>
         </q-card>
@@ -265,22 +335,9 @@
           </q-card-section>
         </q-card>
 
-        <!-- Billing -->
-        <q-card flat bordered class="pef-card q-mb-md">
-          <q-card-section class="pef-card__head">Billing</q-card-section>
-          <q-separator />
-          <q-card-section>
-            <div class="row q-col-gutter-sm">
-              <app-text-field v-model="payload.billingContactName" label="Billing Contact" class="col-12 col-sm-6" />
-              <app-text-field
-                v-model="payload.billingEmail" label="Billing Email" type="email" class="col-12 col-sm-6"
-                :error="!!errors.billingEmail" :error-message="errors.billingEmail"
-              />
-            </div>
-            <!-- The billing ADDRESS moved up to the Addresses card with the other two, so this block is
-                 only the person to bill. -->
-          </q-card-section>
-        </q-card>
+        <!-- The Billing card stood here, last on the form. It has moved up to sit under the billing
+             ADDRESS it belongs with — and it is asked of individuals only now: every other entity type
+             names a Billing Contact in the Contacts card above. -->
 
         <!-- Remaining-required checklist (client-side gate for Review). -->
         <q-card v-if="clientIssues.length" flat bordered class="pef-card pef-todo q-mb-md">
@@ -362,6 +419,9 @@ import {
 } from "modules/rems/remsAddress";
 import { REMS_OPTION_SEED } from "modules/rems/useRemsOptionCatalog";
 import { isBusinessIndustryGroup } from "modules/rems/useRemsMeta";
+import {
+  ALL_ROLE_KEYS, GROUP_ROLES, groupKey, normalizeRoles, roleDefsFor
+} from "modules/rems/remsContactRoles";
 
 import AppTextField from "components/common/AppTextField.vue";
 import AppSelect from "components/common/AppSelect.vue";
@@ -371,13 +431,16 @@ import AppAddressFields from "components/common/AppAddressFields.vue";
 import RoleContactFields from "modules/rems/components/RoleContactFields.vue";
 import RemsReviewSummary from "modules/rems/components/RemsReviewSummary.vue";
 
-// The roles relevant to each industry group, in display order (mirrors RemsFormPayloadValidator).
-const GROUP_ROLES = {
-  individual: ["self", "spouse"],
-  business: ["ceo", "cfo", "accountsPayable", "banker", "lawyer"],
-  government: ["financeDirector", "accountsPayable"]
+// The role sets, their labels and their hints come from modules/rems/remsContactRoles — one definition,
+// shared with the review step and with the panel staff read the submission in.
+
+// What each of the three addresses is, said on the heading it belongs to rather than in a caption line.
+const ADDRESS_HINTS = {
+  physical: "Where the business actually operates, or where you live — the address we would visit. Not a PO box.",
+  mailing: "Where post should reach you. Use this for a PO box, or if your post goes somewhere other than the physical address.",
+  billing: "Where invoices should be sent, if that is not your mailing address. Leave it blank and we will bill the mailing address."
 };
-const ROLE_KEYS = ["self", "spouse", "ceo", "cfo", "accountsPayable", "banker", "lawyer", "financeDirector"];
+
 // INDUSTRY_LABELS stood here — the display names behind a chip that named the client's entity type above
 // the form. The chip is gone (see the template) and with it the only thing that ever read the map. The
 // entity type itself is still very much in use below; it just does its work silently now, deciding which
@@ -422,11 +485,16 @@ const hasRelatedEntities = ref(false);
 // ---- The RemsFormPayloadV1 (camelCase wire shape — field names match RemsPublicFormModels.cs exactly) ----
 // EXCEPT the addresses: those are held in the canonical AppAddressFields shape and converted to/from the
 // frozen wire names by modules/rems/remsAddress (toAddress on seed, fromAddress on build).
-const blankRole = () => ({ name: "", email: "", phone: "" });
+const blankRole = () => ({ firstName: "", lastName: "", email: "", phone: "" });
+const blankRoles = () => Object.fromEntries(ALL_ROLE_KEYS.map((k) => [k, blankRole()]));
 
 const payload = reactive({
   version: 1,
+  // The client's name, in one field and in two. An individual fills the two and `clientName` is built
+  // from them on the way out; a business or government body fills `clientName` and leaves the two blank.
   clientName: "",
+  clientFirstName: "",
+  clientLastName: "",
   email: "",            // LOCKED (from prefill; ignored on submit)
   mobileNumber: "",
   referralSource: "",
@@ -446,16 +514,7 @@ const payload = reactive({
   renewalTerms: "",
   poStartDate: "",
   poEndDate: "",
-  roles: {
-    self: blankRole(),
-    spouse: blankRole(),
-    ceo: blankRole(),
-    cfo: blankRole(),
-    accountsPayable: blankRole(),
-    banker: blankRole(),
-    lawyer: blankRole(),
-    financeDirector: blankRole()
-  },
+  roles: blankRoles(),
   relatedEntities: []   // [{ sourceKey, fullName, emailAddress, phoneNumber }]
 });
 
@@ -481,27 +540,13 @@ const copyAddress = (fromKey, toKey) => {
   Object.assign(payload[toKey], { ...payload[fromKey] });
 };
 
-const roleDefs = computed(() => {
-  if (isIndividual.value) {
-    return [{ key: "self", label: "Self", required: true }, { key: "spouse", label: "Spouse", required: false }];
-  }
-  if (isBusiness.value) {
-    return [
-      { key: "ceo", label: "CEO", required: true },
-      { key: "cfo", label: "CFO", required: true },
-      { key: "accountsPayable", label: "Accounts Payable", required: true },
-      { key: "banker", label: "Banker", required: false },
-      { key: "lawyer", label: "Lawyer", required: false }
-    ];
-  }
-  if (isGovernment.value) {
-    return [
-      { key: "financeDirector", label: "Finance Director", required: true },
-      { key: "accountsPayable", label: "Accounts Payable", required: false }
-    ];
-  }
-  return [];
-});
+// Which role set this client is asked, from the shared definition. The retired Banker and Lawyer are not
+// among them: a client's banker and lawyer are their advisers rather than the firm's contacts on the
+// engagement, and both boxes came back blank on almost every form. Anything a returning client already
+// answered under a retired role travels with the payload and shows on review — it is simply not asked
+// for again.
+const roleSetKey = computed(() => groupKey(industryGroup.value, isBusiness.value));
+const roleDefs = computed(() => (roleSetKey.value ? roleDefsFor(roleSetKey.value) : []));
 
 const entityErr = (i, field) => errors.value[`relatedEntities[${i}].${field}`] || "";
 
@@ -518,14 +563,24 @@ const saveText = computed(() => ({
 // ---- Client-side validation (mirrors RemsFormPayloadValidator; gates the Review button) ----
 const filled = (v) => !!String(v ?? "").trim();
 const emailOk = (v) => /^\S+@\S+\.\S+$/.test(String(v ?? "").trim());
-const roleAny = (r) => filled(r.name) || filled(r.email) || filled(r.phone);
+const roleAny = (r) =>
+  filled(r.firstName) || filled(r.lastName) || filled(r.name) || filled(r.email) || filled(r.phone);
 // Phone is captured when known but never required — a contact is a name and a valid email.
-// Mirrors RemsFormPayloadValidator.ValidateRoleFields.
-const roleComplete = (r) => filled(r.name) && emailOk(r.email);
+// Mirrors RemsFormPayloadValidator.ValidateRoleFields, including its allowance for a payload written
+// before the name was two boxes: that one carries `name` alone and is accepted as it stands rather than
+// asking a client to retype a name they already gave.
+const rolePreSplit = (r) => !filled(r.firstName) && !filled(r.lastName) && filled(r.name);
+const roleComplete = (r) =>
+  (rolePreSplit(r) || (filled(r.firstName) && filled(r.lastName))) && emailOk(r.email);
 
 const clientIssues = computed(() => {
   const out = [];
-  if (!filled(payload.clientName)) out.push("Client name is required.");
+  if (isIndividual.value) {
+    if (!filled(payload.clientFirstName)) out.push("First name is required.");
+    if (!filled(payload.clientLastName)) out.push("Last name is required.");
+  } else if (!filled(payload.clientName)) {
+    out.push("Client / entity name is required.");
+  }
   const addressIssue = "needs country, state, city, address line 1 and zip code.";
   if (!addressComplete(payload.physicalAddress)) out.push(`Physical address ${addressIssue}`);
   // Both are required now: there is no "same as" flag deciding whether a mailing address exists, only a
@@ -533,25 +588,17 @@ const clientIssues = computed(() => {
   if (!addressComplete(payload.mailingAddress)) out.push(`Mailing address ${addressIssue}`);
   if (filled(payload.billingEmail) && !emailOk(payload.billingEmail)) out.push("Billing email is not a valid email address.");
 
-  const roles = payload.roles;
-  const req = (key, label) => { if (!roleComplete(roles[key])) out.push(`${label} contact needs a name and a valid email.`); };
-  const opt = (key, label) => {
-    if (roleAny(roles[key]) && !roleComplete(roles[key])) {
-      out.push(`${label} contact is partly filled — add a name and a valid email, or clear it.`);
+  // Driven off the same role definitions the cards are rendered from, so a role added or retired changes
+  // in one place rather than in two that can disagree.
+  if (isBusiness.value && !filled(payload.ein)) out.push("EIN is required for a business.");
+  roleDefs.value.forEach(({ key, label, required }) => {
+    const role = payload.roles[key];
+    if (required) {
+      if (!roleComplete(role)) out.push(`${label} needs a first name, a last name and a valid email.`);
+    } else if (roleAny(role) && !roleComplete(role)) {
+      out.push(`${label} is partly filled — complete the name and email, or clear it.`);
     }
-  };
-
-  if (isIndividual.value) {
-    req("self", "Self");
-    opt("spouse", "Spouse");
-  } else if (isBusiness.value) {
-    if (!filled(payload.ein)) out.push("EIN is required for a business.");
-    req("ceo", "CEO"); req("cfo", "CFO"); req("accountsPayable", "Accounts Payable");
-    opt("banker", "Banker"); opt("lawyer", "Lawyer");
-  } else if (isGovernment.value) {
-    req("financeDirector", "Finance Director");
-    opt("accountsPayable", "Accounts Payable");
-  }
+  });
 
   // Name and email both required — the phone stays optional, as it is on every contact on this form.
   payload.relatedEntities.forEach((e, i) => {
@@ -573,20 +620,44 @@ const reviewPayload = computed(() => buildPayload());
 // ---- Build the outgoing payload (dates: "" → null so DateOnly binds; mailing dropped when same) ----
 const s = (v) => (v == null ? "" : String(v));
 const dateOrNull = (v) => (filled(v) ? v : null);
-const outRole = (r) => ({ name: s(r.name), email: s(r.email), phone: s(r.phone) });
+// `name` is sent alongside the two parts, not instead of them: it is the pair already joined, so every
+// reader of "the contact's name" — the review summary, the staff panel, the Person that gets minted —
+// has one field to read. A pre-split contact the client has not retouched keeps whatever it arrived with.
+const outRole = (r) => {
+  const joined = [r.firstName, r.lastName].map((v) => s(v).trim()).filter(Boolean).join(" ");
+  return {
+    firstName: s(r.firstName),
+    lastName: s(r.lastName),
+    name: joined || s(r.name),
+    email: s(r.email),
+    phone: s(r.phone)
+  };
+};
 
 function buildRoles () {
-  // The three business groups share one role set, so they all look up under "business".
-  const keys = GROUP_ROLES[isBusinessIndustryGroup(industryGroup.value) ? "business" : industryGroup.value] || ROLE_KEYS;
+  // The roles this client is ASKED, plus any they have already answered under a role the form has since
+  // retired — dropping those on the next autosave would delete an answer the client gave us.
+  const asked = GROUP_ROLES[roleSetKey.value] || ALL_ROLE_KEYS;
+  const answeredElsewhere = ALL_ROLE_KEYS.filter((k) => !asked.includes(k) && roleAny(payload.roles[k]));
   const out = {};
-  keys.forEach((k) => { out[k] = outRole(payload.roles[k]); });
+  [...asked, ...answeredElsewhere].forEach((k) => { out[k] = outRole(payload.roles[k]); });
   return out;
+}
+
+// The client's name as one string: the two boxes joined for an individual, the single box otherwise.
+// Mirrors RemsFormPayloadV1.EffectiveClientName, which is what the server files them under.
+function buildClientName () {
+  const joined = [payload.clientFirstName, payload.clientLastName]
+    .map((v) => s(v).trim()).filter(Boolean).join(" ");
+  return joined || s(payload.clientName);
 }
 
 function buildPayload () {
   return {
     version: 1,
-    clientName: s(payload.clientName),
+    clientName: buildClientName(),
+    clientFirstName: s(payload.clientFirstName),
+    clientLastName: s(payload.clientLastName),
     email: s(payload.email),
     mobileNumber: s(payload.mobileNumber),
     referralSource: s(payload.referralSource),
@@ -617,8 +688,14 @@ function buildPayload () {
 }
 
 // ---- Seeding (prefill + draft) ----
+// A draft saved before the name was split carries only `name`. It is kept AS `name` rather than cut into
+// two on the client's behalf: guessing where a name divides is precisely what the two boxes exist to
+// stop, so the answer stands until the client edits it — at which point they fill in the two boxes and
+// the single string is superseded (see outRole).
 function fillRole (target, src) {
-  target.name = src?.name ?? "";
+  target.firstName = src?.firstName ?? "";
+  target.lastName = src?.lastName ?? "";
+  target.name = src?.firstName || src?.lastName ? "" : (src?.name ?? "");
   target.email = src?.email ?? "";
   target.phone = src?.phone ?? "";
 }
@@ -636,6 +713,12 @@ function seed (prefill, draft) {
   const d = draft || {};
 
   payload.clientName = d.clientName ?? prefill?.clientName ?? "";
+  // The two parts come from the draft where the client has already given them, and from the prefill's own
+  // split of the name staff typed at intake where they have not. `?? ""` rather than a fallback chain into
+  // clientName: a business's single name is not a first name, and prefilling one into that box would put
+  // "Acme Holdings" where a given name goes the moment somebody switched an entity type.
+  payload.clientFirstName = d.clientFirstName ?? prefill?.clientFirstName ?? "";
+  payload.clientLastName = d.clientLastName ?? prefill?.clientLastName ?? "";
   payload.email = prefill?.email ?? d.email ?? "";   // LOCKED to the request's customer email.
   payload.mobileNumber = d.mobileNumber ?? prefill?.mobileNumber ?? "";
   payload.referralSource = d.referralSource ?? "";
@@ -656,7 +739,10 @@ function seed (prefill, draft) {
   payload.mailingAddress = toAddress(d.mailingAddress);
   payload.billingAddress = toAddress(d.billingAddress);
 
-  ROLE_KEYS.forEach((k) => fillRole(payload.roles[k], d.roles?.[k]));
+  // Normalized first: a draft filled in under the old business role names still has its three contacts,
+  // and they belong in the boxes those roles are called by now.
+  const draftRoles = normalizeRoles(d.roles);
+  ALL_ROLE_KEYS.forEach((k) => fillRole(payload.roles[k], draftRoles[k]));
 
   payload.relatedEntities = (d.relatedEntities || []).map(makeEntity);
   hasRelatedEntities.value = payload.relatedEntities.length > 0;
@@ -668,7 +754,7 @@ function seed (prefill, draft) {
 // ---- Load ----
 function applySubmitted (res) {
   state.value = "Submitted";
-  thankYouName.value = res?.clientName || payload.clientName || "";
+  thankYouName.value = res?.clientName || buildClientName() || "";
   step.value = "form";
 }
 
@@ -884,6 +970,13 @@ onMounted(load);
 }
 .pef-addr-head .pef-subhead {
   margin-bottom: 0;
+}
+/* What this address IS, a hover away on the heading it belongs to. Not uppercased with the rest of the
+   heading — it is an icon, and the tooltip carries the words. */
+.pef-subhead__info {
+  margin-left: 5px;
+  cursor: help;
+  vertical-align: text-bottom;
 }
 .pef-entity {
   border-radius: 10px;

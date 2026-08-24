@@ -227,6 +227,7 @@ public sealed class RemsRequestsController : ControllerBase
             Type = type,
             Status = RemsRequestStatuses.Draft,
             RequestedClientName = request.ClientName,
+            ClientNameSuffix = Normalize(request.ClientNameSuffix),
             CustomerEmail = Normalize(request.CustomerEmail),
             CustomerMobileNumber = Normalize(request.CustomerMobileNumber),
             CSEId = request.CSEId,
@@ -337,6 +338,9 @@ public sealed class RemsRequestsController : ControllerBase
         if (request.Description is not null) rems.Description = request.Description;
         if (request.Type is not null) rems.Type = request.Type;
         if (request.ClientName is not null) rems.RequestedClientName = request.ClientName;
+        // Cleared by sending "" — the suffix is the one client field somebody routinely takes back off,
+        // having picked "Jr." for the wrong John Smith, and an omitted field means "leave it alone" here.
+        if (request.ClientNameSuffix is not null) rems.ClientNameSuffix = Normalize(request.ClientNameSuffix);
         if (request.CustomerEmail is not null) rems.CustomerEmail = Normalize(request.CustomerEmail);
         if (request.CustomerMobileNumber is not null) rems.CustomerMobileNumber = Normalize(request.CustomerMobileNumber);
         if (request.CSEId.HasValue) rems.CSEId = request.CSEId;
@@ -597,7 +601,7 @@ public sealed class RemsRequestsController : ControllerBase
                 forMe
                     ? "A REMS request was sent back to you for engagement setup"
                     : $"A REMS request was sent back for engagement setup{(ownerName is null ? "" : $" — to {ownerName}")}",
-                $"{rems.REMSNumber} — {rems.RequestedClientName}: {reason}", EntityType.Rems, rems.Id), cancellationToken);
+                $"{rems.REMSNumber} — {rems.ClientDisplayName}: {reason}", EntityType.Rems, rems.Id), cancellationToken);
         }
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -654,7 +658,7 @@ public sealed class RemsRequestsController : ControllerBase
         {
             await _notifications.DispatchAsync(new CreateNotificationDto(
                 userId, NotificationType.RemsRequestPickedUp,                "A REMS engagement setup was revised",
-                $"{rems.REMSNumber} — {rems.RequestedClientName}", EntityType.Rems, rems.Id), cancellationToken);
+                $"{rems.REMSNumber} — {rems.ClientDisplayName}", EntityType.Rems, rems.Id), cancellationToken);
         }
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -926,7 +930,11 @@ public sealed class RemsRequestsController : ControllerBase
     /// </summary>
     private async Task<Guid> ResolveClientPersonAsync(REMS rems, Guid tenantId, CancellationToken cancellationToken)
     {
+        // Two names, on purpose. The FIRST/LAST split runs on the requested name alone — "Jr." is neither a
+        // given name nor a family one, and a Person filed with it stuck on the end of LastName is a Person
+        // nobody finds by searching for their surname. The DISPLAY name is the one the suffix belongs to.
         var name = rems.RequestedClientName?.Trim() ?? string.Empty;
+        var displayName = rems.ClientDisplayName.Trim();
         var email = Normalize(rems.CustomerEmail);
         var phone = Normalize(rems.CustomerMobileNumber);
 
@@ -965,7 +973,7 @@ public sealed class RemsRequestsController : ControllerBase
             var (first, last) = SplitName(name);
             owned.FirstName = first;
             owned.LastName = last;
-            owned.DisplayName = name;
+            owned.DisplayName = displayName;
             owned.PrimaryEmail = email;
             owned.MobileNumber = phone;
             owned.LastProfileUpdatedOn = DateTime.UtcNow;
@@ -989,7 +997,7 @@ public sealed class RemsRequestsController : ControllerBase
             SourceEntityId = rems.Id,
             FirstName = newFirst,
             LastName = newLast,
-            DisplayName = name,
+            DisplayName = displayName,
             PrimaryEmail = email,
             MobileNumber = phone,
             IsActive = true,
@@ -1128,7 +1136,7 @@ public sealed class RemsRequestsController : ControllerBase
         forms.TryGetValue(r.Id, out var form);
         var (ems, submission) = MapFormState(form);
         return new RemsRequestRow(
-            r.Id, r.REMSNumber, r.RequestedClientName, r.Type, r.CreatedOnUtc, r.Status,
+            r.Id, r.REMSNumber, r.ClientDisplayName, r.Type, r.CreatedOnUtc, r.Status,
             r.CustomerEmail, r.CustomerMobileNumber,
             UserRefOf(r.AdminAssignedToId, names), UserRefOf(r.CSEId, names),
             form?.IndustryGroup, ems, submission,
@@ -1151,7 +1159,8 @@ public sealed class RemsRequestsController : ControllerBase
             .ToList();
 
         return new RemsRequestDetail(
-            rems.Id, rems.REMSNumber, rems.Description, rems.RequestedClientName,
+            rems.Id, rems.REMSNumber, rems.Description, rems.ClientDisplayName,
+            rems.RequestedClientName, rems.ClientNameSuffix,
             rems.Type, rems.Status, rems.CustomerEmail, rems.CustomerMobileNumber,
             rems.ExistingClientReferenceId, rems.ClientPersonId,
             UserRefOf(rems.AdminAssignedToId, names), UserRefOf(rems.CSEId, names),

@@ -586,15 +586,19 @@ const requestRows = computed(() => {
 
 const clientRows = computed(() => {
   const c = client.value;
-  return [
+  const rows = [
     { label: "Name", value: text(c.name) },
     { label: "Email", value: text(c.email) },
     { label: "Phone Number", value: text(c.mobileNumber) },
     { label: "Referral Source", value: text(c.referralSource) },
-    { label: "Billing Contact", value: text(c.billingContactName) },
-    { label: "Billing Email", value: text(c.billingEmail) },
     { label: "Billing Address", value: addressText(c.billingAddress) }
   ];
+  // The billing CONTACT is asked of individuals only now — every other entity type names one among its
+  // contacts, listed above with a name, an email and a phone. Dropped when blank rather than shown as
+  // "—", which beside a Contacts list that has a Billing Contact in it reads as a missing answer.
+  if (c.billingContactName) rows.push({ label: "Billing Contact", value: text(c.billingContactName) });
+  if (c.billingEmail) rows.push({ label: "Billing Email", value: text(c.billingEmail) });
+  return rows;
 });
 
 const setupRows = computed(() => {

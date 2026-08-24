@@ -29,6 +29,12 @@ public sealed record RemsClientFormRow(
     /// ahead of the click so the list can offer the button rather than let it 409.
     /// </summary>
     bool CanPickUp,
+    /// <summary>
+    /// This caller may put the request back in the pool — the undo of Pick up, for the admin who claimed
+    /// something by mistake. True on a request this caller HOLDS, and on any claimed request for an
+    /// elevated caller, which is the same test <c>RemsRequestsController.HandBack</c> applies.
+    /// </summary>
+    bool CanHandBack,
     // The owning REQUEST's audit trail — the row is keyed on it, and it is what the actions open.
     string? CreatedBy,
     DateTime CreatedOnUtc,

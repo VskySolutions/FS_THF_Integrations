@@ -151,6 +151,9 @@ const { approverRoleLabel, approverRoleIcon, approvalStatusLabel, approvalStatus
 const columns = [
   { name: "remsNumber", label: "Request ID", field: "remsNumber", align: "left", sortable: true, default: true, filterable: false },
   { name: "client", label: "Client", field: "clientName", align: "left", sortable: true, default: true, filterable: false },
+  // On by default: an approver deciding on a round needs to know who to ask about it, and the CSE is
+  // that person. Without the column, finding out meant opening the request.
+  { name: "cse", label: "CSE", field: (r) => r.cse?.name || "—", align: "left", sortable: true, default: true, filterable: false },
   { name: "role", label: "Your Role", field: "role", align: "left", sortable: true, default: true, filterOptions: REMS_APPROVER_ROLE_OPTIONS },
   { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true, filterOptions: REMS_APPROVAL_STATUS_OPTIONS },
   // Sorts on how much of the round is still outstanding, so the ones closest to done rise together.

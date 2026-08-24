@@ -69,6 +69,12 @@ public sealed record RemsApprovalTaskRow(
     Guid RemsId,
     string RemsNumber,
     string ClientName,
+    /// <summary>
+    /// The request's Client Service Executive. An approver deciding on a round needs to know who to ask
+    /// about it, and the CSE is that person — so the inbox shows them by default rather than making the
+    /// approver open the request to find out.
+    /// </summary>
+    RemsUserRef? Cse,
     // No EntityName: an approval is about a request and its single engagement now, so the entity's name
     // only ever repeated the client's.
     int ApprovedCount,

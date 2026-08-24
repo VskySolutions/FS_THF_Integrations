@@ -66,7 +66,12 @@ internal sealed class RemsFormRepository : IRemsFormRepository
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
             var t = query.Search.Trim();
-            rows = rows.Where(x => x.Rems.REMSNumber.Contains(t) || x.Rems.RequestedClientName.Contains(t));
+            // Against the name WITH its suffix as well as without: the list shows "John Smith Jr.", so
+            // typing what is on the row has to find the row.
+            rows = rows.Where(x =>
+                x.Rems.REMSNumber.Contains(t)
+                || x.Rems.RequestedClientName.Contains(t)
+                || (x.Rems.RequestedClientName + " " + x.Rems.ClientNameSuffix).Contains(t));
         }
         if (query.Submitted is { } submitted)
         {
@@ -94,7 +99,12 @@ internal sealed class RemsFormRepository : IRemsFormRepository
             .Select(x => new RemsClientFormItem(
                 x.Rems.Id,
                 x.Rems.REMSNumber,
-                x.Rems.RequestedClientName,
+                // The name with its suffix. REMS.ClientDisplayName says exactly this, but it is
+                // [NotMapped] and cannot cross into SQL, so the join is written out here — a row that
+                // dropped the suffix would show a different client name from the request it opens.
+                x.Rems.ClientNameSuffix == null || x.Rems.ClientNameSuffix == ""
+                    ? x.Rems.RequestedClientName
+                    : x.Rems.RequestedClientName + " " + x.Rems.ClientNameSuffix,
                 x.Rems.Status,
                 x.Form.Status == RemsFormStatus.Submitted || x.Form.SubmittedOnUtc != null,
                 x.Form.SubmittedOnUtc,
@@ -209,7 +219,10 @@ internal sealed class RemsFormRepository : IRemsFormRepository
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
             var t = query.Search.Trim();
-            forms = forms.Where(f => f.Rems!.REMSNumber.Contains(t) || f.Rems!.RequestedClientName.Contains(t));
+            forms = forms.Where(f =>
+                f.Rems!.REMSNumber.Contains(t)
+                || f.Rems!.RequestedClientName.Contains(t)
+                || (f.Rems!.RequestedClientName + " " + f.Rems!.ClientNameSuffix).Contains(t));
         }
         if (!string.IsNullOrWhiteSpace(query.RequestStatus))
         {
@@ -234,7 +247,11 @@ internal sealed class RemsFormRepository : IRemsFormRepository
             {
                 f.REMSId,
                 f.Rems!.REMSNumber,
-                ClientName = f.Rems!.RequestedClientName,
+                // The name with its suffix — REMS.ClientDisplayName written out, since [NotMapped]
+                // cannot cross into SQL.
+                ClientName = f.Rems!.ClientNameSuffix == null || f.Rems!.ClientNameSuffix == ""
+                    ? f.Rems!.RequestedClientName
+                    : f.Rems!.RequestedClientName + " " + f.Rems!.ClientNameSuffix,
                 EngagementType = f.Rems!.Type,
                 RequestStatus = f.Rems!.Status,
                 f.Status,

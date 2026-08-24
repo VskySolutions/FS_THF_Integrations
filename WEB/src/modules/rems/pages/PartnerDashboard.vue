@@ -221,7 +221,7 @@ onMounted(async () => {
 
 // Ordered as the list reads: what the request is, then who it is for, then where it has got to, then the
 // trail behind it. Everything between Created On and Actions is off by default, so the visible sequence is
-// Request ID → Type → Client → Status → Assigned Admin → EMS State → Created By → Created On →
+// Request ID → Type → Client → Status → Assigned Admin → CSE → EMS State → Created By → Created On →
 // Actions, and switching a hidden column on slots it in before Actions rather than after.
 const columns = computed(() => [
   { name: "remsNumber", label: "Request ID", field: "remsNumber", align: "left", sortable: true, default: true, filterable: false },
@@ -240,6 +240,9 @@ const columns = computed(() => [
     default: true,
     ...(canSeeAdmins.value ? { filterOptions: adminFilterOptions.value } : { filterable: false })
   },
+  // On by default. The CSE is who to ask about a request, and every list that shows a request now says
+  // so without the reader opening it.
+  { name: "cse", label: "CSE", field: (r) => r.cse?.name || "—", align: "left", default: true, filterable: false },
   { name: "emsFormState", label: "EMS State", field: "emsFormState", align: "left", default: true, filterable: false },
   // Taken from the shared audit set rather than hand-rolled, so the pair is labelled and formatted like
   // every other list's — only promoted to visible, which is the one thing this page wants differently.
@@ -249,7 +252,6 @@ const columns = computed(() => [
   // unreachable.
   { name: "customerEmail", label: "Client Email", field: (r) => r.customerEmail || "—", align: "left", default: false, filterable: false },
   { name: "customerMobileNumber", label: "Client Phone Number", field: (r) => r.customerMobileNumber || "—", align: "left", default: false, filterable: false },
-  { name: "cse", label: "CSE", field: (r) => r.cse?.name || "—", align: "left", default: false, filterable: false },
   { name: "industryGroup", label: "Entity Type", field: (r) => r.industryGroup || "—", align: "left", default: false, filterable: false },
   { name: "clientSubmissionState", label: "Client Submission", field: (r) => submissionStateLabel(r.clientSubmissionState), align: "left", default: false, filterable: false },
   ...auditColumns({ only: ["updatedBy", "updatedOnUtc"] }),

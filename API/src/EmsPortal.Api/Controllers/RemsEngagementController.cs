@@ -130,13 +130,17 @@ public sealed class RemsEngagementController : ControllerBase
 
         // Asked once for the whole page: the permission is the caller's, so only the row's own claimed/
         // unclaimed state varies. Drafts cannot reach this list, so being unclaimed is the whole test.
-        var mayPickUp = User.HasPermission(Permissions.RemsRequestsAssign);
+        var mayAssign = User.HasPermission(Permissions.RemsRequestsAssign);
+        // Whether this caller can prise a request loose from whoever holds it — the remedy when the admin
+        // on it is away. Ordinary admins give back only their own.
+        var elevated = RemsSetupAccess.IsElevated(User);
 
         var rows = items.Select(i => new RemsClientFormRow(
             i.RemsId, i.RemsNumber, i.ClientName, i.RequestStatus,
             HasForm: true, i.Submitted, i.SubmittedOnUtc,
             RemsWorkspaceMapper.UserRef(i.AdminAssignedToId, names), RemsWorkspaceMapper.UserRef(i.CSEId, names),
-            CanPickUp: mayPickUp && i.AdminAssignedToId is null,
+            CanPickUp: mayAssign && i.AdminAssignedToId is null,
+            CanHandBack: mayAssign && i.AdminAssignedToId is { } holder && (elevated || holder == me),
             NameOf(i.CreatedById), i.CreatedOnUtc, NameOf(i.UpdatedById), i.UpdatedOnUtc));
 
         return Ok(ApiResponseFactory.Paginated(rows, "REMS client forms retrieved.", page, limit, total));

@@ -9,10 +9,10 @@
       :back-to="{ name: 'permission_groups' }"
     >
       <template #actions>
-        <q-badge v-if="detail" :color="detail.isActive ? 'positive' : 'grey'" class="q-mr-sm">
+        <q-badge v-if="detail" :color="detail.isActive ? 'positive' : 'grey'">
           {{ detail.isActive ? "Active" : "Inactive" }}
         </q-badge>
-        <q-badge v-if="detail" :color="detail.isFull ? 'negative' : 'grey-7'" class="q-mr-sm" data-test="members-badge">
+        <q-badge v-if="detail" :color="detail.isFull ? 'negative' : 'grey-7'" data-test="members-badge">
           <q-icon v-if="detail.isFull" name="o_block" size="12px" class="q-mr-xs" />
           {{ detail.currentUsage }}<template v-if="detail.capacityLimit != null"> / {{ detail.capacityLimit }}</template> members
         </q-badge>

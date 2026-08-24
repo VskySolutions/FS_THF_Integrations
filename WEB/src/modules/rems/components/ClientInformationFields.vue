@@ -1,15 +1,19 @@
 <template>
   <div>
-    <!-- Who they are and how to reach them, on one line: it is a single question, and the email is the
-         address the intake form is sent to rather than an afterthought below the name.
+    <!-- Who they are and how to reach them: it is a single question, and the email is the address the
+         intake form is sent to rather than an afterthought below the name.
          Four across on a desktop, two across on a tablet (the phone field splits into its own two), and
          stacked on a phone — the sm step matters because without it a 700px window drops straight from
-         four columns to four full-width rows. -->
+         four columns to four full-width rows.
+         Once the client has answered, the page shares its width with their submitted form, and four
+         boxes across what is left of it are four cramped boxes. So in that state the name and its
+         suffix keep the first line and the two ways of reaching the client take the second — see
+         `compact` below. -->
     <div class="row q-col-gutter-md">
       <!-- The col cell and the field are separate elements on purpose: the results menu is `fit`ted to
            its parent, and a parent carrying the grid gutter's padding would hang the menu 16px wide of
            the box it belongs to. -->
-      <div class="col-12 col-sm-6 col-md-4">
+      <div :class="nameCols">
         <!-- The search box IS the client-name field. Picking a result links this request to that THF
              record; typing a name nobody matched files it as a brand-new client under exactly what was
              typed. -->
@@ -95,7 +99,7 @@
            may have, and a suffix nobody thought to seed is not a reason to file somebody under the wrong
            name. Locked with the rest of the client's identity once the intake form has gone out. -->
       <app-text-field
-        v-model="model.clientNameSuffix" label="Suffix" class="col-12 col-sm-6 col-md-2"
+        v-model="model.clientNameSuffix" label="Suffix" :class="suffixCols"
         placeholder="Jr." :readonly="readonly || clientLocked"
         :error="suffixTooLong" error-message="A suffix is at most 16 characters."
       >
@@ -132,7 +136,7 @@
            address has nowhere to send the thing the whole request exists to collect. -->
       <app-text-field
         v-model="model.customerEmail" label="Client Email Address" type="email" required
-        placeholder="jane@company.com" class="col-12 col-sm-6 col-md-3"
+        placeholder="jane@company.com" :class="contactCols"
         :readonly="readonly || clientLocked"
         :error="attempted && !hasEmail"
         error-message="The intake form is emailed to the client — an address is required."
@@ -151,7 +155,7 @@
       <!-- Country + number: one component, one cell of the row it is given. -->
       <app-phone-input
         v-model="model.customerMobileNumber" v-model:country="mobileCountry"
-        label="Client Phone Number" class="col-12 col-sm-6 col-md-3" :readonly="readonly || clientLocked"
+        label="Client Phone Number" :class="contactCols" :readonly="readonly || clientLocked"
       />
     </div>
 
@@ -269,6 +273,11 @@ const props = defineProps({
   // What the request already carries — [{ id, fileName, url }] off the request detail.
   files: { type: Array, default: () => [] },
   attempted: { type: Boolean, default: false },
+  // Set while the client's submitted form is open beside this one, which leaves the tab a fraction of
+  // the page rather than the whole of it. It is a width the layout cannot read for itself: the columns
+  // below are chosen off the VIEWPORT, and the viewport has not changed — only the share of it this
+  // form was given.
+  compact: { type: Boolean, default: false },
 
   // ---- The two classifications, which are NOT part of `model` ----
   // Entity Type belongs to the request's EMS form record and Industry to its engagement, so both are
@@ -300,6 +309,16 @@ const { typeHint } = useRemsMeta();
 // The parent owns the object; this component writes through it. Simpler than a full v-model round-trip
 // for a form this size, and it keeps the parent's save path reading one object.
 const model = reactive(props.modelValue);
+
+// The top row's columns. Four across the full page; the name and its suffix, then the email and the
+// phone, once the page is shared with the client's answers. The col-12 stays in both: a phone stacks
+// them whatever else is on screen.
+const nameCols = computed(() =>
+  props.compact ? "col-12 col-sm-8" : "col-12 col-sm-6 col-md-4");
+const suffixCols = computed(() =>
+  props.compact ? "col-12 col-sm-4" : "col-12 col-sm-6 col-md-2");
+const contactCols = computed(() =>
+  props.compact ? "col-12 col-sm-6" : "col-12 col-sm-6 col-md-3");
 
 const DEFAULT_DIAL_CODE = dialFromIso(DEFAULT_COUNTRY_ISO);
 const mobileCountry = ref(DEFAULT_DIAL_CODE);

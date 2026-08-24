@@ -2,7 +2,7 @@
   <q-page padding>
     <app-detail-header :items="breadcrumbs" :back-to="{ name: 'rems_approvals' }">
       <template #actions>
-        <q-badge v-if="task" :color="engagementStatus.color" class="q-pa-sm text-body2 q-mr-sm">
+        <q-badge v-if="task" :color="engagementStatus.color">
           {{ engagementStatus.label }}
         </q-badge>
         <!-- <q-badge v-if="task" :color="approvalStatusColor(task.status)" class="q-pa-sm text-body2">

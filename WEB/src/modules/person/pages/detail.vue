@@ -10,7 +10,7 @@
     >
       <template #actions>
         <q-chip v-if="personCode" dense color="blue-grey-1" text-color="blue-grey-8">{{ personCode }}</q-chip>
-        <q-badge :color="isUser ? 'primary' : 'grey-4'" :text-color="isUser ? 'white' : 'grey-8'" class="q-mr-sm">
+        <q-badge :color="isUser ? 'primary' : 'grey-4'" :text-color="isUser ? 'white' : 'grey-8'">
           {{ isUser ? "Linked user account" : "Not a user" }}
         </q-badge>
       </template>

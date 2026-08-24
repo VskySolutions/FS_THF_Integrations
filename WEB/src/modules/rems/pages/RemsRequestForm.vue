@@ -17,22 +17,14 @@
           </q-badge>
 
           <!-- What the page is doing with what has been typed. It stands in for the Save button it
-               replaced, so it is present even while idle: a form with no Save on it has to say why. -->
+               replaced, so it is present even while idle: a form with no Save on it has to say why.
+               An icon and nothing else — beside half a dozen labelled buttons, a status that is not one
+               of them should not read as loudly as they do. The words are on the tooltip. -->
           <div v-if="autoSaveOn" class="rf-save" :class="`rf-save--${saveChip.tone}`">
-            <q-spinner v-if="saveState === 'saving'" size="14px" class="q-mr-xs" />
-            <q-icon v-else :name="saveChip.icon" size="16px" class="q-mr-xs" />
-            {{ saveChip.text }}
-            <q-tooltip v-if="saveMessage">{{ saveMessage }}</q-tooltip>
+            <q-spinner v-if="saveState === 'saving'" size="14px" />
+            <q-icon v-else :name="saveChip.icon" size="15px" />
+            <q-tooltip>{{ saveMessage ? `${saveChip.text} — ${saveMessage}` : saveChip.text }}</q-tooltip>
           </div>
-
-          <!-- Auto-save is a debounce, not a promise that everything already landed. Beside the chip that
-               reports it, and only while something is genuinely outstanding — a way to force the point
-               rather than a Save button that has to be pressed. -->
-          <q-btn
-            v-if="autoSaveOn && (savePending || saveState === 'error')"
-            outline no-caps color="primary" icon="o_save" label="Save now"
-            :loading="saveState === 'saving'" @click="flushSaves"
-          />
 
           <!-- The mode switch. Offered only where the stage actually grants an edit right, so it is never
                a button that turns the page into a form nothing on it can be typed into. A new request has
@@ -276,6 +268,7 @@
                   v-model:sub-industry="setupForm.subIndustry"
                   :readonly="!canEditClient"
                   :client-locked="clientLocked"
+                  :compact="showSubmittedPane"
                   :setup-readonly="!canEditSetup"
                   :industry-group-options="industryGroupOptions"
                   :industry-locked="industryLocked"
@@ -1604,16 +1597,18 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", warnOnUnload));
   min-width: 0;
 }
 
-/* The save indicator. It replaces a button, so it is sized and spaced like one rather than like a badge
-   tucked into the corner — a form with no Save on it has to be obvious about where its saving went. */
+/* The save indicator. It reports; it does not act — so it takes the header's STATUS size rather than its
+   button size, and comes out a dot rather than a square that would sit among the buttons looking like
+   one more of them. Round, because it carries an icon and no words: the badges beside it are pills for
+   the same reason, and neither is the rounded rectangle a button is. Both numbers are inherited down the
+   actions row, so this stays in step with them without repeating either here. */
 .rf-save {
   display: inline-flex;
   align-items: center;
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 12.5px;
-  font-weight: 500;
-  white-space: nowrap;
+  justify-content: center;
+  width: var(--dh-status-height, 24px);
+  height: var(--dh-status-height, 24px);
+  border-radius: 50%;
 }
 .rf-save--idle { border: 1px solid var(--line); color: var(--ink-500); }
 .rf-save--busy { background: var(--teal-050); color: var(--teal-900); }

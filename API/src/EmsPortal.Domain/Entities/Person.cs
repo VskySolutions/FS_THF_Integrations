@@ -26,6 +26,20 @@ public class Person : AuditableEntity
     public Guid? AddressId { get; set; }
 
     // ---- Personal information ----
+
+    /// <summary>
+    /// The title a person is addressed by — Mr., Mrs., Ms., Dr., Prof. — held beside the given name
+    /// rather than typed into it. It is not part of the name a person is FILED under (nobody is looked up
+    /// under "Dr."), so it stays out of <see cref="FullName"/>; it is how they are addressed, which a
+    /// letter, an invoice and a greeting all need and none of them can recover from a name.
+    /// <para>
+    /// Free text, capped at 16 characters, with the common titles offered as suggestions — the same
+    /// bargain the client name's generational suffix strikes: the list is what most people need, not all
+    /// any person may have, and a title nobody thought to seed is not a reason to address somebody wrongly.
+    /// </para>
+    /// </summary>
+    public string? Prefix { get; set; }
+
     public string FirstName { get; set; } = string.Empty;
     public string? MiddleName { get; set; }
     public string LastName { get; set; } = string.Empty;
@@ -35,8 +49,6 @@ public class Person : AuditableEntity
     public DateTime? DateOfBirth { get; set; }
     public string? MaritalStatus { get; set; }
     public string? Nationality { get; set; }
-    public string? TimeZone { get; set; }
-    public string? Language { get; set; }
 
     /// <summary>FirstName + MiddleName + LastName (trimmed); falls back to DisplayName.</summary>
     [NotMapped]
@@ -56,20 +68,9 @@ public class Person : AuditableEntity
     public string? EmergencyContactNumber { get; set; }
 
     // ---- Professional information ----
-    //
-    // Department and Organization stood here as free text on the person. The department a person works in
-    // is held per tenant on their USER account (UserDepartment, which also names the REMS Department
-    // Director), so the person-level copy was a second answer nothing read; the organization is the firm
-    // running the portal, which is the same for everybody in it.
+    // No department here: it is held per tenant on the USER account (UserDepartment, which also names the
+    // REMS Department Director), and a person-level copy would be a second answer nothing reads.
     public string? EmployeeCode { get; set; }
-    public Guid? ManagerPersonId { get; set; }
-
-    // ---- Social information ----
-    public string? LinkedInUrl { get; set; }
-    public string? TwitterUrl { get; set; }
-    public string? FacebookUrl { get; set; }
-    public string? InstagramUrl { get; set; }
-    public string? WebsiteUrl { get; set; }
 
     // ---- Profile metadata ----
     public int ProfileCompletionPercentage { get; set; }

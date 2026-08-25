@@ -129,10 +129,6 @@ public sealed class RemsRequestsController : ControllerBase
         return Ok(ApiResponseFactory.Paginated(rows, "REMS requests retrieved.", page, limit, total));
     }
 
-    // The pool-counts endpoint is gone with the Admin Pool view switcher it fed (Unassigned / Assigned to
-    // me / All). Every request names its reviewing admin at intake, so there is no unassigned bucket to
-    // count and nothing to pick up.
-
     // Ungated with the list that leads here, and for the same reason. CanSee below is the real boundary:
     // a request that is not the caller's to read is a 403 whatever permissions they hold.
     [HttpGet("{id:guid}")]
@@ -698,10 +694,6 @@ public sealed class RemsRequestsController : ControllerBase
     private static IEnumerable<Guid> Recipients(params Guid?[] candidates)
         => candidates.Where(c => c.HasValue).Select(c => c!.Value).Distinct();
 
-    // POST {id}/duplicate stood here — it minted a fresh draft carrying the source's intake fields. A
-    // request is raised for one client and one engagement, and a copy of one arrived pre-answered with
-    // somebody else's answers; what a partner actually needs is to raise the next one.
-
     [HttpDelete("{id:guid}")]
     [RequirePermission(Permissions.RemsRequestsDelete)]
     [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status200OK)]
@@ -748,9 +740,9 @@ public sealed class RemsRequestsController : ControllerBase
     /// external client directory exists in this platform, so <c>parentCompany</c>/<c>pastWork</c> are
     /// always null.
     /// <para>
-    /// Any non-empty term searches. A two-character floor stood here and matched the picker's own, and
-    /// between them they made a client whose name IS two or three characters unfindable by typing it. What
-    /// bounds the work is the page limit below, not the length of the term; the picker debounces before it
+    /// Any non-empty term searches — a minimum length would make a client whose name IS two or three
+    /// characters unfindable by typing it. What bounds the work is the page limit below, not the length
+    /// of the term; the picker debounces before it
     /// asks. An empty term is the one thing that searches for nothing — there is nothing to look up.
     /// </para>
     /// </summary>
@@ -788,9 +780,8 @@ public sealed class RemsRequestsController : ControllerBase
     /// </para>
     /// </summary>
     [HttpGet("/api/rems/admins")]
-    // Gated on READING requests rather than on the assign right. It used to feed the "Assign to Admin"
-    // picker, so the assign permission was the natural gate; that picker is gone, and what is left are the
-    // CSE and engagement people-pickers every initiator fills in — none of whom pick anything up.
+    // Gated on READING requests rather than on the assign right: what this feeds is the CSE and
+    // engagement people-pickers every initiator fills in, none of whom pick anything up.
     [RequirePermission(Permissions.RemsRequestsRead)]
     [ProducesResponseType<ApiResponse<IEnumerable<RemsAdminOption>>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Admins([FromQuery] string? role, CancellationToken cancellationToken)
@@ -1095,13 +1086,6 @@ public sealed class RemsRequestsController : ControllerBase
                 + "box and pick them from the results."));
     }
 
-    // The duplicate-title guard and the copy-title uniquifier lived here. Both went with Title itself:
-    // there is no per-client title left to clash on, and a request is told apart from every other by its
-    // own REMS number.
-
-    // IsPartner() stood here. It gated one thing — the Duplicate action, which was the partner's workflow
-    // rather than an admin's — and went with it.
-
     /// <summary>
     /// A request may still be withdrawn while it is a draft. Once the intake link has gone to the client
     /// it stays on the record — somebody outside the firm has been asked for their details by then, and
@@ -1186,10 +1170,9 @@ public sealed class RemsRequestsController : ControllerBase
     private static (string EmsFormState, string? ClientSubmissionState) MapFormState(RemsFormStateInfo? form)
         => RemsWorkspaceMapper.FormState(form);
 
-    // AssignmentNotification stood here — "A REMS request was assigned to you", sent to the admin the
-    // initiator named at intake. Nobody is named at intake any more, so nothing here has an assignee to
-    // tell. The type it raised, RemsRequestAssigned, now carries the pool broadcast instead: it is sent to
-    // every admin when a client's answers land on an unclaimed request (RemsPublicFormController).
+    // RemsRequestAssigned carries the pool broadcast: sent to every admin when a client's answers land on
+    // an unclaimed request (see RemsPublicFormController). Nobody is named at intake, so there is no
+    // single assignee to notify.
 
     /// <summary>
     /// Tells whoever raised the request that an admin now owns it. The requester (typically the Partner)
@@ -1236,10 +1219,9 @@ public sealed class RemsRequestsController : ControllerBase
     };
 
     /// <summary>
-    /// The My Requests view. Absent or unrecognised means <see cref="RemsListOwnership.All"/>, which is
-    /// the list this endpoint returned before the toggle existed — everything the caller may see, bounded
-    /// by the visibility predicate. Narrowing to authorship is the thing that has to be asked for, so a
-    /// client that has not been taught the toggle cannot silently lose rows it used to show.
+    /// The My Requests view. Absent or unrecognised means <see cref="RemsListOwnership.All"/> —
+    /// everything the caller may see, bounded by the visibility predicate. Narrowing to authorship is the
+    /// thing that has to be asked for, so a caller who sends nothing never silently loses rows.
     /// </summary>
     private static RemsListOwnership ParseOwnership(string? ownership) => ownership?.Trim().ToLowerInvariant() switch
     {

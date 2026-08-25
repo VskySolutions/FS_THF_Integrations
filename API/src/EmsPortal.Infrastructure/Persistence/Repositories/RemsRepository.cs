@@ -81,12 +81,10 @@ internal sealed class RemsRepository : IRemsRepository
         var me = options.CallerUserId;
         const string draft = RemsRequestStatuses.Draft;
 
-        // A DRAFT used to be its author's alone even to the admins, on the reading that an unfinished
-        // referral nobody has been pointed at is nobody else's business. It is the admins' business: a
-        // referral that stalls half-written stalls invisibly, and the person whose job it is to keep the
-        // pipeline moving could not see it, let alone finish it. So a REMS Admin now sees the whole tenant,
-        // drafts included, and may work one (RemsSetupAccess.CanWork) — the list's Created By Me / All
-        // toggle is what keeps that out of their own way, and it defaults to their own work.
+        // A REMS Admin sees the whole tenant, DRAFTS INCLUDED, and may work one (RemsSetupAccess.CanWork):
+        // a referral that stalls half-written stalls invisibly, and the person whose job it is to keep the
+        // pipeline moving has to be able to see it and finish it. The list's Created By Me / All toggle is
+        // what keeps that out of their own way, and it defaults to their own work.
         return options.CallerIsPrivileged
             // Admin / Super Admin: every request in the tenant, whatever stage it is at and whoever raised it.
             ? _dbContext.Rems.AsQueryable()

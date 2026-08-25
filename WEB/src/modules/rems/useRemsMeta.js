@@ -12,17 +12,16 @@ import { REMS_STATUS } from "modules/rems/remsStatus";
 // the catalogue's seed, re-exported for the few callers that need the closed set itself (the marking
 // rules, and the sort order a filter dropdown is built in).
 //
-// THREE OF THE ENGAGEMENT CLASSIFICATIONS READ ONE WAY ON SCREEN AND ANOTHER IN CODE. They were renamed;
-// their data — columns, option-set keys, API fields — deliberately was not, because each tenant's own copy
-// of a list is filed under the old key and so are the codes already stored against it:
+// THREE OF THE ENGAGEMENT CLASSIFICATIONS READ ONE WAY ON SCREEN AND ANOTHER IN CODE. Their data —
+// columns, option-set keys, API fields — keeps the older name deliberately, because each tenant's own copy
+// of a list is filed under that key and so are the codes already stored against it:
 //
 //   industryGroup*   is labelled  "Entity Type"   — what kind of entity the client is
 //   subIndustry*     is labelled  "Industry"      — the client's trade
 //   subServiceLine*  is labelled  "Service Line"  — what the firm is engaged to do
 //
 // The helpers below keep the DATA name, so what each one reads is never in doubt; only the strings a user
-// sees carry the new wording. A fourth, the old `serviceLine`, is gone entirely — it asked what the entity
-// type already answers, and the Government Audit rule it carried moved there with it.
+// sees carry the display wording.
 //
 // Everything further down that looks similar — form state, approver role, approval status, engagement
 // status, email events — mirrors a C# ENUM the backend branches on. Those have no option set and must not
@@ -35,11 +34,6 @@ export const REMS_STATUS_OPTIONS = REMS_OPTION_SEED.status;
 // because they are CODES — the tenant may relabel either one, and the auto-selection has to keep working.
 export const REMS_TYPE_BRAND_NEW_CLIENT = "brand_new_client";
 export const REMS_TYPE_EXISTING_CLIENT = "existing_client";
-
-// REMS_TYPE_SUBSIDIARY stood here — "Subsidiary / Child of Existing Client", the third answer. It is gone
-// (RetireRemsSubsidiaryType): a child of a client on file is a new engagement for a client THF already
-// has. The Parent Client field that briefly carried the difference has gone too (DropRemsParentClient),
-// so a referral no longer says anything about a parent at all.
 
 // The three seats an engagement names, as ROLE names — the value each people-picker scopes itself by
 // (remsApi.admins(role)). They mirror EmsPortal.Shared.Security.Roles exactly, spaces and all, because the
@@ -64,22 +58,91 @@ export const REMS_EXISTING_CLIENT_TYPES = [REMS_TYPE_EXISTING_CLIENT];
 
 export const REMS_INDUSTRY_GROUP_OPTIONS = REMS_OPTION_SEED.industryGroup;
 
-// The industry groups that ask the BUSINESS questions — EIN, and the CEO / CFO / Accounts Payable /
-// Banker / Lawyer contacts. "Business" was one group until it was split into the three kinds THF
-// actually onboards; they ask for exactly the same things, so the split named what the client is
-// without changing the form.
+// The industry groups that ask the BUSINESS questions — EIN, and the Primary / Financial / Billing /
+// Other contacts. The three business groups THF onboards are asked exactly the same things, so the
+// split between them names what the client is without changing the form.
 //
-// `business` itself is retired from the picker but still in this family: forms sent before the split
-// carry it, and a client part-way through one has to be able to finish. Mirrors the server's
+// `trust_estate` is in the family for the same reason: a trust or an estate has an EIN of its own and is
+// acted for by trustees or personal representatives, so the people it names are the people who act for
+// it. What it is NOT is an individual — filing one as its trustee is what put the trust's affairs under
+// a person's own name.
+//
+// `business` is not offered in the picker but stays in this family: forms sent before the split into
+// three carry the code, and a client part-way through one has to be able to finish. Mirrors the server's
 // RemsFormPayloadValidator.IsBusinessGroup, which is what actually enforces it.
 export const REMS_BUSINESS_INDUSTRY_GROUPS = Object.freeze([
-  "not_for_profit", "insurance", "commercial", "business"
+  "not_for_profit", "insurance", "commercial", "trust_estate", "business"
 ]);
 
 export const isBusinessIndustryGroup = (group) => REMS_BUSINESS_INDUSTRY_GROUPS.includes(group);
 
-// EMS form-state codes (RemsFormStatus) used to filter the EMS Inbox by form state. The codes are the
-// server's enum names and never change; only the wording below is ours — see the note on the labels.
+// ---- Which industries belong to which entity type ----
+//
+// Entity type and trade do not partition cleanly — a hospital is Health Care whether it is Commercial or
+// Not-for-Profit — which is why this is a map of OVERLAPPING sets rather than a tree: Health Care and
+// Educational Institutions each belong to two entity types, and are offered under both.
+//
+// Keyed and valued by CODE (REMS.IndustryGroup value → REMS.SubIndustry values), because a tenant may
+// relabel either list and the pairing has to survive it. The ORDER shown is the option list's own, not
+// this one's — a tenant who reorders their industries sees their order, filtered.
+//
+// Four rules make it safe on a list a tenant can edit (see remsIndustryOptions below):
+//   1. NO entity type chosen yet offers NOTHING. The trade depends on what kind of entity the client is,
+//      so on a new request the picker stays empty until that is answered — offering all twenty-nine and
+//      then taking most of them away again is a worse way to say the same thing.
+//   2. A code claimed by no entity type here — anything a tenant has ADDED — is offered under every
+//      entity type. Their own configuration must not become unreachable.
+//   3. An entity type with no entry here — Trust and Estate, or one a tenant adds — is not filtered at
+//      all. A pairing nobody has stated is not a pairing to enforce.
+//   4. Whatever is already SELECTED is always offered, even where these rules would exclude it, so
+//      opening an older engagement never silently drops the industry recorded on it.
+export const REMS_INDUSTRY_BY_ENTITY_TYPE = Object.freeze({
+  individual: Object.freeze(["individual"]),
+  government: Object.freeze(["state_government", "local_government", "federal_government", "government"]),
+  not_for_profit: Object.freeze([
+    "trade_associations", "charitable_organizations_foundations", "other_not_for_profit",
+    "educational_institutions", "health_care"
+  ]),
+  insurance: Object.freeze([
+    "insurance_health", "insurance_property_casualty", "insurance_life", "insurance_other"
+  ]),
+  commercial: Object.freeze([
+    "affordable_housing", "agribusiness", "auto_dealers", "construction", "entertainment",
+    "financial_institutions_banking", "hospitality", "manufacturing", "professional_service_firms",
+    "real_estate", "retail", "health_care", "oil_gas_distribution", "wholesale", "technology",
+    "educational_institutions", "distribution"
+  ])
+  // `trust_estate` and `business` are deliberately absent — see rule 2. Neither has a stated list, and a
+  // trust or an estate can be in any trade at all.
+});
+
+// Every industry code this map places somewhere. Anything outside it is a tenant's own addition.
+const CLAIMED_INDUSTRY_CODES = new Set(Object.values(REMS_INDUSTRY_BY_ENTITY_TYPE).flat());
+
+/**
+ * The Industry options to offer for an entity type, out of the tenant's resolved list.
+ *
+ * `selected` is the value currently stored, which is always kept — see rule 3 above.
+ */
+export function remsIndustryOptions (options, entityType, selected = null) {
+  // Rule 1 — nothing to offer until the entity type is answered. Rule 4 still holds: a record that
+  // somehow carries an industry without an entity type keeps showing the one it has.
+  if (!entityType) return options.filter((o) => o.value === selected);
+  const allowed = REMS_INDUSTRY_BY_ENTITY_TYPE[entityType];
+  if (!allowed) return options;
+  return options.filter((o) =>
+    allowed.includes(o.value) || !CLAIMED_INDUSTRY_CODES.has(o.value) || o.value === selected);
+}
+
+/** Whether an industry is one this entity type offers — what decides if a changed entity type clears it. */
+export const remsIndustryFitsEntityType = (entityType, industry) => {
+  if (!industry) return true;
+  const allowed = REMS_INDUSTRY_BY_ENTITY_TYPE[entityType];
+  return !allowed || allowed.includes(industry) || !CLAIMED_INDUSTRY_CODES.has(industry);
+};
+
+// EMS form-state codes (RemsFormStatus), for filtering a list by form state. The codes are the server's
+// enum names and never change; only the wording below is ours — see the note on the labels.
 export const REMS_FORM_STATE_OPTIONS = [
   { label: "Draft", value: "Draft" },
   { label: "Saved", value: "Saved" },
@@ -115,8 +178,7 @@ export const REMS_APPROVAL_STATUS_OPTIONS = [
 // request); the approval stages borrow ENGAGEMENT_STATUS_META's colours, so a request badge and the
 // engagement badge underneath it never disagree about what pending/approved looks like; and the two the
 // initiator-first rebuild added take the send-back orange and a lighter shade of the admin purple, so a
-// badge says both whose desk a request is on and which visit it is. The retired `submitted` is gone — no
-// request can hold it.
+// badge says both whose desk a request is on and which visit it is.
 const STATUS_COLORS = {
   draft: "grey-6",
   awaiting_customer: "teal-7",
@@ -336,10 +398,9 @@ export function useRemsOptionSets () {
 // fallback when the resolve endpoint 403s (the REMS Admin role lacks optionSets.read).
 export const REMS_DEPARTMENT_CODES = Object.freeze({ CAS: "cas", TAX: "tax", AUDIT: "audit", GCS: "gcs" });
 
-// The Entity Type code (REMS.IndustryGroup value) that makes an audit a GOVERNMENT audit. It used to be
-// read off the engagement's service line; that list was dropped for asking what the entity type already
-// answers, so the rule reads the entity type — which is also the stronger place for it, being required
-// and frozen once the client's intake form goes out.
+// The Entity Type code (REMS.IndustryGroup value) that makes an audit a GOVERNMENT audit. Read off the
+// entity type rather than anything on the engagement, because it is required and frozen once the
+// client's intake form goes out.
 export const REMS_ENTITY_TYPE_GOVERNMENT = "government";
 
 export const REMS_DEPARTMENT_OPTIONS = REMS_OPTION_SEED.department;

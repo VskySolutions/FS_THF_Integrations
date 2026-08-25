@@ -1,5 +1,6 @@
 using EmsPortal.Api.Models.Rems;
 using EmsPortal.Api.Security;
+using EmsPortal.Api.Validators.Rems;
 using EmsPortal.Application.Abstractions.Persistence;
 using EmsPortal.Application.Abstractions.UniversalFeatures;
 using EmsPortal.Domain.Entities;
@@ -147,12 +148,14 @@ public sealed class RemsEngagementController : ControllerBase
     }
 
     /// <summary>
-    /// The read-only submitted-form view (AC-REMS-013.2/3), rendered from the immutable
-    /// <c>REMSFormSubmission</c> payload as plain fields — distinct from the editable workspace data.
+    /// The submitted-form view (AC-REMS-013.2/3), rendered from the <c>REMSFormSubmission</c> payload as
+    /// plain fields — distinct from the editable workspace data.
     /// </summary>
     /// <remarks>
     /// Open to the initiator as well as the Admin: it is their client who filled this in, and after a
-    /// send-back it is the answers they have to work the setup against.
+    /// send-back it is the answers they have to work the setup against. Only an Admin may CORRECT them —
+    /// see <see cref="UpdateSubmission"/>, whose right is reported here as <c>canEdit</c> so the screen
+    /// offers the action exactly where the save would be accepted.
     /// </remarks>
     [HttpGet("requests/{remsId:guid}/submission")]
     [RequireAnyPermission(Permissions.RemsEngagementsManage, Permissions.RemsRequestsRead)]
@@ -177,11 +180,130 @@ public sealed class RemsEngagementController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("This request has no submitted form."));
         }
 
-        var payload = RemsFormPayloadJson.TryDeserialize(submission.SubmittedPayload) ?? new RemsFormPayloadV1();
-        var view = new RemsSubmissionView(
-            submission.Id, rems.Id, rems.REMSNumber, form.IndustryGroup, rems.CustomerEmail, submission.SubmittedOnUtc, payload);
-        return Ok(ApiResponseFactory.Success(view, "REMS submitted form retrieved."));
+        return Ok(ApiResponseFactory.Success(
+            await BuildSubmissionViewAsync(rems, form, submission, cancellationToken),
+            "REMS submitted form retrieved."));
     }
+
+    /// <summary>
+    /// Correct the client's submitted answers, in place (Admin only). The client filled this in once, from
+    /// an emailed link that is spent the moment they send it — so when a digit of the EIN is wrong, or a
+    /// contact's email has a typo in it, the alternative to an Admin fixing it is issuing a whole second
+    /// intake form for one character.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The correction OVERWRITES the stored payload rather than filing a second submission: one submission
+    /// per form is a unique index, and the point here is that the record should say what is true about the
+    /// client, not that it should say two things. The audit columns carry who changed it and when, and the
+    /// view reports both — so a reader can always tell a corrected snapshot from an untouched one.
+    /// </para>
+    /// <para>
+    /// It is validated exactly as the client's own submit is, against the entity type the form was built
+    /// for: a corrected form must still be a complete one. Two fields are not the Admin's to change and are
+    /// forced back: the echoed email (the request's customer email is authoritative, as it is on submit)
+    /// and the payload version.
+    /// </para>
+    /// <para>
+    /// What it deliberately does NOT do is re-materialise the client record, its entities, addresses or
+    /// contact Persons. Those were written by the submit transaction and are edited through their own
+    /// endpoints; rewriting them from here would silently reach into shared Person rows.
+    /// </para>
+    /// </remarks>
+    [HttpPut("requests/{remsId:guid}/submission")]
+    [RequirePermission(Permissions.RemsEngagementsManage)]
+    [ProducesResponseType<ApiResponse<RemsSubmissionView>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateSubmission(
+        Guid remsId, [FromBody] RemsFormPayloadV1? payload, CancellationToken cancellationToken)
+    {
+        var rems = await _rems.GetByIdAsync(remsId, cancellationToken);
+        if (rems is null)
+        {
+            return NotFound(ApiResponseFactory.NotFound("REMS request not found."));
+        }
+
+        if (GuardCanRead(rems) is { } notAllowed)
+        {
+            return notAllowed;
+        }
+
+        // Frozen for the same reason every other field on the request is: the approvers are deciding on
+        // what is in front of them, and a snapshot that changed under them is a different decision.
+        if (IsFrozenForApproval(rems.Status))
+        {
+            return StatusCode(StatusCodes.Status409Conflict, ApiResponseFactory.Error(
+                CodeEngagementLocked,
+                "This request is locked.",
+                "The client's submitted form cannot be corrected while the engagement is pending approval or approved."));
+        }
+
+        var form = await _forms.GetWithSubmissionsByRemsIdAsync(remsId, cancellationToken);
+        var submission = form?.Submissions.OrderByDescending(s => s.SubmittedOnUtc).FirstOrDefault();
+        if (form is null || submission is null)
+        {
+            return NotFound(ApiResponseFactory.NotFound("This request has no submitted form."));
+        }
+
+        if (payload is null)
+        {
+            return BadRequest(ApiResponseFactory.Error(
+                ApiErrorCodes.ValidationFailed, "Validation failed.", "payload: No form data was supplied."));
+        }
+
+        // Not the Admin's to change: the email is the address the invite went to, and the version pins the
+        // shape the stored JSON is read back in.
+        payload.Email = rems.CustomerEmail;
+        payload.Version = 1;
+
+        var validation = new RemsFormPayloadValidator().Validate(payload, form.IndustryGroup);
+        if (!validation.IsValid)
+        {
+            return BadRequest(ApiResponseFactory.ValidationError(validation.Errors));
+        }
+
+        // Mutated, not Update()d. The submission was loaded TRACKED (with its form), so change tracking
+        // picks the new payload up on its own — where an explicit Update would walk the graph and mark the
+        // owning REMSForm modified too, stamping its audit columns for a change that is not its.
+        submission.SubmittedPayload = RemsFormPayloadJson.Serialize(payload);
+        await _activity.WriteAsync(
+            new CreateActivityEventDto(EntityType.Rems, rems.Id, ActivityEventTypes.RemsFormCorrected),
+            cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Ok(ApiResponseFactory.Success(
+            await BuildSubmissionViewAsync(rems, form, submission, cancellationToken),
+            "REMS submitted form updated."));
+    }
+
+    /// <summary>
+    /// The submitted-form view, with the correction trail resolved and this caller's own right to correct
+    /// it. <c>UpdatedById</c> is null on a snapshot the client sent and nobody has touched — the submit
+    /// runs anonymously, so there is no actor to stamp — which is what makes it the signal here.
+    /// </summary>
+    private async Task<RemsSubmissionView> BuildSubmissionViewAsync(
+        REMS rems, REMSForm form, REMSFormSubmission submission, CancellationToken cancellationToken)
+    {
+        var payload = RemsFormPayloadJson.TryDeserialize(submission.SubmittedPayload) ?? new RemsFormPayloadV1();
+
+        string? editedBy = null;
+        if (submission.UpdatedById is { } editorId)
+        {
+            var names = await _users.GetFullNamesAsync(new[] { editorId }, cancellationToken);
+            editedBy = names.TryGetValue(editorId, out var name) ? name : "an admin";
+        }
+
+        return new RemsSubmissionView(
+            submission.Id, rems.Id, rems.REMSNumber, form.IndustryGroup, rems.CustomerEmail,
+            rems.ClientNameSuffix,
+            submission.SubmittedOnUtc, payload,
+            editedBy,
+            editedBy is null ? null : submission.UpdatedOnUtc,
+            CanEdit: User.HasPermission(Permissions.RemsEngagementsManage) && !IsFrozenForApproval(rems.Status));
+    }
+
+    /// <summary>Once a round is open — and once it has succeeded — nothing about the request may move.</summary>
+    private static bool IsFrozenForApproval(string? status)
+        => status is RemsRequestStatuses.PendingApproval or RemsRequestStatuses.Approved;
 
     /// <summary>
     /// The engagement workspace (AC-REMS-014): the request's engagement with its audit/government/tax
@@ -213,8 +335,7 @@ public sealed class RemsEngagementController : ControllerBase
         // Null until the client submits their intake form. Everything below tolerates that.
         var client = await _clients.GetByRemsIdAsync(remsId, cancellationToken);
 
-        // One engagement, belonging to the request. The workspace used to load one per entity and index them
-        // by entity id so each tab could find its own; there are no tabs and no second engagement now.
+        // One engagement, belonging to the request rather than to any entity.
         var engagement = await _engagements.GetByRemsIdAsync(remsId, cancellationToken);
         var engagements = engagement is null ? Array.Empty<REMSEngagement>() : new[] { engagement };
         var engagementIds = engagements.Select(e => e.Id).ToList();
@@ -433,7 +554,6 @@ public sealed class RemsEngagementController : ControllerBase
         var departmentChanged = request.Department is not null
             && !string.Equals(Normalize(request.Department), engagement.Department, StringComparison.Ordinal);
         if (request.Department is not null) engagement.Department = Normalize(request.Department);
-        if (request.ServiceLine is not null) engagement.ServiceLine = Normalize(request.ServiceLine);
         // The two sub-classifications. Nothing branches on either — they narrow the line and the industry
         // group for reporting — so they are stored as given, normalized like every other option-set code.
         if (request.SubServiceLine is not null) engagement.SubServiceLine = Normalize(request.SubServiceLine);
@@ -457,10 +577,14 @@ public sealed class RemsEngagementController : ControllerBase
         if (request.BillingManagerId.HasValue) engagement.BillingManagerId = request.BillingManagerId;
         if (request.FirstYearFeeEstimate.HasValue) engagement.FirstYearFeeEstimate = request.FirstYearFeeEstimate;
         if (request.RealizationPercentage.HasValue) engagement.RealizationPercentage = request.RealizationPercentage;
-        // The billing schedule. Normalized like the other two option-set codes on this record; the count
-        // is entered rather than derived, so a quarterly engagement is not automatically four bills.
+        // The billing schedule: how often, and how it actually works. The frequency is normalized like
+        // the other option-set codes on this record; the description is free prose, so it is only trimmed
+        // — and an empty string is how it is CLEARED, which an omitted field cannot say.
         if (request.BillingPeriod is not null) engagement.BillingPeriod = Normalize(request.BillingPeriod);
-        if (request.NumberOfBills.HasValue) engagement.NumberOfBills = request.NumberOfBills;
+        if (request.BillingProcessDescription is not null)
+        {
+            engagement.BillingProcessDescription = Normalize(request.BillingProcessDescription);
+        }
 
         _engagements.Update(engagement);
         await LogEngagementUpdatedAsync(engagement, cancellationToken);
@@ -635,11 +759,6 @@ public sealed class RemsEngagementController : ControllerBase
     }
 
     // -------------------- Part B: marketing, commission --------------------
-
-    // Copy-From is gone (was AC-REMS-015). It existed so a client's second and third entities did not have
-    // to have their engagement setup retyped — and there are no second and third entities to set up any
-    // more. A request carries one engagement, and another business of the same client becomes its own
-    // request with its own setup, so there is never a sibling engagement to copy from.
 
     /// <summary>
     /// Set the engagement marketing tags (AC-REMS-017): a list of REMS marketing option ids, at least one

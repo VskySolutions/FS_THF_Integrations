@@ -352,8 +352,4 @@ const openEmailLog = (row) => {
 
 // How a request names itself in a dialog title bar.
 const rowLabel = (row) => [row.remsNumber, row.clientName].filter(Boolean).join(" — ");
-
-// A Duplicate action stood here — it copied a request's intake fields into a fresh draft. A request is
-// raised for one client and one engagement, and a copy arrived pre-answered with another request's
-// answers; New Request is the way to raise the next one.
 </script>

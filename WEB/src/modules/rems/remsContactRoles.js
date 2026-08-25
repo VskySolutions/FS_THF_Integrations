@@ -66,6 +66,9 @@ export const LEGACY_ROLE_ALIASES = {
   accountsPayable: "billingContact"
 };
 
+// `prefix` is deliberately NOT counted. A title on its own is not a contact — somebody who opened the
+// suggestions and picked "Mr." out of curiosity has told us nothing, and treating that as an answer would
+// make an otherwise-blank optional contact start failing validation as "partly filled".
 const hasAny = (role) =>
   !!role && [role.firstName, role.lastName, role.name, role.email, role.phone]
     .some((v) => v != null && String(v).trim() !== "");
@@ -97,6 +100,23 @@ export const roleDisplayName = (role) => {
 };
 
 export const roleHasAny = hasAny;
+
+/**
+ * The contact as they are addressed — the title in front of the joined name. For DISPLAY only: the name
+ * on its own (roleDisplayName) is what the record is filed and searched under.
+ */
+export const roleAddressedName = (role) => {
+  const name = roleDisplayName(role);
+  const prefix = String(role?.prefix ?? "").trim();
+  return [prefix, name].filter(Boolean).join(" ");
+};
+
+/**
+ * Which role key carries the billing contact. It is asked with the billing ADDRESS rather than among the
+ * other contacts — where the invoice goes and who it is addressed to are two halves of one answer — so
+ * every surface that groups the answers reads it from here rather than each deciding for itself.
+ */
+export const BILLING_ROLE_KEY = "billingContact";
 
 /** Which role set an industry group is asked. The three business groups share one. */
 export const groupKey = (industryGroup, isBusiness) => (isBusiness ? "business" : industryGroup);

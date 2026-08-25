@@ -6,7 +6,7 @@ namespace EmsPortal.Domain.Entities;
 /// The engagement being set up by a <see cref="REMS"/> request — exactly one per request. Holds the
 /// servicing team, fee estimate, realization and billing schedule, and routes through approval.
 /// <see cref="Department"/>, <see cref="SubServiceLine"/>, <see cref="SubIndustry"/> and
-/// <see cref="BillingPeriod"/> store option-set codes (<see cref="ServiceLine"/> did too, and is retired).
+/// <see cref="BillingPeriod"/> store option-set codes.
 /// <para>
 /// It hangs off the REQUEST, not off a <see cref="REMSEntity"/>. The initiator fills the engagement
 /// setup before the client is ever contacted, so there is no entity to attach it to when it is created —
@@ -28,14 +28,6 @@ public class REMSEngagement : AuditableEntity
 
     /// <summary>Owning department (option-set code).</summary>
     public string? Department { get; set; }
-
-    /// <summary>
-    /// RETIRED. The old service line (Commercial / Non-Profit / Government / Individual), which asked what
-    /// KIND of client this is — the question the request's entity type already answers. Dropped from the
-    /// setup form, and nothing reads or writes it any more. Kept on the row so historical engagements do
-    /// not lose what was recorded against them; expect it to be null on anything raised since.
-    /// </summary>
-    public string? ServiceLine { get; set; }
 
     /// <summary>
     /// The service actually being sold — what the setup form calls the SERVICE LINE (option-set
@@ -70,17 +62,19 @@ public class REMSEngagement : AuditableEntity
     /// <summary>How often the client is billed (option-set <c>REMS.BillingPeriod</c> code).</summary>
     public string? BillingPeriod { get; set; }
 
-    /// <summary>How many bills are raised over the engagement.</summary>
-    public int? NumberOfBills { get; set; }
+    /// <summary>
+    /// How this engagement is actually billed, in the firm's own words — "three progress bills against
+    /// the fixed fee, the balance on delivery", "monthly in arrears against timesheets". It was a COUNT
+    /// (No. of Bills), and a count could not carry any of that: a schedule is a sentence, not a number,
+    /// and the number on its own said how many invoices without saying what triggered one.
+    /// </summary>
+    public string? BillingProcessDescription { get; set; }
 
     /// <summary>Engagement approval lifecycle status.</summary>
     public RemsEngagementStatus Status { get; set; }
 
-    // DefaultApproversSeededOnUtc stood here, recording when the firm's shareholders had been written onto
-    // this engagement's approver list. It existed to make a REMOVAL stick — without it the list would be
-    // rebuilt on the next read and put back whoever had just been taken off. Shareholders are not
-    // removable any more: they route by standing, like the director and the CSE, so nothing is written and
-    // there is nothing to remember.
+    // Nothing records when the firm's shareholders joined this engagement's approver list, because nothing
+    // writes them onto it: they route by standing, like the director and the CSE, and are not removable.
 
     // ---- Navigations ----
     // Note: the 0..1 detail relationships (audit/government/tax) and the engagement-per-request link are

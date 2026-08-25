@@ -26,8 +26,9 @@ internal static class RemsFormOptionCodes
 {
     // "business" stays accepted though it is no longer offered: forms sent before it was split into
     // not-for-profit / insurance / commercial still carry it, and those must remain completable.
+    // "trust_estate" asks the business questions too — see RemsFormPayloadValidator.BusinessGroups.
     public static readonly IReadOnlyList<string> IndustryGroups =
-        new[] { "individual", "not_for_profit", "insurance", "commercial", "government", "business" };
+        new[] { "individual", "not_for_profit", "insurance", "commercial", "trust_estate", "government", "business" };
 
     public static bool IsKnownIndustryGroup(string? value) => value is not null && IndustryGroups.Contains(value);
 }

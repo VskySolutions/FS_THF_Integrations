@@ -60,9 +60,6 @@ public sealed class AddRemsFilesRequestValidator : AbstractValidator<AddRemsFile
     }
 }
 
-// AssignRemsRequestRequestValidator stood here. Pick-up and hand-back carry no body — the caller is the
-// assignee, and the request in the URL is the whole instruction — so there is nothing left to validate.
-
 /// <summary>
 /// The seeded <c>REMS.Type</c> option-set codes (see <c>DefaultOptionSets</c>). Type is trivially closed
 /// so it is validated against the known codes; status transitions are driven by the endpoints, not the

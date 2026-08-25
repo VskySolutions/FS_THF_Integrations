@@ -38,11 +38,6 @@
             v-if="request" outline no-caps color="primary" icon="o_forum" label="Conversation"
             @click="conversationOpen = true"
           />
-          <!-- "View submitted form" stood here, opening a modal over the page. The client's answers are
-               the thing the setup below is filled in AGAINST, and a modal made checking one against the
-               other a matter of opening it, reading, closing, and remembering. They are a pane of this
-               page now (see the splitter below), which appears as soon as the client has answered. -->
-
           <!-- What the client has actually been sent, and whether it landed. Beside Send Reminder rather
                than buried on a list, because "have we already chased them twice?" is the question asked
                immediately before pressing it. -->
@@ -177,14 +172,26 @@
                 <q-icon name="o_description" size="18px" color="primary" class="q-mr-xs" />
                 <div class="col">
                   <div class="text-subtitle2 text-weight-medium">Submitted EMS Form</div>
-                  <div class="text-caption text-grey-7">
-                    Read-only snapshot of exactly what the client submitted.
-                  </div>
+                  <div class="text-caption text-grey-7">{{ submittedNote }}</div>
                 </div>
+                <!-- Correcting the client's answers, in the corner of the pane that holds them. Admins
+                     only: the client filled this in once, from a link that is spent, so somebody on this
+                     side has to be able to fix a mistyped EIN without issuing a second intake form —
+                     and that somebody is the Admin reviewing it, not its initiator. Gone once an
+                     approval round has frozen the request, which is the same rule the server applies. -->
+                <q-btn
+                  v-if="canEditSubmission" flat dense no-caps size="sm" color="primary" icon="o_edit"
+                  label="Edit Form" @click="editFormOpen = true"
+                >
+                  <q-tooltip max-width="280px">
+                    Correct what the client submitted. The change is recorded against your name; the
+                    client is not asked again.
+                  </q-tooltip>
+                </q-btn>
               </div>
               <q-separator />
               <div class="rf-submitted__body">
-                <submitted-form-panel :rems-id="remsId" />
+                <submitted-form-panel ref="submittedPanelRef" :rems-id="remsId" />
               </div>
             </q-card>
           </div>
@@ -234,9 +241,9 @@
                   <q-tooltip>{{ prevTab.label }}</q-tooltip>
                 </q-btn>
 
-                <!-- The ONE save left on the page — a request has to exist before anything can be auto-saved
-                 against it, so on a brand-new request the create IS the step forward. It is gone the
-                 moment it has run, which is also when the strip wants its width back. -->
+                <!-- The ONE save on the page: a request must exist before anything can be auto-saved
+                 against it, so on a brand-new request the create IS the step forward. It disappears
+                 the moment it has run, which is also when the strip wants its width back. -->
                 <q-btn
                   v-if="isNew" unelevated no-caps dense color="primary" icon-right="o_arrow_right"
                   label="Save as Draft &amp; Next" class="q-px-md" :loading="saving" @click="createDraft"
@@ -254,10 +261,7 @@
 
                 <!-- Commission is where the initiator's own work ends: past it the tabs are the client's
                  answers and the approvers' round, neither of which they fill in. So instead of stepping
-                 on, this is where the request goes to the client.
-                 "Save and Close" stood beside it and is gone. The form saves itself, so it was a button
-                 that mostly meant Close — and Back, which commits the debounce on its way out, is that
-                 already. -->
+                 on, this is where the request goes to the client. -->
                 <q-btn
                   v-if="atFinishTab" unelevated dense no-caps color="teal-7" icon="o_send"
                   label="Submit to Client" class="q-px-md" :disable="!readyToSend" @click="openSend"
@@ -363,13 +367,6 @@
                 />
               </q-tab-panel>
 
-              <!-- The Client Intake tab stood here: the materialised client record and the main entity's
-               addresses, restated on a tab of their own. "View Submitted Form" in the header shows the
-               client's answers already, from the immutable snapshot rather than from a second copy of
-               them, so the tab was the same page twice. Its Other Entities list was not a restatement —
-               it carries the Create EMS action — and moved up to the Client tab with the rest of what is
-               known about the client. -->
-
               <!-- ---------- Approval ---------- -->
               <!-- Only ever reached by someone who may read it: the approver list is gated on managing
                engagements, so for everyone else this tab does not exist until a round has actually been
@@ -393,9 +390,9 @@
         </div>
       </div>
 
-      <!-- No action bar. Every button that stood here is in one of the two corners at the top of the page
-           — the workflow moves in the header, stepping through the form on the tab strip — so the page
-           ends on the last field of whichever tab is open, with nothing below it to scroll to. -->
+      <!-- No action bar: every button lives in one of the two corners at the top — the workflow moves in
+           the header, stepping through the form on the tab strip — so the page ends on the last field of
+           whichever tab is open, with nothing below it to scroll to. -->
     </template>
 
     <!-- All five act on a saved request, so none of them exist while one is being composed. -->
@@ -411,30 +408,30 @@
       />
       <conversation-dialog v-model="conversationOpen" :request-id="remsId" :subtitle="subtitle" />
       <email-log-dialog v-model="emailLogOpen" :rems-id="remsId" :subtitle="subtitle" @sent="load" />
+      <edit-submitted-form-dialog
+        v-if="canEditSubmission" v-model="editFormOpen" :rems-id="remsId" :subtitle="subtitle"
+        @saved="onSubmissionCorrected"
+      />
     </template>
   </q-page>
 </template>
 
 <script setup>
-// THE REMS form (Phase 16): one tabbed page replacing the create/edit drawer, the entity tab strip and
-// the four-step Setup/Marketing/Commission/Approval wizard.
+// THE REMS form: one tabbed page for creating, editing and reading a request.
 //
 // CREATING, EDITING AND READING ARE THE SAME PAGE, on three paths — /rems/requests/new,
 // /rems/requests/edit/:id and /rems/requests/:id — because they are the same material seen three ways.
 // Which one you are on is the URL itself: the page reads its own route NAME, and nothing is carried in a
-// query flag. (It used to be one path with `:id = "new"` and `?mode=edit`, which made the plainest link in
-// the module — "show me this request" — the longest.)
+// query flag.
 //
 // The tabs are the parts of a referral — the client, the engagement setup, how it was won, who is paid for
 // it, and the approval round — not the steps of a wizard: every tab but the first is reachable in any
 // order and none of them gates another. What the CLIENT answered is not among them: it is a snapshot they
-// sent rather than a part of the referral the firm writes, and the header opens it.
+// sent rather than a part of the referral the firm writes, and the left pane shows it.
 //
 // THERE IS ONE SAVE ON THE PAGE, and it is only there because a request has to EXIST before anything can
 // be written against it: saving the Client Information tab files the draft, and from that moment every
-// edit on every tab saves itself (see the auto-save block below). The Save button that used to write the
-// whole page at once is gone with it — it was the thing that made a half-filled request feel unsafe to
-// leave, and it was also the reason the setup could be typed and then lost.
+// edit on every tab saves itself (see the auto-save block below).
 //
 // The page is the same for everyone; what differs is what it lets you touch. Editability is derived from
 // the request's STAGE rather than from which list you arrived by, because the two rework states hand the
@@ -467,6 +464,7 @@ import EngagementCommission from "modules/rems/components/engagement/EngagementC
 import EngagementApproval from "modules/rems/components/engagement/EngagementApproval.vue";
 import SendEmsDialog from "modules/rems/components/SendEmsDialog.vue";
 import SubmittedFormPanel from "modules/rems/components/SubmittedFormPanel.vue";
+import EditSubmittedFormDialog from "modules/rems/components/EditSubmittedFormDialog.vue";
 import ConversationDialog from "modules/rems/components/ConversationDialog.vue";
 import EmailLogDialog from "modules/rems/components/EmailLogDialog.vue";
 
@@ -523,6 +521,8 @@ const commissionRef = ref(null);
 
 const conversationOpen = ref(false);
 const emailLogOpen = ref(false);
+const editFormOpen = ref(false);
+const submittedPanelRef = ref(null);
 const sendOpen = ref(false);
 const reminderOpen = ref(false);
 const sendBackOpen = ref(false);
@@ -568,7 +568,7 @@ const newEngagement = Object.freeze({
   firstYearFeeEstimate: null,
   realizationPercentage: null,
   billingPeriod: null,
-  numberOfBills: null,
+  billingProcessDescription: "",
   status: "Draft",
   marketingMethodIds: [],
   commissionSplits: [],
@@ -782,11 +782,26 @@ const hasSubmission = computed(() => !!workspace.value?.client);
 
 // ---- The submitted-form pane ----
 // Shown whenever there is a submission to show, in BOTH modes: reading a request and correcting one are
-// each done against what the client actually said, and the button that used to open it in a modal is
-// gone from the header. A request being composed has no client and no answers, so no pane.
+// each done against what the client actually said. A request being composed has no client and no
+// answers, so no pane.
 const showSubmittedPane = computed(() => !isNew.value && hasSubmission.value);
-// No ref on the panel. A submission is immutable and the pane mounts the moment one exists, so it loads
-// once and there is never anything to refresh it with.
+
+// Whether the client's answers are this caller's to correct. Mirrors the endpoint exactly — an Admin
+// (rems.engagements.manage, which is what the Admin / Tenant Admin / Super Admin roles carry), and not
+// once an approval round has frozen the request. Deliberately NOT narrowed to the admin HOLDING the
+// request: a typo in the client's own answers is a fact about the client, not part of the setup one
+// admin is working, and the endpoint draws the same line.
+const canEditSubmission = computed(() => showSubmittedPane.value && isAdmin.value && !frozen.value);
+
+// The pane's caption. It stops claiming to be untouched once somebody has touched it: an admin reading
+// an EIN here is entitled to know whether it is what the client typed or what a colleague corrected it
+// to. The panel below fills in who and when.
+const submittedNote = computed(() => (canEditSubmission.value
+  ? "What the client submitted. Corrections are recorded against the admin who makes them."
+  : "Read-only snapshot of exactly what the client submitted."));
+
+// A correction replaces the stored snapshot, so the pane behind the dialog has to re-read it.
+const onSubmissionCorrected = () => { submittedPanelRef.value?.reload(); };
 
 // 40 / 60 — the left pane is a record to consult, the right one is the work. Kept per browser once the
 // reader moves it: a preference about how somebody reads, not a fact about the request, so it is not
@@ -867,8 +882,8 @@ const cseHint = computed(() => (cseOptions.value.length
   : "Nobody holds the \"CSE\" role — assign it on a user's page in Administration → Users."));
 
 // ---- The Approval tab ----
-// Reading the approver list is gated on managing engagements. The initiator does not hold that, so the
-// section used to load, call it, and render a bare 403 on a tab they could do nothing with anyway.
+// Reading the approver list is gated on managing engagements, which the initiator does not hold — so
+// showing them the section would render a bare 403 on a tab they could do nothing with anyway.
 //
 // Approval is not their step: the admin opens the round once the client's intake is in. So for anyone who
 // cannot run one, the tab appears only once a round HAS been opened — at which point there is something
@@ -926,8 +941,8 @@ const tabsNote = computed(() => (isNew.value
     "remaining tabs are filled against — and from that point everything you type saves itself."
   : ""));
 
-// In the URL like `mode`, so a reload or a shared link comes back to the tab that was open. A tab that is
-// not on this record (a stale link, or one whose section has gone) falls back to the first rather than
+// Held in the URL, so a reload or a shared link comes back to the tab that was open. A tab that is not on
+// this record — a stale link, or one whose section does not apply — falls back to the first rather than
 // rendering an empty card.
 const tab = computed({
   get: () => {
@@ -958,9 +973,7 @@ const nextTab = computed(() => stepTab(1));
 // Where the initiator's own work ends. What lies past Commission is somebody else's: the approvers' round.
 const FINISH_TAB = "commission";
 const hasFinishTab = computed(() => tabs.value.some((t) => t.name === FINISH_TAB && !t.disable));
-// Only where there is something to finish WITH. It used to be true wherever the tab could be saved, which
-// was the "Save and Close" half of the corner; that button is gone and Submit to Client is all that is
-// left of it.
+// Only where there is something to finish WITH — Submit to Client is the whole of finishing here.
 const atFinishTab = computed(() => tab.value === FINISH_TAB && canSendToClient.value);
 // Finishing does not REPLACE stepping on. For the initiator in draft there is nothing past Commission, so
 // submitting is all there is — but once a round has been opened, Approval sits behind it and the admin
@@ -1001,9 +1014,8 @@ const clientRows = computed(() => [
   // Read off the request rather than a picker: nobody chooses this, an admin claims it. Blank until one
   // does, and the badge in the header is what says the request is waiting for that.
   { label: "Reviewing Admin", value: request.value?.assignedAdmin?.name || "Waiting for pickup" },
-  // The retired "Message from Partner". Shown only where an older request actually carries one — the
-  // field is gone from the form, so this never appears on anything raised since, but deleting the row
-  // outright would hide text somebody wrote and nothing else displays.
+  // "Message from Partner" is not asked for any more, so this shows only on the older requests that
+  // carry one — dropping the row outright would hide text somebody wrote and nothing else displays.
   {
     label: "Message from Partner",
     value: request.value?.description,
@@ -1034,7 +1046,7 @@ const setupRows = computed(() => {
     { label: "First-Year Fee Estimate", value: currency(e.firstYearFeeEstimate) },
     { label: "% Realization", value: e.realizationPercentage == null ? "" : `${e.realizationPercentage}%` },
     { label: "Billing Frequency", value: labelOf(billingPeriodOptions.value, e.billingPeriod) },
-    { label: "No. of Bills", value: e.numberOfBills },
+    { label: "Description of Billing Process", value: e.billingProcessDescription, wide: true },
     // The conditional blocks say nothing when they do not apply to this engagement, so they are hidden
     // rather than shown empty — unlike the fields above, where blank IS the record.
     { label: "Fiscal Year End", value: e.tax?.fiscalYearEnd, hideWhenEmpty: true },
@@ -1128,16 +1140,12 @@ const clientProblem = () => {
   if (!clientForm.customerEmail?.trim()) {
     return "Give the client's email address — the intake form is emailed to them.";
   }
-  // No parent-client check. It used to be required, because "Subsidiary / Child of Existing Client" was a
-  // type of its own and a subsidiary with no parent left that answer unfinished. The type is gone: the
-  // parent is asked on "New Engagement, Existing Client", where most referrals genuinely have none, and
-  // requiring it there would demand an answer that does not exist.
   return "";
 };
 
-// No `description`. "Message from Partner" is gone from the form, and leaving the field out of the payload
-// is also what preserves it — the endpoint reads an omitted field as "leave this alone", so whatever an
-// older request recorded stays recorded.
+// No `description`: "Message from Partner" is not on the form, and leaving the field out of the payload is
+// what preserves it — the endpoint reads an omitted field as "leave this alone", so whatever an older
+// request recorded stays recorded.
 const clientPayload = () => ({
   type: clientForm.type,
   clientName: clientForm.clientName,
@@ -1378,9 +1386,6 @@ const openSend = async () => {
   await flushSaves();
   sendOpen.value = true;
 };
-
-// "Save and Close" lived here. Leaving the page is Back's job and always was; the save half of it is what
-// the form does on its own now, and onBeforeRouteLeave below commits the debounce on the way out.
 
 const openReminder = async () => {
   await flushSaves();
@@ -1654,8 +1659,6 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", warnOnUnload));
   }
 }
 
-/* The action bar that used to close the page is gone — every button is in the header or on the tab strip
-   now, so the form ends on its last field. */
 </style>
 
 <style>

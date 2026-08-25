@@ -135,8 +135,6 @@ export const userApi = {
   // Picker data for the department section: the tenant's REMS.Department list and the current head of
   // each → { departments: [{ value, label }], heads: [{ department, userId, fullName }] }.
   departments: () => api.get("/api/admin/users/departments").then(unwrap),
-  // No `jobTitles`: job title is gone from the platform (the picker, its User.JobTitle option list and the
-  // Person.JobTitle column behind it were dropped together), and so is the endpoint that filled it.
   // payload: { department: code|null, isHead } — a null department unassigns the user. Marking a head
   // demotes the incumbent and repoints the REMS department-director mapping (WO-114), so the response
   // carries { department, isHead, demotedHeadName } for reporting the handover.
@@ -478,8 +476,6 @@ export const remsApi = {
   // instants (a date-only picker must convert its own day boundaries — see zonedDayBoundaryUtc).
   // Returns the standard envelope.
   list: (params) => api.get("/api/rems/requests", { params }).then(envelope),
-  // poolCounts is gone with the Admin Pool view switcher it fed. EMS Review is the queue now, and its own
-  // "Assigned to me" / "All" buttons are the switcher — see clientForms below.
   get: (id) => api.get(`/api/rems/requests/${id}`).then(unwrap),
   // payload: { existingClientReferenceId?, clientName, type, description?,
   //            customerEmail?, customerMobileNumber?, mediaId? }
@@ -530,15 +526,12 @@ export const remsApi = {
 
   // ---- Pick up / hand back (who reviews a request) ----
   // The calling admin claims the request. No body: the caller IS the assignee — there is no assigning
-  // somebody else, which is why the "Assign to Admin" picker is gone from the request form. Needs
-  // rems.requests.assign. 409s on a draft, and on one another admin holds. Returns the refreshed detail.
+  // somebody else. Needs rems.requests.assign. 409s on a draft, and on one another admin holds. Returns the refreshed detail.
   pickUp: (id) => api.post(`/api/rems/requests/${id}/pick-up`).then(unwrap),
   // The holding admin returns it to the queue, where it reads "Waiting for pickup" again and any admin may
   // take it. The only way a request loses its reviewing admin.
   handBack: (id) => api.post(`/api/rems/requests/${id}/hand-back`).then(unwrap),
 
-  // `duplicate` stood here, on POST {id}/duplicate. Both are gone: a request is raised for one client and
-  // one engagement, and a copy arrived pre-answered with another request's answers.
   remove: (id) => api.delete(`/api/rems/requests/${id}`).then(envelope),
   // Client picker (2+ chars): [{ id, name, email, phone, parentCompany:null, pastWork:null }].
   // parentCompany/pastWork are always null — no external client directory exists in this platform.
@@ -551,8 +544,6 @@ export const remsApi = {
   admins: (role) => api.get("/api/rems/admins", { params: role ? { role } : undefined }).then(unwrap),
 
   // ---- EMS form build / send (WO-112, WO-116) ----
-  // The build screen read (`getForm`) and the EMS Inbox list (`inbox`) are gone with the screens that
-  // called them — the Build EMS page and the Inbox. Both endpoints are still served; nothing asks for them.
   // payload: { cseUserId, industryGroup } — both required (AC-REMS-007.7). Returns the build screen.
   saveForm: (remsId, payload) => api.post(`/api/rems/requests/${remsId}/form`, payload).then(unwrap),
   // Pre-send preview: { destinationEmail, formLink } (AC-REMS-008.1).
@@ -593,9 +584,21 @@ export const remsApi = {
   //     submitted, submittedOnUtc, assignedAdmin:{id,name}|null, cse:{id,name}|null, canPickUp }.
   // A null `assignedAdmin` is a request waiting for pickup; `canPickUp` is whether THIS caller may take it.
   clientForms: (params) => api.get("/api/rems/client-forms", { params }).then(envelope),
-  // The immutable submitted-form snapshot: { submissionId, remsId, remsNumber, industryGroup, lockedEmail,
-  //   submittedOnUtc, payload } — payload is the RemsFormPayloadV1 wire shape, rendered read-only, grouped.
+  // The submitted-form snapshot: { submissionId, remsId, remsNumber, industryGroup, lockedEmail,
+  //   clientNameSuffix, submittedOnUtc, payload, editedBy, editedOnUtc, canEdit } — payload is the
+  //   RemsFormPayloadV1 wire shape, rendered read-only and grouped. `clientNameSuffix` is the REQUEST's
+  //   generational suffix, which the payload does not carry (the intake form never asks for one), so a
+  //   screen showing the client's own name can read it as the rest of REMS does.
+  //   `editedBy`/`editedOnUtc` are null while the answers are still exactly as the client sent them;
+  //   `canEdit` is whether THIS caller may correct them.
   submission: (remsId) => api.get(`/api/rems/requests/${remsId}/submission`).then(unwrap),
+  // Correct the client's answers in place — Admin only (rems.engagements.manage), and refused once the
+  // engagement is pending approval or approved. Send the WHOLE payload: it replaces the stored one, and
+  // it is validated exactly as the client's own submit was. Returns the refreshed submission view.
+  // It does NOT re-materialise the client record, its entities or its contact Persons — those were
+  // written by the submit and are edited through their own endpoints.
+  updateSubmission: (remsId, payload) =>
+    api.put(`/api/rems/requests/${remsId}/submission`, payload).then(unwrap),
 
   // ---- Engagement workspace (WO-117 / WO-114) ----
   // Addresses travel in the REMS wire shape — { street, addressLine2, city, state, stateCode, zip,
@@ -611,24 +614,23 @@ export const remsApi = {
   // with no client is the ordinary state of an unanswered request rather than an error.
   // entities[]: { id, name, ein, isMainEntity, addresses:[{ id, addressType, address }] — addressType is
   //   Physical | Mailing | Billing — contacts:[{ id, role, isRequired, name, email, phone }] }.
-  // engagement is the request's ONE engagement (it used to hang off each entity):
-  //   { id, department, serviceLine, subServiceLine, subIndustry, departmentDirector, engagementExecutive,
-  //     billingManager, firstYearFeeEstimate, realizationPercentage, billingPeriod, numberOfBills, status,
-  //     marketingMethodIds[], commissionSplits[], audit, government, tax } | null.
-  // `serviceLine` is RETIRED — the old Commercial/Non-Profit/Government/Individual list, which asked what
-  // the request's entity type already answers. Still returned so historical engagements do not lose it;
-  // nothing in the app reads it. What the setup form calls Service Line is `subServiceLine`, and what it
-  // calls Industry is `subIndustry` (see the note at the top of modules/rems/useRemsMeta).
+  // engagement is the request's ONE engagement:
+  //   { id, department, subServiceLine, subIndustry, departmentDirector, engagementExecutive,
+  //     billingManager, firstYearFeeEstimate, realizationPercentage, billingPeriod,
+  //     billingProcessDescription, status, marketingMethodIds[], commissionSplits[], audit,
+  //     government, tax } | null.
+  // What the setup form calls Service Line is `subServiceLine`, and what it calls Industry is
+  // `subIndustry` (see the note at the top of modules/rems/useRemsMeta).
   engagement: (remsId) => api.get(`/api/rems/requests/${remsId}/engagement`).then(unwrap),
   // Correcting the client's own answers — the client record (`updateClient`), the main entity's three
   // addresses (`updateEntityAddresses`) and its role contacts (`updateEntityContacts`) — has no screen any
   // more: what the client submitted is read from the immutable snapshot rather than edited. The three
   // endpoints stand; add the wrapper back with whatever screen wants them.
-  // payload: any subset of { department, serviceLine, subServiceLine, subIndustry, departmentDirectorId,
+  // payload: any subset of { department, subServiceLine, subIndustry, departmentDirectorId,
   //   engagementExecutiveId, billingManagerId, firstYearFeeEstimate, realizationPercentage, billingPeriod,
-  //   numberOfBills } — null fields are left unchanged. Service Line (`subServiceLine`) and Industry
-  //   (`subIndustry`) are optional and therefore CLEARED with an empty string, not with null. The setup
-  //   form no longer sends the retired `serviceLine` at all, which is exactly what preserves it.
+  //   billingProcessDescription } — null fields are left unchanged. Service Line (`subServiceLine`),
+  //   Industry (`subIndustry`) and the billing description are optional and therefore CLEARED with an
+  //   empty string, not with null.
   // Returns { engagement, mappedDepartmentDirectorId } — the director the chosen department maps to (hint).
   updateEngagement: (id, payload) => api.put(`/api/rems/engagements/${id}`, payload).then(unwrap),
   // Link a previously-uploaded media id as the signed client-acceptance form (audit engagements).
@@ -638,8 +640,6 @@ export const remsApi = {
   updateGovernment: (id, payload) => api.put(`/api/rems/engagements/${id}/government`, payload).then(unwrap),
   // payload: { fiscalYearEnd?, taxFormIds:[] } — the response tax detail carries the recomputed due dates.
   updateTax: (id, payload) => api.put(`/api/rems/engagements/${id}/tax`, payload).then(unwrap),
-  // copyEngagement is gone. It existed so a client's second and third entities did not need their setup
-  // retyped, and a request carries exactly one engagement now — there is never a sibling to copy from.
   // Every approval round on an engagement, oldest first:
   //   [{ roundId, roundNumber, status, sentOnUtc, sentBy, completedOnUtc, declineThreshold, declineCount,
   //      decisions:[{ taskId, approver, role, status, decidedOnUtc, reason, checklistCompleted,
@@ -686,7 +686,7 @@ export const remsApi = {
   //     request:{ remsId, remsNumber, title, description, requestedClientName, type, status,
   //       customerEmail, customerMobileNumber, industryGroup, emsFormState, clientSubmissionState,
   //       assignedAdmin, cse, requestedBy, createdOnUtc, files:[{ id, mediaId, fileName, mimeType, fileSize, url }] },
-  //     engagement:{ engagementId, status, department, serviceLine, subServiceLine, subIndustry,
+  //     engagement:{ engagementId, status, department, subServiceLine, subIndustry,
   //       client:{ id, name, email, mobileNumber, referralSource, billingContactName, billingEmail,
   //         billingAddress, entities:[{ id, name, ein, isMainEntity }] },
   //       entity:{ id, name, ein, isMainEntity, addresses:[{ id, addressType, address }],

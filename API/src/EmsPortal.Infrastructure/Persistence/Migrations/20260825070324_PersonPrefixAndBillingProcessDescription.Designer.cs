@@ -4,6 +4,7 @@ using EmsPortal.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace EmsPortal.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(EmsPortalDbContext))]
-    partial class EmsPortalDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260825070324_PersonPrefixAndBillingProcessDescription")]
+    partial class PersonPrefixAndBillingProcessDescription
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -98,9 +101,17 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<string>("Area")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<string>("BuildingName")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CityCode")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
 
                     b.Property<string>("CityName")
                         .HasMaxLength(100)
@@ -130,9 +141,18 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
+                    b.Property<bool>("IsValidated")
+                        .HasColumnType("bit");
+
                     b.Property<string>("Landmark")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
+
+                    b.Property<double?>("Latitude")
+                        .HasColumnType("float");
+
+                    b.Property<double?>("Longitude")
+                        .HasColumnType("float");
 
                     b.Property<string>("PostalCode")
                         .HasMaxLength(20)
@@ -155,6 +175,10 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTime>("UpdatedOnUtc")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("ValidationSource")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.HasKey("Id");
 
@@ -791,6 +815,9 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("DeletedOnUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<int?>("Duration")
+                        .HasColumnType("int");
+
                     b.Property<string>("FileExtension")
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
@@ -800,6 +827,9 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
 
                     b.Property<int?>("Height")
                         .HasColumnType("int");
+
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("bit");
 
                     b.Property<bool>("IsProcessed")
                         .HasColumnType("bit");
@@ -826,6 +856,10 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(260)
                         .HasColumnType("nvarchar(260)");
 
+                    b.Property<string>("PreviewUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
                     b.Property<string>("PublicUrl")
                         .HasMaxLength(2048)
                         .HasColumnType("nvarchar(2048)");
@@ -833,6 +867,10 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.Property<string>("RelativePath")
                         .HasMaxLength(1024)
                         .HasColumnType("nvarchar(1024)");
+
+                    b.Property<string>("Resolution")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("StorageProvider")
                         .HasMaxLength(50)
@@ -842,6 +880,10 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(260)
                         .HasColumnType("nvarchar(260)");
+
+                    b.Property<string>("ThumbnailUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
 
                     b.Property<Guid?>("UpdatedById")
                         .HasColumnType("uniqueidentifier");
@@ -1401,6 +1443,10 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<string>("FacebookUrl")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
                     b.Property<string>("FirstName")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -1410,11 +1456,19 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
+                    b.Property<string>("InstagramUrl")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsProfileVerified")
                         .HasColumnType("bit");
+
+                    b.Property<string>("Language")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
 
                     b.Property<string>("LastName")
                         .IsRequired()
@@ -1423,6 +1477,13 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTime?>("LastProfileUpdatedOn")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("LinkedInUrl")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<Guid?>("ManagerPersonId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("MaritalStatus")
                         .HasMaxLength(32)
@@ -1480,6 +1541,14 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("TenantId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("TimeZone")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("TwitterUrl")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
                     b.Property<Guid?>("UpdatedById")
                         .HasColumnType("uniqueidentifier");
 
@@ -1488,6 +1557,10 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid?>("UserId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("WebsiteUrl")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
 
                     b.HasKey("Id");
 
@@ -1946,6 +2019,9 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<Guid?>("ExternalClientReferenceId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("MobileNumber")
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
@@ -2107,6 +2183,10 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.Property<decimal?>("RealizationPercentage")
                         .HasPrecision(5, 2)
                         .HasColumnType("decimal(5,2)");
+
+                    b.Property<string>("ServiceLine")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -2553,6 +2633,11 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("REMSClientId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("SourceEntityKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
 
@@ -2569,6 +2654,10 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId");
 
                     b.HasIndex("TenantId", "REMSClientId");
+
+                    b.HasIndex("TenantId", "REMSClientId", "SourceEntityKey")
+                        .IsUnique()
+                        .HasFilter("[Deleted] = 0");
 
                     b.HasIndex(new[] { "TenantId", "REMSClientId" }, "IX_REMSEntity_TenantId_REMSClientId_Main")
                         .IsUnique()

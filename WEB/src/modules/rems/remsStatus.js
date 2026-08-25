@@ -1,9 +1,7 @@
 // The REMS request lifecycle codes, mirroring RemsRequestStatuses on the server.
 //
-// The codes are what the option set stores, so two of them read oddly and are kept deliberately:
-// `customer_submitted` is the ADMIN REVIEW stage (the client has submitted; the admin now reviews), and
-// there is no `submitted` at all — the Admin Pool it named is gone, because the initiator sends the
-// intake link to the client themselves.
+// The codes are what the option set stores, so one of them reads oddly and is kept deliberately:
+// `customer_submitted` is the ADMIN REVIEW stage — the client has submitted; the admin now reviews.
 //
 // The lifecycle names the stage a request is IN — who it is waiting on — rather than the event that last
 // happened to it.

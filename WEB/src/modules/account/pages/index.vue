@@ -144,10 +144,6 @@ const initials = computed(() => {
   return (a + b).toUpperCase() || "U";
 });
 
-// The line under the name has gone with the fields that fed it: it read "Job Title · Organization", and
-// both are off the person record now — the job title first, then the organization, which was the firm
-// running the portal and therefore the same for everyone reading it.
-
 // Assignments come from the tenant store (kept in sync with the auth profile).
 const assignments = computed(() => tenantStore.assignments || authStore.user?.tenants || []);
 // Distinct role names across every tenant assignment (multi-role, WO-123).

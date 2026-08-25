@@ -14,8 +14,8 @@ namespace EmsPortal.Api.Validators.Rems;
 /// <para>
 /// Required per group: Individual → a first and last name + <c>self</c>; Business → <c>ein</c> +
 /// <c>primaryContact</c>/<c>financialContact</c>/<c>billingContact</c>; Government →
-/// <c>financeDirector</c>. Every entity's physical address is required, as are each related entity's name
-/// and email address; a required role must carry a first name, a last name and a valid email.
+/// <c>financeDirector</c>. The physical and mailing addresses are both required, as are each related
+/// entity's name and email address; a required role must carry a first name, a last name and a valid email.
 /// </para>
 /// </summary>
 public sealed class RemsFormPayloadValidator
@@ -23,19 +23,26 @@ public sealed class RemsFormPayloadValidator
     public const string Individual = "individual";
     public const string Government = "government";
 
-    // The business FAMILY. "business" was one group until it was split into the three kinds of business
-    // THF actually onboards; they ask for exactly the same things (EIN, CEO/CFO/AP, banker, lawyer), so
-    // the split is about naming what the client is, not about changing the form.
+    // The business FAMILY: the kinds of business THF onboards are asked for exactly the same things, so
+    // what separates them is what the client IS, not what the form asks.
     //
-    // `Business` itself is retired from the picker but STILL RECOGNISED here: forms sent before the split
-    // carry it, and a client part-way through one must be able to finish.
+    // `Business` is not offered in the picker but is STILL RECOGNISED here: forms sent before the split
+    // into three carry the code, and a client part-way through one must be able to finish.
     public const string Business = "business";
     public const string NotForProfit = "not_for_profit";
     public const string Insurance = "insurance";
     public const string Commercial = "commercial";
 
+    /// <summary>
+    /// A trust or a decedent's estate. In the business family because it is asked the same things: it has
+    /// an EIN of its own and is acted for by trustees or personal representatives, so the primary,
+    /// financial and billing contacts are the people who act for it. It is emphatically not an individual
+    /// — treating it as one files the trust's affairs under its trustee's own name.
+    /// </summary>
+    public const string TrustEstate = "trust_estate";
+
     private static readonly HashSet<string> BusinessGroups =
-        new(StringComparer.Ordinal) { Business, NotForProfit, Insurance, Commercial };
+        new(StringComparer.Ordinal) { Business, NotForProfit, Insurance, Commercial, TrustEstate };
 
     /// <summary>True for any industry group that asks the business questions.</summary>
     public static bool IsBusinessGroup(string? industryGroup)
@@ -66,14 +73,10 @@ public sealed class RemsFormPayloadValidator
             failures.Add(new ValidationFailure("clientName", "Client name is required."));
         }
 
-        // Physical address is always captured for the main entity ("Physical always").
+        // Both are required, unconditionally. The form offers a "copy from" button rather than a "same as"
+        // flag, so there is no flag to read and every client fills both in — which the browser enforces too.
         RequireAddress(failures, "physicalAddress", payload.PhysicalAddress);
-
-        // A separate mailing address is required only when the client says it differs.
-        if (payload.MailingDiffers)
-        {
-            RequireAddress(failures, "mailingAddress", payload.MailingAddress);
-        }
+        RequireAddress(failures, "mailingAddress", payload.MailingAddress);
 
         if (!string.IsNullOrWhiteSpace(payload.BillingEmail) && !IsEmail(payload.BillingEmail))
         {
@@ -122,9 +125,8 @@ public sealed class RemsFormPayloadValidator
 
         // ---- Additional entities ----
         // Each row is another of the client's businesses for the firm to set up separately, so it needs a
-        // name to file it under and an address to reach it on. The email is not one of two ways to make the
-        // row reachable any more: the request this row exists to prompt is opened by emailing an intake
-        // form, so a row without an address becomes nothing. The phone stays optional, as on every contact.
+        // name to file it under and an email to reach it on — the request this row exists to prompt is
+        // opened by emailing an intake form, so a row without an address becomes nothing. Phone optional.
         for (var i = 0; i < payload.RelatedEntities.Count; i++)
         {
             var related = payload.RelatedEntities[i];

@@ -37,7 +37,10 @@
               v-if="canChooseTenant" v-model="form.tenantId" :options="tenantOptions" label="Tenant"
               class="col-12" :loading="loadingTenants" :disable="!canWrite"
             />
-            <app-text-field v-model="form.firstName" label="First Name" class="col-12 col-sm-6" :disable="!canWrite" :rules="[(v) => !!v || 'Required']" />
+            <!-- The title, to the left of the name it belongs in front of. Held apart from the name
+                 because a person is filed under a given name and a family name, and "Dr." is neither. -->
+            <app-name-prefix-field v-model="form.prefix" class="col-6 col-sm-2" :disable="!canWrite" />
+            <app-text-field v-model="form.firstName" label="First Name" class="col-6 col-sm-4" :disable="!canWrite" :rules="[(v) => !!v || 'Required']" />
             <app-text-field v-model="form.middleName" label="Middle Name" class="col-12 col-sm-6" :disable="!canWrite" />
             <app-text-field v-model="form.lastName" label="Last Name" class="col-12 col-sm-6" :disable="!canWrite" :rules="[(v) => !!v || 'Required']" />
             <app-text-field v-model="form.preferredName" label="Preferred Name" class="col-12 col-sm-6" :disable="!canWrite" />
@@ -86,6 +89,7 @@ import { useTenantOptions } from "composables/useTenantOptions";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import AppTextField from "components/common/AppTextField.vue";
+import AppNamePrefixField from "components/common/AppNamePrefixField.vue";
 import AppDateField from "components/common/AppDateField.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
 
@@ -109,6 +113,7 @@ const emailRules = [(v) => !v || /.+@.+\..+/.test(v) || "Enter a valid email"];
 
 const form = reactive({
   tenantId: null,
+  prefix: "",
   firstName: "",
   middleName: "",
   lastName: "",
@@ -135,6 +140,7 @@ const load = async () => {
     isUser.value = detail.isUser;
     personCode.value = p.personCode || "";
     form.tenantId = p.tenantId || null;
+    form.prefix = p.prefix || "";
     form.firstName = p.firstName || "";
     form.middleName = p.middleName || "";
     form.lastName = p.lastName || "";

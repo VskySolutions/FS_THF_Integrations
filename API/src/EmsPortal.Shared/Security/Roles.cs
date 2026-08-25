@@ -49,8 +49,7 @@ public static class Roles
     /// </summary>
     public const string Shareholder = "Shareholder";
 
-    // Approver stood here. It marked somebody as offerable in the REMS "add approvers" picker, and that
-    // picker now offers every user in the tenant — an engagement can need a signature from anyone, and
-    // maintaining a role to say so was a gate that only ever got in the way. Deciding an approval task
-    // never needed it: that is authorised by OWNING the task.
+    // There is deliberately no Approver role: the "add approvers" picker offers every user in the tenant,
+    // because an engagement can need a signature from anyone. Deciding an approval task is authorised by
+    // OWNING the task, never by a role.
 }

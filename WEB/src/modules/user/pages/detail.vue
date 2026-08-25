@@ -12,9 +12,9 @@
     <div v-if="loading" class="row flex-center q-pa-xl"><q-spinner color="primary" size="40px" /></div>
 
     <div v-else-if="user">
-      <!-- Who this is, at a glance: the identity, the standing, and the two actions that change it.
-           Status used to be a card of its own further down, which meant "is this account even usable?"
-           was answered below the fold while the fields above it were being edited. -->
+      <!-- Who this is, at a glance: the identity, the standing, and the two actions that change it. The
+           status belongs up here — "is this account even usable?" should not be answered below the fold
+           while the fields above it are being edited. -->
       <q-card flat bordered class="user-card q-mb-md">
         <!-- Avatar and identity share a line at every width; the actions drop beneath them on a phone
              rather than squeezing the name into a column two words wide. -->
@@ -102,8 +102,33 @@
             </q-card-section>
             <q-separator />
             <q-card-section class="row q-col-gutter-md">
+              <!-- The title, to the left of the name. Saved on the way past with the rest of the basics;
+                   it lives on the same Person record the two name fields do. -->
               <q-input
-                v-model="firstName" outlined dense stack-label label="First Name" class="col-12 col-sm-6"
+                v-model="prefix" outlined dense stack-label label="Prefix" placeholder="Mr."
+                class="col-4 col-sm-2" :readonly="!canEdit" maxlength="16" @blur="autoSaveBasics"
+              >
+                <template v-if="canEdit" #append>
+                  <q-btn flat dense round size="sm" icon="o_arrow_drop_down" color="grey-7" aria-label="Prefix suggestions">
+                    <q-menu anchor="bottom end" self="top end" auto-close>
+                      <q-list dense style="min-width: 150px;">
+                        <q-item
+                          v-for="opt in PREFIX_OPTIONS" :key="opt" clickable :active="prefix === opt"
+                          active-class="bg-grey-2 text-primary" @click="pickPrefix(opt)"
+                        >
+                          <q-item-section>{{ opt }}</q-item-section>
+                        </q-item>
+                        <q-separator />
+                        <q-item clickable :disable="!prefix" @click="pickPrefix('')">
+                          <q-item-section class="text-grey-7">No prefix</q-item-section>
+                        </q-item>
+                      </q-list>
+                    </q-menu>
+                  </q-btn>
+                </template>
+              </q-input>
+              <q-input
+                v-model="firstName" outlined dense stack-label label="First Name" class="col-8 col-sm-4"
                 :readonly="!canEdit" @blur="autoSaveBasics"
               />
               <q-input
@@ -359,6 +384,11 @@ const canReadPersons = computed(() => has(Permissions.PersonsRead));
 const userId = route.params.id;
 const user = ref(null);
 const loading = ref(false);
+// The title the person is addressed by. This page edits the same Person record the People screens do,
+// so it is offered here too — the suggestions are inline rather than through AppNamePrefixField because
+// every field on this card is a bare q-input saved on blur, not one of the labelled app fields.
+const PREFIX_OPTIONS = ["Mr.", "Mrs.", "Ms.", "Miss", "Mx.", "Dr.", "Prof."];
+const prefix = ref("");
 const firstName = ref("");
 const lastName = ref("");
 const email = ref("");
@@ -451,6 +481,7 @@ const load = async ({ syncFields = true } = {}) => {
   try {
     user.value = await userApi.get(userId);
     if (!syncFields) return;
+    prefix.value = user.value.prefix || "";
     firstName.value = user.value.firstName || "";
     lastName.value = user.value.lastName || "";
     phoneNumber.value = user.value.phoneNumber || "";
@@ -548,7 +579,8 @@ const runAutoSave = async (target, fn) => {
 const autoSaveBasics = async () => {
   const u = user.value;
   if (!canEdit.value || !u) return;
-  if (firstName.value === (u.firstName || "") &&
+  if (prefix.value === (u.prefix || "") &&
+    firstName.value === (u.firstName || "") &&
     lastName.value === (u.lastName || "") &&
     phoneNumber.value === (u.phoneNumber || "")) {
     return;
@@ -556,6 +588,9 @@ const autoSaveBasics = async () => {
 
   await runAutoSave(basicSave, async () => {
     await userApi.update(userId, {
+      // "" rather than null: the endpoint reads an omitted field as "leave it alone", so a title taken
+      // back off would otherwise stay on the record.
+      prefix: prefix.value || "",
       firstName: firstName.value,
       lastName: lastName.value,
       phoneNumber: phoneNumber.value,
@@ -563,6 +598,13 @@ const autoSaveBasics = async () => {
     });
     await load({ syncFields: false });
   });
+};
+
+// Choosing from the menu is an edit like any other, and the menu closes rather than blurring the box —
+// so the save is fired here instead of waiting for a blur that will not come.
+const pickPrefix = async (value) => {
+  prefix.value = value;
+  await autoSaveBasics();
 };
 
 // The username is the one field that cannot simply be saved on the way past: the API only rejects
@@ -599,6 +641,7 @@ const commitEmail = async () => {
 
   const saved = await runAutoSave(basicSave, async () => {
     await userApi.update(userId, {
+      prefix: prefix.value || "",
       firstName: firstName.value,
       lastName: lastName.value,
       phoneNumber: phoneNumber.value,

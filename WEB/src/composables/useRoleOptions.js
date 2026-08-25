@@ -6,8 +6,8 @@ import { useAuthStore } from "stores/auth";
 // anything unrecognised is a Custom role) so both the grouped assignment picker and the
 // category-distinguished role chips in the displays agree on how a role is classified.
 export const SYSTEM_ROLE_NAMES = Object.freeze(["SuperAdmin", "TenantAdmin"]);
-// What a person DOES in REMS. "Approver" was here and is gone — the add-approvers picker offers every
-// user in the tenant now, so there is no role to hold.
+// What a person DOES in REMS. There is no Approver role: the add-approvers picker offers every user in
+// the tenant.
 export const OPERATIONAL_ROLE_NAMES = Object.freeze(["Partner", "Admin"]);
 // What a person IS in REMS. They grant nothing: the first three make the user offerable in the picker
 // that fills that seat on an engagement, and Shareholder puts them on every engagement's approver list

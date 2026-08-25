@@ -34,12 +34,9 @@ public sealed class CreateRemsRequestRequest
     /// <summary>Optional single attachment: a previously-uploaded media id (POST /api/media).</summary>
     public Guid? MediaId { get; set; }
 
-    // There is no Submit flag any more. A request is always created as a draft, and what moves it on is
-    // the initiator sending the intake link to the client (POST /api/rems/{id}/form/send).
-
-    // AssignAdminUserId stood here: the one admin the initiator had to name as the reviewer. It is gone.
-    // An initiator submits to the admins, not to one of them — the request reaches every admin's EMS
-    // Review unassigned, and whichever of them picks it up owns it (POST /api/rems/requests/{id}/pick-up).
+    // No Submit flag and no admin to name. A request is always created as a draft; what moves it on is the
+    // initiator sending the intake link to the client (POST /api/rems/{id}/form/send), and it reaches every
+    // admin's EMS Review unassigned until one picks it up (POST /api/rems/requests/{id}/pick-up).
 
     /// <summary>
     /// The <c>REMSAdditionalEntity</c> row this request was raised from, when the initiator used the
@@ -66,12 +63,8 @@ public sealed class UpdateRemsRequestRequest
     public Guid? CSEId { get; set; }
     public Guid? ExistingClientReferenceId { get; set; }
 
-    // ParentClientReferenceId stood here, alone in being derived from Type rather than left alone when
-    // null. It is gone with the Parent Client field (DropRemsParentClient).
-
-    // AssignAdminUserId / UnassignAdmin stood here. Saving a request no longer re-points who reviews it:
-    // an admin gains a request by picking it up and loses it by handing it back, and both of those are
-    // actions of their own rather than a field somebody else can write on an edit.
+    // Saving a request cannot re-point who reviews it: an admin gains a request by picking it up and loses
+    // it by handing it back, both actions of their own rather than a field somebody else writes on an edit.
 }
 
 /// <summary>
@@ -117,9 +110,6 @@ public sealed record RemsSendBackView(
     /// <summary>Who the admin addressed it to, or null on returns made before they were asked to choose.</summary>
     string? ReturnedTo);
 
-// AssignRemsRequestRequest stood here — the body of "assign this request to that admin". Pick-up names
-// nobody: the caller is the assignee, so the endpoint takes no body at all.
-
 /// <summary>A user reference (id + display name) for the assigned admin / CSE columns.</summary>
 public sealed record RemsUserRef(Guid Id, string Name);
 
@@ -133,7 +123,6 @@ public sealed record RemsRowActions(
     /// off them".
     /// </summary>
     bool CanPickUp,
-    // CanDuplicate stood here, with the Duplicate action it gated.
     bool CanDelete);
 
 /// <summary>Dashboard list row for a REMS request (WO-111).</summary>

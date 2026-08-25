@@ -1,9 +1,5 @@
 <template>
   <div>
-    <!-- Copy-From is gone: it existed so a client's second and third entities did not need their setup
-         retyped, and a request carries exactly one engagement now. Another business of the same client
-         becomes its own request with its own setup, so there is never a sibling to copy from. -->
-
     <!-- Core engagement placement + team + fee/realization (AC-REMS-014.5-10).
          The column widths ARE the grouping: 4+4+4 wraps to a trio per line and 6+6 to a pair, so the
          lines below read as what they are — what the firm does and where the work sits, who runs it, what
@@ -71,24 +67,27 @@
         </app-text-field>
 
         <!-- ── How it is billed ─────────────────────────────────────────────────────────────────── -->
-        <!-- How often, and how many bills over the engagement. The count is entered, not derived — a
-             quarterly engagement is not automatically four bills. -->
+        <!-- How often, and how it actually works. The second was a COUNT — "No. of Bills" — which said
+             how many invoices without saying what triggered one, and could not record a schedule that
+             does not reduce to a number at all ("three progress bills, the balance on delivery"). It is
+             the sentence now, and the frequency beside it offers Milestone for the schedules that are
+             not a calendar cycle. -->
         <app-select
           v-model="core.billingPeriod" :options="billingPeriodOptions" label="Billing Frequency"
-          class="col-12 col-sm-6" :readonly="!editable"
+          class="col-12 col-sm-4" :readonly="!editable"
           info="From the REMS Billing Frequency option list (Administration → Option Sets)."
         />
         <app-text-field
-          v-model="core.numberOfBills" label="No. of Bills" type="number"
-          class="col-12 col-sm-6" :readonly="!editable" :rules="billCountRules"
+          v-model="core.billingProcessDescription" label="Description of Billing Process"
+          class="col-12 col-sm-8" :readonly="!editable" autogrow
+          placeholder="e.g. three progress bills against the fixed fee, the balance on delivery"
+          :rules="billingDescriptionRules"
         />
       </div>
 
-      <!-- No save button of its own. This section used to teleport a "Save & Next" into the workspace
-           card's title row, because Setup was step one of a four-tab wizard; then it had its own button
-           when the wizard became stacked sections. Both made the page ask the user to save it in pieces —
-           client details here, setup there — which is the one thing the form is meant not to do. The page
-           has ONE Save and it writes this section (and the conditional cards below) with everything else. -->
+      <!-- No save button of its own. A page that asks to be saved in pieces — client details here, setup
+           there — is the one thing this form is meant not to do: it has ONE Save, and that writes this
+           section and the conditional cards below along with everything else. -->
 
       <!-- Conditional: Audit → required signed CAF PDF upload (AC-REMS-014.11/12). -->
       <q-card v-if="showAudit" flat bordered class="rems-inner q-mt-md">
@@ -259,17 +258,16 @@ const dateOnly = (v) => {
 // ---- Core engagement fields (local editable copy, re-synced from the source view) ----
 const buildCore = (e) => ({
   department: e.department || null,
-  // Neither `serviceLine` nor `subIndustry`. The old service line is gone from the form entirely; the
-  // industry is asked on the Client Information tab and written by the page. Leaving a field out of the
-  // payload is also what preserves it — the endpoint reads an omitted field as "leave this alone" — so
-  // this form saving cannot undo either of them.
+  // No `subIndustry`: the industry is asked on the Client Information tab and written by the page.
+  // Leaving a field out of the payload is what preserves it — the endpoint reads an omitted field as
+  // "leave this alone" — so this form saving cannot undo it.
   subServiceLine: e.subServiceLine || null,
   engagementExecutiveId: e.engagementExecutive?.id || null,
   billingManagerId: e.billingManager?.id || null,
   firstYearFeeEstimate: e.firstYearFeeEstimate ?? "",
   realizationPercentage: e.realizationPercentage ?? "",
   billingPeriod: e.billingPeriod || null,
-  numberOfBills: e.numberOfBills ?? ""
+  billingProcessDescription: e.billingProcessDescription ?? ""
 });
 const core = ref(buildCore(props.engagement));
 
@@ -363,15 +361,16 @@ const dueDates = computed(() => {
 // Service Line, Department, the engagement team and % Realization are mandatory (they are also the
 // backend's send-for-approval prerequisites), so Save & Next cannot pass with any of them blank.
 //
-// Service Line joined them: it had kept the optional standing it inherited from the retired field whose
-// column it borrowed, but it is what the firm is actually engaged to DO — an engagement routed for
-// approval without one asks the approvers to sign off a piece of work nobody has named.
+// Service Line is among them because it is what the firm is actually engaged to DO — an engagement routed
+// for approval without one asks the approvers to sign off a piece of work nobody has named.
 const requiredRule = (what) => (v) => (v !== null && v !== undefined && v !== "") || `Select ${what}`;
 
 const feeRules = [(v) => v === "" || v === null || Number(v) >= 0 || "Enter a valid amount"];
-// A schedule of zero or fractional bills is not a schedule; the DB has the same check constraint.
-const billCountRules = [
-  (v) => v === "" || v === null || (Number.isInteger(Number(v)) && Number(v) > 0) || "Enter a whole number of bills"
+// A description of how the client is billed, not a treatise. Mirrors the column and the API validator.
+const BILLING_DESCRIPTION_MAX = 1000;
+const billingDescriptionRules = [
+  (v) => (v ?? "").length <= BILLING_DESCRIPTION_MAX ||
+    `Keep the billing process to ${BILLING_DESCRIPTION_MAX} characters or fewer.`
 ];
 const realizationRules = [
   (v) => (v !== "" && v !== null && v !== undefined) || "Enter a % Realization",
@@ -403,8 +402,8 @@ const toNum = (v) => (v === "" || v === null || v === undefined ? null : Number(
 const saveSetup = async (engagementId, remsId = null) => {
   if (!validateFormats()) {
     throw new Error(
-      "Check the engagement setup: the fee cannot be negative, realization is 0–100%, and the number " +
-      "of bills is a whole number above zero.");
+      "Check the engagement setup: the fee cannot be negative, realization is 0–100%, and the billing " +
+      `process description is at most ${BILLING_DESCRIPTION_MAX} characters.`);
   }
 
   let view = (await remsApi.updateEngagement(engagementId, {
@@ -418,7 +417,9 @@ const saveSetup = async (engagementId, remsId = null) => {
     firstYearFeeEstimate: toNum(core.value.firstYearFeeEstimate),
     realizationPercentage: toNum(core.value.realizationPercentage),
     billingPeriod: core.value.billingPeriod,
-    numberOfBills: toNum(core.value.numberOfBills)
+    // Empty string rather than null, like the clearable code above it: the endpoint reads null as
+    // "leave this field alone", so a description taken back out would otherwise come back on the next read.
+    billingProcessDescription: core.value.billingProcessDescription ?? ""
   })).engagement;
 
   if (showGovernment.value) {
@@ -449,10 +450,9 @@ const validateFormats = () => {
   const blank = (v) => v === "" || v === null || v === undefined;
   const inRange = (v, min, max) =>
     blank(v) || (Number.isFinite(Number(v)) && Number(v) >= min && Number(v) <= max);
-  const bills = core.value.numberOfBills;
   return inRange(core.value.firstYearFeeEstimate, 0, Number.MAX_SAFE_INTEGER) &&
     inRange(core.value.realizationPercentage, 0, 100) &&
-    (blank(bills) || (Number.isInteger(Number(bills)) && Number(bills) > 0));
+    (core.value.billingProcessDescription ?? "").length <= BILLING_DESCRIPTION_MAX;
 };
 
 // ---- The signed client-acceptance form ----
@@ -467,9 +467,6 @@ watch([core, gov, tax, cafFile], () => {
 }, { deep: true });
 
 defineExpose({ saveSetup });
-
-// Copy-From lived here. Removed with the per-entity engagements it served: a request carries exactly one,
-// so there is never another engagement of the same client to copy from.
 </script>
 
 <style scoped>

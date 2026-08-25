@@ -1,8 +1,7 @@
 <template>
   <!-- The client's submitted EMS form, read-only, rendered from the immutable submission. This is a PANEL
        rather than a dialog: it lives in the left pane of the request page, beside the setup it is being
-       read against. It used to be a modal, which meant checking one answer against one field cost an
-       open and a close, and comparing two of them was impossible. -->
+       read against, so checking one answer against one field costs no opening and closing. -->
   <div class="sfp">
     <div v-if="loading" class="row flex-center q-pa-xl"><q-spinner color="primary" size="32px" /></div>
 
@@ -23,8 +22,17 @@
         <div class="col-auto text-caption text-grey-7">Submitted {{ fmt.formatDateTime(view.submittedOnUtc) }}</div>
       </div>
 
+      <!-- Said before the answers, not after them: a reader checking an EIN against the setup needs to
+           know whether it is the client's own answer or a colleague's correction of it BEFORE they read
+           it. Absent entirely while the snapshot is untouched, which is the ordinary case. -->
+      <q-banner v-if="view.editedBy" dense class="sfp-edited q-mb-md rounded-borders">
+        <template #avatar><q-icon name="o_edit_note" color="amber-9" /></template>
+        Corrected by {{ view.editedBy }} on {{ fmt.formatDateTime(view.editedOnUtc) }} — these are no
+        longer only the client's own answers.
+      </q-banner>
+
       <!-- Grouped in the order the client was asked, so the admin reads the answers as they were given:
-           Contact · Addresses · Billing · Contract Details · Contacts · Other Entities. Plain read-only
+           Contact · Addresses & Billing · Contract Details · Contacts · Other Entities. Plain read-only
            text (AC-REMS-013.2). -->
       <div v-for="g in groups" :key="g.title" class="submitted-group">
         <div class="submitted-group__title">
@@ -76,7 +84,8 @@ import { useDateFormat } from "composables/useDateFormat";
 import { useRemsMeta, isBusinessIndustryGroup } from "modules/rems/useRemsMeta";
 import { addressText } from "modules/rems/remsAddress";
 import {
-  answeredRoleKeys, groupKey, normalizeRoles, roleDefsFor, roleDisplayName, roleHasAny
+  answeredRoleKeys, BILLING_ROLE_KEY, clientDisplayName, groupKey, normalizeRoles, roleAddressedName,
+  roleDefsFor, roleHasAny
 } from "modules/rems/remsContactRoles";
 
 const props = defineProps({
@@ -102,13 +111,17 @@ const val = (v) => (v == null || String(v).trim() === "" ? "—" : v);
 
 // The client's name as one string, whichever shape the payload is in: the two parts a person gave, or
 // the single entity name a company gave. Older payloads carry only `clientName`.
+//
+// Read WITH the request's generational suffix, which the payload does not carry — the intake form never
+// asks for one — so this heading says "John Smith Jr." like every other REMS surface. The First Name and
+// Last Name ROWS below stay exactly as the client typed them: those report the answer, this names them.
 const clientName = computed(() => {
   const p = payload.value;
   const joined = [p.clientFirstName, p.clientLastName]
     .filter((v) => v != null && String(v).trim() !== "")
     .map((v) => String(v).trim())
     .join(" ");
-  return joined || String(p.clientName ?? "").trim();
+  return clientDisplayName(joined || String(p.clientName ?? "").trim(), view.value?.clientNameSuffix);
 });
 
 // Calendar-date fields (DateOnly "YYYY-MM-DD") are shown as-is (MM-DD-YYYY), never timezone-shifted.
@@ -125,6 +138,7 @@ const groups = computed(() => {
   // Contact — the name as the client was asked for it.
   const contact = isIndividual.value
     ? [
+      { label: "Prefix", value: val(p.clientPrefix) },
       { label: "First Name", value: val(p.clientFirstName ?? p.clientName) },
       { label: "Last Name", value: val(p.clientLastName) }
     ]
@@ -146,24 +160,34 @@ const groups = computed(() => {
   if (isBusiness.value) contact.push({ label: "EIN", value: val(p.ein) });
   result.push({ title: "Contact", icon: "o_person", kind: "fields", rows: contact });
 
-  // Addresses — three of them, each stored in its own right.
-  result.push({
-    title: "Addresses",
-    icon: "o_place",
-    kind: "fields",
-    rows: [
-      { label: "Physical Address", value: addressText(p.physicalAddress) },
-      { label: "Mailing Address", value: addressText(p.mailingAddress) },
-      { label: "Billing Address", value: addressText(p.billingAddress) }
-    ]
-  });
+  // Addresses — three of them, each stored in its own right — and the billing CONTACT with them, which
+  // is where the form asks it: the address an invoice goes to and the person it is addressed to are two
+  // halves of one answer, and reading them sections apart is what made checking either of them awkward.
+  const roles = normalizeRoles(p.roles);
+  const billingRole = roles[BILLING_ROLE_KEY];
+  const addressRows = [
+    { label: "Physical Address", value: addressText(p.physicalAddress) },
+    { label: "Mailing Address", value: addressText(p.mailingAddress) },
+    { label: "Billing Address", value: addressText(p.billingAddress) }
+  ];
+  if (isIndividual.value || !roleHasAny(billingRole)) {
+    addressRows.push(
+      { label: "Billing Contact", value: val(p.billingContactName) },
+      { label: "Billing Email", value: val(p.billingEmail) });
+  } else {
+    addressRows.push(
+      { label: "Billing Contact", value: roleAddressedName(billingRole) },
+      { label: "Billing Email", value: val(billingRole.email) },
+      { label: "Billing Phone", value: val(billingRole.phone) });
+  }
+  result.push({ title: "Addresses & Billing", icon: "o_place", kind: "fields", rows: addressRows });
 
-  // Billing — under the address it goes to, as the form asks it. Only where the client was asked: every
-  // entity type but Individual names a Billing Contact among its contacts below. Still shown on an older
-  // submission that carries an answer, because the panel reports what was sent.
-  if (isIndividual.value || p.billingContactName || p.billingEmail) {
+  // A non-individual submission that ALSO carries the retired two-box billing answer — sent before every
+  // entity type named a Billing Contact. Not a duplicate of the contact above: a different answer the
+  // client gave, and this panel reports what was in the envelope.
+  if (!isIndividual.value && (p.billingContactName || p.billingEmail) && roleHasAny(billingRole)) {
     result.push({
-      title: "Billing",
+      title: "Billing (as previously given)",
       icon: "o_receipt_long",
       kind: "fields",
       rows: [
@@ -194,14 +218,14 @@ const groups = computed(() => {
 
   // Contacts. Normalized, so a submission written under the old business role names reads under the names
   // those roles are known by now; the roles this entity type is no longer asked follow the rest, because
-  // what the client sent is what this panel is for.
-  const roles = normalizeRoles(p.roles);
+  // what the client sent is what this panel is for. The billing contact is not here — it is read above,
+  // with the address it is billed to.
   const key = groupKey(view.value?.industryGroup, isBusiness.value);
   const contactRows = roleDefsFor(key, answeredRoleKeys(roles))
-    .filter((def) => roleHasAny(roles[def.key]))
+    .filter((def) => def.key !== BILLING_ROLE_KEY && roleHasAny(roles[def.key]))
     .map((def) => ({
       role: def.label,
-      name: roleDisplayName(roles[def.key]),
+      name: roleAddressedName(roles[def.key]),
       email: roles[def.key]?.email,
       phone: roles[def.key]?.phone
     }));
@@ -242,6 +266,11 @@ defineExpose({ reload: load });
 </script>
 
 <style scoped>
+/* Amber rather than red: a corrected snapshot is not a problem, it is a fact worth noticing. */
+.sfp-edited {
+  background: #fff8e1;
+  color: #6d4c00;
+}
 .submitted-group {
   margin-bottom: 18px;
 }

@@ -3,8 +3,6 @@
     <q-page-container>
       <q-page class="auth-wrap column flex-center">
         <div class="auth-panel column items-center">
-          <!-- Brand sits above the form now that the side panel is gone — without it the screen carries no
-               identity at all. -->
           <div class="row items-center justify-center q-mb-lg">
             <img src="~assets/logo.png" alt="EMS Portal" class="auth-brand__logo">
             <span class="text-h5 text-weight-bold q-ml-sm text-grey-9">EMS Portal</span>

@@ -16,6 +16,9 @@ internal sealed class PersonConfiguration : IEntityTypeConfiguration<Person>
         builder.HasIndex(p => p.PersonCode).IsUnique().HasFilter("[Deleted] = 0");
 
         // Personal information
+        // Room for a written-out title ("Professor") as well as the abbreviations offered, and no more —
+        // the same 16 the client name's suffix gets, for the same reason.
+        builder.Property(p => p.Prefix).HasMaxLength(16);
         builder.Property(p => p.FirstName).HasMaxLength(100);
         builder.Property(p => p.MiddleName).HasMaxLength(100);
         builder.Property(p => p.LastName).HasMaxLength(100);
@@ -24,8 +27,6 @@ internal sealed class PersonConfiguration : IEntityTypeConfiguration<Person>
         builder.Property(p => p.Gender).HasMaxLength(32);
         builder.Property(p => p.MaritalStatus).HasMaxLength(32);
         builder.Property(p => p.Nationality).HasMaxLength(100);
-        builder.Property(p => p.TimeZone).HasMaxLength(64);
-        builder.Property(p => p.Language).HasMaxLength(32);
 
         // Contact information
         builder.Property(p => p.PrimaryEmail).HasMaxLength(256);
@@ -39,13 +40,6 @@ internal sealed class PersonConfiguration : IEntityTypeConfiguration<Person>
 
         // Professional information
         builder.Property(p => p.EmployeeCode).HasMaxLength(64);
-
-        // Social information
-        builder.Property(p => p.LinkedInUrl).HasMaxLength(512);
-        builder.Property(p => p.TwitterUrl).HasMaxLength(512);
-        builder.Property(p => p.FacebookUrl).HasMaxLength(512);
-        builder.Property(p => p.InstagramUrl).HasMaxLength(512);
-        builder.Property(p => p.WebsiteUrl).HasMaxLength(512);
 
         builder.Property(p => p.Notes).HasMaxLength(2000);
 

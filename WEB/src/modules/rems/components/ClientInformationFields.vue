@@ -10,6 +10,48 @@
          suffix keep the first line and the two ways of reaching the client take the second — see
          `compact` below. -->
     <div class="row q-col-gutter-md">
+      <!-- The generational particle on the name — Jr., Sr., II, III, IV — in a box of its own, and in
+           front of the search box rather than after it. Two reasons it is separate: the search matches
+           THF's client records, and "John Smith Jr." finds nothing where "John Smith" finds the man; and
+           a Person is filed under a given name and a family name, neither of which "Jr." is. It is
+           appended to the name wherever the client is shown.
+           Free text with the five as suggestions: the list is what most clients need, not all any client
+           may have, and a suffix nobody thought to seed is not a reason to file somebody under the wrong
+           name. Locked with the rest of the client's identity once the intake form has gone out. -->
+      <app-text-field
+        v-model="model.clientNameSuffix" label="Suffix" :class="suffixCols"
+        placeholder="Jr." :readonly="readonly || clientLocked"
+        :error="suffixTooLong" error-message="A suffix is at most 16 characters."
+      >
+        <template #append>
+          <q-icon v-if="clientLocked" name="o_lock" size="18px" color="grey-6" />
+          <q-btn
+            v-else-if="!readonly" flat dense round size="sm" icon="o_arrow_drop_down" color="grey-7"
+            aria-label="Suffix suggestions"
+          >
+            <q-menu anchor="bottom end" self="top end" auto-close>
+              <q-list dense style="min-width: 150px;">
+                <q-item
+                  v-for="opt in SUFFIX_OPTIONS" :key="opt.value"
+                  clickable :active="model.clientNameSuffix === opt.value"
+                  active-class="bg-grey-2 text-primary"
+                  @click="model.clientNameSuffix = opt.value"
+                >
+                  <q-item-section>
+                    <q-item-label>{{ opt.label }}</q-item-label>
+                    <q-item-label caption>{{ opt.caption }}</q-item-label>
+                  </q-item-section>
+                </q-item>
+                <q-separator />
+                <q-item clickable :disable="!model.clientNameSuffix" @click="model.clientNameSuffix = ''">
+                  <q-item-section class="text-grey-7">No suffix</q-item-section>
+                </q-item>
+              </q-list>
+            </q-menu>
+          </q-btn>
+        </template>
+      </app-text-field>
+
       <!-- The col cell and the field are separate elements on purpose: the results menu is `fit`ted to
            its parent, and a parent carrying the grid gutter's padding would hang the menu 16px wide of
            the box it belongs to. -->
@@ -90,48 +132,6 @@
         </div>
       </div>
 
-      <!-- The generational particle on the name — Jr., Sr., II, III, IV — in a box of its own rather
-           than typed into the search above. Two reasons it is separate: the search matches THF's client
-           records, and "John Smith Jr." finds nothing where "John Smith" finds the man; and a Person is
-           filed under a given name and a family name, neither of which "Jr." is. It is appended to the
-           name wherever the client is shown.
-           Free text with the five as suggestions: the list is what most clients need, not all any client
-           may have, and a suffix nobody thought to seed is not a reason to file somebody under the wrong
-           name. Locked with the rest of the client's identity once the intake form has gone out. -->
-      <app-text-field
-        v-model="model.clientNameSuffix" label="Suffix" :class="suffixCols"
-        placeholder="Jr." :readonly="readonly || clientLocked"
-        :error="suffixTooLong" error-message="A suffix is at most 16 characters."
-      >
-        <template #append>
-          <q-icon v-if="clientLocked" name="o_lock" size="18px" color="grey-6" />
-          <q-btn
-            v-else-if="!readonly" flat dense round size="sm" icon="o_arrow_drop_down" color="grey-7"
-            aria-label="Suffix suggestions"
-          >
-            <q-menu anchor="bottom end" self="top end" auto-close>
-              <q-list dense style="min-width: 150px;">
-                <q-item
-                  v-for="opt in SUFFIX_OPTIONS" :key="opt.value"
-                  clickable :active="model.clientNameSuffix === opt.value"
-                  active-class="bg-grey-2 text-primary"
-                  @click="model.clientNameSuffix = opt.value"
-                >
-                  <q-item-section>
-                    <q-item-label>{{ opt.label }}</q-item-label>
-                    <q-item-label caption>{{ opt.caption }}</q-item-label>
-                  </q-item-section>
-                </q-item>
-                <q-separator />
-                <q-item clickable :disable="!model.clientNameSuffix" @click="model.clientNameSuffix = ''">
-                  <q-item-section class="text-grey-7">No suffix</q-item-section>
-                </q-item>
-              </q-list>
-            </q-menu>
-          </q-btn>
-        </template>
-      </app-text-field>
-
       <!-- Required, not "one of email or mobile": the intake form is emailed, so a request without an
            address has nowhere to send the thing the whole request exists to collect. -->
       <app-text-field
@@ -161,8 +161,6 @@
 
     <div id="rf-type-question" class="rf-question">How does this referral relate to THF's records?</div>
 
-    <!-- The whole answer. A Parent Client lookup sat beside these chips, asked when the answer was the
-         existing-client one; it is gone, and the question raises no follow-up any more. -->
     <div class="rf-chips" role="radiogroup" aria-labelledby="rf-type-question">
       <button
         v-for="opt in typeOptions" :key="opt.value"
@@ -194,29 +192,21 @@
         :model-value="industryGroup" :options="industryGroupOptions" label="Entity Type" required
         class="col-12 col-sm-6 col-md-4" :readonly="setupReadonly || industryLocked" :clearable="false"
         :hint="industryLocked ? 'Locked — the intake form has been sent.' : ''"
-        info="What kind of entity the client is. Decides which questions the client's intake form asks, so it is fixed once the form goes out — and an Audit for a Government entity is a Government Audit, which asks for a contract number."
-        @update:model-value="$emit('update:industryGroup', $event)"
+        info="What kind of entity the client is. Decides which questions the client's intake form asks and which trades the Industry list beside it offers, so it is fixed once the form goes out — and an Audit for a Government entity is a Government Audit, which asks for a contract number."
+        @update:model-value="onEntityTypeChosen"
       />
-      <!-- Optional, and deliberately NOT filtered by the entity type beside it: the two do not partition
-           cleanly (a hospital is Health Care whether it is Commercial or Not-for-Profit). Clearable for
-           the same reason — a client whose trade is not on the list is better left blank than filed under
-           a wrong one. -->
+      <!-- Optional, and narrowed by the entity type beside it — a Government entity is offered the three
+           kinds of government and nothing else. The two do NOT partition cleanly, which is why the map
+           behind this (REMS_INDUSTRY_BY_ENTITY_TYPE) is overlapping sets rather than a tree: Health Care
+           and Educational Institutions each appear under two entity types. Still clearable — a client
+           whose trade is not on the list is better left blank than filed under a wrong one. -->
       <app-select
-        :model-value="subIndustry" :options="subIndustryOptions" label="Industry"
+        :model-value="subIndustry" :options="industryOptions" label="Industry"
         class="col-12 col-sm-6 col-md-4" :readonly="setupReadonly"
-        info="From the REMS Industry option list (Administration → Option Sets). The client's trade. Every trade is offered whichever entity type is chosen."
-        @update:model-value="$emit('update:subIndustry', $event)"
+        :hint="industryHint" :info="industryInfo"
+        @update:model-value="onIndustryPicked"
       />
-      <!-- "Assign to Admin" completed this row. It is gone: an initiator names nobody, because they have
-           no way of knowing which admin has capacity for this one. The request reaches every admin's EMS
-           Review as "Waiting for pickup", and whoever takes it owns it from there. -->
     </div>
-
-    <!-- "Message from Partner" stood here — a rich-text box for context to the admin and the client.
-         Removed: the request's own Conversation thread is where that context belongs, because it reaches
-         the admin, the CSE and the approvers, and can be replied to. A field on the form could only ever
-         be written once, by one person, and read by whoever happened to open the tab. Requests raised
-         before this keep whatever was typed in them; nothing here writes the field any more. -->
 
     <!-- Already-attached files, so a request being edited says what it is already carrying rather than
          showing an empty picker over documents nobody can see from here. -->
@@ -251,7 +241,8 @@ import { ref, reactive, computed, watch, nextTick, onBeforeUnmount } from "vue";
 import { remsApi, mediaApi } from "services/api";
 import { useNotify } from "composables/useNotify";
 import {
-  useRemsMeta, REMS_EXISTING_CLIENT_TYPES, REMS_TYPE_BRAND_NEW_CLIENT, REMS_TYPE_EXISTING_CLIENT
+  useRemsMeta, remsIndustryOptions, remsIndustryFitsEntityType,
+  REMS_EXISTING_CLIENT_TYPES, REMS_TYPE_BRAND_NEW_CLIENT, REMS_TYPE_EXISTING_CLIENT
 } from "modules/rems/useRemsMeta";
 import { CLIENT_NAME_SUFFIXES } from "modules/rems/remsContactRoles";
 import { dialFromIso, DEFAULT_COUNTRY_ISO } from "composables/useCountries";
@@ -304,19 +295,20 @@ const props = defineProps({
 const emit = defineEmits(["update:modelValue", "change", "update:industryGroup", "update:subIndustry"]);
 
 const notify = useNotify();
-const { typeHint } = useRemsMeta();
+const { typeHint, industryGroupLabel, subIndustryLabel } = useRemsMeta();
 
 // The parent owns the object; this component writes through it. Simpler than a full v-model round-trip
 // for a form this size, and it keeps the parent's save path reading one object.
 const model = reactive(props.modelValue);
 
-// The top row's columns. Four across the full page; the name and its suffix, then the email and the
-// phone, once the page is shared with the client's answers. The col-12 stays in both: a phone stacks
-// them whatever else is on screen.
+// The top row's columns. Four across the full page; the suffix and the name, then the email and the
+// phone, once the page is shared with the client's answers. The suffix leads and is narrow — it is a
+// particle in front of a name, so it gets a particle's width and never a half-row of its own — and the
+// two share a line even on a phone, which is how the pair reads as one answer.
 const nameCols = computed(() =>
-  props.compact ? "col-12 col-sm-8" : "col-12 col-sm-6 col-md-4");
+  props.compact ? "col-8 col-sm-9" : "col-8 col-sm-10 col-md-4");
 const suffixCols = computed(() =>
-  props.compact ? "col-12 col-sm-4" : "col-12 col-sm-6 col-md-2");
+  props.compact ? "col-4 col-sm-3" : "col-4 col-sm-2 col-md-2");
 const contactCols = computed(() =>
   props.compact ? "col-12 col-sm-6" : "col-12 col-sm-6 col-md-3");
 
@@ -364,6 +356,53 @@ defineExpose({ uploadAttachments });
 
 const hasEmail = computed(() => !!model.customerEmail?.trim());
 
+// ---- Industry, narrowed by the entity type ----
+// The trades this kind of entity is in, out of the tenant's own list. Whatever is already stored stays
+// offered whatever the map says, so opening an older engagement never drops the industry recorded on it.
+const industryOptions = computed(() =>
+  remsIndustryOptions(props.subIndustryOptions, props.industryGroup, props.subIndustry));
+
+// Said on the field, because a list that has just gone from twenty-nine values to three looks broken
+// unless something says why.
+const industryInfo = computed(() => (props.industryGroup
+  ? "From the REMS Industry option list (Administration → Option Sets), narrowed to the trades a " +
+    `${industryGroupLabel(props.industryGroup)} entity is in. Some trades belong to more than one ` +
+    "entity type and appear under each."
+  : "From the REMS Industry option list (Administration → Option Sets). Which trades are offered depends " +
+    "on the Entity Type, so the list is empty until that is chosen."));
+
+// What just happened to a stored industry the new entity type does not offer. A field that empties itself
+// with no explanation reads as data lost rather than as an answer that stopped applying.
+const industryCleared = ref("");
+// The cleared-industry note when there is one, otherwise the reason an empty picker is empty — a dropdown
+// that opens on nothing reads as broken unless something says why.
+const industryHint = computed(() =>
+  industryCleared.value ||
+  (props.industryGroup ? "" : "Choose an Entity Type first — it decides which trades are offered."));
+
+// Changing the entity type can strand the industry: "Retail" is not a trade a Government entity is in,
+// and leaving it would store a pair the picker cannot even show. So it is cleared — and said out loud.
+//
+// Done in the PICKER'S handler rather than in a watcher on the prop, deliberately. A watcher cannot tell
+// the page seeding this form from the server apart from somebody choosing a different entity type, so on
+// any engagement whose stored industry predates this pairing it would clear a saved answer on load — and
+// the auto-save would then make that permanent. This only ever runs when a human opens the dropdown.
+const onEntityTypeChosen = (value) => {
+  emit("update:industryGroup", value);
+  industryCleared.value = "";
+  if (remsIndustryFitsEntityType(value, props.subIndustry)) return;
+  const stranded = subIndustryLabel(props.subIndustry);
+  emit("update:subIndustry", null);
+  industryCleared.value =
+    `Industry cleared — ${stranded} is not a trade a ${industryGroupLabel(value)} entity is in.`;
+};
+
+// The note has done its job the moment a trade is chosen.
+const onIndustryPicked = (value) => {
+  industryCleared.value = "";
+  emit("update:subIndustry", value);
+};
+
 // The suffix suggestions, and the one thing that can be wrong with a free-text suffix. Checked here so
 // the field says so while it is being typed rather than the save coming back with a 400 on a name
 // particle.
@@ -407,11 +446,9 @@ watch(() => props.modelValue.clientName, (name) => {
   if ((name || "") !== clientQuery.value) clientQuery.value = name || "";
 });
 
-// Every term searches, however short. A two-character floor stood here, on the reasoning that one letter
-// matches half the tenant — but it also meant a client actually NAMED in two or three characters could not
-// be found by typing their name, and a box that answers nothing while you type reads as broken rather than
-// as protecting itself. The debounce is what keeps the traffic down instead, and the server caps the
-// result set at 20 whatever the term. Only an empty box searches for nothing: there is nothing to look up.
+// Every term searches, however short: a minimum length would leave a client actually NAMED in two or
+// three characters unfindable by typing their name. The debounce keeps the traffic down instead, and the
+// server caps the result set at 20 whatever the term. Only an empty box searches for nothing.
 const LOOKUP_DEBOUNCE_MS = 500;
 let lookupTimer = null;
 // Bumped on every query so a slow response for an abandoned term cannot land on top of a newer one.
@@ -566,11 +603,6 @@ const chooseType = (value) => {
   if (value === REMS_TYPE_BRAND_NEW_CLIENT && linkedClient.value) detachClient();
 };
 
-// A second lookup lived here — the Parent Client box, offered on "New Engagement, Existing Client" and
-// clearing itself when the answer changed. The whole field is gone: which client an engagement is for is
-// what REMS records, and how that client relates to another company on THF's books is not something the
-// partner raising the referral was in a position to state.
-
 const openMenuIfResults = () => {
   if (clientOptions.value.length || (clientSearched.value && !!clientQuery.value.trim())) {
     clientMenu.value = true;
@@ -609,8 +641,8 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-/* The hints that used to be caption lines and rules between the fields. On the field they are about,
-   at the end of it, and only reading themselves out when someone asks. */
+/* Field hints: on the field they are about, at the end of it, and only reading themselves out when
+   someone asks. */
 .rf-note { cursor: help; }
 
 .rf-hint {

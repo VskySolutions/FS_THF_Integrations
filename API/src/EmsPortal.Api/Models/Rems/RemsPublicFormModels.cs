@@ -31,6 +31,14 @@ public sealed class RemsFormPayloadV1
     public string? ClientName { get; set; }
 
     /// <summary>
+    /// The title an individual client is addressed by — Mr., Mrs., Ms., Dr. Held beside the given name
+    /// rather than typed into it, and deliberately NOT folded into
+    /// <see cref="EffectiveClientName"/>: the name is what the client is filed and searched under, and
+    /// nobody is looked up under "Dr.". Null for a business or government client, which has no title.
+    /// </summary>
+    public string? ClientPrefix { get; set; }
+
+    /// <summary>
     /// An individual client's given name. Null for a business or government client, whose name is a
     /// company's rather than a person's and does not divide into two.
     /// </summary>
@@ -50,7 +58,6 @@ public sealed class RemsFormPayloadV1
 
     // ---- Address (main entity) ----
     public RemsAddressPayload? PhysicalAddress { get; set; }
-    public bool MailingDiffers { get; set; }
     public RemsAddressPayload? MailingAddress { get; set; }
 
     // ---- Billing ----
@@ -155,6 +162,14 @@ public sealed class RemsAddressPayload
 /// </summary>
 public sealed class RemsRolePayload
 {
+    /// <summary>
+    /// The title this contact is addressed by — Mr., Mrs., Ms., Dr. Kept out of <see cref="DisplayName"/>
+    /// for the same reason it is kept out of the client's: the joined name is what the contact's
+    /// <c>Person</c> is filed under, and a title is not part of it. It travels to
+    /// <c>Person.Prefix</c> when the contact is materialised.
+    /// </summary>
+    public string? Prefix { get; set; }
+
     public string? FirstName { get; set; }
     public string? LastName { get; set; }
 
@@ -297,10 +312,9 @@ public sealed class RemsRelatedEntityPayload
     public string? EmailAddress { get; set; }
     public string? PhoneNumber { get; set; }
 
-    // The business name, EIN and addresses are gone. An additional entity is now captured as a CONTACT,
-    // not as a second legal entity: it produces no REMSEntity, no engagement and no approval round of its
-    // own. It becomes its own REMS request instead, raised by hand from the Partner/CSE list — which is
-    // where the business details get asked for, through that request's own intake.
+    // An additional entity is a CONTACT, not a second legal entity: it produces no REMSEntity, no
+    // engagement and no approval round of its own. It becomes its own REMS request, raised by hand from
+    // the Partner/CSE list, and that request's own intake is where the business details get asked for.
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -381,6 +395,7 @@ public sealed record RemsReviewModel(
 /// </summary>
 public sealed record RemsReviewContact(
     string? ClientName,
+    string? ClientPrefix,
     string? ClientFirstName,
     string? ClientLastName,
     string Email,
@@ -411,7 +426,8 @@ public sealed record RemsReviewAddressGroup(
 
 /// <summary>A role contact row on review. <see cref="Name"/> is the two parts joined, for reading.</summary>
 public sealed record RemsReviewContactRow(
-    string Role, bool IsRequired, string? FirstName, string? LastName, string? Name, string? Email, string? Phone);
+    string Role, bool IsRequired, string? Prefix, string? FirstName, string? LastName, string? Name,
+    string? Email, string? Phone);
 
 /// <summary>Billing block.</summary>
 public sealed record RemsReviewBilling(string? BillingContactName, string? BillingEmail, RemsAddressPayload? BillingAddress);

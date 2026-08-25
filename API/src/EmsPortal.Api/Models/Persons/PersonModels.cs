@@ -12,6 +12,9 @@ public sealed class CreatePersonRequest
     public Guid? TenantId { get; set; }
 
     // Personal
+    /// <summary>The title they are addressed by — Mr., Mrs., Ms., Dr. Free text; not part of the filed name.</summary>
+    public string? Prefix { get; set; }
+
     public string FirstName { get; set; } = string.Empty;
     public string? MiddleName { get; set; }
     public string LastName { get; set; } = string.Empty;
@@ -48,6 +51,9 @@ public sealed class UpdatePersonRequest
     public Guid? TenantId { get; set; }
 
     // Personal
+    /// <summary>The title they are addressed by. Free text; not part of the filed name.</summary>
+    public string? Prefix { get; set; }
+
     public string? FirstName { get; set; }
     public string? MiddleName { get; set; }
     public string? LastName { get; set; }

@@ -70,6 +70,7 @@ public sealed class PersonsController : ControllerBase
             // they are currently viewing (the claim follows the Super-Admin tenant scope) rather than
             // nowhere. (Falls back to active-tenant stamping.)
             TenantId = (User.IsSuperAdmin() ? request.TenantId : null) ?? User.GetActiveTenantId(),
+            Prefix = request.Prefix,
             FirstName = request.FirstName,
             MiddleName = request.MiddleName,
             LastName = request.LastName,
@@ -173,6 +174,7 @@ public sealed class PersonsController : ControllerBase
         }
 
         // Personal
+        Apply(request.Prefix, v => person.Prefix = v);
         Apply(request.FirstName, v => person.FirstName = v);
         Apply(request.MiddleName, v => person.MiddleName = v);
         Apply(request.LastName, v => person.LastName = v);
@@ -290,7 +292,6 @@ public sealed class PersonsController : ControllerBase
         address.AddressLine1 = input.AddressLine1;
         address.AddressLine2 = input.AddressLine2;
         address.Landmark = input.Landmark;
-        address.Area = input.Area;
         address.BuildingName = input.BuildingName;
         address.FloorNumber = input.FloorNumber;
         address.UnitNumber = input.UnitNumber;
@@ -298,11 +299,8 @@ public sealed class PersonsController : ControllerBase
         address.CountryName = input.CountryName;
         address.StateCode = input.StateCode;
         address.StateName = input.StateName;
-        address.CityCode = input.CityCode;
         address.CityName = input.CityName;
         address.PostalCode = input.PostalCode;
-        address.Latitude = input.Latitude;
-        address.Longitude = input.Longitude;
 
         if (isNew)
         {

@@ -178,9 +178,9 @@ const columns = [
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 
-// Paged and filtered SERVER-side, like every other REMS list. It used to load every task the caller had
-// ever been routed and search them in the browser, which quietly stopped scaling as an approver's history
-// grew — and made the pager count the loaded page rather than the matching set.
+// Paged and filtered SERVER-side, like every other REMS list: loading an approver's whole history and
+// searching it in the browser stops scaling, and makes the pager count the loaded page rather than the
+// matching set.
 const { rows, loading, totalRecords, search, filterOpen, pagination, load, onRequest } = useListTable({
   fetcher: ({ page, limit }) =>
     remsApi.myApprovalTasks({

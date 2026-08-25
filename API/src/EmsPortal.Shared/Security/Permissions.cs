@@ -61,14 +61,14 @@ public static class Permissions
     /// <summary>Delete REMS requests.</summary>
     public const string RemsRequestsDelete = "rems.requests.delete";
     /// <summary>
-    /// Pick a REMS request up from EMS Review, and hand it back. Named for the "assign to admin" action it
-    /// used to gate; nobody assigns anybody now — the key means "may claim work off the shared queue", so
-    /// it belongs to the admins who work that queue and to nobody else.
+    /// Pick a REMS request up from EMS Review, and hand it back. Nobody assigns anybody — the key means
+    /// "may claim work off the shared queue", so it belongs to the admins who work that queue and to
+    /// nobody else. The name is historical; read it as the pick-up right.
     /// </summary>
     public const string RemsRequestsAssign = "rems.requests.assign";
-    // rems.pool.read is gone. Which requests an admin may SEE is not a permission of its own: EMS Review
-    // is the whole tenant's queue and every admin reads all of it, because a request waiting for pickup
-    // has to be visible to the person who might pick it up.
+    // Which requests an admin may SEE is deliberately not a permission of its own: EMS Review is the whole
+    // tenant's queue and every admin reads all of it, because a request waiting for pickup has to be
+    // visible to the person who might pick it up.
     /// <summary>Create, edit, and configure REMS forms.</summary>
     public const string RemsFormsManage = "rems.forms.manage";
     /// <summary>Send REMS forms to recipients.</summary>
@@ -154,9 +154,8 @@ public static class Permissions
         // RemsFormsSend is a Partner permission: the initiator emails the intake link to the client
         // themselves rather than handing the request to an admin to send.
         //
-        // RemsRequestsAssign is NOT. It was here only because naming the reviewing admin used to be
-        // mandatory at intake; that picker is gone, and the key now means "may pick a request up", which is
-        // the admins' move on a queue a partner never works.
+        // RemsRequestsAssign is NOT: it means "may pick a request up", which is the admins' move on a
+        // queue a partner never works.
         RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate,
         // The email log follows the sending: the person chasing a client is the one who needs to know
         // whether the last three emails reached them, and since Phase 16 that person is the initiator

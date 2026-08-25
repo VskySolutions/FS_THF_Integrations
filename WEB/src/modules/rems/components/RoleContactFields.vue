@@ -21,11 +21,14 @@
       />
     </div>
     <div class="row q-col-gutter-sm">
+      <!-- How to address them, in front of the name. Never required: plenty of people go by no title at
+           all, and one guessed on their behalf is worse than none. -->
+      <app-name-prefix-field v-model="role.prefix" class="col-4 col-sm-2" />
       <!-- Two boxes, because a contact becomes a Person and a Person is filed under a given name and a
            family name. One box asked the client to write a name and left the application guessing where
            to cut it — which put "Van Der Berg" in a first-name column often enough to matter. -->
       <app-text-field
-        v-model="role.firstName" label="First Name" :required="required" class="col-12 col-sm-6"
+        v-model="role.firstName" label="First Name" :required="required" class="col-8 col-sm-4"
         :error="!!err('firstName')" :error-message="err('firstName')"
       />
       <app-text-field
@@ -47,6 +50,7 @@
 
 <script setup>
 import AppTextField from "components/common/AppTextField.vue";
+import AppNamePrefixField from "components/common/AppNamePrefixField.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
 
 const role = defineModel({ type: Object, required: true });

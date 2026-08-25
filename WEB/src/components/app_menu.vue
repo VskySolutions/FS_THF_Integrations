@@ -118,9 +118,8 @@ const sections = [
     key: "rems",
     label: "REMS",
     icon: "o_business_center",
-    // Three lists, one per role. The Admin Pool and EMS Inbox are gone: the initiator now fills the whole
-    // request and sends the intake link themselves, so nothing ever waits in a pool to be picked up, and
-    // what used to be two admin queues is one review queue.
+    // Three lists, one per role. There is no separate pool or inbox: the initiator fills the whole request
+    // and sends the intake link themselves, so the admins have one review queue between them.
     items: [
       // Open to everyone, like Approvals: the list shows the requests you raised or are named on, so a
       // user with no REMS work sees an empty list rather than a menu that hides the page from them.

@@ -2,8 +2,7 @@ namespace EmsPortal.Domain.Entities;
 
 /// <summary>
 /// The client record materialised from a completed <see cref="REMSFormSubmission"/> (WO-110). One
-/// client per REMS request. <see cref="ReferralSource"/> stores the option-set code;
-/// <see cref="ExternalClientReferenceId"/> is a loose reference (not a foreign key).
+/// client per REMS request. <see cref="ReferralSource"/> stores the option-set code.
 /// </summary>
 public class REMSClient : AuditableEntity
 {
@@ -18,9 +17,6 @@ public class REMSClient : AuditableEntity
 
     /// <summary>The immutable submission this client was created from.</summary>
     public Guid SourceFormSubmissionId { get; set; }
-
-    /// <summary>Loose reference to an external client record (not a foreign key).</summary>
-    public Guid? ExternalClientReferenceId { get; set; }
 
     /// <summary>Client display name.</summary>
     public string Name { get; set; } = string.Empty;

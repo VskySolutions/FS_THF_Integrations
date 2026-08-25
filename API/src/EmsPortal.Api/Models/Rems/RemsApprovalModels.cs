@@ -148,7 +148,6 @@ public sealed record RemsApprovalEngagementView(
     Guid EngagementId,
     string Status,
     string? Department,
-    string? ServiceLine,
     string? SubServiceLine,
     string? SubIndustry,
     RemsApprovalClientView Client,

@@ -43,9 +43,8 @@
         />
       </template>
 
-      <!-- The number opens the request. It used to open the client's form in a modal, which is where that
-           form USED to live; it is a pane of the request page now, so the request is the one place the
-           number can send you that has both. -->
+      <!-- The number opens the request, which is the one place that carries both the setup and the
+           client's own answers (the latter in a pane beside it). -->
       <template #body-cell-remsNumber="cell">
         <q-td :props="cell">
           <q-btn
@@ -143,10 +142,6 @@
           >
             <q-tooltip>{{ editBlocked(cell.row) || "Edit" }}</q-tooltip>
           </q-btn>
-          <!-- A "View the client's form" action stood here, opening the submission in a modal. The
-               submission is a pane of the request page now, beside the setup it is read against, so View
-               and Edit above both land on it. -->
-
           <!-- What the client has been emailed about this request and what came back, plus the reminder
                for one who still has not answered. Every row here has a form, so there is always a log to
                open — an empty one is itself the answer for a form nobody has sent yet. -->
@@ -222,10 +217,9 @@ const statusRow = (row) => ({ status: row?.requestStatus, assignedAdmin: row?.as
 // in a 403. Reading is open to every admin whoever holds the request — this is a shared queue, and
 // deciding whether to pick something up means being able to look at it first.
 //
-// Neither waits on the client any more. Both used to be shut until the form came back, which left an admin
-// unable to open — or correct — a request whose intake was already there to read, at exactly the point in
-// its life when a mistake in it is still cheap to fix. What genuinely needs a submission is the button
-// beside these, which shows the client's own answers, and that one is still gated on it.
+// Neither waits on the client. Gating them on the submission would leave an admin unable to open — or
+// correct — a request whose intake was already there to read, at exactly the point where a mistake in it
+// is still cheap to fix. What genuinely needs a submission is the button beside these.
 const editBlocked = (row) => engagementOwnerDenial(row);
 
 // REMS number and client are covered by the quick search, so they get no duplicate filter box of their

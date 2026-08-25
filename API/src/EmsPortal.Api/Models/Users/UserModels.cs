@@ -24,6 +24,8 @@ public sealed class CreateUserRequest
 
 public sealed class UpdateUserRequest
 {
+    /// <summary>The title the person is addressed by (Mr., Dr., …). Written onto their Person record.</summary>
+    public string? Prefix { get; set; }
     public string? FirstName { get; set; }
     public string? LastName { get; set; }
     public string? PhoneNumber { get; set; }
@@ -159,6 +161,8 @@ public sealed record UserDetail(
     Guid UserId,
     Guid? PersonId,
     string Email,
+    /// <summary>The title they are addressed by, from their Person record; null when they have none.</summary>
+    string? Prefix,
     string FirstName,
     string LastName,
     string FullName,

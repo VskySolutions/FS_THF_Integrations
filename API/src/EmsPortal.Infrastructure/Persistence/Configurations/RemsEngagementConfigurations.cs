@@ -18,18 +18,18 @@ internal sealed class RemsEngagementConfiguration : IEntityTypeConfiguration<REM
             t.HasCheckConstraint(
                 "CK_REMSEngagement_Realization",
                 "[RealizationPercentage] IS NULL OR ([RealizationPercentage] >= 0 AND [RealizationPercentage] <= 100)");
-            // A schedule of zero or negative bills is not a schedule.
-            t.HasCheckConstraint(
-                "CK_REMSEngagement_NumberOfBills",
-                "[NumberOfBills] IS NULL OR [NumberOfBills] > 0");
+            // No CHECK on BillingProcessDescription: it is prose, and there is nothing about a sentence a
+            // constraint could enforce.
         });
         builder.HasKey(e => e.Id);
 
         builder.Property(e => e.Department).HasMaxLength(64);
-        builder.Property(e => e.ServiceLine).HasMaxLength(64);
         builder.Property(e => e.SubServiceLine).HasMaxLength(64);
         builder.Property(e => e.SubIndustry).HasMaxLength(64);
         builder.Property(e => e.BillingPeriod).HasMaxLength(64);
+        // A description of how the client is billed, not a treatise: long enough for the two or three
+        // sentences a schedule takes, short enough that nobody pastes an engagement letter into it.
+        builder.Property(e => e.BillingProcessDescription).HasMaxLength(1000);
         builder.Property(e => e.FirstYearFeeEstimate).HasPrecision(18, 2);
         builder.Property(e => e.RealizationPercentage).HasPrecision(5, 2);
         builder.Property(e => e.Status).HasConversion<string>().HasMaxLength(20).IsRequired();

@@ -381,6 +381,12 @@ public sealed class UsersController : ControllerBase
         var person = user.Person;
         if (person is not null)
         {
+            if (request.Prefix is not null)
+            {
+                // "" is how a title is taken back off — it is the one name field somebody routinely
+                // clears, and an omitted field cannot say that.
+                person.Prefix = request.Prefix;
+            }
             if (request.FirstName is not null)
             {
                 person.FirstName = request.FirstName;
@@ -878,11 +884,6 @@ public sealed class UsersController : ControllerBase
     /// <summary>The option-set key holding the department codes (shared with the REMS engagement setup).</summary>
     private const string DepartmentOptionSetKey = "REMS.Department";
 
-    // Job title is gone from the platform. The mandatory picker on the user forms, the
-    // GET /api/admin/users/job-titles endpoint that filled it, the User.JobTitle option list behind it and
-    // the Person.JobTitle column it wrote to were all dropped together (DropPersonJobTitle) — a title told
-    // nobody anything the department and the role assignments did not already say.
-
     /// <summary>
     /// Closed fallback mirroring the seeded <c>REMS.Department</c> values (see <c>DefaultOptionSets</c>), so
     /// the picker still works on a deployment where the option list has not been seeded.
@@ -1113,6 +1114,7 @@ public sealed class UsersController : ControllerBase
             user.Id,
             user.PersonId,
             user.Email,
+            p?.Prefix,
             p?.FirstName ?? string.Empty,
             p?.LastName ?? string.Empty,
             p?.FullName ?? user.DisplayName,

@@ -432,9 +432,6 @@ public sealed class RemsPublicFormController : ControllerBase
             TenantId = tenantId,
             REMSId = form.REMSId,
             SourceFormSubmissionId = submissionId,
-            // Points at the same Person the request's client resolved to at intake, so the client the
-            // form materialises and the client the picker knows are one record rather than two.
-            ExternalClientReferenceId = form.Rems!.ClientPersonId,
             // EffectiveClientName, not ClientName: an individual gives their name in two boxes now, and
             // the joined echo beside them is the client's to send rather than ours to trust.
             Name = Clean(payload.EffectiveClientName) ?? string.Empty,
@@ -455,7 +452,6 @@ public sealed class RemsPublicFormController : ControllerBase
             Id = mainEntityId,
             TenantId = tenantId,
             REMSClientId = clientId,
-            SourceEntityKey = "main",
             Name = Clean(payload.EffectiveClientName) ?? string.Empty,
             EIN = isBusiness ? Clean(payload.Ein) : null,
             IsMainEntity = true,
@@ -588,6 +584,9 @@ public sealed class RemsPublicFormController : ControllerBase
             TenantId = tenantId,
             SourceEntityType = EntityType.Rems,
             SourceEntityId = sourceRemsId,
+            // How the client asked us to address this contact. Stored beside the name, not folded into it
+            // — DisplayName below is what the person is filed and searched under.
+            Prefix = Clean(role.Prefix),
             FirstName = first,
             LastName = last,
             DisplayName = Clean(role.DisplayName) ?? first,
@@ -598,9 +597,9 @@ public sealed class RemsPublicFormController : ControllerBase
         };
     }
 
-    // StageBlankEngagement is gone. Engagements are no longer minted on submit: the initiator fills the
-    // engagement setup before the client is ever contacted, so by the time a submission arrives the
-    // request already has its one engagement and this path only attaches the client's answers to it.
+    // No engagement is minted on submit: the initiator fills the engagement setup before the client is
+    // ever contacted, so by the time a submission arrives the request already has its one engagement and
+    // this path only attaches the client's answers to it.
 
     /// <summary>The staged submit graph — every row carries an explicit TenantId and a pre-generated id.</summary>
     private sealed class SubmitGraph
@@ -701,7 +700,8 @@ public sealed class RemsPublicFormController : ControllerBase
     private RemsReviewModel BuildReviewModel(REMS rems, RemsFormPayloadV1 payload, string industryGroup)
     {
         var contact = new RemsReviewContact(
-            Clean(payload.EffectiveClientName), Clean(payload.ClientFirstName), Clean(payload.ClientLastName),
+            Clean(payload.EffectiveClientName), Clean(payload.ClientPrefix),
+            Clean(payload.ClientFirstName), Clean(payload.ClientLastName),
             rems.CustomerEmail ?? string.Empty, Clean(payload.MobileNumber), Clean(payload.ReferralSource));
 
         var contract = string.Equals(industryGroup, RemsFormPayloadValidator.Government, StringComparison.Ordinal)
@@ -723,8 +723,8 @@ public sealed class RemsPublicFormController : ControllerBase
         var additionalContacts = EnumerateRoles(industryGroup, payload.EffectiveRoles)
             .Where(t => t.Role is { HasAny: true })
             .Select(t => new RemsReviewContactRow(
-                t.RoleName, t.IsRequired,
-                Clean(t.Role!.EffectiveFirstName), Clean(t.Role.EffectiveLastName), Clean(t.Role.DisplayName),
+                t.RoleName, t.IsRequired, Clean(t.Role!.Prefix),
+                Clean(t.Role.EffectiveFirstName), Clean(t.Role.EffectiveLastName), Clean(t.Role.DisplayName),
                 Clean(t.Role.Email), Clean(t.Role.Phone)))
             .ToList();
 
@@ -855,10 +855,6 @@ public sealed class RemsPublicFormController : ControllerBase
         AddressId = addressId,
         AddressType = type,
     };
-
-    // SplitName stood here. The public form asks for a first and a last name in their own boxes now, so
-    // there is nothing left here to split; the one-box fallback for older payloads lives on the payload
-    // itself (RemsNameSplit, behind RemsRolePayload.EffectiveFirstName).
 
     private static RemsAddressPayload? NonEmpty(RemsAddressPayload? address) => address is { HasAny: true } ? address : null;
 

@@ -42,13 +42,10 @@ public static class DefaultOptionSets
     {
         new Definition(EntityType.Rems, "REMS.Type", "REMS Type", OptionItemSortMode.Custom, new[]
         {
-            // Two ways a referral can relate to THF's records. It was four: "New Engagement" and
-            // "Existing Client" asked the partner to split a hair nobody could, since every new engagement
-            // for a client we already have is both, and were merged into the code `existing_client` (see
-            // MergeRemsExistingClientTypes). "Subsidiary / Child of Existing Client" then folded into the
-            // same answer (RetireRemsSubsidiaryType): a child of a client on file is an engagement for a
-            // client we already have. The Parent Client field that briefly carried the difference is gone
-            // too (DropRemsParentClient), which is why this description no longer mentions it.
+            // Two ways a referral can relate to THF's records, and only two: every new engagement for a
+            // client on file is both "new engagement" and "existing client", and a subsidiary of one is
+            // an engagement for a client we already have. Splitting those hairs asked the partner a
+            // question nobody could answer consistently.
             new ItemDefinition("brand_new_client", "Brand-New Client", 1, Description:
                 "The client/company is working with THF for the first time. No prior record exists in the system."),
             new ItemDefinition("existing_client", "New Engagement, Existing Client", 2, Description:
@@ -72,18 +69,14 @@ public static class DefaultOptionSets
                 "Mentioned in an article, forum (e.g., Reddit), or guest post."),
             new ItemDefinition("other", "Other", 7, Description: "Anything not covered above."),
         }),
-        // REMS.Priority is gone: the field it configured was dropped from the request (see
-        // DropRemsRequestPriority). A list nobody reads is worse than no list — it invites a tenant to
-        // configure something that has no effect anywhere.
         new Definition(EntityType.Rems, "REMS.Status", "REMS Status", OptionItemSortMode.Custom, new[]
         {
             // The request lifecycle, in stage order — each value names who the request is waiting on.
             // See RemsRequestStatuses for the transitions.
             //
-            // "submitted" is gone with the Admin Pool it described: the initiator now sends the intake
-            // form to the client themselves, so a request never waits in a pool to be picked up.
-            // "customer_submitted" keeps its code and is relabelled — the stage is the Admin reviewing
-            // what came back, not staff starting the engagement setup, which happens before any of this.
+            // `customer_submitted` reads as "Admin Review": the stage is the Admin reviewing what came
+            // back, not staff starting the engagement setup, which happens before any of this. The code
+            // keeps its older name because rows already hold it.
             new ItemDefinition("draft", "Draft", 1, Description:
                 "With its initiator. Saved but not yet sent to the client."),
             new ItemDefinition("awaiting_customer", "Awaiting Customer", 2, Description:
@@ -103,11 +96,17 @@ public static class DefaultOptionSets
         }),
         new Definition(EntityType.Rems, "REMS.BillingPeriod", "REMS Billing Period", OptionItemSortMode.Custom, new[]
         {
-            // How often the client is billed. Pairs with the engagement's No. of Bills, which is a plain
-            // count rather than anything derived from the period.
+            // How often the client is billed. Pairs with the engagement's Description of Billing Process,
+            // which is where a schedule that does not reduce to a frequency gets written out.
             new ItemDefinition("monthly", "Monthly", 1),
             new ItemDefinition("quarterly", "Quarterly", 2),
             new ItemDefinition("annual", "Annual", 3),
+            // Not a frequency at all: the engagement is billed when a piece of work lands, not when the
+            // calendar turns. It is offered here because it is the answer to the same question — "when do
+            // we invoice?" — and the description beside it is where the milestones themselves are named.
+            new ItemDefinition("milestone", "Milestone", 4, Description:
+                "Billed as each agreed milestone is reached, rather than on a calendar cycle. " +
+                "Set out the milestones in the Description of Billing Process."),
         }),
         // What KIND of entity the client is — an individual, a not-for-profit, an insurer, a commercial
         // business, a government body. Shown as "Entity Type"; the key stays REMS.IndustryGroup because
@@ -124,6 +123,13 @@ public static class DefaultOptionSets
             new ItemDefinition("insurance", "Insurance", 3),
             new ItemDefinition("commercial", "Commercial", 4),
             new ItemDefinition("government", "Government", 5),
+            // A trust or an estate is a legal entity with a name, a tax number and people who act for it,
+            // so it is asked exactly what the three business groups are asked (see IsBusinessGroup) —
+            // an EIN and the primary / financial / billing contacts. What it is NOT is an individual:
+            // filing one as its trustee is what put the trust's affairs under a person's own name.
+            new ItemDefinition("trust_estate", "Trust and Estate", 6, Description:
+                "A trust or a decedent's estate. Asked the same questions as a business — it has an EIN " +
+                "and is acted for by trustees or personal representatives rather than by an individual."),
         }),
         // The client's trade. Shown as "Industry"; the key stays REMS.SubIndustry for the same reason as
         // the entity type above. Unlike the entity type — which decides which questions the client's
@@ -153,9 +159,12 @@ public static class DefaultOptionSets
             new ItemDefinition("local_government", "Local Government", 17),
             new ItemDefinition("federal_government", "Federal Government", 18),
             new ItemDefinition("educational_institutions", "Educational Institutions", 19),
-            new ItemDefinition("insurance_property_casualty", "Insurance - Property and Casualty", 20),
-            new ItemDefinition("insurance_life", "Insurance - Life", 21),
-            new ItemDefinition("insurance_other", "Insurance - Other", 22),
+            // The four insurance trades, with no "Insurance -" on the front: the Industry list is narrowed
+            // by the entity type beside it, which already says Insurance. The VALUES keep the prefix — they
+            // are the codes engagements are recorded against.
+            new ItemDefinition("insurance_property_casualty", "Property and Casualty", 20),
+            new ItemDefinition("insurance_life", "Life", 21),
+            new ItemDefinition("insurance_other", "Other", 22),
             new ItemDefinition("trade_associations", "Trade Associations", 23),
             new ItemDefinition("charitable_organizations_foundations", "Charitable Organizations or Foundations", 24),
             new ItemDefinition("other_not_for_profit", "Other Not-for-Profit", 25),
@@ -168,7 +177,11 @@ public static class DefaultOptionSets
             // backfill that adds this to each existing tenant's copy takes MAX(DisplayOrder) + 1, so
             // renumbering here would put the item in one place for a new tenant and another for everybody
             // already running. The list is not alphabetical in any case — Health Care sits at 12.
-            new ItemDefinition("insurance_health", "Insurance - Healthcare", 29),
+            // "Healthcare", one word — the entity type beside it says Insurance, and this is deliberately
+            // not the same string as "Health Care" above, which is the trade a hospital is in whether it
+            // is Commercial or Not-for-Profit. The two never meet in a picker (the entity type narrows the
+            // list to one or the other), only in the option-set admin.
+            new ItemDefinition("insurance_health", "Healthcare", 29),
         }),
         new Definition(EntityType.Rems, "REMSMarketing_MarketingMethods.MarketingMethodId", "REMS Marketing Methods", OptionItemSortMode.Custom, new[]
         {
@@ -205,13 +218,6 @@ public static class DefaultOptionSets
             // nor a fiscal year end.
             new ItemDefinition("admin", "Admin", 5),
         }),
-        // REMS.ServiceLine (Commercial / Non-Profit / Government / Individual) stood here. It was dropped:
-        // it asked what KIND of client this is, which is what REMS.EntityType below already answers, so
-        // every engagement was classified twice and the two could disagree. The Government Audit rule it
-        // used to carry moved to the entity type, and the list itself is retired by the
-        // RenameRemsEngagementClassifications migration. Engagements keep their stored ServiceLine code —
-        // nothing reads or writes it any more.
-        //
         // The service actually being sold. This IS "Service Line" now (its key stays REMS.SubServiceLine,
         // because a tenant's own copy of a list is keyed by it and renaming the key would orphan theirs).
         // A classification field: what the firm is engaged to do, for reporting and for the

@@ -154,8 +154,8 @@
 
 <script setup>
 // The role, in full: what it is, what it grants, which groups compose it, and who holds it here. Reached
-// from the roles list, which used to open this in a drawer — a role is a record people come back to and
-// link each other at, and a drawer is neither addressable nor wide enough for the users beside it.
+// from the roles list. A page rather than a drawer: a role is a record people come back to and link each
+// other at, and a drawer is neither addressable nor wide enough for the users beside it.
 //
 // It opens for two quite different callers. A Super Admin, or a tenant admin looking at their own tenant's
 // role, edits everything. A tenant admin looking at a PLATFORM role reads the definition and manages the

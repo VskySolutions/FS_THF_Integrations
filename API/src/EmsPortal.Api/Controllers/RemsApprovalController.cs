@@ -55,10 +55,6 @@ public sealed class RemsApprovalController : ControllerBase
     private const string MarketingSetKey = "REMSMarketing_MarketingMethods.MarketingMethodId";
     private const string TaxFormSetKey = "REMS.TaxForm";
 
-    // ManagingShareholderGroup stood here — the name of the user GROUP the shareholders were read from.
-    // The group became a role, and then the seat itself went: nobody signs off on every engagement by
-    // standing, so there is neither a group nor a role to look up.
-
     private readonly IRemsRepository _rems;
     private readonly IRemsEngagementRepository _engagements;
     private readonly IRemsApprovalRepository _approvals;
@@ -476,8 +472,11 @@ public sealed class RemsApprovalController : ControllerBase
                 t.Id, round.Id, round.RoundNumber, t.ApproverRole.ToString(), t.Status.ToString(),
                 round.SentOnUtc, t.DecidedOnUtc, round.Status.ToString(),
                 // The client's name as they gave it on intake, falling back to the name the request was
-                // raised under when the row is somehow reached before a submission exists.
-                engagement.Id, rems.Id, rems.REMSNumber, client?.Name ?? rems.ClientDisplayName,
+                // raised under when the row is somehow reached before a submission exists — and either
+                // way with the request's generational suffix on it. The intake form never asks for one,
+                // so the client's own version of their name arrives without it, and this row would
+                // otherwise read "John Smith" beside an EMS Review list saying "John Smith Jr.".
+                engagement.Id, rems.Id, rems.REMSNumber, rems.WithClientSuffix(client?.Name),
                 RemsWorkspaceMapper.UserRef(rems.CSEId, auditNames),
                 round.Tasks.Count(x => x.Status == RemsApprovalTaskStatus.Approved),
                 round.Tasks.Count(x => x.Status == RemsApprovalTaskStatus.Rejected),
@@ -785,9 +784,9 @@ public sealed class RemsApprovalController : ControllerBase
     /// the work is actually at instead of staying on "Engagement Setup" for the whole approval cycle — which
     /// is what left a requester with no way to tell that their request was sitting with the approvers.
     /// <para>
-    /// This used to be a roll-up across one engagement per entity. A request now carries exactly one, so it
-    /// is a straight translation — <paramref name="current"/> is that engagement, not yet committed, so its
-    /// in-memory status is what the request follows.
+    /// A request carries exactly one engagement, so this is a straight translation —
+    /// <paramref name="current"/> is that engagement, not yet committed, so its in-memory status is what
+    /// the request follows.
     /// </para>
     /// <para>
     /// A rejected engagement sends the request to the INITIATOR rather than back to the admin: enough
@@ -868,11 +867,10 @@ public sealed class RemsApprovalController : ControllerBase
     /// <summary>
     /// The users the Approval tab offers as EXTRA approvers: EVERY active user in the tenant.
     /// <para>
-    /// It used to be the holders of an <c>Approver</c> role, which is gone. An engagement can need a
-    /// signature from anyone in the firm — the person who introduced the client, the specialist whose
-    /// opinion the fee rests on — and a role maintained to say so was only ever a list somebody had
-    /// forgotten to add them to. Nothing is lost by opening it: adding an approver is a deliberate act by
-    /// the admin routing the round, and it is recorded as theirs.
+    /// Deliberately not narrowed to a role: an engagement can need a signature from anyone in the firm —
+    /// the person who introduced the client, the specialist whose opinion the fee rests on — and a role
+    /// maintained to say so is only ever a list somebody has forgotten to add them to. Nothing is lost by
+    /// opening it: adding an approver is a deliberate act by the admin routing the round, recorded as theirs.
     /// </para>
     /// <para>
     /// The automatic approvers are routed to whether or not they appear here, so picking one of them
@@ -1137,8 +1135,8 @@ public sealed class RemsApprovalController : ControllerBase
         var client = ClientOf(engagement)!;
 
         // The task-context graph stops at the client's entities: their addresses/contacts, the conditional
-        // engagement detail and the request's files each need their own load. The engagement no longer
-        // names an entity, so the packet reviews the client's MAIN one — the business being engaged.
+        // engagement detail and the request's files each need their own load. The engagement names no
+        // entity, so the packet reviews the client's MAIN one — the business being engaged.
         var mainEntity = client.Entities.FirstOrDefault(e => !e.Deleted && e.IsMainEntity)
             ?? client.Entities.FirstOrDefault(e => !e.Deleted);
         var entity = mainEntity is null
@@ -1173,13 +1171,13 @@ public sealed class RemsApprovalController : ControllerBase
                 .ToList());
 
         var engagementView = await BuildApprovalEngagementViewAsync(
-            task, engagement, client, entity, audit, government, tax, names, cancellationToken);
+            task, rems, engagement, client, entity, audit, government, tax, names, cancellationToken);
 
         // By ROLE — shareholder, director, CSE, commission recipient, then anyone added by hand — which is
-        // the order the Approval tab lists and the order the history reads in. It used to lead with whoever
-        // decided first and gather the undecided at the bottom; that sorted the same round differently
-        // every time somebody signed, and moved the row an approver was looking for while they looked at
-        // it. Who has yet to decide is what the status badge says, not what the position says.
+        // the order the Approval tab lists and the order the history reads in. Deliberately NOT ordered by
+        // who decided first: that would sort the same round differently every time somebody signed, moving
+        // the row an approver was looking at. Who has yet to decide is the status badge's job, not the
+        // position's.
         var decisions = round.Tasks
             .OrderBy(t => DisplayRank(t.ApproverRole))
             .ThenBy(t => t.CreatedOnUtc)
@@ -1208,6 +1206,9 @@ public sealed class RemsApprovalController : ControllerBase
 
     private async Task<RemsApprovalEngagementView> BuildApprovalEngagementViewAsync(
         REMSApprovalTask task,
+        // The originating request. Needed for the client's generational suffix, which lives on the
+        // request and on nothing the client themselves filled in — see REMS.WithClientSuffix.
+        REMS rems,
         REMSEngagement engagement,
         REMSClient client,
         REMSEntity entity,
@@ -1243,18 +1244,25 @@ public sealed class RemsApprovalController : ControllerBase
                 await ResolveOptionRefsAsync(TaxFormSetKey, taxFormIds, cancellationToken));
         }
 
+        // The client's name, and the MAIN entity's, read with the request's generational suffix on them.
+        // Both hold what the client typed on their intake form, which never asks for a suffix — so
+        // without this an approver reads "John Smith" on a request every other REMS surface calls
+        // "John Smith Jr.". Only the main entity: an additional entity is another business, and the
+        // client's own particle is not part of its name.
+        string EntityName(REMSEntity e) => e.IsMainEntity ? rems.WithClientSuffix(e.Name) : e.Name;
+
         var clientView = new RemsApprovalClientView(
-            client.Id, client.Name, client.Email, client.MobileNumber, client.ReferralSource,
+            client.Id, rems.WithClientSuffix(client.Name), client.Email, client.MobileNumber, client.ReferralSource,
             client.BillingContactName, client.BillingEmail,
             client.Entities
                 .Where(e => !e.Deleted)
                 .OrderByDescending(e => e.IsMainEntity)
                 .ThenBy(e => e.Name)
-                .Select(e => new RemsApprovalEntitySummary(e.Id, e.Name, e.EIN, e.IsMainEntity))
+                .Select(e => new RemsApprovalEntitySummary(e.Id, EntityName(e), e.EIN, e.IsMainEntity))
                 .ToList());
 
         var entityView = new RemsApprovalEntityView(
-            entity.Id, entity.Name, entity.EIN, entity.IsMainEntity,
+            entity.Id, EntityName(entity), entity.EIN, entity.IsMainEntity,
             entity.Addresses.Where(a => !a.Deleted)
                 .Select(a => new RemsEntityAddressView(a.Id, a.AddressType.ToString(), RemsWorkspaceMapper.Address(a.Address)!))
                 .ToList(),
@@ -1267,7 +1275,6 @@ public sealed class RemsApprovalController : ControllerBase
             engagement.Id,
             engagement.Status.ToString(),
             engagement.Department,
-            engagement.ServiceLine,
             engagement.SubServiceLine,
             engagement.SubIndustry,
             clientView,

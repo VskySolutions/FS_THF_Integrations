@@ -23,8 +23,5 @@ internal sealed class MediaConfiguration : IEntityTypeConfiguration<Media>
         builder.Property(m => m.StorageProvider).HasMaxLength(50);
         builder.Property(m => m.RelativePath).HasMaxLength(1024);
         builder.Property(m => m.PublicUrl).HasMaxLength(2048);
-        builder.Property(m => m.ThumbnailUrl).HasMaxLength(2048);
-        builder.Property(m => m.PreviewUrl).HasMaxLength(2048);
-        builder.Property(m => m.Resolution).HasMaxLength(50);
     }
 }

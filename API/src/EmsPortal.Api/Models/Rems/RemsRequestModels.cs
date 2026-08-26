@@ -8,19 +8,18 @@ namespace EmsPortal.Api.Models.Rems;
 /// </summary>
 public sealed class CreateRemsRequestRequest
 {
-    /// <summary>Loose reference to an existing client (Person id) when the type is existing/subsidiary.</summary>
+    /// <summary>Loose reference to an existing client (Person id) when the referral is for a client THF already has.</summary>
     public Guid? ExistingClientReferenceId { get; set; }
-
-    /// <summary>
-    /// The client this one is a subsidiary of (Person id, from the same lookup as the client itself).
-    /// Read only when <see cref="Type"/> is the subsidiary code; on any other type it is ignored and the
-    /// stored parent is cleared. Must name a person stamped as a client — the type says "child of an
-    /// EXISTING client", so a free-text parent would be a contradiction.
-    /// </summary>
-    public Guid? ParentClientReferenceId { get; set; }
 
     /// <summary>Client name at intake (required — filled from the selected person or free text).</summary>
     public string ClientName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The generational suffix on that name — Jr., Sr., II, III, IV — kept out of
+    /// <see cref="ClientName"/> so the two can be told apart afterwards. Optional and free text; the five
+    /// above are offered as suggestions rather than as the whole of what is allowed.
+    /// </summary>
+    public string? ClientNameSuffix { get; set; }
 
     /// <summary>Request type (option-set <c>REMS.Type</c> code, e.g. <c>brand_new_client</c>).</summary>
     public string Type { get; set; } = string.Empty;
@@ -35,16 +34,9 @@ public sealed class CreateRemsRequestRequest
     /// <summary>Optional single attachment: a previously-uploaded media id (POST /api/media).</summary>
     public Guid? MediaId { get; set; }
 
-    // There is no Submit flag any more. A request is always created as a draft: the Admin Pool it used to
-    // be submitted into is gone, and what moves a request on is the initiator sending the intake link to
-    // the client (POST /api/rems/{id}/form/send).
-
-    /// <summary>
-    /// The admin who will review this request once the client's intake comes back. REQUIRED — every
-    /// request names its reviewer up front, even though that admin has nothing to do until the client has
-    /// answered. Reassignment afterwards is open to both sides.
-    /// </summary>
-    public Guid AssignAdminUserId { get; set; }
+    // No Submit flag and no admin to name. A request is always created as a draft; what moves it on is the
+    // initiator sending the intake link to the client (POST /api/rems/{id}/form/send), and it reaches every
+    // admin's EMS Review unassigned until one picks it up (POST /api/rems/requests/{id}/pick-up).
 
     /// <summary>
     /// The <c>REMSAdditionalEntity</c> row this request was raised from, when the initiator used the
@@ -62,33 +54,17 @@ public sealed class UpdateRemsRequestRequest
     public string? Description { get; set; }
     public string? Type { get; set; }
     public string? ClientName { get; set; }
+
+    /// <summary>The client's generational suffix. Send <c>""</c> to clear it; omit it to leave it alone.</summary>
+    public string? ClientNameSuffix { get; set; }
+
     public string? CustomerEmail { get; set; }
     public string? CustomerMobileNumber { get; set; }
     public Guid? CSEId { get; set; }
     public Guid? ExistingClientReferenceId { get; set; }
 
-    /// <summary>
-    /// The client this one is a subsidiary of. Unlike every other field here, it is not left alone when
-    /// null: it is derived from <see cref="Type"/>, so a request whose type is no longer the subsidiary
-    /// code has its parent cleared whatever this says. That is what stops a request switched from
-    /// "Subsidiary" to "Brand new client" keeping a parent nothing on the form still shows.
-    /// </summary>
-    public Guid? ParentClientReferenceId { get; set; }
-
-    /// <summary>
-    /// The admin to own this request. A null on its own means "leave the assignment alone", exactly like
-    /// every other field on this payload — handing a request back to the pool is said with
-    /// <see cref="UnassignAdmin"/>. Changing the assignment additionally requires
-    /// <c>rems.requests.assign</c>: editing a request and choosing who works it are separate rights.
-    /// </summary>
-    public Guid? AssignAdminUserId { get; set; }
-
-    /// <summary>
-    /// Clears the assignment. Retained for the rare correction, but a request with no admin has nobody to
-    /// review it when the client answers — reassigning to somebody else is almost always what is meant.
-    /// Mutually exclusive with <see cref="AssignAdminUserId"/>.
-    /// </summary>
-    public bool UnassignAdmin { get; set; }
+    // Saving a request cannot re-point who reviews it: an admin gains a request by picking it up and loses
+    // it by handing it back, both actions of their own rather than a field somebody else writes on an edit.
 }
 
 /// <summary>
@@ -134,12 +110,6 @@ public sealed record RemsSendBackView(
     /// <summary>Who the admin addressed it to, or null on returns made before they were asked to choose.</summary>
     string? ReturnedTo);
 
-/// <summary>Assign (or re-assign) a request to an admin (WO-111, AC-REMS-005).</summary>
-public sealed class AssignRemsRequestRequest
-{
-    public Guid AdminUserId { get; set; }
-}
-
 /// <summary>A user reference (id + display name) for the assigned admin / CSE columns.</summary>
 public sealed record RemsUserRef(Guid Id, string Name);
 
@@ -147,8 +117,12 @@ public sealed record RemsUserRef(Guid Id, string Name);
 public sealed record RemsRowActions(
     bool CanView,
     bool CanEdit,
-    bool CanAssign,
-    bool CanDuplicate,
+    /// <summary>
+    /// The caller may claim this request as its reviewing admin. True only while nobody holds it — a
+    /// request already picked up is never offered to a second admin, so this is "take it", not "take it
+    /// off them".
+    /// </summary>
+    bool CanPickUp,
     bool CanDelete);
 
 /// <summary>Dashboard list row for a REMS request (WO-111).</summary>
@@ -164,9 +138,6 @@ public sealed record RemsRequestRow(
     // them the contact line and the Client Email column could only ever render "—".
     string? CustomerEmail,
     string? CustomerMobileNumber,
-    // The client this one is a subsidiary of, for the list's Parent Client column. The name comes off the
-    // request row itself, so the column costs the list nothing.
-    string? ParentClientName,
     RemsUserRef? AssignedAdmin,
     RemsUserRef? Cse,
     string? IndustryGroup,
@@ -192,7 +163,14 @@ public sealed record RemsRequestDetail(
     Guid Id,
     string RemsNumber,
     string? Description,
+    /// <summary>The client's name as it reads — the requested name with the suffix on it.</summary>
     string ClientName,
+    /// <summary>
+    /// The requested name WITHOUT the suffix, and the suffix itself. The form edits these two; every
+    /// other surface reads <see cref="ClientName"/>, which is the pair already joined.
+    /// </summary>
+    string RequestedClientName,
+    string? ClientNameSuffix,
     string Type,
     string Status,
     string? CustomerEmail,
@@ -202,10 +180,6 @@ public sealed record RemsRequestDetail(
     // somebody already on file — unlike ExistingClientReferenceId, which stays null for a brand-new
     // client. Null only on requests not saved since the column was added.
     Guid? ClientPersonId,
-    // The client this one is a subsidiary of. Both null on every other type — see REMS.ParentClientName
-    // for why the name travels with the id instead of being joined at read time.
-    Guid? ParentClientReferenceId,
-    string? ParentClientName,
     RemsUserRef? AssignedAdmin,
     RemsUserRef? Cse,
     string? IndustryGroup,

@@ -4,9 +4,8 @@ import { optionSetApi, EntityType } from "services/api";
 // The tenant-configurable REMS option lists, resolved once and shared by every screen.
 //
 // These are OPTION SETS, not enums: a tenant may rename "Brand-New Client", add a service line, or
-// relabel a status in Administration → Option Sets, and the app has to show what they chose. Screens used
-// to render the seeded English labels from a hardcoded array instead, so those edits changed the pickers
-// and nothing else — a row's badge still read the platform default.
+// relabel a status in Administration → Option Sets, and every screen has to show what they chose — a badge
+// rendered from a hardcoded array would still read the platform default.
 //
 // The distinction matters the other way too. REMSFormStatus, RemsApproverRole, RemsApprovalTaskStatus and
 // RemsEngagementStatus are C# enums the backend branches on; they have no option set and must NOT be
@@ -15,8 +14,8 @@ import { optionSetApi, EntityType } from "services/api";
 // Seeded with the closed codes so the first paint is already right and stays right if a resolve fails
 // (a caller without optionSets.read, an offline tick). The resolved set overlays it when it arrives.
 const SEED = {
-  // "New Engagement" and "Existing Client" were merged into one value — every new engagement for a
-  // client we already have is both — keeping the `existing_client` code (MergeRemsExistingClientTypes).
+  // Two answers, and only two: every new engagement for a client on file is both "new engagement" and
+  // "existing client", and a subsidiary of one is an engagement for a client we already have.
   // `description` mirrors the option item's own Description column — it is what the tooltip renders
   // wherever the value is offered or displayed, so the seed carries it too and a resolve failure does
   // not silently strip the explanation.
@@ -31,12 +30,6 @@ const SEED = {
       value: "existing_client",
       description: "The person or company already has an active client record with THF, and this request " +
         "creates an additional engagement under that same client."
-    },
-    {
-      label: "Subsidiary / Child of Existing Client",
-      value: "subsidiary_child_of_existing_client",
-      description: "When the client is a child of an already present parent client. All the billing goes " +
-        "to the parent client in this situation."
     }
   ],
   // How the client heard about THF, asked on the public EMS form.
@@ -61,25 +54,36 @@ const SEED = {
     },
     { label: "Other", value: "other", description: "Anything not covered above." }
   ],
-  // Stage order, matching the backend RemsRequestStatuses lifecycle.
+  // Stage order and wording, matching the backend RemsRequestStatuses lifecycle. Only the fallback for a
+  // caller who cannot resolve the tenant's copy, so it is worth keeping true: a stale seed shows a badge
+  // the same user sees differently elsewhere.
   status: [
     { label: "Draft", value: "draft" },
-    { label: "Submitted", value: "submitted" },
     { label: "Awaiting Customer", value: "awaiting_customer" },
-    { label: "Engagement Setup", value: "customer_submitted" },
+    { label: "Admin Review", value: "customer_submitted" },
+    { label: "Returned to Initiator", value: "returned_to_initiator" },
+    { label: "Awaiting Admin Confirmation", value: "awaiting_admin_confirmation" },
     { label: "Pending Approval", value: "pending_approval" },
     { label: "Changes Requested", value: "changes_requested" },
     { label: "Approved", value: "approved" }
   ],
-  // "Business" was split into the three kinds THF onboards; all three ask the same questions the single
-  // group did (see REMS_BUSINESS_INDUSTRY_GROUPS in useRemsMeta). `business` is still recognised there
-  // for forms sent before the split, it is just no longer offered.
+  // The three business kinds THF onboards all ask the same questions (see REMS_BUSINESS_INDUSTRY_GROUPS
+  // in useRemsMeta), which also still recognises the older `business` code for forms sent under it.
   industryGroup: [
     { label: "Individual", value: "individual" },
     { label: "Not-for-Profit", value: "not_for_profit" },
     { label: "Insurance", value: "insurance" },
     { label: "Commercial", value: "commercial" },
-    { label: "Government", value: "government" }
+    { label: "Government", value: "government" },
+    // A trust or a decedent's estate. In the business family (REMS_BUSINESS_INDUSTRY_GROUPS) because it
+    // is asked the same questions: it has an EIN of its own and is acted for by trustees or personal
+    // representatives, so the primary / financial / billing contacts are the people who act for it.
+    {
+      label: "Trust and Estate",
+      value: "trust_estate",
+      description: "A trust or a decedent's estate. Asked the same questions as a business — it has an " +
+        "EIN and is acted for by trustees or personal representatives rather than by an individual."
+    }
   ],
   department: [
     { label: "CAS", value: "cas" },
@@ -90,17 +94,21 @@ const SEED = {
     // key off the "audit" and "tax" codes specifically.
     { label: "Admin", value: "admin" }
   ],
-  // Pairs with the engagement's No. of Bills, which is a plain count rather than anything derived from
-  // the period. There is deliberately no "Custom".
+  // Pairs with the engagement's Description of Billing Process, which is where a schedule that does not
+  // reduce to a frequency gets written out. There is deliberately no "Custom" — that is what the
+  // description is for.
   billingPeriod: [
     { label: "Monthly", value: "monthly" },
     { label: "Quarterly", value: "quarterly" },
-    { label: "Annual", value: "annual" }
+    { label: "Annual", value: "annual" },
+    // Not a frequency: the engagement is billed when a piece of work lands, not when the calendar turns.
+    {
+      label: "Milestone",
+      value: "milestone",
+      description: "Billed as each agreed milestone is reached, rather than on a calendar cycle. " +
+        "Set out the milestones in the Description of Billing Process."
+    }
   ],
-  // A `serviceLine` list (Commercial / Non-Profit / Government / Individual) stood here. It asked what
-  // KIND of client this is — which is what industryGroup, now shown as ENTITY TYPE, already answers — so
-  // the field was dropped from Engagement Setup and the Government Audit rule moved to the entity type.
-  //
   // The service actually being sold, and what the form now calls the SERVICE LINE. The key stays
   // REMS.SubServiceLine (below): every tenant's own copy of the list is keyed by it, and so are the codes
   // already stored on engagements. Nothing branches on this one — it is classification. The Internal-*
@@ -157,16 +165,22 @@ const SEED = {
     { label: "Local Government", value: "local_government" },
     { label: "Federal Government", value: "federal_government" },
     { label: "Educational Institutions", value: "educational_institutions" },
-    { label: "Insurance - Property and Casualty", value: "insurance_property_casualty" },
-    { label: "Insurance - Life", value: "insurance_life" },
-    { label: "Insurance - Other", value: "insurance_other" },
+    // The four insurance trades carry no "Insurance -" prefix: the Industry list is narrowed by the
+    // entity type beside it, which already says Insurance. The VALUES keep it — they are the codes
+    // engagements are recorded against.
+    { label: "Property and Casualty", value: "insurance_property_casualty" },
+    { label: "Life", value: "insurance_life" },
+    { label: "Other", value: "insurance_other" },
     { label: "Trade Associations", value: "trade_associations" },
     { label: "Charitable Organizations or Foundations", value: "charitable_organizations_foundations" },
     { label: "Other Not-for-Profit", value: "other_not_for_profit" },
     { label: "Government", value: "government" },
     { label: "Individual", value: "individual" },
     { label: "Distribution", value: "distribution" },
-    { label: "Insurance - Health", value: "insurance_health" }
+    // "Healthcare", one word — deliberately not the same string as "Health Care" above, which is the
+    // trade a hospital is in whether it is Commercial or Not-for-Profit. The entity type keeps them apart
+    // in the picker; they meet only in the option-set admin.
+    { label: "Healthcare", value: "insurance_health" }
   ]
 };
 

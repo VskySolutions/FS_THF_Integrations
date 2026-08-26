@@ -81,19 +81,28 @@ internal sealed class RemsRepository : IRemsRepository
         var me = options.CallerUserId;
         const string draft = RemsRequestStatuses.Draft;
 
-        // A DRAFT is not private in general — it is private until its author has said who is to review it.
-        // Naming a reviewing admin at intake is what puts the request on that admin's desk, so from that
-        // moment they see it and can work it, rather than waiting for the client to answer before the
-        // request they are named on becomes visible to them at all. It stays invisible to every OTHER
-        // admin: an unfinished referral nobody has been pointed at is still its author's alone.
+        // A REMS Admin sees the whole tenant, DRAFTS INCLUDED, and may work one (RemsSetupAccess.CanWork):
+        // a referral that stalls half-written stalls invisibly, and the person whose job it is to keep the
+        // pipeline moving has to be able to see it and finish it. The list's Created By Me / All toggle is
+        // what keeps that out of their own way, and it defaults to their own work.
         return options.CallerIsPrivileged
-            // Admin / Super Admin: every non-draft tenant request, plus drafts they raised or are named on.
-            ? _dbContext.Rems.Where(r =>
-                r.Status != draft || r.CreatedById == me || r.AdminAssignedToId == me)
+            // Admin / Super Admin: every request in the tenant, whatever stage it is at and whoever raised it.
+            ? _dbContext.Rems.AsQueryable()
             // Partner-only: own drafts and drafts naming them; non-draft when created or involved.
+            //
+            // OnBehalfOfUserId is half of "own" here, and was missing: a delegate raising a request in a
+            // shareholder's seat produces the SHAREHOLDER's request (RemsSetupAccess.IsInitiator and the
+            // controller's IsMine both say so), but this predicate only ever asked who typed it, so the
+            // principal could not see their own work in any list. The controller's CanSee already admitted
+            // them, which made the gap the asymmetry its own docs warn against, running the wrong way: a
+            // request GetById would open that no list would ever offer. The (TenantId, OnBehalfOfUserId,
+            // Status) index exists for exactly this predicate.
             : _dbContext.Rems.Where(r =>
-                (r.Status == draft && (r.CreatedById == me || r.AdminAssignedToId == me)) ||
-                (r.Status != draft && (r.CreatedById == me || r.AdminAssignedToId == me || r.CSEId == me)));
+                (r.Status == draft
+                    && (r.CreatedById == me || r.OnBehalfOfUserId == me || r.AdminAssignedToId == me)) ||
+                (r.Status != draft
+                    && (r.CreatedById == me || r.OnBehalfOfUserId == me
+                        || r.AdminAssignedToId == me || r.CSEId == me)));
     }
 
     /// <summary>The requested VIEW, layered on top of the security predicate — never a substitute for it.</summary>
@@ -104,7 +113,18 @@ internal sealed class RemsRepository : IRemsRepository
 
         if (options.Scope == RemsListScope.Partner)
         {
-            return query.Where(r => r.CreatedById == me || r.AdminAssignedToId == me || r.CSEId == me);
+            // "All" is the whole of what the caller may see — for a REMS Admin the tenant's requests,
+            // other people's drafts included; for everybody else, everything they created or are named on.
+            // It narrows nothing on top of the visibility predicate, which is what makes it "all".
+            //
+            // "Created By Me" is authorship and nothing else: raised BY the caller, or FOR them by a
+            // delegate acting in their seat (the same pair the rest of REMS calls IsMine — a delegate's
+            // work is the principal's work). It deliberately excludes the requests that merely NAME the
+            // caller as CSE or reviewing admin. Those are somebody else's referral that landed on their
+            // desk, and a view labelled by who created something cannot be the view that lists them.
+            return options.Ownership == RemsListOwnership.All
+                ? query
+                : query.Where(r => r.CreatedById == me || r.OnBehalfOfUserId == me);
         }
 
         if (options.Scope != RemsListScope.Pool)
@@ -127,7 +147,12 @@ internal sealed class RemsRepository : IRemsRepository
         if (!string.IsNullOrWhiteSpace(options.ClientName))
         {
             var t = options.ClientName.Trim();
-            query = query.Where(r => r.RequestedClientName.Contains(t));
+            // Against the name WITH its suffix as well as without: the list shows "John Smith Jr.", so
+            // typing what is on the row has to find the row. (ClientDisplayName says the same thing but
+            // is [NotMapped] and cannot cross into SQL.)
+            query = query.Where(r =>
+                r.RequestedClientName.Contains(t)
+                || (r.RequestedClientName + " " + r.ClientNameSuffix).Contains(t));
         }
         if (!string.IsNullOrWhiteSpace(options.Contact))
         {

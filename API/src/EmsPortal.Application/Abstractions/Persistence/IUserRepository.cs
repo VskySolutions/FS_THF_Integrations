@@ -35,6 +35,20 @@ public interface IUserRepository
     /// </summary>
     Task<IReadOnlyList<User>> ListByTenantRolesAsync(Guid tenantId, IReadOnlyCollection<string> roleNames, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Everyone holding one specific role in a tenant, by role id — the membership behind the role page's
+    /// user panel. Inactive users are included: an admin managing who holds a role has to see the ones
+    /// whose accounts are switched off, or removing them is impossible from here. Ordered by display name.
+    /// </summary>
+    Task<IReadOnlyList<User>> ListByTenantRoleAsync(Guid tenantId, Guid roleId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Every active user assigned to <paramref name="tenantId"/>, whatever role they hold there. The
+    /// role-blind sibling of <see cref="ListByTenantRolesAsync"/>, for the pickers that offer the whole
+    /// tenant rather than one seat's holders. Distinct, ordered by display name, unpaged.
+    /// </summary>
+    Task<IReadOnlyList<User>> ListActiveByTenantAsync(Guid tenantId, CancellationToken cancellationToken = default);
+
     Task AddAsync(User user, CancellationToken cancellationToken = default);
 
     void Update(User user);

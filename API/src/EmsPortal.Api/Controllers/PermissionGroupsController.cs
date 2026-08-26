@@ -1,3 +1,4 @@
+using EmsPortal.Api.Models;
 using EmsPortal.Api.Models.PermissionGroups;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.Auditing;
@@ -149,7 +150,9 @@ public sealed class PermissionGroupsController : ControllerBase
         var rolesUsing = await _groups.GetRolesUsingGroupAsync(id, cancellationToken);
         var usage = await _groups.CountActiveMembersAsync(group.Id, group.TenantId, null, cancellationToken);
         var audit = await _auditRead.ListByEntityAsync(nameof(PermissionGroup), id.ToString(), 100, cancellationToken);
-        return Ok(ApiResponseFactory.Success(ToDetail(group, rolesUsing, audit, usage), "Permission group retrieved."));
+        // The trail records WHO as a user id; it is shown to a person, so it is resolved to a name.
+        var actorName = await AuditActorNames.ResolverAsync(_users, audit, cancellationToken);
+        return Ok(ApiResponseFactory.Success(ToDetail(group, rolesUsing, audit, usage, actorName), "Permission group retrieved."));
     }
 
     // ---- Create ----
@@ -371,12 +374,7 @@ public sealed class PermissionGroupsController : ControllerBase
             return null;
         }
 
-        var ceiling = new HashSet<string>(Permissions.ForTenantAdmin(), StringComparer.Ordinal);
-        foreach (var role in await _roles.ListByTenantAsync(tenantId, cancellationToken))
-        {
-            ceiling.UnionWith(role.Permissions);
-            ceiling.UnionWith(role.EffectivePermissions);
-        }
+        var ceiling = await RoleAccess.CeilingAsync(_roles, tenantId, cancellationToken);
 
         var disallowed = keys.Where(k => !ceiling.Contains(k)).ToList();
         return disallowed.Count == 0
@@ -400,12 +398,13 @@ public sealed class PermissionGroupsController : ControllerBase
         PermissionGroup g,
         IReadOnlyList<(Guid RoleId, string RoleName)> rolesUsing,
         IReadOnlyList<AuditTrailEntry> audit,
-        int currentUsage)
+        int currentUsage,
+        Func<string?, string?> actorName)
         => new(
             g.Id, g.Name, g.Description, g.IsActive, g.TenantId, g.Tenant?.Name,
             g.Permissions.Select(p => p.PermissionKey).OrderBy(k => k).ToList(),
             rolesUsing.Select(r => new RoleUsingGroupResponse(r.RoleId, r.RoleName)).ToList(),
-            audit.Select(a => new PermissionGroupAuditEntryResponse(a.Action, a.PerformedBy, a.CreatedDate, a.Details)).ToList(),
+            audit.Select(a => new PermissionGroupAuditEntryResponse(a.Action, actorName(a.PerformedBy), a.CreatedDate, a.Details)).ToList(),
             CanDelete(g),
             g.CreatedOnUtc, g.UpdatedOnUtc,
             g.CapacityLimit, currentUsage, IsFull(g.CapacityLimit, currentUsage));

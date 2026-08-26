@@ -7,6 +7,7 @@ using EmsPortal.Domain.Enums;
 using EmsPortal.Shared.Configuration;
 using EmsPortal.Shared.Contracts;
 using EmsPortal.Shared.Security;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
@@ -14,7 +15,7 @@ namespace EmsPortal.Api.Controllers;
 
 /// <summary>
 /// REMS request lifecycle backend (WO-111): the partner dashboard, Admin Pool, and the create/edit/
-/// assign/duplicate/delete actions on a REMS request. Endpoints are permission-gated; row visibility is
+/// assign/delete actions on a REMS request. Endpoints are permission-gated; row visibility is
 /// additionally record-level (drafts are creator-only; a partner sees requests they created or are
 /// involved in; an Admin/Super Admin sees the whole tenant pool). The conversation thread, activity
 /// timeline, and attachments reuse the Universal Features (Conversations/Activity/Attachments) endpoints keyed
@@ -37,6 +38,7 @@ public sealed class RemsRequestsController : ControllerBase
 
     private readonly IRemsRepository _rems;
     private readonly IRemsEngagementRepository _engagements;
+    private readonly IRemsApprovalRepository _approvals;
     private readonly IRemsDelegationRepository _delegations;
     private readonly IRemsNumberGenerator _numberGenerator;
     private readonly IUserRepository _users;
@@ -44,13 +46,13 @@ public sealed class RemsRequestsController : ControllerBase
     private readonly IUnitOfWork _unitOfWork;
     private readonly IActivityEventWriter _activity;
     private readonly INotificationDispatcher _notifications;
-    private readonly IUserGroupRepository _groups;
     /// <summary>Where the SPA is served from — the front half of the client's public form link.</summary>
     private readonly string _baseUrl;
 
     public RemsRequestsController(
         IRemsRepository rems,
         IRemsEngagementRepository engagements,
+        IRemsApprovalRepository approvals,
         IRemsDelegationRepository delegations,
         IRemsNumberGenerator numberGenerator,
         IUserRepository users,
@@ -58,11 +60,11 @@ public sealed class RemsRequestsController : ControllerBase
         IUnitOfWork unitOfWork,
         IActivityEventWriter activity,
         INotificationDispatcher notifications,
-        IUserGroupRepository groups,
         IOptions<AppOptions> appOptions)
     {
         _rems = rems;
         _engagements = engagements;
+        _approvals = approvals;
         _delegations = delegations;
         _numberGenerator = numberGenerator;
         _users = users;
@@ -70,14 +72,17 @@ public sealed class RemsRequestsController : ControllerBase
         _unitOfWork = unitOfWork;
         _activity = activity;
         _notifications = notifications;
-        _groups = groups;
         _baseUrl = appOptions.Value.BaseUrl;
     }
 
     // -------------------- Dashboard list --------------------
 
+    // Open to every authenticated caller, like the approvals inbox. What comes back is decided by the
+    // records, not by a permission: RemsRequestListOptions carries the caller and the repository scopes
+    // to what they raised or are named on, unless they are privileged (Super Admin / REMS Admin), who
+    // see the tenant. A permission gate here only ever hid the page from somebody with work in it.
     [HttpGet]
-    [RequirePermission(Permissions.RemsRequestsRead)]
+    [Authorize]
     [ProducesResponseType<ApiResponse<IEnumerable<RemsRequestRow>>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> List(
         [FromQuery] int page = 1,
@@ -91,6 +96,11 @@ public sealed class RemsRequestsController : ControllerBase
         [FromQuery] DateTime? createdTo = null,
         [FromQuery] string? scope = null,
         [FromQuery] string? poolScope = null,
+        // "mine" or "all" (the default), the My Requests toggle. Not a permission of its own: "all" is
+        // bounded by the same visibility predicate as everything else, so it widens the list only for a
+        // caller who can already see past their own work. "mine" is authorship — what the caller raised,
+        // or had raised for them — and drops the requests that merely name them as CSE or reviewing admin.
+        [FromQuery] string? ownership = null,
         CancellationToken cancellationToken = default)
     {
         if (User.GetUserId() is not { } me)
@@ -104,7 +114,8 @@ public sealed class RemsRequestsController : ControllerBase
 
         var options = new RemsRequestListOptions(
             me, privileged, clientName, contact, status, type, assignedAdminUserId,
-            createdFrom, createdTo, ParseScope(scope), ParsePoolFilter(poolScope), page, limit);
+            createdFrom, createdTo, ParseScope(scope), ParsePoolFilter(poolScope),
+            ParseOwnership(ownership), page, limit);
         var (items, total) = await _rems.ListRequestsAsync(options, cancellationToken);
 
         var names = await _users.GetFullNamesAsync(
@@ -118,12 +129,10 @@ public sealed class RemsRequestsController : ControllerBase
         return Ok(ApiResponseFactory.Paginated(rows, "REMS requests retrieved.", page, limit, total));
     }
 
-    // The pool-counts endpoint is gone with the Admin Pool view switcher it fed (Unassigned / Assigned to
-    // me / All). Every request names its reviewing admin at intake, so there is no unassigned bucket to
-    // count and nothing to pick up.
-
+    // Ungated with the list that leads here, and for the same reason. CanSee below is the real boundary:
+    // a request that is not the caller's to read is a 403 whatever permissions they hold.
     [HttpGet("{id:guid}")]
-    [RequirePermission(Permissions.RemsRequestsRead)]
+    [Authorize]
     [ProducesResponseType<ApiResponse<RemsRequestDetail>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
@@ -139,7 +148,13 @@ public sealed class RemsRequestsController : ControllerBase
         }
 
         var privileged = IsPrivileged();
-        if (!CanSee(rems, me, privileged))
+        // An approver is the one reader the list rule cannot name: they are not the initiator, not the
+        // reviewing admin and usually not the CSE — a shareholder or a commission recipient is on the
+        // request because the engagement routed to them. Their notifications deep-link HERE (a REMS
+        // notification carries the request id), so without this a rejected round mails four people a link
+        // that 403s. Asked only after CanSee says no, so the ordinary reader still costs no query.
+        if (!CanSee(rems, me, privileged)
+            && !await _approvals.IsApproverOnRequestAsync(rems.Id, me, cancellationToken))
         {
             return StatusCode(StatusCodes.Status403Forbidden,
                 ApiResponseFactory.Forbidden("Not permitted to view this request."));
@@ -162,14 +177,7 @@ public sealed class RemsRequestsController : ControllerBase
                 ApiResponseFactory.Forbidden("No active tenant/user context."));
         }
 
-        // A supplied assignee must resolve to a user.
-        if (request.AssignAdminUserId is { } assignId && await _users.GetByIdAsync(assignId, cancellationToken) is null)
-        {
-            return BadRequest(ApiResponseFactory.Error(
-                ApiErrorCodes.ValidationFailed, "Validation failed.", "Unknown assignAdminUserId."));
-        }
-
-        // And a supplied client reference to a client. Checked before the name match below, which only runs
+        // A supplied client reference must resolve to a client. Checked before the name match below, which only runs
         // when the caller named nobody and can only resolve to a client anyway — so what is checked here is
         // exactly what the caller sent.
         if (await RejectUnknownClientReferenceAsync(request.ExistingClientReferenceId, cancellationToken) is { } badClient)
@@ -194,16 +202,6 @@ public sealed class RemsRequestsController : ControllerBase
             return emailClash;
         }
 
-        // The parent, on a subsidiary. Resolved from the type that was just settled above rather than the
-        // one the caller sent, so a request auto-promoted to "existing client" by the name match does not
-        // keep a parent it no longer claims to have.
-        var (parentId, parentName, badParent) = await ResolveParentClientAsync(
-            type, request.ParentClientReferenceId, cancellationToken);
-        if (badParent is not null)
-        {
-            return badParent;
-        }
-
         // Whose request this is. A delegate acting for a shareholder produces the shareholder's work, so it
         // is stamped with both: CreatedById (set automatically on save) keeps who did it, and
         // OnBehalfOfUserId keeps whose it is. Acting as yourself leaves the latter null.
@@ -214,9 +212,10 @@ public sealed class RemsRequestsController : ControllerBase
                 ApiResponseFactory.Forbidden("Your delegation does not allow preparing requests."));
         }
 
-        // Always a draft. There is no pool to submit into any more: the initiator fills the whole request —
-        // client details and engagement setup — and then sends the intake link to the client themselves,
-        // which is what moves it on (see RemsFormController.Send).
+        // Always a draft, and always UNASSIGNED. The initiator fills the whole request — client details and
+        // engagement setup — and then sends the intake link to the client themselves, which is what moves
+        // it on (see RemsFormController.Send). Which admin ends up reviewing it is not theirs to say: the
+        // request waits in EMS Review for whichever admin picks it up.
         var rems = new REMS
         {
             Id = Guid.NewGuid(),
@@ -224,18 +223,16 @@ public sealed class RemsRequestsController : ControllerBase
             Type = type,
             Status = RemsRequestStatuses.Draft,
             RequestedClientName = request.ClientName,
+            ClientNameSuffix = Normalize(request.ClientNameSuffix),
             CustomerEmail = Normalize(request.CustomerEmail),
             CustomerMobileNumber = Normalize(request.CustomerMobileNumber),
             CSEId = request.CSEId,
             ExistingClientReferenceId = request.ExistingClientReferenceId,
-            ParentClientReferenceId = parentId,
-            ParentClientName = parentName,
-            AdminAssignedToId = request.AssignAdminUserId,
             OnBehalfOfUserId = seat?.PrincipalUserId,
         };
 
-        // Allocate the REMS number and stage the row + client person + activity + assignment + attachment
-        // atomically. The person is staged first: the request's FK points at them.
+        // Allocate the REMS number and stage the row + client person + activity + attachment atomically.
+        // The person is staged first: the request's FK points at them.
         await _unitOfWork.ExecuteInTransactionAsync(async ct =>
         {
             rems.REMSNumber = await _numberGenerator.GenerateAsync(tenantId, ct);
@@ -254,12 +251,6 @@ public sealed class RemsRequestsController : ControllerBase
             }, ct);
 
             await _activity.WriteAsync(new CreateActivityEventDto(EntityType.Rems, rems.Id, ActivityEventTypes.RemsCreated), ct);
-            if (request.AssignAdminUserId is { } adminId)
-            {
-                await _activity.WriteAsync(new CreateActivityEventDto(
-                    EntityType.Rems, rems.Id, ActivityEventTypes.RemsAssigned, null, adminId.ToString()), ct);
-                await _notifications.DispatchAsync(AssignmentNotification(adminId, rems), ct);
-            }
             if (request.MediaId is { } mediaId)
             {
                 await _rems.AddFileAsync(new REMSFiles { Id = Guid.NewGuid(), REMSId = rems.Id, MediaId = mediaId }, ct);
@@ -306,28 +297,9 @@ public sealed class RemsRequestsController : ControllerBase
                 ApiResponseFactory.Forbidden("Not permitted to edit this request."));
         }
 
-        // Assignment can be set, changed or handed back to the pool from the edit form (AC-REMS-005). A
-        // null id alone means "leave it alone", like every other field here, so returning a request to
-        // the pool is said explicitly with unassignAdmin.
-        var newAssignee = request.UnassignAdmin ? null : request.AssignAdminUserId;
-        var assignmentChanging = (request.UnassignAdmin || request.AssignAdminUserId.HasValue)
-            && rems.AdminAssignedToId != newAssignee;
-        if (assignmentChanging)
-        {
-            // Editing a request and choosing who owns it are separate rights; holding the first must not
-            // quietly grant the second.
-            if (!User.HasPermission(Permissions.RemsRequestsAssign))
-            {
-                return StatusCode(StatusCodes.Status403Forbidden,
-                    ApiResponseFactory.Forbidden("Not permitted to assign this request."));
-            }
-
-            if (newAssignee is { } assignId && await _users.GetByIdAsync(assignId, cancellationToken) is null)
-            {
-                return BadRequest(ApiResponseFactory.Error(
-                    ApiErrorCodes.ValidationFailed, "Validation failed.", "Unknown assignAdminUserId."));
-            }
-        }
+        // No assignment block here any more. An edit cannot re-point who reviews a request: that changes
+        // hands only through PickUp / HandBack below, which is why neither this payload nor this method
+        // touches AdminAssignedToId.
 
         // A supplied client reference must name a client — as on create, and for the same reason: an edit
         // is the other way a reference reaches the request.
@@ -362,47 +334,20 @@ public sealed class RemsRequestsController : ControllerBase
         if (request.Description is not null) rems.Description = request.Description;
         if (request.Type is not null) rems.Type = request.Type;
         if (request.ClientName is not null) rems.RequestedClientName = request.ClientName;
+        // Cleared by sending "" — the suffix is the one client field somebody routinely takes back off,
+        // having picked "Jr." for the wrong John Smith, and an omitted field means "leave it alone" here.
+        if (request.ClientNameSuffix is not null) rems.ClientNameSuffix = Normalize(request.ClientNameSuffix);
         if (request.CustomerEmail is not null) rems.CustomerEmail = Normalize(request.CustomerEmail);
         if (request.CustomerMobileNumber is not null) rems.CustomerMobileNumber = Normalize(request.CustomerMobileNumber);
         if (request.CSEId.HasValue) rems.CSEId = request.CSEId;
         if (request.ExistingClientReferenceId.HasValue) rems.ExistingClientReferenceId = request.ExistingClientReferenceId;
 
-        // The parent, resolved against the type the request now holds — which is why it runs after Type has
-        // landed above. Assigned unconditionally rather than only-when-supplied: on any type but subsidiary
-        // this resolves to null, and that IS the clearing. `??` keeps a parent already on file when an edit
-        // simply does not mention it.
-        var (parentId, parentName, badParent) = await ResolveParentClientAsync(
-            rems.Type, request.ParentClientReferenceId ?? rems.ParentClientReferenceId, cancellationToken);
-        if (badParent is not null)
-        {
-            return badParent;
-        }
-        rems.ParentClientReferenceId = parentId;
-        rems.ParentClientName = parentName;
-
         // After the client fields land, so the person record follows what the request now says.
         rems.ClientPersonId = await ResolveClientPersonAsync(rems, rems.TenantId, cancellationToken);
-
-        // Applied before the submission notice below, which stays silent on an already-owned request —
-        // submitting and assigning in one save must not also ring the whole pool.
-        var previousAssignee = rems.AdminAssignedToId;
-        if (assignmentChanging) rems.AdminAssignedToId = newAssignee;
 
         // Editing never moves a request along any more. A draft leaves draft only by being sent to the
         // client, which is its own action.
         _rems.Update(rems);
-        if (assignmentChanging)
-        {
-            await _activity.WriteAsync(new CreateActivityEventDto(
-                EntityType.Rems, rems.Id, ActivityEventTypes.RemsAssigned,
-                previousAssignee?.ToString(), newAssignee?.ToString()), cancellationToken);
-            // Only a new owner gets told. Clearing the assignment has nobody to notify.
-            if (newAssignee is { } assignedId)
-            {
-                await _notifications.DispatchAsync(AssignmentNotification(assignedId, rems), cancellationToken);
-                await NotifyRequesterOfPickUpAsync(rems, assignedId, me, cancellationToken);
-            }
-        }
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var refreshed = await _rems.GetByIdAsync(rems.Id, cancellationToken) ?? rems;
@@ -454,14 +399,33 @@ public sealed class RemsRequestsController : ControllerBase
         return Ok(ApiResponseFactory.Success(detail, "REMS request attachments added."));
     }
 
-    [HttpPost("{id:guid}/assign")]
+    // -------------------- Pick up / hand back --------------------
+
+    /// <summary>
+    /// The calling admin claims this request as its reviewing admin. This replaced "assign to admin": an
+    /// initiator no longer names anybody, so a submitted request reaches EVERY admin's EMS Review unclaimed
+    /// and the first one to press this owns it — its engagement setup, its send-back and its routing for
+    /// approval (see <see cref="RemsSetupAccess"/>).
+    /// <para>
+    /// The caller is always the assignee, so there is no body: nobody can be handed work by somebody else.
+    /// Taking one already claimed is refused rather than allowed to steal it — the holder gives it back
+    /// with <see cref="HandBack"/>, and then it is anyone's again. Pressing it on a request already yours
+    /// is a no-op rather than an error: two clicks on one button is not a conflict.
+    /// </para>
+    /// </summary>
+    [HttpPost("{id:guid}/pick-up")]
     [RequirePermission(Permissions.RemsRequestsAssign)]
     [ProducesResponseType<ApiResponse<RemsRequestDetail>>(StatusCodes.Status200OK)]
-    public async Task<IActionResult> Assign(Guid id, [FromBody] AssignRemsRequestRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> PickUp(Guid id, CancellationToken cancellationToken)
     {
         if (User.GetUserId() is not { } me)
         {
             return Unauthorized(ApiResponseFactory.Unauthorized("No user context."));
+        }
+
+        if (RejectNonReviewer() is { } notReviewer)
+        {
+            return notReviewer;
         }
 
         var rems = await _rems.GetByIdAsync(id, cancellationToken);
@@ -470,34 +434,89 @@ public sealed class RemsRequestsController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("REMS request not found."));
         }
 
+        // A draft has not been submitted to anybody yet — it is still its initiator's private working copy,
+        // and there is nothing on it for an admin to take over.
+        if (rems.Status == RemsRequestStatuses.Draft)
+        {
+            return Conflict(ApiResponseFactory.Error(
+                ApiErrorCodes.ValidationFailed, "Cannot pick this request up.",
+                "This request is still a draft — its initiator has not sent it to the client yet."));
+        }
+
+        if (rems.AdminAssignedToId is { } holder && holder != me)
+        {
+            var holderNames = await _users.GetFullNamesAsync(new[] { holder }, cancellationToken);
+            return Conflict(ApiResponseFactory.Error(
+                ApiErrorCodes.ValidationFailed, "Cannot pick this request up.",
+                $"{NameOf(holderNames, holder) ?? "Another admin"} picked this request up already."));
+        }
+
         var privileged = IsPrivileged();
-        if (!CanAct(rems, me, privileged))
+        if (rems.AdminAssignedToId is null)
         {
-            return StatusCode(StatusCodes.Status403Forbidden,
-                ApiResponseFactory.Forbidden("Not permitted to assign this request."));
-        }
-
-        if (await _users.GetByIdAsync(request.AdminUserId, cancellationToken) is null)
-        {
-            return BadRequest(ApiResponseFactory.Error(
-                ApiErrorCodes.ValidationFailed, "Validation failed.", "Unknown adminUserId."));
-        }
-
-        var old = rems.AdminAssignedToId;
-        if (old != request.AdminUserId)
-        {
-            rems.AdminAssignedToId = request.AdminUserId;
+            rems.AdminAssignedToId = me;
             _rems.Update(rems);
             await _activity.WriteAsync(new CreateActivityEventDto(
-                EntityType.Rems, rems.Id, ActivityEventTypes.RemsAssigned, old?.ToString(), request.AdminUserId.ToString()), cancellationToken);
-            await _notifications.DispatchAsync(AssignmentNotification(request.AdminUserId, rems), cancellationToken);
-            await NotifyRequesterOfPickUpAsync(rems, request.AdminUserId, me, cancellationToken);
+                EntityType.Rems, rems.Id, ActivityEventTypes.RemsAssigned, null, me.ToString()), cancellationToken);
+            // Nobody tells the picker what they just did. The person waiting on the request is the one who
+            // raised it, and until now their submission has been met with silence.
+            await NotifyRequesterOfPickUpAsync(rems, me, me, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
         }
 
         var refreshed = await _rems.GetByIdAsync(rems.Id, cancellationToken) ?? rems;
         var detail = await BuildDetailAsync(refreshed, me, privileged, cancellationToken);
-        return Ok(ApiResponseFactory.Success(detail, "REMS request assigned."));
+        return Ok(ApiResponseFactory.Success(detail, "REMS request picked up."));
+    }
+
+    /// <summary>
+    /// The holding admin returns the request to the pool, so it reads "Waiting for pickup" again and any
+    /// admin may take it. The counterpart of <see cref="PickUp"/>, and the only way a request loses its
+    /// reviewing admin now that saving one cannot re-point it — without this, a request taken by mistake
+    /// would be stuck with whoever mis-clicked.
+    /// </summary>
+    [HttpPost("{id:guid}/hand-back")]
+    [RequirePermission(Permissions.RemsRequestsAssign)]
+    [ProducesResponseType<ApiResponse<RemsRequestDetail>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> HandBack(Guid id, CancellationToken cancellationToken)
+    {
+        if (User.GetUserId() is not { } me)
+        {
+            return Unauthorized(ApiResponseFactory.Unauthorized("No user context."));
+        }
+
+        if (RejectNonReviewer() is { } notReviewer)
+        {
+            return notReviewer;
+        }
+
+        var rems = await _rems.GetByIdAsync(id, cancellationToken);
+        if (rems is null)
+        {
+            return NotFound(ApiResponseFactory.NotFound("REMS request not found."));
+        }
+
+        // Yours to give back, or an elevated caller's to prise loose — the remedy when the admin holding a
+        // request is away and somebody else has to work it.
+        if (rems.AdminAssignedToId is { } holder && holder != me && !RemsSetupAccess.IsElevated(User))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseFactory.Forbidden("Only the admin holding this request can hand it back."));
+        }
+
+        var privileged = IsPrivileged();
+        if (rems.AdminAssignedToId is { } previous)
+        {
+            rems.AdminAssignedToId = null;
+            _rems.Update(rems);
+            await _activity.WriteAsync(new CreateActivityEventDto(
+                EntityType.Rems, rems.Id, ActivityEventTypes.RemsAssigned, previous.ToString(), null), cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+
+        var refreshed = await _rems.GetByIdAsync(rems.Id, cancellationToken) ?? rems;
+        var detail = await BuildDetailAsync(refreshed, me, privileged, cancellationToken);
+        return Ok(ApiResponseFactory.Success(detail, "REMS request handed back."));
     }
 
     // -------------------- The admin ↔ initiator rework loop --------------------
@@ -578,7 +597,7 @@ public sealed class RemsRequestsController : ControllerBase
                 forMe
                     ? "A REMS request was sent back to you for engagement setup"
                     : $"A REMS request was sent back for engagement setup{(ownerName is null ? "" : $" — to {ownerName}")}",
-                $"{rems.REMSNumber} — {rems.RequestedClientName}: {reason}", EntityType.Rems, rems.Id), cancellationToken);
+                $"{rems.REMSNumber} — {rems.ClientDisplayName}: {reason}", EntityType.Rems, rems.Id), cancellationToken);
         }
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -635,7 +654,7 @@ public sealed class RemsRequestsController : ControllerBase
         {
             await _notifications.DispatchAsync(new CreateNotificationDto(
                 userId, NotificationType.RemsRequestPickedUp,                "A REMS engagement setup was revised",
-                $"{rems.REMSNumber} — {rems.RequestedClientName}", EntityType.Rems, rems.Id), cancellationToken);
+                $"{rems.REMSNumber} — {rems.ClientDisplayName}", EntityType.Rems, rems.Id), cancellationToken);
         }
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -674,66 +693,6 @@ public sealed class RemsRequestsController : ControllerBase
     /// <summary>Distinct, non-empty notification recipients — the same person may hold two of these seats.</summary>
     private static IEnumerable<Guid> Recipients(params Guid?[] candidates)
         => candidates.Where(c => c.HasValue).Select(c => c!.Value).Distinct();
-
-    [HttpPost("{id:guid}/duplicate")]
-    [RequirePermission(Permissions.RemsRequestsCreate)]
-    [ProducesResponseType<ApiResponse<RemsRequestDetail>>(StatusCodes.Status201Created)]
-    public async Task<IActionResult> Duplicate(Guid id, CancellationToken cancellationToken)
-    {
-        if (User.GetUserId() is not { } me || User.GetActiveTenantId() is not { } tenantId)
-        {
-            return StatusCode(StatusCodes.Status403Forbidden,
-                ApiResponseFactory.Forbidden("No active tenant/user context."));
-        }
-
-        var source = await _rems.GetByIdAsync(id, cancellationToken);
-        if (source is null)
-        {
-            return NotFound(ApiResponseFactory.NotFound("REMS request not found."));
-        }
-
-        var privileged = IsPrivileged();
-        if (!CanSee(source, me, privileged))
-        {
-            return StatusCode(StatusCodes.Status403Forbidden,
-                ApiResponseFactory.Forbidden("Not permitted to duplicate this request."));
-        }
-
-        // Carry forward only the intake fields; a fresh draft with no assignment/form/submission/files.
-        var copy = new REMS
-        {
-            Id = Guid.NewGuid(),
-            Description = source.Description,
-            Type = source.Type,
-            Status = RemsRequestStatuses.Draft,
-            RequestedClientName = source.RequestedClientName,
-            CustomerEmail = source.CustomerEmail,
-            CustomerMobileNumber = source.CustomerMobileNumber,
-            ExistingClientReferenceId = source.ExistingClientReferenceId,
-            // Same client, so the same person — a duplicate is a second request for them, not a second
-            // client. Null only when the source predates the column and has not been saved since; the
-            // next save of the copy resolves it.
-            ClientPersonId = source.ClientPersonId,
-            // The type comes across, so the parent has to as well — a duplicated subsidiary that lost its
-            // parent would read as a child of nobody.
-            ParentClientReferenceId = source.ParentClientReferenceId,
-            ParentClientName = source.ParentClientName,
-            CSEId = source.CSEId,
-        };
-
-        await _unitOfWork.ExecuteInTransactionAsync(async ct =>
-        {
-            copy.REMSNumber = await _numberGenerator.GenerateAsync(tenantId, ct);
-            await _rems.AddAsync(copy, ct);
-            await _activity.WriteAsync(new CreateActivityEventDto(
-                EntityType.Rems, copy.Id, ActivityEventTypes.RemsDuplicated, source.REMSNumber, copy.REMSNumber), ct);
-            await _unitOfWork.SaveChangesAsync(ct);
-        }, cancellationToken);
-
-        var created = await _rems.GetByIdAsync(copy.Id, cancellationToken) ?? copy;
-        var detail = await BuildDetailAsync(created, me, privileged, cancellationToken);
-        return StatusCode(StatusCodes.Status201Created, ApiResponseFactory.Success(detail, "REMS request duplicated."));
-    }
 
     [HttpDelete("{id:guid}")]
     [RequirePermission(Permissions.RemsRequestsDelete)]
@@ -777,9 +736,15 @@ public sealed class RemsRequestsController : ControllerBase
     // -------------------- Pickers --------------------
 
     /// <summary>
-    /// Two-or-more-character search of existing <see cref="Person"/> records (by name, email, phone) for
-    /// the client picker. No external client directory exists in this platform, so
-    /// <c>parentCompany</c>/<c>pastWork</c> are always null.
+    /// Search of existing <see cref="Person"/> records (by name, email, phone) for the client picker. No
+    /// external client directory exists in this platform, so <c>parentCompany</c>/<c>pastWork</c> are
+    /// always null.
+    /// <para>
+    /// Any non-empty term searches — a minimum length would make a client whose name IS two or three
+    /// characters unfindable by typing it. What bounds the work is the page limit below, not the length
+    /// of the term; the picker debounces before it
+    /// asks. An empty term is the one thing that searches for nothing — there is nothing to look up.
+    /// </para>
     /// </summary>
     [HttpGet("/api/rems/clients/lookup")]
     [RequirePermission(Permissions.RemsRequestsCreate)]
@@ -787,10 +752,10 @@ public sealed class RemsRequestsController : ControllerBase
     public async Task<IActionResult> ClientLookup([FromQuery] string? q, CancellationToken cancellationToken)
     {
         var term = q?.Trim() ?? string.Empty;
-        if (term.Length < 2)
+        if (term.Length == 0)
         {
             return Ok(ApiResponseFactory.Success(
-                Array.Empty<RemsClientLookupItem>(), "Enter at least two characters to search."));
+                Array.Empty<RemsClientLookupItem>(), "Enter a name, email or phone number to search."));
         }
 
         // The ambient tenant filter pins the search to the caller's active tenant. Clients only: a
@@ -805,18 +770,21 @@ public sealed class RemsRequestsController : ControllerBase
     }
 
     /// <summary>
-    /// Users who can own a REMS request (the assign dropdown): Admin and Super Admin users assigned to the
-    /// active tenant. With <paramref name="group"/> the list is instead the members of that user group —
-    /// how the engagement's Engagement Executive / Billing Manager pickers are scoped. An unknown or empty
-    /// group returns an empty list rather than falling back, so the caller can say the group needs members
-    /// instead of silently offering people who are not in it.
+    /// The tenant's Admin and Super Admin users. With <paramref name="role"/> the list is instead the
+    /// holders of that role in the tenant — how the CSE / Engagement Executive / Billing Manager pickers
+    /// are scoped. A role nobody holds returns an empty list rather than falling back, so the caller can
+    /// say the role needs somebody in it instead of silently offering people who are not.
+    /// <para>
+    /// This took a user GROUP name until the four seats became roles. Same shape, same one-name-in
+    /// contract; only what the name refers to changed.
+    /// </para>
     /// </summary>
     [HttpGet("/api/rems/admins")]
-    // Naming the reviewing admin is mandatory at intake, so every initiator needs this list — the assign
-    // permission is what they hold, and it is now the only gate.
-    [RequirePermission(Permissions.RemsRequestsAssign)]
+    // Gated on READING requests rather than on the assign right: what this feeds is the CSE and
+    // engagement people-pickers every initiator fills in, none of whom pick anything up.
+    [RequirePermission(Permissions.RemsRequestsRead)]
     [ProducesResponseType<ApiResponse<IEnumerable<RemsAdminOption>>>(StatusCodes.Status200OK)]
-    public async Task<IActionResult> Admins([FromQuery] string? group, CancellationToken cancellationToken)
+    public async Task<IActionResult> Admins([FromQuery] string? role, CancellationToken cancellationToken)
     {
         if (User.GetActiveTenantId() is not { } tenantId)
         {
@@ -824,21 +792,9 @@ public sealed class RemsRequestsController : ControllerBase
         }
 
         IReadOnlyList<User> candidates;
-        if (!string.IsNullOrWhiteSpace(group))
+        if (!string.IsNullOrWhiteSpace(role))
         {
-            var userGroup = await _groups.GetByNameAsync(group.Trim(), cancellationToken);
-            if (userGroup is null)
-            {
-                return Ok(ApiResponseFactory.Success(Array.Empty<RemsAdminOption>(), "Group not found."));
-            }
-
-            var members = await _groups.GetMembersWithUsersByGroupAsync(userGroup.Id, cancellationToken);
-            candidates = members
-                .Select(m => m.User)
-                .Where(u => u is { IsActive: true })
-                .Select(u => u!)
-                .DistinctBy(u => u.Id)
-                .ToList();
+            candidates = await _users.ListByTenantRolesAsync(tenantId, new[] { role.Trim() }, cancellationToken);
         }
         else
         {
@@ -855,24 +811,48 @@ public sealed class RemsRequestsController : ControllerBase
 
     // -------------------- Helpers --------------------
 
-    /// <summary>An Admin-role or Super Admin caller (sees the whole tenant pool; everyone else is record-scoped).</summary>
-    private bool IsPrivileged()
-        => User.IsSuperAdmin() || User.GetRoles().Any(r => string.Equals(r, Roles.Admin, StringComparison.Ordinal));
+    /// <summary>
+    /// The refusal for a caller who may claim work but does not work the EMS Review queue, or null to carry
+    /// on. Picking a request up means becoming the admin who reviews it, so it takes BOTH keys: the right
+    /// to claim (<c>rems.requests.assign</c>, on the endpoint) and the right to do the reviewing
+    /// (<c>rems.engagements.manage</c>, here).
+    /// <para>
+    /// The pair matters during the changeover. Partners held the assign key while naming a reviewing admin
+    /// was part of intake; they lose it with that picker, but permissions travel in the JWT, so a session
+    /// opened before the change is still carrying it. They have never held the second key.
+    /// </para>
+    /// </summary>
+    private IActionResult? RejectNonReviewer()
+        => User.HasPermission(Permissions.RemsEngagementsManage)
+            ? null
+            : StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseFactory.Forbidden("Only an admin who reviews REMS requests can pick one up."));
+
+    /// <summary>An Admin-role or Super Admin caller (sees the whole tenant; everyone else is record-scoped).</summary>
+    private bool IsPrivileged() => RemsSetupAccess.IsRemsAdmin(User);
 
     /// <summary>
-    /// Record-level VISIBILITY: a draft is its author's and its named reviewing admin's; non-drafts are
-    /// pool-wide for privileged callers, else created-or-involved.
+    /// Record-level VISIBILITY: privileged callers see the tenant, drafts included; everyone else sees
+    /// their own drafts and the non-drafts they created or are involved in.
     /// <para>
-    /// Naming the reviewing admin at intake is what puts a request on their desk, so it is also what makes
-    /// it visible to them — waiting for the client to answer would leave an admin unable to open a request
-    /// that already names them. It is not visible to any OTHER admin: a draft nobody has been pointed at
-    /// is still its author's alone. Mirrors <c>RemsRepository.ApplyVisibility</c>, which is the same rule
-    /// in SQL; the two must agree or a row appears in a list and 403s when opened.
+    /// A draft is a request nobody has been asked about yet — it has no reviewing admin because none is
+    /// named until one picks it up, and it is not submitted to anyone until its initiator sends the client
+    /// their link. That kept it out of the admins' sight entirely, which is what changed: a referral left
+    /// half-written is exactly the one an admin needs to be able to find and finish. Mirrors
+    /// <c>RemsRepository.ApplyVisibility</c>, which is the same rule in SQL; the two must agree or a row
+    /// appears in a list and 403s when opened.
+    /// </para>
+    /// <para>
+    /// <c>GetById</c> admits one reader beyond this: an approver on the request (see
+    /// <c>IRemsApprovalRepository.IsApproverOnRequestAsync</c>). That is deliberately NOT mirrored into the
+    /// list rule, and the asymmetry runs the safe way — an extra reader who can open a request they hold a
+    /// deep link to, never a row offered in a list that then refuses to open. An approver's queue is the
+    /// Approval Inbox, which lists their tasks; the request lists stay what they are.
     /// </para>
     /// </summary>
     private static bool CanSee(REMS r, Guid me, bool privileged)
         => r.Status == RemsRequestStatuses.Draft
-            ? IsMine(r, me) || r.AdminAssignedToId == me
+            ? privileged || IsMine(r, me)
             : privileged || IsMine(r, me) || r.AdminAssignedToId == me || r.CSEId == me;
 
     /// <summary>
@@ -882,7 +862,7 @@ public sealed class RemsRequestsController : ControllerBase
     /// </summary>
     private static bool IsMine(REMS r, Guid me) => r.CreatedById == me || r.OnBehalfOfUserId == me;
 
-    /// <summary>Record-level ACT (edit/assign/delete): the creator or a privileged caller.</summary>
+    /// <summary>Record-level ACT (edit/delete): the creator or a privileged caller.</summary>
     private static bool CanAct(REMS r, Guid me, bool privileged)
         => privileged || IsMine(r, me);
 
@@ -941,7 +921,11 @@ public sealed class RemsRequestsController : ControllerBase
     /// </summary>
     private async Task<Guid> ResolveClientPersonAsync(REMS rems, Guid tenantId, CancellationToken cancellationToken)
     {
+        // Two names, on purpose. The FIRST/LAST split runs on the requested name alone — "Jr." is neither a
+        // given name nor a family one, and a Person filed with it stuck on the end of LastName is a Person
+        // nobody finds by searching for their surname. The DISPLAY name is the one the suffix belongs to.
         var name = rems.RequestedClientName?.Trim() ?? string.Empty;
+        var displayName = rems.ClientDisplayName.Trim();
         var email = Normalize(rems.CustomerEmail);
         var phone = Normalize(rems.CustomerMobileNumber);
 
@@ -980,7 +964,7 @@ public sealed class RemsRequestsController : ControllerBase
             var (first, last) = SplitName(name);
             owned.FirstName = first;
             owned.LastName = last;
-            owned.DisplayName = name;
+            owned.DisplayName = displayName;
             owned.PrimaryEmail = email;
             owned.MobileNumber = phone;
             owned.LastProfileUpdatedOn = DateTime.UtcNow;
@@ -1004,7 +988,7 @@ public sealed class RemsRequestsController : ControllerBase
             SourceEntityId = rems.Id,
             FirstName = newFirst,
             LastName = newLast,
-            DisplayName = name,
+            DisplayName = displayName,
             PrimaryEmail = email,
             MobileNumber = phone,
             IsActive = true,
@@ -1061,6 +1045,10 @@ public sealed class RemsRequestsController : ControllerBase
                 + "Client box and pick them, rather than filing a second record for the same client."));
     }
 
+    // ResolveParentClientAsync stood alongside the reference check below — it validated the Parent Client
+    // id against the request's type and returned the name to denormalise. Gone with the field
+    // (DropRemsParentClient).
+
     /// <summary>
     /// The 400 for a client reference that does not name a client, or null to carry on. The picker offers
     /// none but persons stamped <see cref="EntityType.Client"/>, so no screen can produce this — but the
@@ -1077,37 +1065,6 @@ public sealed class RemsRequestsController : ControllerBase
     /// thing that fails the save.
     /// </para>
     /// </summary>
-    /// <summary>
-    /// The parent client to store, for a given request type: the named person and their name today, or
-    /// (null, null) on any type but subsidiary — which is what clears a parent left behind by a type
-    /// change. The third element is a 400 when the id names somebody who is not a client on file.
-    /// <para>
-    /// The name is copied rather than joined at read time, matching <c>RequestedClientName</c>: the lists
-    /// that show it are paged over hundreds of requests and would otherwise reach into Person for one
-    /// column. It is refreshed on every save, so an edit picks up a renamed parent.
-    /// </para>
-    /// </summary>
-    private async Task<(Guid? Id, string? Name, IActionResult? Failure)> ResolveParentClientAsync(
-        string? type, Guid? parentClientReferenceId, CancellationToken cancellationToken)
-    {
-        if (!string.Equals(type, RemsRequestTypes.SubsidiaryChildOfExistingClient, StringComparison.Ordinal)
-            || parentClientReferenceId is not { } parentId)
-        {
-            return (null, null, null);
-        }
-
-        // Tenant-scoped and soft-delete-filtered by the ambient query filter, as the client reference is.
-        if (await _persons.GetByIdAsync(parentId, cancellationToken) is not { SourceEntityType: EntityType.Client } parent)
-        {
-            return (null, null, BadRequest(ApiResponseFactory.Error(
-                ApiErrorCodes.ValidationFailed, "Validation failed.",
-                "parentClientReferenceId must name a client on file. Search for the parent in the Parent "
-                    + "Client box and pick them from the results.")));
-        }
-
-        return (parentId, parent.FullName, null);
-    }
-
     private async Task<IActionResult?> RejectUnknownClientReferenceAsync(
         Guid? existingClientReferenceId, CancellationToken cancellationToken)
     {
@@ -1129,14 +1086,6 @@ public sealed class RemsRequestsController : ControllerBase
                 + "box and pick them from the results."));
     }
 
-    // The duplicate-title guard and the copy-title uniquifier lived here. Both went with Title itself:
-    // there is no per-client title left to clash on, and a duplicated request is told apart from the one
-    // it came from by its own REMS number.
-
-    /// <summary>A Partner-role caller. Duplicating a request is their workflow, not an admin's.</summary>
-    private bool IsPartner()
-        => User.GetRoles().Any(r => string.Equals(r, Roles.Partner, StringComparison.Ordinal));
-
     /// <summary>
     /// A request may still be withdrawn while it is a draft. Once the intake link has gone to the client
     /// it stays on the record — somebody outside the firm has been asked for their details by then, and
@@ -1154,8 +1103,12 @@ public sealed class RemsRequestsController : ControllerBase
         return new RemsRowActions(
             CanView: true,
             CanEdit: canAct && User.HasPermission(Permissions.RemsRequestsUpdate),
-            CanAssign: canAct && User.HasPermission(Permissions.RemsRequestsAssign),
-            CanDuplicate: IsPartner() && User.HasPermission(Permissions.RemsRequestsCreate),
+            // Not gated on CanAct, unlike everything around it: picking up is precisely the move made on
+            // somebody ELSE's request, by an admin who has no standing on it yet. What bounds it is the
+            // request being out of draft and unclaimed — the same pair PickUp enforces.
+            CanPickUp: User.HasPermission(Permissions.RemsRequestsAssign)
+                && r.Status != RemsRequestStatuses.Draft
+                && r.AdminAssignedToId is null,
             CanDelete: canAct && User.HasPermission(Permissions.RemsRequestsDelete) && IsDeletable(r));
     }
 
@@ -1167,8 +1120,8 @@ public sealed class RemsRequestsController : ControllerBase
         forms.TryGetValue(r.Id, out var form);
         var (ems, submission) = MapFormState(form);
         return new RemsRequestRow(
-            r.Id, r.REMSNumber, r.RequestedClientName, r.Type, r.CreatedOnUtc, r.Status,
-            r.CustomerEmail, r.CustomerMobileNumber, r.ParentClientName,
+            r.Id, r.REMSNumber, r.ClientDisplayName, r.Type, r.CreatedOnUtc, r.Status,
+            r.CustomerEmail, r.CustomerMobileNumber,
             UserRefOf(r.AdminAssignedToId, names), UserRefOf(r.CSEId, names),
             form?.IndustryGroup, ems, submission,
             NameOf(names, r.CreatedById), NameOf(names, r.UpdatedById), r.UpdatedOnUtc,
@@ -1190,10 +1143,10 @@ public sealed class RemsRequestsController : ControllerBase
             .ToList();
 
         return new RemsRequestDetail(
-            rems.Id, rems.REMSNumber, rems.Description, rems.RequestedClientName,
+            rems.Id, rems.REMSNumber, rems.Description, rems.ClientDisplayName,
+            rems.RequestedClientName, rems.ClientNameSuffix,
             rems.Type, rems.Status, rems.CustomerEmail, rems.CustomerMobileNumber,
             rems.ExistingClientReferenceId, rems.ClientPersonId,
-            rems.ParentClientReferenceId, rems.ParentClientName,
             UserRefOf(rems.AdminAssignedToId, names), UserRefOf(rems.CSEId, names),
             form?.IndustryGroup, ems, submission, files,
             NameOf(names, rems.CreatedById), rems.CreatedOnUtc, NameOf(names, rems.UpdatedById), rems.UpdatedOnUtc,
@@ -1217,19 +1170,9 @@ public sealed class RemsRequestsController : ControllerBase
     private static (string EmsFormState, string? ClientSubmissionState) MapFormState(RemsFormStateInfo? form)
         => RemsWorkspaceMapper.FormState(form);
 
-    private static CreateNotificationDto AssignmentNotification(Guid recipientId, REMS rems)
-        => new(
-            recipientId,
-            NotificationType.RemsRequestAssigned,
-            "A REMS request was assigned to you",
-            $"{rems.REMSNumber} — {rems.RequestedClientName}",
-            EntityType.Rems,
-            rems.Id);
-
-    // NotifyPoolOfSubmissionAsync stood here — "New REMS request waiting for pickup", broadcast to every
-    // admin in the tenant. It announced a request landing in the admin pool unclaimed, and it lost its last
-    // caller when Phase 16 removed the pool: a request now names its reviewing admin at intake and the
-    // initiator sends the client's link themselves, so nothing waits to be picked up by anybody.
+    // RemsRequestAssigned carries the pool broadcast: sent to every admin when a client's answers land on
+    // an unclaimed request (see RemsPublicFormController). Nobody is named at intake, so there is no
+    // single assignee to notify.
 
     /// <summary>
     /// Tells whoever raised the request that an admin now owns it. The requester (typically the Partner)
@@ -1273,5 +1216,16 @@ public sealed class RemsRequestsController : ControllerBase
         "unassigned" => RemsPoolFilter.Unassigned,
         "mine" => RemsPoolFilter.Mine,
         _ => RemsPoolFilter.All,
+    };
+
+    /// <summary>
+    /// The My Requests view. Absent or unrecognised means <see cref="RemsListOwnership.All"/> —
+    /// everything the caller may see, bounded by the visibility predicate. Narrowing to authorship is the
+    /// thing that has to be asked for, so a caller who sends nothing never silently loses rows.
+    /// </summary>
+    private static RemsListOwnership ParseOwnership(string? ownership) => ownership?.Trim().ToLowerInvariant() switch
+    {
+        "mine" => RemsListOwnership.Mine,
+        _ => RemsListOwnership.All,
     };
 }

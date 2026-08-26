@@ -32,6 +32,7 @@
       <!-- Optional extra actions (e.g. "Save as Draft") sit beside the primary action, same row. -->
       <slot name="footer-actions" />
       <q-btn
+        v-if="!hideSave"
         unelevated
         no-caps
         color="primary"
@@ -55,6 +56,9 @@ const props = defineProps({
   title: { type: String, default: "" },
   saveLabel: { type: String, default: "Save" },
   saving: { type: Boolean, default: false },
+  // Drops the primary action, leaving Cancel. For a drawer that only shows a record the viewer has no
+  // right to change — a Save they cannot use reads as a bug, not as a boundary.
+  hideSave: { type: Boolean, default: false },
   // When set, the form's draft is auto-persisted under this key.
   draftKey: { type: String, default: "" },
   draft: { type: Object, default: null }

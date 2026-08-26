@@ -51,13 +51,34 @@
         <q-expansion-item
           v-for="group in visibleCategories"
           :key="group.category"
-          :label="group.category"
-          :caption="`${countSelectedIn(group.keys)} / ${group.keys.length} selected`"
           default-opened
           dense
-          header-class="text-primary text-weight-medium"
+          header-class="pg-group__header"
         >
-          <q-list dense>
+          <!-- The whole category in one tick. Ticking the box must not also collapse the section, hence
+               the stopped click; and it only ever reaches the keys a row could reach, so the ceiling
+               still holds. Half-selected renders indeterminate rather than guessing either way. -->
+          <template #header>
+            <q-item-section side>
+              <q-checkbox
+                :model-value="groupState(group.keys)"
+                :disable="!selectableIn(group.keys).length"
+                dense
+                @click.stop
+                @update:model-value="(value) => toggleGroup(group.keys, value)"
+              >
+                <q-tooltip>Select every permission in {{ group.category }}</q-tooltip>
+              </q-checkbox>
+            </q-item-section>
+            <q-item-section>
+              <q-item-label class="pg-group__title">{{ group.category }}</q-item-label>
+              <q-item-label caption>
+                {{ countSelectedIn(group.keys) }} / {{ group.keys.length }} selected
+              </q-item-label>
+            </q-item-section>
+          </template>
+
+          <q-list dense class="pg-group__keys">
             <q-item v-for="key in group.keys" :key="key" tag="label" :disable="isDisabled(key)">
               <q-item-section side top>
                 <q-checkbox v-model="selectedKeys" :val="key" :disable="isDisabled(key)" dense />
@@ -155,6 +176,31 @@ const visibleCategories = computed(() => {
 });
 
 const countSelectedIn = (keys) => keys.filter((k) => selectedKeys.value.includes(k)).length;
+
+// The keys in a category this caller may actually tick — the ceiling greys the rest out, and a
+// select-all that reached them would be a way around it.
+const selectableIn = (keys) => keys.filter((k) => !isDisabled(k));
+
+// Tri-state for the category checkbox: all of them, none of them, or null for some (which Quasar renders
+// indeterminate). Measured over the selectable keys only, so a category whose last key is out of reach
+// still reads as fully selected once the rest are.
+const groupState = (keys) => {
+  const selectable = selectableIn(keys);
+  if (!selectable.length) return false;
+  const chosen = selectable.filter((k) => selectedKeys.value.includes(k)).length;
+  if (chosen === 0) return false;
+  return chosen === selectable.length ? true : null;
+};
+
+const toggleGroup = (keys, next) => {
+  const selectable = selectableIn(keys);
+  if (next) {
+    selectedKeys.value = [...new Set([...selectedKeys.value, ...selectable])];
+    return;
+  }
+  const dropped = new Set(selectable);
+  selectedKeys.value = selectedKeys.value.filter((k) => !dropped.has(k));
+};
 
 // ---- Tenant ceiling (best-effort, never blocks submit) ----
 // Super Admins see no ceiling. For Tenant Admins, prefer the union of keys across the tenant's
@@ -286,5 +332,24 @@ defineExpose({ form, selectedKeys, visibleCategories, categoryForKey });
 }
 .count-badge {
   font-size: 12px;
+}
+
+/* A category row is a heading, not another option — and since it grew a checkbox of its own it needed
+   telling apart from the keys under it by more than colour. A tinted band with a rule beneath it, so a
+   long list reads as sections rather than as one unbroken run of checkboxes. */
+.pg-group__header {
+  background-color: #e0f2f1;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+.pg-group__title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--q-primary);
+}
+/* The keys sit in from their heading, so the grouping survives a scroll past the band. */
+.pg-group__keys :deep(.q-item) {
+  padding-left: 24px;
 }
 </style>

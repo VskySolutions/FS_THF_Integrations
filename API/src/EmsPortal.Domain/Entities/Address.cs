@@ -16,7 +16,6 @@ public class Address : AuditableEntity
     public string? AddressLine1 { get; set; }
     public string? AddressLine2 { get; set; }
     public string? Landmark { get; set; }
-    public string? Area { get; set; }
     public string? BuildingName { get; set; }
     public string? FloorNumber { get; set; }
     public string? UnitNumber { get; set; }
@@ -26,15 +25,6 @@ public class Address : AuditableEntity
     public string? CountryName { get; set; }
     public string? StateCode { get; set; }
     public string? StateName { get; set; }
-    public string? CityCode { get; set; }
     public string? CityName { get; set; }
     public string? PostalCode { get; set; }
-
-    // ---- Geolocation ----
-    public double? Latitude { get; set; }
-    public double? Longitude { get; set; }
-
-    // ---- Validation ----
-    public bool IsValidated { get; set; }
-    public string? ValidationSource { get; set; }
 }

@@ -26,6 +26,11 @@ internal sealed class RoleConfiguration : IEntityTypeConfiguration<Role>
         // Denormalised cache of group-derived permission keys (Permission Groups, ADR-002).
         builder.Property(r => r.EffectivePermissionsJson);
 
-        builder.HasIndex(r => r.Name).IsUnique().HasFilter("[Deleted] = 0");
+        // A name is unique within its scope, not across the platform: among the platform roles
+        // (TenantId null — SQL Server treats those NULLs as equal, which is exactly the rule wanted here)
+        // and within each owning tenant. Two firms may both want a "Reviewer"; neither may take a second
+        // one. A tenant name that would shadow a platform role is refused by RolesController — the index
+        // cannot see that clash because the TenantId differs.
+        builder.HasIndex(r => new { r.TenantId, r.Name }).IsUnique().HasFilter("[Deleted] = 0");
     }
 }

@@ -13,10 +13,14 @@ export default [
     component: () => import("layouts/layout.vue"),
     children: [
       {
+        // Open to every signed-in user, like the Approvals inbox and for the same reason: what somebody
+        // sees here is decided by the records, not by a permission. The list returns the requests they
+        // raised or are named on (RemsRequestsController.List scopes on the caller), so anyone without
+        // REMS work simply sees an empty list rather than a page they cannot reach.
         path: "partner",
         name: "rems_partner",
         component: () => import("modules/rems/pages/PartnerDashboard.vue"),
-        meta: { requiresAuth: true, permissions: ["rems.requests.read"], title: "My REMS Requests" }
+        meta: { requiresAuth: true, title: "My REMS Requests" }
       },
       {
         // The Admin's only surface: requests whose clients have answered, opened for review of BOTH the
@@ -48,16 +52,18 @@ export default [
         path: "requests/edit/:id",
         name: "rems_request_edit",
         component: () => import("modules/rems/pages/RemsRequestForm.vue"),
-        meta: { requiresAuth: true, permissions: ["rems.requests.read"], title: "REMS Request" }
+        meta: { requiresAuth: true, title: "REMS Request" }
       },
       {
         // The read-only request detail. The old separate detail page is folded into this, which shows
         // everything it did and the whole engagement besides — so this is the plain permalink for a
         // request, and what REMS notifications and emailed links point at.
+        // Ungated with the list that leads here: opening one of your own requests cannot be a permission
+        // the list already ignored. The server decides what you may see (CanSee), and 404s the rest.
         path: "requests/:id",
         name: "rems_request",
         component: () => import("modules/rems/pages/RemsRequestForm.vue"),
-        meta: { requiresAuth: true, permissions: ["rems.requests.read"], title: "REMS Request" }
+        meta: { requiresAuth: true, title: "REMS Request" }
       },
       // Links minted before the split: /rems/requests/:id/form, with ?mode=edit deciding which of the
       // two it meant, and /rems/engagements/:id from the workspace this page replaced. `mode` is dropped

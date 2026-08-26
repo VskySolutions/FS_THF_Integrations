@@ -12,9 +12,10 @@ public sealed record RemsApproverSuggestion(RemsUserRef User, string Role);
 
 /// <summary>
 /// The full approver list an engagement will route to (updates until the round is sent): the automatic
-/// approvers — the CSE and every commission recipient — plus anyone added on the Approval tab.
+/// approvers — the firm's shareholders, the Department Director, the CSE and every commission recipient —
+/// plus anyone added on the Approval tab. Ordered for reading, shareholders first.
 /// <see cref="SelectedApproverIds"/> is just the added ones, so the picker shows only what a user chose
-/// rather than the people who are approvers regardless.
+/// rather than the people who are approvers regardless — and cannot be used to take one of them off.
 /// </summary>
 public sealed record RemsApproverList(
     Guid EngagementId,
@@ -23,14 +24,21 @@ public sealed record RemsApproverList(
     IReadOnlyList<Guid> SelectedApproverIds);
 
 /// <summary>
-/// A user selectable as an extra approver: someone holding the Approver role in the active tenant. The
-/// job title travels with them so the picker can read "Full Name — Job Title".
+/// A user selectable as an extra approver: any active user in the tenant (there is no Approver role).
+/// <para>
+/// <paramref name="Roles"/> is every role they hold in this tenant, which is what the picker shows beside
+/// the name: choosing who else should sign off is a question about what someone IS to the firm, and a list
+/// of bare names cannot answer it. The email travels with them too, as the tiebreak when two people share
+/// a name and a role.
+/// </para>
 /// </summary>
-public sealed record RemsApproverOption(Guid UserId, string Name, string? JobTitle, string? Email);
+public sealed record RemsApproverOption(
+    Guid UserId, string Name, string? Email, IReadOnlyList<string> Roles);
 
 /// <summary>
 /// Replaces the engagement's ADDED approvers with exactly these users (AC-REMS-018). An empty list removes
-/// the additions; the automatic approvers are unaffected either way.
+/// the additions; the automatic approvers — shareholders among them — are unaffected either way, which is
+/// what makes them impossible to remove from here.
 /// </summary>
 public sealed class SetRemsApproversRequest
 {
@@ -38,11 +46,15 @@ public sealed class SetRemsApproversRequest
 }
 
 /// <summary>
-/// A row in the caller's own approval-task list (pending + historical). The three counts describe the
-/// whole ROUND, not just the caller's task, so the inbox can show how far along an engagement is —
-/// "1/4 approved" answers "is this waiting on me alone, or on five other people too?".
-/// Still awaiting = <c>ApproverCount - ApprovedCount - RejectedCount</c>; a rejection ends the round, so
-/// the remaining tasks stay pending and never decide.
+/// One REQUEST in the caller's approvals inbox, carried by their task on its latest round — so
+/// <see cref="Role"/>, <see cref="Status"/> and <see cref="RoundNumber"/> say what they are to it now, and
+/// the rounds before this one are read on the task detail rather than listed here as rows of their own.
+/// <para>
+/// The three counts describe the whole ROUND, not just the caller's task, so the inbox can show how far
+/// along an engagement is — "1/4 approved" answers "is this waiting on me alone, or on five other people
+/// too?". Still awaiting = <c>ApproverCount - ApprovedCount - RejectedCount</c>; a rejection ends the
+/// round, so the remaining tasks stay pending and never decide.
+/// </para>
 /// </summary>
 public sealed record RemsApprovalTaskRow(
     Guid TaskId,
@@ -57,6 +69,12 @@ public sealed record RemsApprovalTaskRow(
     Guid RemsId,
     string RemsNumber,
     string ClientName,
+    /// <summary>
+    /// The request's Client Service Executive. An approver deciding on a round needs to know who to ask
+    /// about it, and the CSE is that person — so the inbox shows them by default rather than making the
+    /// approver open the request to find out.
+    /// </summary>
+    RemsUserRef? Cse,
     // No EntityName: an approval is about a request and its single engagement now, so the entity's name
     // only ever repeated the client's.
     int ApprovedCount,
@@ -79,7 +97,7 @@ public sealed record RemsChecklistItemView(Guid Id, int DisplayOrder, string Lab
 /// approver is being asked to sign off on exactly what staff filled in.
 /// <para>
 /// One thing stays role-scoped: the first-year fee estimate and % realization are reserved to the
-/// Department Director and Managing Shareholder (AC-REMS-019.10). For every other role they arrive null
+/// Department Director (AC-REMS-019.10). For every other role they arrive null
 /// with <see cref="RemsApprovalEngagementView.FinancialsRestricted"/> set, so the UI can say the figures
 /// are withheld rather than render them as blank.
 /// </para>
@@ -107,8 +125,6 @@ public sealed record RemsApprovalRequestView(
     string RemsNumber,
     string? Description,
     string RequestedClientName,
-    /// <summary>The client this one is a subsidiary of, or null on every other request type.</summary>
-    string? ParentClientName,
     string Type,
     string Status,
     string? CustomerEmail,
@@ -132,7 +148,6 @@ public sealed record RemsApprovalEngagementView(
     Guid EngagementId,
     string Status,
     string? Department,
-    string? ServiceLine,
     string? SubServiceLine,
     string? SubIndustry,
     RemsApprovalClientView Client,
@@ -160,8 +175,9 @@ public sealed record RemsApprovalRoundHistory(
     DateTime SentOnUtc,
     string? SentBy,
     DateTime? CompletedOnUtc,
-    // What it would have taken to close this round, and how close it got — a round that carried with one
-    // decline against it reads very differently from a unanimous one.
+    // What it would have taken to close this round, and how close it got. One decline closes a round
+    // now, so these agree on anything that failed today — but a round closed under the old two-decline
+    // threshold still carries the count it actually took, against a threshold recomputed as one.
     int DeclineThreshold,
     int DeclineCount,
     IReadOnlyList<RemsApprovalRoundDecision> Decisions);
@@ -263,7 +279,7 @@ public sealed class RejectApprovalTaskRequest
 
 /// <summary>
 /// The per-role approval checklist labels (AC-REMS-019.4/5/6): CSE = 2, DepartmentDirector = 3,
-/// ManagingShareholder = 3, CommissionRecipient = 2. Defined as constants here (they could become
+/// CommissionRecipient = 2. Defined as constants here (they could become
 /// option-set-driven later). Rows are created in order as <c>REMSApprovalChecklistItem</c>s.
 /// </summary>
 public static class RemsApprovalChecklistCatalog
@@ -281,21 +297,16 @@ public static class RemsApprovalChecklistCatalog
         "Engagement team and department placement appropriate",
     };
 
-    private static readonly IReadOnlyList<string> ManagingShareholder = new[]
-    {
-        "Firm risk and independence reviewed",
-        "Fee and realization approved",
-        "Final engagement acceptance",
-    };
-
     private static readonly IReadOnlyList<string> CommissionRecipient = new[]
     {
         "Commission split reviewed",
         "Commission allocation accepted",
     };
 
-    // A hand-picked approver with no other standing on the engagement: a general review, since nothing
-    // narrower can be assumed about why they were added.
+    // An approver with no other standing on the engagement: a general review, since nothing narrower can
+    // be assumed about why they are looking at it. Shared with Shareholder — being asked about every
+    // engagement says nothing about what to ask them, and a firm-wide checklist would have to be general
+    // in exactly this way.
     private static readonly IReadOnlyList<string> Approver = new[]
     {
         "Engagement details reviewed",
@@ -307,9 +318,8 @@ public static class RemsApprovalChecklistCatalog
     {
         RemsApproverRole.CSE => Cse,
         RemsApproverRole.DepartmentDirector => DepartmentDirector,
-        RemsApproverRole.ManagingShareholder => ManagingShareholder,
         RemsApproverRole.CommissionRecipient => CommissionRecipient,
-        RemsApproverRole.Approver => Approver,
+        RemsApproverRole.Shareholder or RemsApproverRole.Approver => Approver,
         _ => Array.Empty<string>(),
     };
 }

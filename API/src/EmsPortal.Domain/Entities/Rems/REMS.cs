@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace EmsPortal.Domain.Entities;
 
 /// <summary>
@@ -17,13 +19,11 @@ public class REMS : AuditableEntity
     /// <summary>Human-readable request number, unique per tenant (e.g. <c>REMS-1</c>).</summary>
     public string REMSNumber { get; set; } = string.Empty;
 
-    // Title is gone. It existed to tell one client's requests apart, but it asked the initiator to invent a
-    // name for something that already has two — the REMS number and the client — and neither the lists nor
-    // the notifications needed a third. A client's requests are now distinguished by number and date.
-
     /// <summary>
-    /// The initiator's message. Client-facing: it travels with the intake form as well as being what the
-    /// admin reads, which is why it is uncapped rather than the old nvarchar(500).
+    /// The initiator's message ("Message from Partner"). No longer asked for — the request's Conversation
+    /// thread carries that context, because it reaches the admin, the CSE and the approvers and can be
+    /// replied to. Kept because older requests hold text somebody wrote, and the request page still shows
+    /// it where there is any.
     /// </summary>
     public string? Description { get; set; }
 
@@ -43,22 +43,6 @@ public class REMS : AuditableEntity
     public Guid? ExistingClientReferenceId { get; set; }
 
     /// <summary>
-    /// The THF client this one is a subsidiary or child of — a <see cref="Person"/> stamped as a client,
-    /// referenced loosely like <see cref="ExistingClientReferenceId"/> rather than by foreign key. Set only
-    /// where <see cref="Type"/> is the subsidiary code; choosing any other type clears it, because a parent
-    /// on a request that is not a child is a claim nothing on the form is making.
-    /// </summary>
-    public Guid? ParentClientReferenceId { get; set; }
-
-    /// <summary>
-    /// The parent's name as it stood when the referral was raised. Denormalised for the same reason
-    /// <see cref="RequestedClientName"/> is: every list that shows a request would otherwise join out to
-    /// Person for one column. It is a snapshot — a parent later renamed keeps its old name here, and
-    /// <see cref="ParentClientReferenceId"/> is what anything needing the live record follows.
-    /// </summary>
-    public string? ParentClientName { get; set; }
-
-    /// <summary>
     /// The <see cref="Person"/> master record this request's client is, set on every save. Where
     /// <see cref="ExistingClientReferenceId"/> records that intake <em>matched</em> a client THF already
     /// had — null for a brand-new client — this is simply who the client is, minted on the spot when
@@ -70,8 +54,64 @@ public class REMS : AuditableEntity
     /// </summary>
     public Guid? ClientPersonId { get; set; }
 
-    /// <summary>Name of the client as requested at intake.</summary>
+    /// <summary>Name of the client as requested at intake, WITHOUT the generational suffix.</summary>
     public string RequestedClientName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The generational suffix on the client's name — Jr., Sr., II, III, IV — kept apart from the name
+    /// itself. Free text with those five offered as suggestions: the list is what most clients need, not
+    /// what any client may have, and a suffix nobody thought to seed is not a reason to file a client
+    /// under the wrong name.
+    /// <para>
+    /// Held separately rather than typed into the name box so that the two are separable afterwards: a
+    /// person record splits into first and last name, and "Jr." belongs to neither. <see
+    /// cref="ClientDisplayName"/> is what puts them back together for reading.
+    /// </para>
+    /// </summary>
+    public string? ClientNameSuffix { get; set; }
+
+    /// <summary>
+    /// The client's name as it reads — the requested name with the suffix appended. This is what every
+    /// list, notification and email shows; <see cref="RequestedClientName"/> on its own would drop the
+    /// suffix silently wherever it was used.
+    /// </summary>
+    [NotMapped]
+    public string ClientDisplayName => Append(RequestedClientName?.Trim() ?? string.Empty);
+
+    /// <summary>
+    /// Any name of this client, read as it should be — with the request's suffix on the end.
+    /// <para>
+    /// Needed because the client's name exists in two places once their intake form comes back: the name
+    /// the request was raised under (<see cref="RequestedClientName"/>) and the name the CLIENT typed,
+    /// which is what <c>REMSClient.Name</c> and the main <c>REMSEntity.Name</c> hold. The intake form
+    /// never asks for a suffix — it is the firm's own particle on the name, set at intake — so a surface
+    /// showing the client's own version was showing "John Smith" where every list beside it said
+    /// "John Smith Jr.".
+    /// </para>
+    /// <para>
+    /// A blank name falls back to <see cref="ClientDisplayName"/>; a name that already carries the suffix
+    /// is returned untouched, so this is safe to apply to a value that may already have been through it.
+    /// </para>
+    /// </summary>
+    public string WithClientSuffix(string? name)
+    {
+        var trimmed = name?.Trim() ?? string.Empty;
+        // Via Append rather than ClientDisplayName so the blank case cannot recurse — ClientDisplayName is
+        // itself Append(RequestedClientName), and RequestedClientName can be empty on an unsaved request.
+        return Append(trimmed.Length == 0 ? RequestedClientName?.Trim() ?? string.Empty : trimmed);
+    }
+
+    /// <summary>The suffix appended once — a name that already ends with it is left alone.</summary>
+    private string Append(string name)
+    {
+        var suffix = ClientNameSuffix?.Trim() ?? string.Empty;
+        if (name.Length == 0 || suffix.Length == 0 || name.EndsWith(" " + suffix, StringComparison.OrdinalIgnoreCase))
+        {
+            return name;
+        }
+
+        return $"{name} {suffix}";
+    }
 
     /// <summary>Customer email used to reach out; required together-or-with mobile at app level.</summary>
     public string? CustomerEmail { get; set; }

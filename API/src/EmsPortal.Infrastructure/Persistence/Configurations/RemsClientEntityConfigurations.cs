@@ -40,7 +40,6 @@ internal sealed class RemsEntityConfiguration : IEntityTypeConfiguration<REMSEnt
         builder.ToTable("REMSEntity");
         builder.HasKey(e => e.Id);
 
-        builder.Property(e => e.SourceEntityKey).IsRequired().HasMaxLength(64);
         builder.Property(e => e.Name).IsRequired().HasMaxLength(200);
         builder.Property(e => e.EIN).HasMaxLength(32);
 
@@ -49,10 +48,9 @@ internal sealed class RemsEntityConfiguration : IEntityTypeConfiguration<REMSEnt
 
         builder.HasOne(e => e.Client).WithMany(c => c.Entities).HasForeignKey(e => e.REMSClientId).OnDelete(DeleteBehavior.Restrict);
 
-        // Unique source key per client, and exactly one active main entity per client. The main-entity
-        // index is given an explicit name so it stays distinct from the plain nav index on the same
-        // columns below (an unnamed HasIndex on the same property set would merge into one index).
-        builder.HasIndex(e => new { e.TenantId, e.REMSClientId, e.SourceEntityKey }).IsUnique().HasFilter("[Deleted] = 0");
+        // Exactly one active main entity per client. Named explicitly so it stays distinct from the plain
+        // nav index on the same columns below (an unnamed HasIndex on the same property set would merge
+        // into one index).
         builder.HasIndex(e => new { e.TenantId, e.REMSClientId }, "IX_REMSEntity_TenantId_REMSClientId_Main")
             .IsUnique()
             .HasFilter("[IsMainEntity] = 1 AND [Deleted] = 0");

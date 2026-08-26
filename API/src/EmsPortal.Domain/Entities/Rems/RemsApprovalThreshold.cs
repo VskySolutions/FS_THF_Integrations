@@ -3,21 +3,26 @@ namespace EmsPortal.Domain.Entities;
 /// <summary>
 /// How many approvers have to decline before a REMS approval round fails.
 /// <para>
-/// A round used to die on the FIRST rejection. It now survives a single decline and closes on the second,
-/// which means a lone objector is outvoted rather than decisive — deliberate, but worth knowing: one
-/// "no" against four "yes" no longer stops an engagement being approved.
+/// One is enough: any single decline closes the round there and then. A round briefly survived a lone
+/// objection and closed on the second decline — that was dropped, because an approver who says no has to
+/// be answered rather than outvoted by the approvals sitting beside them.
+/// </para>
+/// <para>
+/// Closing the round is the whole of it: the rework comes back through a NEW round, so every approver —
+/// including the ones who had already approved the round that failed — decides again and works their
+/// checklist again from blank. Nothing carries over.
 /// </para>
 /// </summary>
 public static class RemsApprovalThreshold
 {
     /// <summary>Declines needed to close a round.</summary>
-    public const int Declines = 2;
+    public const int Declines = 1;
 
     /// <summary>
-    /// The threshold that actually applies to a round of <paramref name="approverCount"/> approvers,
-    /// never more than there are people to reach it. Without this a round with a single approver could
-    /// never fail: their decline would leave the count at one, short of the threshold forever, and the
-    /// round would sit open with no pending tasks left to move it.
+    /// The threshold that actually applies to a round of <paramref name="approverCount"/> approvers, never
+    /// more than there are people to reach it. At <see cref="Declines"/> = 1 the cap never bites; it is
+    /// what stops a RAISED threshold stranding a small round — a round of one approver needing two declines
+    /// could never fail, and would sit open forever with no pending task left to move it.
     /// </summary>
     public static int EffectiveFor(int approverCount) =>
         approverCount < 1 ? 1 : Math.Min(Declines, approverCount);

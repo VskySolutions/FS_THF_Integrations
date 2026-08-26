@@ -20,19 +20,17 @@ public sealed class CreateUserRequest
     public string Role { get; set; } = string.Empty;
     /// <summary>When true, email the new user an invitation with their temporary password (via the tenant's active SMTP account).</summary>
     public bool SendInvitation { get; set; }
-    /// <summary>Required job title, from the <c>User.JobTitle</c> option list. Written to the person record.</summary>
-    public string? JobTitle { get; set; }
 }
 
 public sealed class UpdateUserRequest
 {
+    /// <summary>The title the person is addressed by (Mr., Dr., …). Written onto their Person record.</summary>
+    public string? Prefix { get; set; }
     public string? FirstName { get; set; }
     public string? LastName { get; set; }
     public string? PhoneNumber { get; set; }
     public string? DisplayName { get; set; }
     public string? Email { get; set; }
-    /// <summary>Job title, from the <c>User.JobTitle</c> option list. Null leaves it unchanged.</summary>
-    public string? JobTitle { get; set; }
 }
 
 public sealed class UpdateProfileRequest
@@ -104,33 +102,19 @@ public sealed class SetUserDepartmentRequest
     public bool IsHead { get; set; }
 }
 
-/// <summary>Makes (or clears) this user the tenant's REMS managing shareholder — a firm-wide singleton.</summary>
-public sealed class SetManagingShareholderRequest
-{
-    /// <summary>True to hand this user the role (displacing the incumbent); false to clear it.</summary>
-    public bool IsManagingShareholder { get; set; }
-}
-
 /// <summary>One selectable department for the picker.</summary>
 public sealed record DepartmentOptionDto(string Value, string Label);
 
 /// <summary>The current head of a department in the active tenant.</summary>
 public sealed record DepartmentHeadDto(string Department, Guid UserId, string FullName);
 
-/// <summary>A minimal user reference (who currently holds a role).</summary>
-public sealed record UserRefDto(Guid UserId, string FullName);
-
 /// <summary>
-/// Picker data for the user's approval-role section: the tenant's departments, the head of each, and the
-/// tenant's managing shareholder — everything needed to name an incumbent before a role is taken over.
+/// Picker data for the user's department section: the tenant's departments and the head of each — what
+/// the UI needs to name the incumbent before a headship is taken over.
 /// </summary>
 public sealed record DepartmentOptionsResponse(
     IReadOnlyList<DepartmentOptionDto> Departments,
-    IReadOnlyList<DepartmentHeadDto> Heads,
-    UserRefDto? ManagingShareholder);
-
-/// <summary>The saved role, plus the name of the user it displaced (null when nobody held it).</summary>
-public sealed record SetManagingShareholderResponse(bool IsManagingShareholder, string? DisplacedName);
+    IReadOnlyList<DepartmentHeadDto> Heads);
 
 /// <summary>
 /// The saved placement, plus the name of the head this change displaced (null when nobody was demoted)
@@ -159,7 +143,6 @@ public sealed record UserSummary(
     string LastName,
     string FullName,
     string? PhoneNumber,
-    string? JobTitle,
     string? TenantName,
     IReadOnlyList<string> Roles,
     IReadOnlyList<UserGroupDto> Groups,
@@ -178,19 +161,20 @@ public sealed record UserDetail(
     Guid UserId,
     Guid? PersonId,
     string Email,
+    /// <summary>The title they are addressed by, from their Person record; null when they have none.</summary>
+    string? Prefix,
     string FirstName,
     string LastName,
     string FullName,
     string? PhoneNumber,
     string DisplayName,
-    // From the person record, chosen from the User.JobTitle option list (the label is what is stored).
-    string? JobTitle,
     bool IsActive,
     bool MustChangePassword,
     IReadOnlyList<TenantAssignmentDto> Assignments,
     IReadOnlyList<UserGroupDto> Groups,
     // The department held in the active tenant (null when unassigned), and whether the user heads it —
-    // a head is also the department's REMS director. IsManagingShareholder is the tenant-wide REMS role.
+    // a head is also the department's REMS director.
     string? Department,
     bool IsDepartmentHead,
-    bool IsManagingShareholder);
+    // The profile picture from the person's own record, or null — in which case the UI shows initials.
+    string? ProfileMediaUrl);

@@ -50,7 +50,8 @@ public sealed class RoleGroupCompositionController : ControllerBase
     [ProducesResponseType<ApiResponse<RoleGroupsResponse>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> ListGroups(Guid roleId, CancellationToken cancellationToken)
     {
-        if (await _roles.GetByIdAsync(roleId, cancellationToken) is null)
+        var role = await _roles.GetByIdAsync(roleId, cancellationToken);
+        if (role is null || !RoleAccess.CanSee(User, role))
         {
             return NotFound(ApiResponseFactory.NotFound("Role not found."));
         }
@@ -71,7 +72,8 @@ public sealed class RoleGroupCompositionController : ControllerBase
     [ProducesResponseType<ApiResponse<RolePermissionPreviewResponse>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Preview(Guid roleId, CancellationToken cancellationToken)
     {
-        if (await _roles.GetByIdAsync(roleId, cancellationToken) is null)
+        var role = await _roles.GetByIdAsync(roleId, cancellationToken);
+        if (role is null || !RoleAccess.CanSee(User, role))
         {
             return NotFound(ApiResponseFactory.NotFound("Role not found."));
         }
@@ -88,9 +90,16 @@ public sealed class RoleGroupCompositionController : ControllerBase
     public async Task<IActionResult> AssignGroups(Guid roleId, [FromBody] AssignGroupsRequest body, CancellationToken cancellationToken)
     {
         var role = await _roles.GetByIdAsync(roleId, cancellationToken);
-        if (role is null)
+        if (role is null || !RoleAccess.CanSee(User, role))
         {
             return NotFound(ApiResponseFactory.NotFound("Role not found."));
+        }
+        // Composing a group in or out rewrites what the role grants, so it IS an edit of the role and
+        // follows the role rule: a platform role is a Super Admin's to change, whoever owns the groups.
+        if (!RoleAccess.CanManage(User, role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden(
+                "This role belongs to the platform; only a Super Admin can change it."));
         }
 
         // Load and validate every requested group: must exist, belong to one tenant, and be in the
@@ -170,9 +179,16 @@ public sealed class RoleGroupCompositionController : ControllerBase
     public async Task<IActionResult> RemoveGroup(Guid roleId, Guid groupId, CancellationToken cancellationToken)
     {
         var role = await _roles.GetByIdAsync(roleId, cancellationToken);
-        if (role is null)
+        if (role is null || !RoleAccess.CanSee(User, role))
         {
             return NotFound(ApiResponseFactory.NotFound("Role not found."));
+        }
+        // Composing a group in or out rewrites what the role grants, so it IS an edit of the role and
+        // follows the role rule: a platform role is a Super Admin's to change, whoever owns the groups.
+        if (!RoleAccess.CanManage(User, role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden(
+                "This role belongs to the platform; only a Super Admin can change it."));
         }
         var link = await _groups.GetRoleLinkAsync(roleId, groupId, cancellationToken);
         if (link is null)

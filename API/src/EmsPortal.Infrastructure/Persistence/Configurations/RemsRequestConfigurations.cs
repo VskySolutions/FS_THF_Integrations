@@ -23,8 +23,9 @@ internal sealed class RemsConfiguration : IEntityTypeConfiguration<REMS>
         builder.Property(r => r.Type).IsRequired().HasMaxLength(64);
         builder.Property(r => r.Status).IsRequired().HasMaxLength(64);
         builder.Property(r => r.RequestedClientName).IsRequired().HasMaxLength(200);
-        // Same width as the client's own name — it is one, copied from a Person record.
-        builder.Property(r => r.ParentClientName).HasMaxLength(200);
+        // Room for a written-out suffix ("Junior") as well as the abbreviations offered, and no more:
+        // this is a name particle, not a second name field.
+        builder.Property(r => r.ClientNameSuffix).HasMaxLength(16);
         builder.Property(r => r.CustomerEmail).HasMaxLength(256);
         builder.Property(r => r.CustomerMobileNumber).HasMaxLength(32);
 

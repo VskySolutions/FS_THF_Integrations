@@ -9,6 +9,24 @@ body {
   // font-size: 14px !important;
 }
 
+// CKEditor ships its own typeface and applies it in two places: --ck-font-face for its UI (toolbar,
+// dropdowns, balloons) and --ck-content-font-family for .ck-content, which is both the editable area and
+// the markup rendered back out read-only. Both default to Helvetica/Arial, so every rich-text field and
+// every stored description read in a different face from the page around them.
+//
+// `inherit` rather than naming the stack again: the content then follows whatever the page is set in,
+// here and after the next time somebody changes it, and there is no third spelling of the font to keep
+// in step with the body rule above and $typography-font-family.
+//
+// `html:root` rather than `:root` because CKEditor declares these on :root as well, and its stylesheet is
+// imported by the editor component — so it lands in the bundle after this file whenever a page carrying
+// an editor is loaded. Equal specificity would let load order decide the font; one extra type selector
+// settles it either way.
+html:root {
+  --ck-font-face: inherit;
+  --ck-content-font-family: inherit;
+}
+
 // scrollarea
 .q-scrollarea {
   height: calc(100% - 80px) !important;
@@ -793,4 +811,19 @@ background-color: inherit;
   flex: 1;
   overflow-y: auto;
   max-height: 300px;
+}
+
+// ---- Small screens -----------------------------------------------------------------------------
+// Two rules that only matter on a phone, kept together because they are one decision.
+//
+// The viewport meta no longer carries `user-scalable=no, maximum-scale=1` — a client filling the EMS
+// onboarding form on a phone must be able to pinch-zoom (WCAG 1.4.4), and that flag forbade it.
+// Suppressing zoom was also the only thing stopping iOS Safari from zooming the page in whenever a
+// field smaller than 16px took focus, and leaving the field zoomed after it. So the fields become 16px
+// below sm, which is the size iOS leaves alone — and is the more readable size on a phone anyway.
+@media (max-width: 599px) {
+  .q-field__native,
+  .q-field__input {
+    font-size: 16px;
+  }
 }

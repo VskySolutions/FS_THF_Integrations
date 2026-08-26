@@ -106,21 +106,35 @@ const sections = [
     ]
   },
   {
-    // REMS (Phase 15). Each item is gated by its own permission — never a role name — so a user sees only
-    // the areas their roles grant. AC-ADM-019.5 / REQ-REMS-001.7. Approvals is the exception and is open
-    // to everyone: anyone can be made an approver (the CSE, a commission recipient, or someone added on
-    // the Approval tab), no permission governs it, and a role gate there would hide the page from a real
-    // approver. Users with no tasks simply see an empty inbox.
+    // REMS (Phase 15). Items are gated by permission — never by a role name — so a user sees only the
+    // areas their roles grant. AC-ADM-019.5 / REQ-REMS-001.7.
+    //
+    // My Requests and Approvals are the exceptions: both are open to every signed-in user, because what
+    // each one shows is decided by the RECORDS rather than by a permission. The inbox returns the tasks
+    // that are the caller's own, and anyone can be made an approver (the CSE, a commission recipient,
+    // someone added on the Approval tab); the list returns the requests they raised or are named on, and
+    // being named on one is not something a permission predicts either. A gate on either page hid it from
+    // people who had work waiting on it. Anyone with none simply sees an empty list.
     key: "rems",
     label: "REMS",
     icon: "o_business_center",
-    // Three lists, one per role. The Admin Pool and EMS Inbox are gone: the initiator now fills the whole
-    // request and sends the intake link themselves, so nothing ever waits in a pool to be picked up, and
-    // what used to be two admin queues is one review queue.
+    // Three lists, one per role. There is no separate pool or inbox: the initiator fills the whole request
+    // and sends the intake link themselves, so the admins have one review queue between them.
     items: [
-      { label: "My Requests", icon: "o_space_dashboard", to: "/rems/partner", permissions: [Permissions.RemsRequestsRead] },
+      // Open to everyone, like Approvals: the list shows the requests you raised or are named on, so a
+      // user with no REMS work sees an empty list rather than a menu that hides the page from them.
+      { label: "My Requests", icon: "o_space_dashboard", to: "/rems/partner", permissions: null },
       { label: "EMS Review", icon: "o_fact_check", to: "/rems/ems-review", permissions: [Permissions.RemsEngagementsManage] },
       { label: "Approvals", icon: "o_approval", to: "/rems/approvals", permissions: null }
+    ]
+  },
+  {
+    key: "administration",
+    label: "Administration",
+    icon: "o_corporate_fare",
+    items: [
+      { label: "Tenants", icon: "o_apartment", to: "/tenants", permissions: [Permissions.TenantsWrite] },
+      { label: "Person", icon: "o_badge", to: "/persons", permissions: [Permissions.PersonsRead] },
     ]
   },
   {
@@ -129,18 +143,9 @@ const sections = [
     icon: "o_lock",
     items: [
       { label: "Permission Groups", icon: "o_workspaces", to: "/permission-groups", permissions: [Permissions.GroupsManage] },
-      { label: "Person", icon: "o_badge", to: "/persons", permissions: [Permissions.PersonsRead] },
       { label: "Roles", icon: "o_admin_panel_settings", to: "/roles", permissions: [Permissions.RolesWrite] },
       { label: "Users", icon: "o_group", to: "/users", permissions: [Permissions.UsersRead] },
       { label: "User Groups", icon: "o_groups", to: "/user-groups", permissions: [Permissions.UsersGroupManagement] }
-    ]
-  },
-  {
-    key: "administration",
-    label: "Administration",
-    icon: "o_corporate_fare",
-    items: [
-      { label: "Tenants", icon: "o_apartment", to: "/tenants", permissions: [Permissions.TenantsWrite] }
     ]
   },
   {

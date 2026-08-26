@@ -1,6 +1,6 @@
 <template>
   <q-dialog v-model="open" persistent>
-    <q-card style="min-width: 620px; max-width: 92vw;">
+    <q-card style="width: 620px; max-width: 92vw;">
       <q-card-section class="row items-center no-wrap">
         <div>
           <div class="text-h6">{{ phase === "sent" ? copy.sentTitle : copy.title }}</div>

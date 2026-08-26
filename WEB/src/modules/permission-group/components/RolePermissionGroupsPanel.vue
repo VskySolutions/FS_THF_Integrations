@@ -1,13 +1,18 @@
 <template>
-  <div class="role-pg-panel">
-    <div class="row items-center q-mb-sm">
-      <div class="section-subhead">Permission Groups</div>
+  <q-card flat bordered class="role-pg-panel">
+    <q-card-section class="row items-center q-gutter-sm">
+      <q-icon name="o_workspaces" color="primary" size="sm" />
+      <div class="text-subtitle1 text-weight-medium">Permission Groups</div>
+      <app-info-tip
+        text="Groups compose permissions into the role on top of the keys it holds directly. What the role actually grants is the union of the two — Preview shows it."
+      />
       <q-space />
-      <q-btn outline no-caps dense color="primary" icon="o_preview" label="Preview Effective Permissions" class="q-mr-sm" @click="openPreview" />
-      <q-btn unelevated no-caps dense color="primary" icon="o_add" label="Add Groups" @click="openAdd" />
-    </div>
+      <q-btn outline no-caps dense color="primary" icon="o_preview" label="Preview" @click="openPreview" />
+      <q-btn unelevated no-caps dense color="primary" icon="o_add" label="Add" @click="openAdd" />
+    </q-card-section>
+    <q-separator />
 
-    <q-list bordered separator class="rounded-borders">
+    <q-list separator>
       <q-item v-for="group in assignedGroups" :key="group.id">
         <q-item-section avatar><q-icon name="o_workspaces" color="grey-7" /></q-item-section>
         <q-item-section>
@@ -73,7 +78,7 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
-  </div>
+  </q-card>
 </template>
 
 <script setup>
@@ -83,6 +88,7 @@ import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { humanizeKey, groupKeysByCategory } from "composables/usePermissionCategories";
 import AppSelect from "components/common/AppSelect.vue";
+import AppInfoTip from "components/common/AppInfoTip.vue";
 
 const props = defineProps({
   roleId: { type: String, default: null }
@@ -198,12 +204,9 @@ defineExpose({ load, openPreview, removeGroup, confirmAdd, selectedToAdd, previe
 </script>
 
 <style scoped>
-.section-subhead {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--q-primary);
+/* Matches the definition card above it, so the column reads as one set of cards. */
+.role-pg-panel {
+  border-radius: 12px;
 }
 .pg-key {
   font-size: 12px;

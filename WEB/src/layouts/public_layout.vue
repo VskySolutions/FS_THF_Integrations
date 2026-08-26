@@ -42,6 +42,12 @@
   background: #f4f6fb;
   padding: 24px 16px 48px;
 }
+/* A phone has no width to give away to a gutter: the form cards get it instead. */
+@media (max-width: 599px) {
+  .public-page {
+    padding: 16px 10px 32px;
+  }
+}
 .public-page__inner {
   width: 100%;
   max-width: 960px;

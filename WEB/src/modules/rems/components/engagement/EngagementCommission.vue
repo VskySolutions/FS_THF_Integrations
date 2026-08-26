@@ -10,7 +10,7 @@
       <app-select
         v-model="pick" :options="availableRecipients" label="Add recipient" class="col-12 col-sm"
         use-input :disable="splits.length >= 10" :hint="recipientHint"
-        info="Lists members of the &quot;CSE&quot; user group, maintained in Administration → User Groups. Recipients already added are excluded."
+        info="Lists users holding the &quot;CSE&quot; role, assigned on a user's page in Administration → Users. Recipients already added are excluded."
         @update:model-value="addRecipient"
       />
       <div class="col-auto text-caption text-grey-6 q-pb-sm">{{ splits.length }} / 10</div>
@@ -47,11 +47,23 @@
       </div>
     </div>
 
+    <!-- The allocation does not add up. Said as a banner rather than only as a caption, because a
+         commission split that is short is the mistake that costs somebody money and it is invisible in a
+         column of percentages that each look reasonable on their own.
+         A WARNING, not a block: an engagement can legitimately sit part-allocated while the split is
+         still being agreed, and this form saves itself as it is typed — refusing to save a total that
+         reads 60% halfway through entering the second of three recipients would make the section
+         unfillable. Over 100% is still refused outright, because that one is never right. -->
+    <q-banner v-if="allocationWarning" dense class="rems-commission__warn q-mt-sm rounded-borders">
+      <template #avatar><q-icon name="o_warning" color="orange-9" /></template>
+      {{ allocationWarning }}
+    </q-banner>
+
   </div>
 </template>
 
 <script setup>
-// The engagement commission splits (AC-REMS-016): up to ten recipients from the CSE user group, each with
+// The engagement commission splits (AC-REMS-016): up to ten recipients holding the CSE role, each with
 // an editable percentage (> 0 and ≤ 100), individually removable.
 //
 // Controlled by the page: it holds the splits, announces every change (`change`), and the page's auto-save
@@ -65,7 +77,7 @@ import AppTextField from "components/common/AppTextField.vue";
 
 const props = defineProps({
   engagement: { type: Object, required: true },
-  // Selectable recipients — the "CSE" user group's members, as [{ label, value }].
+  // Selectable recipients — the holders of the "CSE" role, as [{ label, value }].
   recipientOptions: { type: Array, default: () => [] },
   editable: { type: Boolean, default: true }
 });
@@ -98,7 +110,7 @@ const availableRecipients = computed(() =>
 // just being blank (mirrors the setup form's executive / billing-manager hints).
 const recipientHint = computed(() => (props.recipientOptions.length
   ? ""
-  : "No members in the \"CSE\" group — add them in Administration → User Groups."));
+  : "Nobody holds the \"CSE\" role — assign it on a user's page in Administration → Users."));
 
 const addRecipient = (value) => {
   if (!value || splits.value.length >= 10) { pick.value = null; return; }
@@ -123,9 +135,26 @@ const totalPercent = computed(() =>
 const totalOver = computed(() => totalPercent.value > 100);
 const overBy = computed(() => round2(totalPercent.value - 100));
 
+// Whether the allocation adds up, and what to say when it does not. Silent on an engagement with no
+// recipients at all: naming nobody is how "there is no commission on this one" is recorded, and a warning
+// there would fire on every engagement that never had a split.
+const allocationWarning = computed(() => {
+  if (!splits.value.length) return "";
+  if (totalOver.value) {
+    return `Commission totals ${totalPercent.value}% — that is ${overBy.value}% over. ` +
+      "The splits divide one commission, so they cannot add up to more than the whole of it.";
+  }
+  if (totalPercent.value < 100) {
+    return `Commission totals ${totalPercent.value}% — ${round2(100 - totalPercent.value)}% is unallocated. ` +
+      "Check the split before this goes for approval.";
+  }
+  return "";
+});
+
 // Warn the moment the running total crosses 100, on the transition only — watching the flag rather than
 // the total keeps this to one toast instead of one per keystroke. Save is blocked separately, since a
-// toast is easy to miss.
+// toast is easy to miss. Only the OVER case gets a toast: an allocation still short of 100% is a
+// half-finished split far more often than a mistake, and the banner is there to say so.
 watch(totalOver, (over) => {
   if (over) {
     notify.warning(`Commission totals ${totalPercent.value}% — the total across all recipients cannot exceed 100%.`);
@@ -161,3 +190,12 @@ const saveCommission = async (engagementId) => {
 
 defineExpose({ saveCommission });
 </script>
+
+<style scoped>
+/* Amber, not red: the allocation not adding up is something to look at before the engagement is routed,
+   not something that has failed. */
+.rems-commission__warn {
+  background: #fff8e1;
+  color: #8a5a00;
+}
+</style>

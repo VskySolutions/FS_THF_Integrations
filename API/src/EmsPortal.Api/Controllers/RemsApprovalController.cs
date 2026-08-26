@@ -55,22 +55,13 @@ public sealed class RemsApprovalController : ControllerBase
     private const string MarketingSetKey = "REMSMarketing_MarketingMethods.MarketingMethodId";
     private const string TaxFormSetKey = "REMS.TaxForm";
 
-    /// <summary>
-    /// The user group the firm's managing shareholder(s) are read from — scoped by group name, the same way
-    /// the CSE, Engagement Executive and Billing Manager pickers are. Maintained in Administration → User
-    /// Groups; a tenant that has not made the group falls back to the single shareholder on RemsSettings.
-    /// </summary>
-    private const string ManagingShareholderGroup = "Managing Shareholder";
-
     private readonly IRemsRepository _rems;
     private readonly IRemsEngagementRepository _engagements;
     private readonly IRemsApprovalRepository _approvals;
     private readonly IRemsClientRepository _clients;
-    private readonly IRemsSettingsRepository _settings;
     private readonly IMediaRepository _media;
     private readonly IOptionSetRepository _optionSets;
     private readonly IUserRepository _users;
-    private readonly IUserGroupRepository _groups;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IActivityEventWriter _activity;
     private readonly INotificationDispatcher _notifications;
@@ -80,11 +71,9 @@ public sealed class RemsApprovalController : ControllerBase
         IRemsEngagementRepository engagements,
         IRemsApprovalRepository approvals,
         IRemsClientRepository clients,
-        IRemsSettingsRepository settings,
         IMediaRepository media,
         IOptionSetRepository optionSets,
         IUserRepository users,
-        IUserGroupRepository groups,
         IUnitOfWork unitOfWork,
         IActivityEventWriter activity,
         INotificationDispatcher notifications)
@@ -93,11 +82,9 @@ public sealed class RemsApprovalController : ControllerBase
         _engagements = engagements;
         _approvals = approvals;
         _clients = clients;
-        _settings = settings;
         _media = media;
         _optionSets = optionSets;
         _users = users;
-        _groups = groups;
         _unitOfWork = unitOfWork;
         _activity = activity;
         _notifications = notifications;
@@ -106,9 +93,9 @@ public sealed class RemsApprovalController : ControllerBase
     // -------------------- Suggested approvers (live) --------------------
 
     /// <summary>
-    /// The engagement's approver list (AC-REMS-018): the four automatic approvers — the managing
-    /// shareholder, the Department Director, the CSE and every commission recipient — plus anyone added on
-    /// the Approval tab. Updates until the round is sent.
+    /// The engagement's approver list (AC-REMS-018): the automatic approvers — the firm's shareholders, the
+    /// Department Director, the CSE and every commission recipient — plus anyone added on the Approval tab.
+    /// Updates until the round is sent.
     /// </summary>
     [HttpGet("engagements/{id:guid}/approvers")]
     [RequirePermission(Permissions.RemsEngagementsManage)]
@@ -127,8 +114,8 @@ public sealed class RemsApprovalController : ControllerBase
     }
 
     /// <summary>
-    /// The users selectable as extra approvers: everyone holding the <c>Approver</c> role in the active
-    /// tenant, with their job title for the picker label.
+    /// The users selectable as extra approvers: every active user in the tenant, with their email for the
+    /// picker label. See <see cref="ApproverOptionsAsync"/> for why it is not narrowed to a role.
     /// </summary>
     [HttpGet("engagements/{id:guid}/approver-options")]
     [RequirePermission(Permissions.RemsEngagementsManage)]
@@ -183,7 +170,7 @@ public sealed class RemsApprovalController : ControllerBase
             if (requested.Any(uid => !allowed.Contains(uid)))
             {
                 return BadRequest(ApiResponseFactory.Error(
-                    ApiErrorCodes.ValidationFailed, "Validation failed.", "One or more selected approvers do not hold the Approver role."));
+                    ApiErrorCodes.ValidationFailed, "Validation failed.", "One or more selected approvers are not active users of this tenant."));
             }
         }
 
@@ -238,6 +225,11 @@ public sealed class RemsApprovalController : ControllerBase
             return ConflictResult(CodeNotSendable, "Only a draft engagement can be sent for approval; a rejected one must be resubmitted.");
         }
 
+        if (GuardSetupOwner(engagement) is { } notOwner)
+        {
+            return notOwner;
+        }
+
         if (await ValidateApprovalPrerequisitesAsync(engagement, cancellationToken) is { } prereqError)
         {
             return prereqError;
@@ -246,7 +238,7 @@ public sealed class RemsApprovalController : ControllerBase
         var approvers = await BuildApproverListAsync(engagement, cancellationToken);
         if (approvers.Count == 0)
         {
-            return ConflictResult(CodeNoApprovers, "There are no approvers for this engagement; assign a CSE, director, managing shareholder or commission recipient first.");
+            return ConflictResult(CodeNoApprovers, "There are no approvers for this engagement; name a CSE, a department director or a commission recipient first, or add approvers on the Approval tab.");
         }
 
         await CreateRoundAsync(engagement, approvers, me, isResubmission: false, cancellationToken);
@@ -280,6 +272,11 @@ public sealed class RemsApprovalController : ControllerBase
             return ConflictResult(CodeNotRejected, "Only a rejected engagement can be resubmitted.");
         }
 
+        if (GuardSetupOwner(engagement) is { } notOwner)
+        {
+            return notOwner;
+        }
+
         if (await ValidateApprovalPrerequisitesAsync(engagement, cancellationToken) is { } prereqError)
         {
             return prereqError;
@@ -297,31 +294,71 @@ public sealed class RemsApprovalController : ControllerBase
         return Ok(ApiResponseFactory.Success(list, "REMS engagement resubmitted for approval."));
     }
 
+    /// <summary>
+    /// The refusal for routing an engagement whose request is not this caller's to work, or null to carry
+    /// on. Holding <c>rems.approvals.send</c> says you may route engagements; it does not say WHICH, and
+    /// routing is the reviewing admin's move — the last one they make before the approvers take over.
+    /// <para>
+    /// It matters more than it used to. A request now reaches the admins unclaimed, so without this an
+    /// engagement nobody had picked up could be routed and approved with no reviewing admin ever named,
+    /// and one admin could route a round on a request another was still working.
+    /// </para>
+    /// </summary>
+    private IActionResult? GuardSetupOwner(REMSEngagement engagement)
+    {
+        if (User.GetUserId() is not { } me)
+        {
+            return Unauthorized(ApiResponseFactory.Unauthorized("No user context."));
+        }
+
+        // An engagement with no request behind it cannot be reasoned about; the loader always supplies one,
+        // so this is a guard against a graph nobody expects rather than a case with a rule of its own.
+        if (engagement.Rems is not { } rems)
+        {
+            return NotFound(ApiResponseFactory.NotFound("REMS request not found."));
+        }
+
+        return RemsSetupAccess.CanWork(User, rems, me)
+            ? null
+            : StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseFactory.Forbidden(RemsSetupAccess.WorkDeniedReason(rems)));
+    }
+
     // -------------------- Approver's own tasks --------------------
 
     /// <summary>
-    /// The caller's own approval tasks (pending and historical), newest round first (AC-REMS-019), paged and
-    /// filtered server-side: <paramref name="search"/> over the REMS number, client and entity name, plus
-    /// optional <paramref name="role"/> / <paramref name="status"/>. Each row carries the round's
-    /// approved/rejected/total counts so the inbox can show its progress — the row is still the caller's own
-    /// task, and no other approver's identity is exposed here.
-    /// </summary>
-    /// <summary>
-    /// Every approval round on an engagement, oldest first — who sent it, what each approver decided, why
+    /// Every approval round on an engagement, newest first — who sent it, what each approver decided, why
     /// they declined, how far their checklist got, and how the declines stood against the threshold.
     /// <para>
-    /// Gated on reading REMS requests rather than on managing engagements: the initiator has to be able to
-    /// see why a round came back, and reworking the setup is now their job.
+    /// Two readers, not one. Reading REMS requests gets you here — the initiator has to see why a round came
+    /// back, since reworking the setup is now their job. So does being an APPROVER on the engagement, which
+    /// no permission can stand in for: the seat roles (CSE, Shareholder, and the rest) grant no permissions
+    /// at all, so a shareholder gated on <c>rems.requests.read</c> was refused the history of the very round
+    /// they were asked to sign — on their own task page, where this panel sits open by default.
     /// </para>
     /// </summary>
     [HttpGet("engagements/{id:guid}/approval/history")]
-    [RequirePermission(Permissions.RemsRequestsRead)]
+    [Authorize]
     [ProducesResponseType<ApiResponse<IEnumerable<RemsApprovalRoundHistory>>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> History(Guid id, CancellationToken cancellationToken)
     {
-        if (await _engagements.GetByIdAsync(id, cancellationToken) is null)
+        if (User.GetUserId() is not { } me)
+        {
+            return Unauthorized(ApiResponseFactory.Unauthorized("No user context."));
+        }
+
+        if (await _engagements.GetByIdAsync(id, cancellationToken) is not { } engagement)
         {
             return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
+        }
+
+        // The permission first: it is free, and it is what the staff reading this hold. The approver check
+        // is a query, so only a caller the permission did not cover pays for it.
+        if (!User.HasPermission(Permissions.RemsRequestsRead)
+            && !await _approvals.IsApproverOnRequestAsync(engagement.REMSId, me, cancellationToken))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseFactory.Forbidden("Not permitted to view this engagement's approval history."));
         }
 
         var rounds = await _approvals.GetRoundsByEngagementAsync(id, cancellationToken);
@@ -331,8 +368,13 @@ public sealed class RemsApprovalController : ControllerBase
 
         string Name(Guid userId) => names.TryGetValue(userId, out var n) ? n : "Unknown user";
 
+        // Newest round first — 3, 2, 1. A resubmission opens a NEW round rather than reopening the last, so
+        // the highest number is the one live (or last) and every round below it is what it was raised to
+        // answer. Reading down the panel is reading backwards through the argument, which is the direction
+        // anybody opening it is going: what is happening now, then why. It also matches what the repository
+        // already returns — this re-sorted it into the other order on the way out.
         var history = rounds
-            .OrderBy(r => r.RoundNumber)
+            .OrderByDescending(r => r.RoundNumber)
             .Select(r =>
             {
                 var tasks = r.Tasks.Where(t => !t.Deleted).ToList();
@@ -341,7 +383,11 @@ public sealed class RemsApprovalController : ControllerBase
                     RemsApprovalThreshold.EffectiveFor(tasks.Count),
                     tasks.Count(t => t.Status == RemsApprovalTaskStatus.Rejected),
                     tasks
-                        .OrderBy(t => t.ApproverRole)
+                        // The firm's own order — shareholder, director, CSE, commission recipient, then
+                        // anyone added by hand — and NOT the enum's declaration order, which happens to
+                        // start at CSE. The same rank the Approval tab lists by, so a round reads the same
+                        // way before it is sent and ever after.
+                        .OrderBy(t => DisplayRank(t.ApproverRole))
                         .ThenBy(t => t.CreatedOnUtc)
                         .Select(t =>
                         {
@@ -358,6 +404,25 @@ public sealed class RemsApprovalController : ControllerBase
         return Ok(ApiResponseFactory.Success(history, "REMS approval history retrieved."));
     }
 
+    /// <summary>
+    /// The caller's approvals inbox (AC-REMS-019): one row per REQUEST routed to them, paged and filtered
+    /// server-side — <paramref name="search"/> over the REMS number and client name, plus optional
+    /// <paramref name="role"/> / <paramref name="status"/>.
+    /// <para>
+    /// A request re-routed after a rejection opens a NEW round with a new task, so a caller asked three
+    /// times held three tasks and this listed all three — the round that wanted them buried between two
+    /// that were finished. The row is their task on the LATEST round of each request; the rounds before it
+    /// are read on the task detail, which lists them under the round being decided.
+    /// </para>
+    /// <para>
+    /// <paramref name="role"/> and <paramref name="status"/> therefore narrow on what the caller is to the
+    /// request NOW, not on anything they were on a round that has since been superseded.
+    /// </para>
+    /// <para>
+    /// Each row carries the round's approved/rejected/total counts so the inbox can show its progress — the
+    /// row is still the caller's own task, and no other approver's identity is exposed here.
+    /// </para>
+    /// </summary>
     [HttpGet("approval-tasks")]
     [Authorize]
     [ProducesResponseType<ApiResponse<IEnumerable<RemsApprovalTaskRow>>>(StatusCodes.Status200OK)]
@@ -386,8 +451,13 @@ public sealed class RemsApprovalController : ControllerBase
         var (tasks, total) = await _approvals.ListTasksByApproverAsync(
             new RemsApprovalTaskQuery(me, search, roleFilter, statusFilter, page, limit), cancellationToken);
 
+        // The audit actors AND each request's CSE, resolved in one read: the CSE is a column on this list
+        // now, and a name lookup per row would be one round trip per task.
         var auditNames = await _users.GetFullNamesAsync(
-            tasks.SelectMany(t => new[] { t.CreatedById, t.UpdatedById })
+            tasks.SelectMany(t => new[]
+                {
+                    t.CreatedById, t.UpdatedById, t.Round?.Engagement?.Rems?.CSEId,
+                })
                 .Where(id => id.HasValue).Select(id => id!.Value),
             cancellationToken);
         string? NameOf(Guid? id) => id is { } uid && auditNames.TryGetValue(uid, out var n) ? n : null;
@@ -402,8 +472,12 @@ public sealed class RemsApprovalController : ControllerBase
                 t.Id, round.Id, round.RoundNumber, t.ApproverRole.ToString(), t.Status.ToString(),
                 round.SentOnUtc, t.DecidedOnUtc, round.Status.ToString(),
                 // The client's name as they gave it on intake, falling back to the name the request was
-                // raised under when the row is somehow reached before a submission exists.
-                engagement.Id, rems.Id, rems.REMSNumber, client?.Name ?? rems.RequestedClientName,
+                // raised under when the row is somehow reached before a submission exists — and either
+                // way with the request's generational suffix on it. The intake form never asks for one,
+                // so the client's own version of their name arrives without it, and this row would
+                // otherwise read "John Smith" beside an EMS Review list saying "John Smith Jr.".
+                engagement.Id, rems.Id, rems.REMSNumber, rems.WithClientSuffix(client?.Name),
+                RemsWorkspaceMapper.UserRef(rems.CSEId, auditNames),
                 round.Tasks.Count(x => x.Status == RemsApprovalTaskStatus.Approved),
                 round.Tasks.Count(x => x.Status == RemsApprovalTaskStatus.Rejected),
                 round.Tasks.Count,
@@ -417,8 +491,7 @@ public sealed class RemsApprovalController : ControllerBase
     /// client, the entity under review, the complete engagement setup with its audit/government/tax detail,
     /// the marketing tags, the commission splits, the round's other decisions, and the caller's checklist —
     /// the same case staff assembled in the engagement workspace, since that is what is being approved.
-    /// The fee estimate and realization remain reserved to the Department Director and Managing Shareholder
-    /// (AC-REMS-019.10). Not the caller's own task =&gt; 404.
+    /// The fee estimate and realization remain reserved to the Department Director (AC-REMS-019.10). Not the caller's own task =&gt; 404.
     /// </summary>
     [HttpGet("approval-tasks/{taskId:guid}")]
     [Authorize]
@@ -524,12 +597,13 @@ public sealed class RemsApprovalController : ControllerBase
         _approvals.UpdateTask(task);
         await _activity.WriteAsync(new CreateActivityEventDto(EntityType.Rems, rems.Id, ActivityEventTypes.RemsApproved, null, task.ApproverRole.ToString()), cancellationToken);
 
-        // The round is settled once nobody is still deciding. It cannot require EVERY task to be approved
-        // any more: a single decline no longer closes the round, so a round holding one decline and
-        // otherwise approvals would never satisfy that test and would sit open forever with no pending task
-        // left to move it. Below the decline threshold the objection is outvoted and the round carries.
-        // (A round that REACHED the threshold was closed by Reject and is not Pending, so it cannot land
-        // here.) Flip the round + engagement and raise the full-approval notification EXACTLY ONCE to
+        // The round is settled once nobody is still deciding. At a threshold of one decline that comes to
+        // the same thing as every task being approved: a decline closes the round from Reject, so a round
+        // still Pending here holds nothing but approvals and the tasks yet to answer. It stays written as
+        // "nobody pending" rather than "all approved" because that is what the threshold means — raise
+        // RemsApprovalThreshold.Declines and an outvoted decline sits in an open round, which "all
+        // approved" could never satisfy and would leave the round open forever with no pending task left
+        // to move it. Flip the round + engagement and raise the full-approval notification EXACTLY ONCE to
         // everyone involved (AC-REMS-019.1/12).
         var fullyApproved = round.Tasks.All(t => t.Id == task.Id || t.Status != RemsApprovalTaskStatus.Pending);
         if (fullyApproved)
@@ -558,7 +632,7 @@ public sealed class RemsApprovalController : ControllerBase
                 await _notifications.DispatchAsync(new CreateNotificationDto(
                     userId, NotificationType.RemsEngagementApproved,
                     "A REMS engagement was fully approved",
-                    $"{rems.REMSNumber} — {rems.RequestedClientName}", EntityType.Rems, rems.Id), cancellationToken);
+                    $"{rems.REMSNumber} — {rems.ClientDisplayName}", EntityType.Rems, rems.Id), cancellationToken);
             }
             await _activity.WriteAsync(new CreateActivityEventDto(EntityType.Rems, rems.Id, ActivityEventTypes.RemsFullyApproved), cancellationToken);
         }
@@ -572,17 +646,17 @@ public sealed class RemsApprovalController : ControllerBase
     /// <summary>
     /// Decline the caller's own task with a required reason (AC-REMS-020).
     /// <para>
-    /// One decline no longer ends a round. The round closes when
-    /// <see cref="RemsApprovalThreshold.Declines"/> approvers have declined, so a lone objector is outvoted
-    /// rather than decisive — with four approvals against one decline the engagement is approved over that
-    /// objection. Approvers still pending when the threshold is reached are marked
-    /// <see cref="RemsApprovalTaskStatus.Superseded"/> rather than left Pending on a closed round, which
-    /// would read as though they never responded.
+    /// One decline ends the round (<see cref="RemsApprovalThreshold.Declines"/>): an objection is answered
+    /// by reworking the engagement, never outvoted by the approvals beside it. Approvers still pending when
+    /// it closes are marked <see cref="RemsApprovalTaskStatus.Superseded"/> rather than left Pending on a
+    /// closed round, which would read as though they never responded; approvers who had already approved
+    /// keep that decision on the dead round and decide again, checklist and all, on the next one.
     /// </para>
     /// <para>
     /// A closed round sends the request back to its INITIATOR to rework the engagement setup, not to the
-    /// admin. Each decliner's own reason is the record of why — the round's single
-    /// <c>RejectionReason</c> cannot hold several, so it carries only the decline that closed the round.
+    /// admin. The round's single <c>RejectionReason</c> carries the decline that closed it, and each
+    /// decliner's own reason stays on their task — which is the whole record at a threshold of one, and
+    /// still holds if the threshold is ever raised past it.
     /// </para>
     /// </summary>
     [HttpPost("approval-tasks/{taskId:guid}/reject")]
@@ -628,6 +702,8 @@ public sealed class RemsApprovalController : ControllerBase
         var threshold = RemsApprovalThreshold.EffectiveFor(round.Tasks.Count);
         var closesRound = declines >= threshold;
 
+        // Inert while the threshold is one decline, and deliberately kept: what decides is the threshold,
+        // not this branch. Raise RemsApprovalThreshold.Declines and a round has to stay open again.
         if (!closesRound)
         {
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -677,12 +753,22 @@ public sealed class RemsApprovalController : ControllerBase
         {
             recipients.Add(admin);
         }
+
+        // And everyone the round was routed to — the shareholders, the department director, the CSE and the
+        // commission recipients, plus anyone added by hand. They were each asked to sign this off; the round
+        // ending is the answer to that question, and it is not one they should have to go looking for. The
+        // same set full approval notifies, so an approver hears how a round ended either way rather than
+        // only when it ends well. A HashSet, so the CSE who is also an approver is told once.
+        foreach (var approverId in round.Tasks.Select(t => t.ApproverId))
+        {
+            recipients.Add(approverId);
+        }
         foreach (var userId in recipients)
         {
             await _notifications.DispatchAsync(new CreateNotificationDto(
                 userId, NotificationType.RemsEngagementRejected,
                 "A REMS engagement approval round was declined",
-                $"{rems.REMSNumber} — {rems.RequestedClientName}: {string.Join(" | ", reasons)}", EntityType.Rems, rems.Id), cancellationToken);
+                $"{rems.REMSNumber} — {rems.ClientDisplayName}: {string.Join(" | ", reasons)}", EntityType.Rems, rems.Id), cancellationToken);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -698,9 +784,9 @@ public sealed class RemsApprovalController : ControllerBase
     /// the work is actually at instead of staying on "Engagement Setup" for the whole approval cycle — which
     /// is what left a requester with no way to tell that their request was sitting with the approvers.
     /// <para>
-    /// This used to be a roll-up across one engagement per entity. A request now carries exactly one, so it
-    /// is a straight translation — <paramref name="current"/> is that engagement, not yet committed, so its
-    /// in-memory status is what the request follows.
+    /// A request carries exactly one engagement, so this is a straight translation —
+    /// <paramref name="current"/> is that engagement, not yet committed, so its in-memory status is what
+    /// the request follows.
     /// </para>
     /// <para>
     /// A rejected engagement sends the request to the INITIATOR rather than back to the admin: enough
@@ -724,15 +810,38 @@ public sealed class RemsApprovalController : ControllerBase
     // -------------------- Approver-list generation --------------------
 
     /// <summary>
-    /// The approver set to route to (AC-REMS-018): the four automatic approvers, plus whoever was added on
-    /// the Approval tab. Each user's role comes from <see cref="RoleFor"/> rather than from storage, so a
-    /// saved list keeps up when the engagement's people change under it.
+    /// The firm's shareholders: everyone holding the <c>Shareholder</c> role in the caller's tenant. Read
+    /// from the role rather than stored on the engagement, so naming a new shareholder puts them on every
+    /// engagement still to be routed without anyone reopening one.
+    /// </summary>
+    private async Task<IReadOnlyList<Guid>> ShareholderIdsAsync(CancellationToken cancellationToken)
+    {
+        if (User.GetActiveTenantId() is not { } tenantId)
+        {
+            return Array.Empty<Guid>();
+        }
+
+        var holders = await _users.ListByTenantRolesAsync(
+            tenantId, new[] { Roles.Shareholder }, cancellationToken);
+        return holders.Select(u => u.Id).Distinct().ToList();
+    }
+
+    /// <summary>
+    /// The approver set to route to (AC-REMS-018): the automatic approvers, plus whoever was added on the
+    /// Approval tab. Each user's role comes from <see cref="RoleFor"/> rather than from storage, so a saved
+    /// list keeps up when the engagement's people change under it.
+    /// <para>
+    /// Ordered for reading — shareholder, director, CSE, commission recipient, then anyone added by hand —
+    /// rather than in the order the ids happened to be collected. <c>OrderBy</c> is stable, so people
+    /// sharing a rank keep the order they came in: shareholders by name, commission recipients by their
+    /// split.
+    /// </para>
     /// </summary>
     private async Task<IReadOnlyList<(Guid UserId, RemsApproverRole Role)>> BuildApproverListAsync(
         REMSEngagement engagement, CancellationToken cancellationToken)
     {
+        var shareholders = await ShareholderIdsAsync(cancellationToken);
         var picked = await _engagements.ListApproversAsync(engagement.Id, cancellationToken);
-        var shareholders = await ManagingShareholderIdsAsync(cancellationToken);
 
         // Added approvers come ON TOP of the automatic ones — picking somebody never removes an approver
         // who holds their place by standing on the engagement.
@@ -741,53 +850,52 @@ public sealed class RemsApprovalController : ControllerBase
         return userIds
             .Distinct()
             .Select(userId => (UserId: userId, Role: RoleFor(engagement, shareholders, userId)))
+            .OrderBy(a => DisplayRank(a.Role))
             .ToList();
     }
 
-    /// <summary>
-    /// The firm's managing shareholder(s), read from the <c>Managing Shareholder</c> USER GROUP — scoped by
-    /// group name exactly as the CSE, Engagement Executive and Billing Manager pickers are, so who signs off
-    /// on every engagement is maintained in one place with the rest of them, and more than one person can
-    /// hold the seat.
-    /// <para>
-    /// A tenant with no such group (or an empty one) falls back to the single shareholder on
-    /// <c>RemsSettings</c>, which is set from a user's own detail page. That is where every tenant's
-    /// shareholder is recorded today, so adopting the group is a migration a firm makes when it wants to,
-    /// not a prerequisite for approvals to route.
-    /// </para>
-    /// </summary>
-    private async Task<IReadOnlyList<Guid>> ManagingShareholderIdsAsync(CancellationToken cancellationToken)
+    /// <summary>Where each role sits in the approver list, most senior first.</summary>
+    private static int DisplayRank(RemsApproverRole role) => role switch
     {
-        if (await _groups.GetByNameAsync(ManagingShareholderGroup, cancellationToken) is { } group)
-        {
-            var ids = (await _groups.GetMembersWithUsersByGroupAsync(group.Id, cancellationToken))
-                .Where(m => m.User is { IsActive: true })
-                .Select(m => m.UserId)
-                .Distinct()
-                .ToList();
-            if (ids.Count > 0)
-            {
-                return ids;
-            }
-        }
-
-        var settings = await _settings.GetAsync(cancellationToken);
-        return settings?.ManagingShareholderUserId is { } shareholder ? new[] { shareholder } : Array.Empty<Guid>();
-    }
+        RemsApproverRole.Shareholder => 0,
+        RemsApproverRole.DepartmentDirector => 1,
+        RemsApproverRole.CSE => 2,
+        RemsApproverRole.CommissionRecipient => 3,
+        _ => 4,
+    };
 
     /// <summary>
-    /// The users the Approval tab offers as EXTRA approvers: those holding the <c>Approver</c> role in the
-    /// tenant. The four automatic approvers are routed to whether or not they appear here, so picking one
-    /// of them changes nothing — the list is deduplicated before the round is built.
+    /// The users the Approval tab offers as EXTRA approvers: EVERY active user in the tenant.
+    /// <para>
+    /// Deliberately not narrowed to a role: an engagement can need a signature from anyone in the firm —
+    /// the person who introduced the client, the specialist whose opinion the fee rests on — and a role
+    /// maintained to say so is only ever a list somebody has forgotten to add them to. Nothing is lost by
+    /// opening it: adding an approver is a deliberate act by the admin routing the round, recorded as theirs.
+    /// </para>
+    /// <para>
+    /// The automatic approvers are routed to whether or not they appear here, so picking one of them
+    /// changes nothing — the list is deduplicated before the round is built.
+    /// </para>
     /// </summary>
     private async Task<IReadOnlyList<RemsApproverOption>> ApproverOptionsAsync(Guid tenantId, CancellationToken cancellationToken)
     {
-        var candidates = await _users.ListByTenantRolesAsync(tenantId, new[] { Roles.Approver }, cancellationToken);
+        var candidates = await _users.ListActiveByTenantAsync(tenantId, cancellationToken);
         var names = await _users.GetFullNamesAsync(candidates.Select(u => u.Id), cancellationToken);
 
         return candidates
             .Select(u => new RemsApproverOption(
-                u.Id, names.TryGetValue(u.Id, out var n) ? n : u.DisplayName, u.Person?.JobTitle, u.Email))
+                u.Id,
+                names.TryGetValue(u.Id, out var n) ? n : u.DisplayName,
+                u.Email,
+                // The roles held HERE. The repository loads each user's assignments already filtered to
+                // this tenant, so another firm's roles cannot leak into the label. Legacy rows with no
+                // RoleEntity fall back to the enum name they were written with.
+                u.TenantRoles
+                    .Where(r => !r.Deleted && r.TenantId == tenantId)
+                    .Select(r => r.RoleEntity?.Name ?? r.Role.ToString())
+                    .Distinct()
+                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                    .ToList()))
             .OrderBy(o => o.Name)
             .ToList();
     }
@@ -801,16 +909,21 @@ public sealed class RemsApprovalController : ControllerBase
         => engagement.Rems?.Clients.FirstOrDefault(c => !c.Deleted);
 
     /// <summary>
-    /// The approvers every engagement routes to whatever is picked on the Approval tab: the managing
-    /// shareholder, the Department Director and CSE from the engagement's own setup, and every commission
-    /// recipient. None of the four is a choice — each one is already on this engagement, and the tab adds
+    /// The approvers every engagement routes to whatever is picked on the Approval tab: the firm's
+    /// shareholders, the Department Director and CSE from the engagement's own setup, and every commission
+    /// recipient. None of them is a choice — each one is on this engagement by standing, and the tab adds
     /// people to them rather than deciding them. Anyone missing (no CSE named, no director on the chosen
-    /// department, no shareholder anywhere) simply contributes nobody.
+    /// department, no shareholder in the tenant) simply contributes nobody.
+    /// <para>
+    /// Shareholders sign off on every engagement the firm routes, so they are here rather than written onto
+    /// the editable picked list: being automatic is exactly what stops them being taken off. Several people
+    /// can hold the role — the single Managing Shareholder this replaced could not be shared, and could not
+    /// be told apart from the seat it occupied.
+    /// </para>
     /// </summary>
-    private static List<Guid> AutomaticApproverIds(
-        REMSEngagement engagement, IReadOnlyList<Guid> managingShareholderIds)
+    private static List<Guid> AutomaticApproverIds(REMSEngagement engagement, IReadOnlyList<Guid> shareholderIds)
     {
-        var ids = new List<Guid>(managingShareholderIds);
+        var ids = new List<Guid>(shareholderIds);
         if (engagement.DepartmentDirectorId is { } director)
         {
             ids.Add(director);
@@ -827,9 +940,16 @@ public sealed class RemsApprovalController : ControllerBase
     /// The role a user acts under on this engagement, most specific first. Someone with no standing of their
     /// own — a hand-picked approver — reviews as a plain <see cref="RemsApproverRole.Approver"/>. Derived
     /// rather than stored so a saved list keeps up when the CSE or the commission recipients change.
+    /// <para>
+    /// Shareholder is tested LAST of the standings, which is the opposite of where it sits in the list (see
+    /// <see cref="DisplayRank"/>). Being a shareholder is firm-wide; being this engagement's director or
+    /// CSE is about the engagement in front of them, and it is what decides their checklist and whether
+    /// they see the fee. A shareholder who directs the department reviews as its director and keeps that
+    /// sight of the figures — reading them as a shareholder would take it away.
+    /// </para>
     /// </summary>
     private static RemsApproverRole RoleFor(
-        REMSEngagement engagement, IReadOnlyList<Guid> managingShareholderIds, Guid userId)
+        REMSEngagement engagement, IReadOnlyList<Guid> shareholderIds, Guid userId)
     {
         if (engagement.Rems?.CSEId == userId)
         {
@@ -839,13 +959,13 @@ public sealed class RemsApprovalController : ControllerBase
         {
             return RemsApproverRole.DepartmentDirector;
         }
-        if (managingShareholderIds.Contains(userId))
-        {
-            return RemsApproverRole.ManagingShareholder;
-        }
         if (engagement.CommissionSplits.Any(s => !s.Deleted && s.EmployeeId == userId))
         {
             return RemsApproverRole.CommissionRecipient;
+        }
+        if (shareholderIds.Contains(userId))
+        {
+            return RemsApproverRole.Shareholder;
         }
         return RemsApproverRole.Approver;
     }
@@ -860,7 +980,9 @@ public sealed class RemsApprovalController : ControllerBase
                 new RemsUserRef(a.UserId, names.TryGetValue(a.UserId, out var n) ? n : string.Empty), a.Role.ToString()))
             .ToList();
 
-        // Only the ADDED approvers — the picker must not show back the people who are on the list anyway.
+        // Only the approvers somebody ADDED. The automatic ones — shareholders, director, CSE, commission
+        // recipients — are left out: the picker must not show back somebody who is on the list anyway, and
+        // binding them here would imply they could be unpicked.
         var selected = (await _engagements.ListApproversAsync(engagement.Id, cancellationToken))
             .Select(a => a.UserId)
             .ToList();
@@ -875,8 +997,10 @@ public sealed class RemsApprovalController : ControllerBase
         // on its Setup step too; this is the backstop for anything reaching the API another way.
         var missing = new List<string>();
         if (string.IsNullOrWhiteSpace(engagement.Department)) missing.Add("Department");
-        // The old Service Line is not among these any more: the field is gone from the setup form, so
-        // requiring it would block every engagement raised since on a question nobody is asked.
+        // The service the firm is actually engaged to do. Held on SubServiceLine — the column kept its old
+        // name when the original ServiceLine was retired, and THAT one is still not asked for anywhere, so
+        // it is still not required here.
+        if (string.IsNullOrWhiteSpace(engagement.SubServiceLine)) missing.Add("Service Line");
         if (engagement.EngagementExecutiveId is null) missing.Add("Engagement Executive");
         if (engagement.BillingManagerId is null) missing.Add("Billing Manager");
         if (engagement.RealizationPercentage is null) missing.Add("% Realization");
@@ -978,7 +1102,7 @@ public sealed class RemsApprovalController : ControllerBase
             await _notifications.DispatchAsync(new CreateNotificationDto(
                 userId, NotificationType.RemsApprovalRequested,
                 isResubmission ? "A REMS engagement was resubmitted for your approval" : "A REMS engagement needs your approval",
-                $"{rems.REMSNumber} — {rems.RequestedClientName}", EntityType.Rems, rems.Id), cancellationToken);
+                $"{rems.REMSNumber} — {rems.ClientDisplayName}", EntityType.Rems, rems.Id), cancellationToken);
         }
 
         var listText = string.Join(", ", approvers.Select(a => $"{a.UserId}:{a.Role}"));
@@ -1011,8 +1135,8 @@ public sealed class RemsApprovalController : ControllerBase
         var client = ClientOf(engagement)!;
 
         // The task-context graph stops at the client's entities: their addresses/contacts, the conditional
-        // engagement detail and the request's files each need their own load. The engagement no longer
-        // names an entity, so the packet reviews the client's MAIN one — the business being engaged.
+        // engagement detail and the request's files each need their own load. The engagement names no
+        // entity, so the packet reviews the client's MAIN one — the business being engaged.
         var mainEntity = client.Entities.FirstOrDefault(e => !e.Deleted && e.IsMainEntity)
             ?? client.Entities.FirstOrDefault(e => !e.Deleted);
         var entity = mainEntity is null
@@ -1034,7 +1158,7 @@ public sealed class RemsApprovalController : ControllerBase
 
         var (emsFormState, clientSubmissionState) = RemsWorkspaceMapper.FormState(formState);
         var requestView = new RemsApprovalRequestView(
-            rems.Id, rems.REMSNumber, rems.Description, rems.RequestedClientName, rems.ParentClientName,
+            rems.Id, rems.REMSNumber, rems.Description, rems.ClientDisplayName,
             rems.Type, rems.Status, rems.CustomerEmail, rems.CustomerMobileNumber,
             formState?.IndustryGroup, emsFormState, clientSubmissionState,
             RemsWorkspaceMapper.UserRef(rems.AdminAssignedToId, names),
@@ -1047,15 +1171,16 @@ public sealed class RemsApprovalController : ControllerBase
                 .ToList());
 
         var engagementView = await BuildApprovalEngagementViewAsync(
-            task, engagement, client, entity, audit, government, tax, names, cancellationToken);
+            task, rems, engagement, client, entity, audit, government, tax, names, cancellationToken);
 
-        // Decided first, oldest decision at the top, so the list reads as the round's history: who signed
-        // off first, then next, with whoever has yet to decide gathered at the bottom. Role only breaks
-        // ties among the undecided, who share a null timestamp.
+        // By ROLE — shareholder, director, CSE, commission recipient, then anyone added by hand — which is
+        // the order the Approval tab lists and the order the history reads in. Deliberately NOT ordered by
+        // who decided first: that would sort the same round differently every time somebody signed, moving
+        // the row an approver was looking at. Who has yet to decide is the status badge's job, not the
+        // position's.
         var decisions = round.Tasks
-            .OrderBy(t => t.DecidedOnUtc.HasValue ? 0 : 1)
-            .ThenBy(t => t.DecidedOnUtc)
-            .ThenBy(t => t.ApproverRole)
+            .OrderBy(t => DisplayRank(t.ApproverRole))
+            .ThenBy(t => t.CreatedOnUtc)
             .Select(t => new RemsApprovalDecisionView(
                 t.Id, RemsWorkspaceMapper.UserRef(t.ApproverId, names)!, t.ApproverRole.ToString(),
                 t.Status.ToString(), t.DecidedOnUtc, t.RejectionReason, t.Id == task.Id))
@@ -1081,6 +1206,9 @@ public sealed class RemsApprovalController : ControllerBase
 
     private async Task<RemsApprovalEngagementView> BuildApprovalEngagementViewAsync(
         REMSApprovalTask task,
+        // The originating request. Needed for the client's generational suffix, which lives on the
+        // request and on nothing the client themselves filled in — see REMS.WithClientSuffix.
+        REMS rems,
         REMSEngagement engagement,
         REMSClient client,
         REMSEntity entity,
@@ -1116,18 +1244,25 @@ public sealed class RemsApprovalController : ControllerBase
                 await ResolveOptionRefsAsync(TaxFormSetKey, taxFormIds, cancellationToken));
         }
 
+        // The client's name, and the MAIN entity's, read with the request's generational suffix on them.
+        // Both hold what the client typed on their intake form, which never asks for a suffix — so
+        // without this an approver reads "John Smith" on a request every other REMS surface calls
+        // "John Smith Jr.". Only the main entity: an additional entity is another business, and the
+        // client's own particle is not part of its name.
+        string EntityName(REMSEntity e) => e.IsMainEntity ? rems.WithClientSuffix(e.Name) : e.Name;
+
         var clientView = new RemsApprovalClientView(
-            client.Id, client.Name, client.Email, client.MobileNumber, client.ReferralSource,
+            client.Id, rems.WithClientSuffix(client.Name), client.Email, client.MobileNumber, client.ReferralSource,
             client.BillingContactName, client.BillingEmail,
             client.Entities
                 .Where(e => !e.Deleted)
                 .OrderByDescending(e => e.IsMainEntity)
                 .ThenBy(e => e.Name)
-                .Select(e => new RemsApprovalEntitySummary(e.Id, e.Name, e.EIN, e.IsMainEntity))
+                .Select(e => new RemsApprovalEntitySummary(e.Id, EntityName(e), e.EIN, e.IsMainEntity))
                 .ToList());
 
         var entityView = new RemsApprovalEntityView(
-            entity.Id, entity.Name, entity.EIN, entity.IsMainEntity,
+            entity.Id, EntityName(entity), entity.EIN, entity.IsMainEntity,
             entity.Addresses.Where(a => !a.Deleted)
                 .Select(a => new RemsEntityAddressView(a.Id, a.AddressType.ToString(), RemsWorkspaceMapper.Address(a.Address)!))
                 .ToList(),
@@ -1140,7 +1275,6 @@ public sealed class RemsApprovalController : ControllerBase
             engagement.Id,
             engagement.Status.ToString(),
             engagement.Department,
-            engagement.ServiceLine,
             engagement.SubServiceLine,
             engagement.SubIndustry,
             clientView,
@@ -1167,12 +1301,12 @@ public sealed class RemsApprovalController : ControllerBase
     }
 
     /// <summary>
-    /// Whether a role sees the first-year fee estimate and % realization. Reserved to the Department Director
-    /// and the Managing Shareholder (AC-REMS-019.10) — the ONE thing an approver's role still scopes now that
-    /// the rest of the engagement setup is shown to everyone on the round. Open it up by returning true.
+    /// Whether a role sees the first-year fee estimate and % realization. Reserved to the Department
+    /// Director (AC-REMS-019.10) — the ONE thing an approver's role still scopes now that the rest of the
+    /// engagement setup is shown to everyone on the round. Open it up by returning true.
     /// </summary>
     private static bool MaySeeFinancials(RemsApproverRole role)
-        => role is RemsApproverRole.DepartmentDirector or RemsApproverRole.ManagingShareholder;
+        => role is RemsApproverRole.DepartmentDirector;
 
     /// <summary>
     /// Resolves option-set item ids to their labels (and, for marketing, the group tag from MetadataJson),

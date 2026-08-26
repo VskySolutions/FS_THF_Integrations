@@ -68,212 +68,11 @@
             <li v-for="(m, i) in serverSummary" :key="i">{{ m }}</li>
           </ul>
         </q-banner>
-
-        <!-- Contact -->
-        <q-card flat bordered class="pef-card q-mb-md">
-          <q-card-section class="pef-card__head">Contact</q-card-section>
-          <q-separator />
-          <q-card-section>
-            <div class="row q-col-gutter-sm">
-              <app-text-field
-                v-model="payload.clientName" label="Client Name" required class="col-12 col-sm-6"
-                :error="!!errors.clientName" :error-message="errors.clientName"
-              />
-              <app-text-field
-                v-model="payload.email" label="Email" readonly class="col-12 col-sm-6"
-                hint="Locked to your invitation"
-              >
-                <template #append><q-icon name="o_lock" size="18px" color="grey-6" /></template>
-              </app-text-field>
-              <div class="col-12 col-sm-6">
-                <app-phone-input v-model="payload.mobileNumber" label="Phone Number" />
-              </div>
-              <!-- Each option's description is its own tooltip, maintained by staff in Administration →
-                   Option Sets and delivered with the form (this page is anonymous and cannot resolve an
-                   option set itself). Choosing one opens a follow-up box for the specifics. -->
-              <app-select
-                v-model="payload.referralSource" :options="referralOptions" label="Referral Source"
-                class="col-12 col-sm-6" clearable
-                hint="How did you hear about us?"
-              >
-                <template #option="scope">
-                  <q-item v-bind="scope.itemProps">
-                    <q-item-section>
-                      <q-item-label>{{ scope.opt.label }}</q-item-label>
-                      <q-item-label v-if="scope.opt.description" caption>{{ scope.opt.description }}</q-item-label>
-                    </q-item-section>
-                  </q-item>
-                </template>
-              </app-select>
-              <app-text-field
-                v-if="payload.referralSource"
-                v-model="payload.referralSourceDetail" label="Tell us more" class="col-12 col-sm-6"
-                :placeholder="referralDetailPlaceholder"
-              />
-
-              <!-- No spouse fields here. An individual's spouse is asked for once, in the Spouse block of
-                   the Contacts card below — name, email and phone together, as one contact. This card used
-                   to ask the same three a second time into their own payload fields, which invited two
-                   different answers for one spouse and materialised into nothing: only the Contacts answer
-                   becomes a person record on submit. -->
-
-              <!-- Business: EIN -->
-              <app-text-field
-                v-if="isBusiness" v-model="payload.ein" label="EIN" required class="col-12 col-sm-6"
-                :error="!!errors.ein" :error-message="errors.ein"
-              />
-            </div>
-          </q-card-section>
-        </q-card>
-
-        <!-- Addresses: three of them, each stored in its own right. "Copy from" fills the fields once and
-             leaves them editable — it is not a live mirror, so correcting the physical address later does
-             not silently move the other two with it. -->
-        <q-card flat bordered class="pef-card q-mb-md">
-          <q-card-section class="pef-card__head">
-            Addresses
-            <div class="text-caption text-grey-7 text-weight-regular">
-              If your mailing or billing address is the same, copy it across and edit anything that differs.
-            </div>
-          </q-card-section>
-          <q-separator />
-          <q-card-section>
-            <div class="pef-subhead">Physical Address</div>
-            <app-address-fields
-              v-model="payload.physicalAddress" required :errors="addressErrors(errors, 'physicalAddress')"
-            />
-
-            <div class="pef-addr-head q-mt-lg">
-              <div class="pef-subhead">Mailing Address</div>
-              <q-btn
-                flat dense no-caps size="sm" color="primary" icon="o_content_copy"
-                label="Copy from physical" :disable="!hasAny(payload.physicalAddress)"
-                @click="copyAddress('physicalAddress', 'mailingAddress')"
-              />
-            </div>
-            <app-address-fields
-              v-model="payload.mailingAddress" required :errors="addressErrors(errors, 'mailingAddress')"
-            />
-
-            <div class="pef-addr-head q-mt-lg">
-              <div class="pef-subhead">Billing Address</div>
-              <q-btn
-                flat dense no-caps size="sm" color="primary" icon="o_content_copy"
-                label="Copy from mailing" :disable="!hasAny(payload.mailingAddress)"
-                @click="copyAddress('mailingAddress', 'billingAddress')"
-              />
-            </div>
-            <app-address-fields
-              v-model="payload.billingAddress" :errors="addressErrors(errors, 'billingAddress')"
-            />
-          </q-card-section>
-        </q-card>
-
-        <!-- Contract Details (Government) -->
-        <q-card v-if="isGovernment" flat bordered class="pef-card q-mb-md">
-          <q-card-section class="pef-card__head">Contract Details</q-card-section>
-          <q-separator />
-          <q-card-section>
-            <div class="row q-col-gutter-sm">
-              <app-date-field v-model="payload.contractStartDate" label="Contract Start Date" class="col-12 col-sm-6" />
-              <app-date-field v-model="payload.contractEndDate" label="Contract End Date" class="col-12 col-sm-6" />
-              <app-text-field v-model="payload.originalTerm" label="Original Term" class="col-12 col-sm-6" />
-              <app-text-field v-model="payload.renewalTerms" label="Renewal Terms" class="col-12 col-sm-6" />
-              <app-date-field v-model="payload.poStartDate" label="Purchase Order Start Date" class="col-12 col-sm-6" />
-              <app-date-field v-model="payload.poEndDate" label="Purchase Order End Date" class="col-12 col-sm-6" />
-            </div>
-          </q-card-section>
-        </q-card>
-
-        <!-- Contacts (roles) -->
-        <q-card flat bordered class="pef-card q-mb-md">
-          <q-card-section class="pef-card__head">
-            Contacts
-            <div class="text-caption text-grey-7 text-weight-regular">
-              Required contacts must include a name and an email. Phone is optional.
-            </div>
-          </q-card-section>
-          <q-separator />
-          <q-card-section class="column q-gutter-md">
-            <role-contact-fields
-              v-for="def in roleDefs" :key="def.key"
-              v-model="payload.roles[def.key]"
-              :label="def.label" :required="def.required" :prefix="`roles.${def.key}`" :errors="errors"
-            />
-          </q-card-section>
-        </q-card>
-
-        <!-- Other entities: who to speak to, not a second set of business details. Each one becomes its
-             own EMS request, raised by the partner afterwards, which is where its details get asked for. -->
-        <q-card flat bordered class="pef-card q-mb-md">
-          <q-card-section class="pef-card__head">
-            Other Entities
-            <div class="text-caption text-grey-7 text-weight-regular">
-              We will set each one up separately and get in touch about it.
-            </div>
-          </q-card-section>
-          <q-separator />
-          <q-card-section>
-            <q-toggle
-              :model-value="hasRelatedEntities"
-              label="Do you have more entities?"
-              color="primary"
-              @update:model-value="onToggleRelated"
-            />
-
-            <div v-if="hasRelatedEntities" class="column q-gutter-md q-mt-sm">
-              <q-card
-                v-for="(entity, i) in payload.relatedEntities" :key="entity.sourceKey"
-                flat bordered class="pef-entity"
-              >
-                <q-card-section class="row items-center no-wrap q-pb-none">
-                  <div class="text-subtitle2 text-weight-medium col">Entity #{{ i + 1 }}</div>
-                  <q-btn flat round dense color="negative" icon="o_delete" @click="removeEntity(i)">
-                    <q-tooltip>Remove</q-tooltip>
-                  </q-btn>
-                </q-card-section>
-                <q-card-section>
-                  <div class="row q-col-gutter-sm">
-                    <app-text-field
-                      v-model="entity.fullName" label="Client/Entity Name" required class="col-12 col-sm-4"
-                      :error="!!entityErr(i, 'fullName')" :error-message="entityErr(i, 'fullName')"
-                    />
-                    <!-- Required, not "email or phone": each of these becomes its own EMS request, and that
-                         request is opened by emailing an intake form to this address. A row we cannot write
-                         to is a row that never becomes anything. -->
-                    <app-text-field
-                      v-model="entity.emailAddress" label="Email Address" type="email" required
-                      class="col-12 col-sm-4"
-                      :error="!!entityErr(i, 'emailAddress')" :error-message="entityErr(i, 'emailAddress')"
-                    />
-                    <app-text-field v-model="entity.phoneNumber" label="Phone Number" class="col-12 col-sm-4" />
-                  </div>
-                </q-card-section>
-              </q-card>
-
-              <div>
-                <q-btn outline no-caps color="primary" icon="o_add" label="Add another entity" @click="addEntity" />
-              </div>
-            </div>
-          </q-card-section>
-        </q-card>
-
-        <!-- Billing -->
-        <q-card flat bordered class="pef-card q-mb-md">
-          <q-card-section class="pef-card__head">Billing</q-card-section>
-          <q-separator />
-          <q-card-section>
-            <div class="row q-col-gutter-sm">
-              <app-text-field v-model="payload.billingContactName" label="Billing Contact" class="col-12 col-sm-6" />
-              <app-text-field
-                v-model="payload.billingEmail" label="Billing Email" type="email" class="col-12 col-sm-6"
-                :error="!!errors.billingEmail" :error-message="errors.billingEmail"
-              />
-            </div>
-            <!-- The billing ADDRESS moved up to the Addresses card with the other two, so this block is
-                 only the person to bill. -->
-          </q-card-section>
-        </q-card>
+        <client-intake-fields
+          v-model="payload" :industry-group="industryGroup" :errors="errors"
+          :referral-sources="referralSources"
+          @confirm-clear-entities="onConfirmClearEntities"
+        />
 
         <!-- Remaining-required checklist (client-side gate for Review). -->
         <q-card v-if="clientIssues.length" flat bordered class="pef-card pef-todo q-mb-md">
@@ -344,37 +143,26 @@
 // unauthenticated remsPublicApi, renders one of Invalid/Unavailable/Submitted/Editable, auto-saves the
 // draft as a durable RemsFormPayloadV1, and drives the Review → Submit → thank-you flow. No auth/tenant
 // stores are touched — everything is authorised by the invite code alone.
-import { ref, reactive, computed, watch, onMounted, nextTick } from "vue";
+//
+// The FIELDS are not here. They are ClientIntakeFields, and their shape, seeding, building and
+// validation are useRemsIntakeForm — because an Admin correcting a client's answers gets the same form,
+// and two copies of it would be two forms within a release or two. What is left here is everything that
+// is peculiar to the client's own visit: the invite code, the auto-save, the review step, and the four
+// terminal states this page can end in.
+import { ref, computed, watch, onMounted, nextTick } from "vue";
 import { useRoute } from "vue-router";
 import { debounce } from "quasar";
 import { remsPublicApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
-import {
-  blankAddress, toAddress, fromAddress, addressErrors, addressComplete
-} from "modules/rems/remsAddress";
 import { REMS_OPTION_SEED } from "modules/rems/useRemsOptionCatalog";
-import { isBusinessIndustryGroup } from "modules/rems/useRemsMeta";
+import {
+  blankIntakePayload, buildIntakePayload, intakeClientName, intakeIssues, parseIntakeFieldErrors,
+  seedIntakePayload
+} from "modules/rems/useRemsIntakeForm";
 
-import AppTextField from "components/common/AppTextField.vue";
-import AppSelect from "components/common/AppSelect.vue";
-import AppPhoneInput from "components/common/AppPhoneInput.vue";
-import AppDateField from "components/common/AppDateField.vue";
-import AppAddressFields from "components/common/AppAddressFields.vue";
-import RoleContactFields from "modules/rems/components/RoleContactFields.vue";
+import ClientIntakeFields from "modules/rems/components/ClientIntakeFields.vue";
 import RemsReviewSummary from "modules/rems/components/RemsReviewSummary.vue";
-
-// The roles relevant to each industry group, in display order (mirrors RemsFormPayloadValidator).
-const GROUP_ROLES = {
-  individual: ["self", "spouse"],
-  business: ["ceo", "cfo", "accountsPayable", "banker", "lawyer"],
-  government: ["financeDirector", "accountsPayable"]
-};
-const ROLE_KEYS = ["self", "spouse", "ceo", "cfo", "accountsPayable", "banker", "lawyer", "financeDirector"];
-// INDUSTRY_LABELS stood here — the display names behind a chip that named the client's entity type above
-// the form. The chip is gone (see the template) and with it the only thing that ever read the map. The
-// entity type itself is still very much in use below; it just does its work silently now, deciding which
-// questions the client is asked.
 
 const route = useRoute();
 const notify = useNotify();
@@ -385,13 +173,6 @@ const inviteCode = route.params.inviteCode;
 // paint, then replaced by whatever the server sends with the form — the tenant's own wording and
 // descriptions. Each option carries `description`, which is the tooltip / caption for that value.
 const referralSources = ref([...REMS_OPTION_SEED.referralSource]);
-const referralOptions = computed(() => referralSources.value);
-const referralDetailPlaceholder = computed(() => {
-  const chosen = referralSources.value.find((o) => o.value === payload.referralSource);
-  // The option's own description is the best prompt for the follow-up — "Friend, Family, or Colleague"
-  // says what to type far better than a generic "Please provide details".
-  return chosen?.description || "Please provide details";
-});
 
 // ---- Screen state ----
 const loading = ref(true);
@@ -399,7 +180,7 @@ const loadFailed = ref(false);
 const state = ref("");          // "Invalid" | "Unavailable" | "Submitted" | "Editable"
 const cancelled = ref(false);
 const thankYouName = ref("");
-const industryGroup = ref("");  // lowercase code: individual | business | government
+const industryGroup = ref("");  // lowercase entity-type code, e.g. individual | commercial | government
 const step = ref("form");       // "form" | "review"
 
 // ---- Save / validation state ----
@@ -410,93 +191,13 @@ const errors = ref({});         // per-field server messages, keyed by payload p
 const serverSummary = ref([]);  // flat list of server messages for the top banner
 const saveState = ref("idle");  // "idle" | "saving" | "saved" | "error"
 
-const hasRelatedEntities = ref(false);
-
-// ---- The RemsFormPayloadV1 (camelCase wire shape — field names match RemsPublicFormModels.cs exactly) ----
-// EXCEPT the addresses: those are held in the canonical AppAddressFields shape and converted to/from the
-// frozen wire names by modules/rems/remsAddress (toAddress on seed, fromAddress on build).
-const blankRole = () => ({ name: "", email: "", phone: "" });
-
-const payload = reactive({
-  version: 1,
-  clientName: "",
-  email: "",            // LOCKED (from prefill; ignored on submit)
-  mobileNumber: "",
-  referralSource: "",
-  referralSourceDetail: "",
-  physicalAddress: blankAddress(),
-  mailingAddress: blankAddress(),
-  billingContactName: "",
-  billingEmail: "",
-  billingAddress: blankAddress(),
-  spouseName: "",
-  spousePhone: "",
-  spouseEmail: "",
-  ein: "",
-  contractStartDate: "",
-  contractEndDate: "",
-  originalTerm: "",
-  renewalTerms: "",
-  poStartDate: "",
-  poEndDate: "",
-  roles: {
-    self: blankRole(),
-    spouse: blankRole(),
-    ceo: blankRole(),
-    cfo: blankRole(),
-    accountsPayable: blankRole(),
-    banker: blankRole(),
-    lawyer: blankRole(),
-    financeDirector: blankRole()
-  },
-  relatedEntities: []   // [{ sourceKey, fullName, emailAddress, phoneNumber }]
-});
+// The editable payload the field set writes through. `ref` rather than the bare reactive object because
+// ClientIntakeFields takes it as a defineModel.
+const payload = ref(blankIntakePayload());
 
 // ---- Derived ----
-const isIndividual = computed(() => industryGroup.value === "individual");
-const isBusiness = computed(() => isBusinessIndustryGroup(industryGroup.value));
-const isGovernment = computed(() => industryGroup.value === "government");
 const showUnavailable = computed(() => loadFailed.value || state.value === "Invalid" || state.value === "Unavailable");
 const busy = computed(() => reviewing.value || submitting.value);
-
-// Whether an address has anything in it at all — what decides if there is something worth copying.
-const hasAny = (address) =>
-  !!address && Object.values(address).some((v) => typeof v === "string" && v.trim() !== "");
-
-// Copy one address into another, ONCE. Deliberately not a live mirror: the client can correct the copy
-// afterwards, and a later edit to the source must not silently drag the copy along with it — which is
-// exactly what the old "same as physical" radio did, and why an amended physical address used to move
-// the billing address without anyone asking.
-//
-// Assigned field by field into the EXISTING object rather than replacing it, so the bound model instance
-// survives (AppAddressFields resolves its country → state → city cascade from that instance).
-const copyAddress = (fromKey, toKey) => {
-  Object.assign(payload[toKey], { ...payload[fromKey] });
-};
-
-const roleDefs = computed(() => {
-  if (isIndividual.value) {
-    return [{ key: "self", label: "Self", required: true }, { key: "spouse", label: "Spouse", required: false }];
-  }
-  if (isBusiness.value) {
-    return [
-      { key: "ceo", label: "CEO", required: true },
-      { key: "cfo", label: "CFO", required: true },
-      { key: "accountsPayable", label: "Accounts Payable", required: true },
-      { key: "banker", label: "Banker", required: false },
-      { key: "lawyer", label: "Lawyer", required: false }
-    ];
-  }
-  if (isGovernment.value) {
-    return [
-      { key: "financeDirector", label: "Finance Director", required: true },
-      { key: "accountsPayable", label: "Accounts Payable", required: false }
-    ];
-  }
-  return [];
-});
-
-const entityErr = (i, field) => errors.value[`relatedEntities[${i}].${field}`] || "";
 
 // ---- Save indicator ----
 const saveIcon = computed(() => ({
@@ -508,160 +209,39 @@ const saveText = computed(() => ({
   error: "Couldn't save — we'll retry as you edit"
 }[saveState.value] || "Your progress saves automatically"));
 
-// ---- Client-side validation (mirrors RemsFormPayloadValidator; gates the Review button) ----
-const filled = (v) => !!String(v ?? "").trim();
-const emailOk = (v) => /^\S+@\S+\.\S+$/.test(String(v ?? "").trim());
-const roleAny = (r) => filled(r.name) || filled(r.email) || filled(r.phone);
-// Phone is captured when known but never required — a contact is a name and a valid email.
-// Mirrors RemsFormPayloadValidator.ValidateRoleFields.
-const roleComplete = (r) => filled(r.name) && emailOk(r.email);
-
-const clientIssues = computed(() => {
-  const out = [];
-  if (!filled(payload.clientName)) out.push("Client name is required.");
-  const addressIssue = "needs country, state, city, address line 1 and zip code.";
-  if (!addressComplete(payload.physicalAddress)) out.push(`Physical address ${addressIssue}`);
-  // Both are required now: there is no "same as" flag deciding whether a mailing address exists, only a
-  // copy button that fills it in for you.
-  if (!addressComplete(payload.mailingAddress)) out.push(`Mailing address ${addressIssue}`);
-  if (filled(payload.billingEmail) && !emailOk(payload.billingEmail)) out.push("Billing email is not a valid email address.");
-
-  const roles = payload.roles;
-  const req = (key, label) => { if (!roleComplete(roles[key])) out.push(`${label} contact needs a name and a valid email.`); };
-  const opt = (key, label) => {
-    if (roleAny(roles[key]) && !roleComplete(roles[key])) {
-      out.push(`${label} contact is partly filled — add a name and a valid email, or clear it.`);
-    }
-  };
-
-  if (isIndividual.value) {
-    req("self", "Self");
-    opt("spouse", "Spouse");
-  } else if (isBusiness.value) {
-    if (!filled(payload.ein)) out.push("EIN is required for a business.");
-    req("ceo", "CEO"); req("cfo", "CFO"); req("accountsPayable", "Accounts Payable");
-    opt("banker", "Banker"); opt("lawyer", "Lawyer");
-  } else if (isGovernment.value) {
-    req("financeDirector", "Finance Director");
-    opt("accountsPayable", "Accounts Payable");
-  }
-
-  // Name and email both required — the phone stays optional, as it is on every contact on this form.
-  payload.relatedEntities.forEach((e, i) => {
-    if (!filled(e.fullName)) out.push(`Entity #${i + 1} needs a client / entity name.`);
-    if (!filled(e.emailAddress)) {
-      out.push(`Entity #${i + 1} needs an email address.`);
-    } else if (!emailOk(e.emailAddress)) {
-      out.push(`Entity #${i + 1} has an invalid email address.`);
-    }
-  });
-
-  return out;
-});
+// What still has to be filled in before Review. Mirrors RemsFormPayloadValidator — see useRemsIntakeForm.
+const clientIssues = computed(() => intakeIssues(payload.value, industryGroup.value));
 const canReview = computed(() => clientIssues.value.length === 0);
+
+const buildPayload = () => buildIntakePayload(payload.value, industryGroup.value);
 
 // The review step shows the payload exactly as it will be submitted (wire shape, addresses converted).
 const reviewPayload = computed(() => buildPayload());
 
-// ---- Build the outgoing payload (dates: "" → null so DateOnly binds; mailing dropped when same) ----
-const s = (v) => (v == null ? "" : String(v));
-const dateOrNull = (v) => (filled(v) ? v : null);
-const outRole = (r) => ({ name: s(r.name), email: s(r.email), phone: s(r.phone) });
-
-function buildRoles () {
-  // The three business groups share one role set, so they all look up under "business".
-  const keys = GROUP_ROLES[isBusinessIndustryGroup(industryGroup.value) ? "business" : industryGroup.value] || ROLE_KEYS;
-  const out = {};
-  keys.forEach((k) => { out[k] = outRole(payload.roles[k]); });
-  return out;
-}
-
-function buildPayload () {
-  return {
-    version: 1,
-    clientName: s(payload.clientName),
-    email: s(payload.email),
-    mobileNumber: s(payload.mobileNumber),
-    referralSource: s(payload.referralSource),
-    referralSourceDetail: s(payload.referralSourceDetail),
-    physicalAddress: fromAddress(payload.physicalAddress),
-    mailingAddress: fromAddress(payload.mailingAddress),
-    billingContactName: s(payload.billingContactName),
-    billingEmail: s(payload.billingEmail),
-    billingAddress: fromAddress(payload.billingAddress),
-    spouseName: s(payload.spouseName),
-    spousePhone: s(payload.spousePhone),
-    spouseEmail: s(payload.spouseEmail),
-    ein: s(payload.ein),
-    contractStartDate: dateOrNull(payload.contractStartDate),
-    contractEndDate: dateOrNull(payload.contractEndDate),
-    originalTerm: s(payload.originalTerm),
-    renewalTerms: s(payload.renewalTerms),
-    poStartDate: dateOrNull(payload.poStartDate),
-    poEndDate: dateOrNull(payload.poEndDate),
-    roles: buildRoles(),
-    relatedEntities: payload.relatedEntities.map((e, i) => ({
-      sourceKey: e.sourceKey || `related-${i + 1}`,
-      fullName: s(e.fullName),
-      emailAddress: s(e.emailAddress),
-      phoneNumber: s(e.phoneNumber)
-    }))
-  };
-}
-
 // ---- Seeding (prefill + draft) ----
-function fillRole (target, src) {
-  target.name = src?.name ?? "";
-  target.email = src?.email ?? "";
-  target.phone = src?.phone ?? "";
-}
-function makeEntity (e, i) {
-  return {
-    sourceKey: e?.sourceKey || `related-${Date.now()}-${i}`,
-    fullName: e?.fullName ?? "",
-    emailAddress: e?.emailAddress ?? "",
-    phoneNumber: e?.phoneNumber ?? ""
-  };
-}
-
 function seed (prefill, draft) {
   ready.value = false;
-  const d = draft || {};
-
-  payload.clientName = d.clientName ?? prefill?.clientName ?? "";
-  payload.email = prefill?.email ?? d.email ?? "";   // LOCKED to the request's customer email.
-  payload.mobileNumber = d.mobileNumber ?? prefill?.mobileNumber ?? "";
-  payload.referralSource = d.referralSource ?? "";
-  payload.referralSourceDetail = d.referralSourceDetail ?? "";
-  payload.billingContactName = d.billingContactName ?? "";
-  payload.billingEmail = d.billingEmail ?? "";
-  payload.spouseName = d.spouseName ?? "";
-  payload.spousePhone = d.spousePhone ?? "";
-  payload.ein = d.ein ?? "";
-  payload.originalTerm = d.originalTerm ?? "";
-  payload.renewalTerms = d.renewalTerms ?? "";
-  payload.contractStartDate = d.contractStartDate ?? "";
-  payload.contractEndDate = d.contractEndDate ?? "";
-  payload.poStartDate = d.poStartDate ?? "";
-  payload.poEndDate = d.poEndDate ?? "";
-
-  payload.physicalAddress = toAddress(d.physicalAddress);
-  payload.mailingAddress = toAddress(d.mailingAddress);
-  payload.billingAddress = toAddress(d.billingAddress);
-
-  ROLE_KEYS.forEach((k) => fillRole(payload.roles[k], d.roles?.[k]));
-
-  payload.relatedEntities = (d.relatedEntities || []).map(makeEntity);
-  hasRelatedEntities.value = payload.relatedEntities.length > 0;
-
+  seedIntakePayload(payload.value, draft, prefill);
   // Let the reactive writes flush before re-arming autosave, so seeding never triggers a save.
   nextTick(() => { ready.value = true; });
+}
+
+// Turning the Other Entities toggle off throws away what has been typed, so the field set hands the
+// decision back here and applies it only if the client says yes.
+async function onConfirmClearEntities (applyClear) {
+  const ok = await confirm({
+    title: "Remove other entities?",
+    message: "This will remove every other entity you've added to this form.",
+    confirmLabel: "Remove",
+    type: "danger"
+  });
+  if (ok) applyClear();
 }
 
 // ---- Load ----
 function applySubmitted (res) {
   state.value = "Submitted";
-  thankYouName.value = res?.clientName || payload.clientName || "";
+  thankYouName.value = res?.clientName || intakeClientName(payload.value) || "";
   step.value = "form";
 }
 
@@ -716,21 +296,9 @@ watch(payload, () => {
 
 // ---- Server validation → per-field + summary ----
 function applyServerValidation (err) {
-  const details = err?.response?.data?.error?.details || "";
-  const map = {};
-  const list = [];
-  details.split(";").forEach((chunk) => {
-    const piece = chunk.trim();
-    if (!piece) return;
-    const idx = piece.indexOf(":");
-    if (idx === -1) { list.push(piece); return; }
-    const field = piece.slice(0, idx).trim();
-    const message = piece.slice(idx + 1).trim();
-    map[field] = message;
-    list.push(message);
-  });
-  errors.value = map;
-  serverSummary.value = list.length ? list : ["One or more fields need your attention."];
+  const parsed = parseIntakeFieldErrors(err);
+  errors.value = parsed.fields;
+  serverSummary.value = parsed.summary;
 }
 
 // Non-validation failures (409 not-editable / 404 / network) → resync the load state so the client sees
@@ -801,42 +369,6 @@ async function onCancel () {
   scrollTop();
 }
 
-// ---- Related businesses ----
-const entityHasData = (e) => filled(e.fullName) || filled(e.emailAddress) || filled(e.phoneNumber);
-
-function addEntity () {
-  payload.relatedEntities.push({
-    sourceKey: `related-${Date.now()}-${payload.relatedEntities.length}`,
-    fullName: "",
-    emailAddress: "",
-    phoneNumber: ""
-  });
-}
-
-function removeEntity (i) {
-  payload.relatedEntities.splice(i, 1);
-  if (!payload.relatedEntities.length) hasRelatedEntities.value = false;
-}
-
-async function onToggleRelated (val) {
-  if (val) {
-    hasRelatedEntities.value = true;
-    if (!payload.relatedEntities.length) addEntity();
-    return;
-  }
-  if (payload.relatedEntities.some(entityHasData)) {
-    const ok = await confirm({
-      title: "Remove other entities?",
-      message: "This will remove every other entity you've added to this form.",
-      confirmLabel: "Remove",
-      type: "danger"
-    });
-    if (!ok) { hasRelatedEntities.value = true; return; }
-  }
-  payload.relatedEntities = [];
-  hasRelatedEntities.value = false;
-}
-
 onMounted(load);
 </script>
 
@@ -858,30 +390,9 @@ onMounted(load);
 .pef-note {
   margin-top: 32px;
 }
-.pef-subhead {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--q-primary);
-  margin-bottom: 8px;
-}
-/* Heading and its copy button on one baseline. The button sits with the label it fills in, so it reads as
-   "this address, copied from that one" rather than as a stray action above the fields. */
-.pef-addr-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.pef-addr-head .pef-subhead {
-  margin-bottom: 0;
-}
-.pef-entity {
-  border-radius: 10px;
-  background: #fbfcfe;
-}
+/* The sub-heading, address-heading, copy-button and entity-card rules moved to ClientIntakeFields with
+   the markup they style — scoped styles do not reach into a child component, and leaving them here would
+   have been rules for elements this file no longer renders. */
 .pef-todo {
   background: #f7f9fc;
 }
@@ -890,6 +401,7 @@ onMounted(load);
   bottom: 0;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 12px 4px;
   margin-top: 8px;
@@ -910,5 +422,29 @@ onMounted(load);
 }
 .pef-save--error {
   color: var(--q-negative);
+}
+
+/* The client fills this in on a phone as often as not. Below sm the three items across the bar do not
+   fit on one line, so the save state takes the line above and the two buttons split the one below,
+   each wide enough to be a thumb target rather than a 60px stub. */
+@media (max-width: 599px) {
+  .pef-actionbar {
+    gap: 8px 10px;
+    padding: 10px 0;
+  }
+  .pef-save {
+    order: -1;
+    width: 100%;
+    margin: 0;
+    justify-content: center;
+  }
+  /* Splits the row evenly between them; the spacer that separates the pair on a desktop would
+     otherwise claim a third of the line for itself. */
+  .pef-actionbar > .q-btn {
+    flex: 1 1 0;
+  }
+  .pef-actionbar > .q-space {
+    display: none;
+  }
 }
 </style>

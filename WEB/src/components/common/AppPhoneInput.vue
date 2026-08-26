@@ -1,8 +1,8 @@
 <template>
   <!-- The dial code and the number are ONE answer, so they read as one field: a single label, and the two
-       controls flush beneath it with the seam between them collapsed to a single line. They used to carry
-       a label each — "Country" over a box nobody remembers being asked for, beside "Phone Number" — which
-       read as two separate questions and left the number looking optional next to it. -->
+       controls flush beneath it with the seam between them collapsed to a single line. A label each —
+       "Country" beside "Phone Number" — reads as two separate questions and leaves the number looking
+       optional next to it. -->
   <div class="app-field app-phone">
     <app-field-label :label="label" :required="required" />
     <div class="app-phone__row">

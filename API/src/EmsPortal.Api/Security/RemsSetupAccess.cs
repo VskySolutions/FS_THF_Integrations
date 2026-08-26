@@ -23,11 +23,21 @@ internal static class RemsSetupAccess
 {
     /// <summary>
     /// A Super Admin or Tenant Admin, who are exempt from the stage rules so an assignment can be worked
-    /// around in an emergency. The ordinary remedy is to re-point the reviewing admin, which both lists
-    /// already offer.
+    /// around in an emergency. The ordinary remedy is for the holding admin to hand the request back, after
+    /// which any admin may pick it up again.
     /// </summary>
     public static bool IsElevated(ClaimsPrincipal user)
         => user.IsSuperAdmin() || user.GetRoles().Any(r => string.Equals(r, Roles.TenantAdmin, StringComparison.Ordinal));
+
+    /// <summary>
+    /// A REMS Admin (or a Super Admin): the operational role that runs the firm's pipeline. Distinct from
+    /// <see cref="IsElevated"/>, which is the platform's own administrators — this one is a job, not a
+    /// power, and it buys exactly two things: seeing every request in the tenant
+    /// (<c>RemsRepository.ApplyVisibility</c>) and finishing a DRAFT somebody else left behind
+    /// (<see cref="CanWork"/>). It does NOT let one admin work a request another has picked up.
+    /// </summary>
+    public static bool IsRemsAdmin(ClaimsPrincipal user)
+        => user.IsSuperAdmin() || user.GetRoles().Any(r => string.Equals(r, Roles.Admin, StringComparison.Ordinal));
 
     /// <summary>
     /// Whose request this is: the person who raised it, or the principal they raised it for. A delegate
@@ -54,7 +64,15 @@ internal static class RemsSetupAccess
     /// <summary>
     /// May WRITE the setup: whoever the request is with at this stage. Before the client has answered (and
     /// during either rework state) that is the initiator and the CSE working it with them; once the client
-    /// has answered it is the Admin named on the request, and only them.
+    /// has answered it is the Admin who picked the request up, and only them — which is why a request
+    /// nobody has picked up is nobody's to work until somebody does.
+    /// <para>
+    /// One exception to "whoever it is with": a REMS Admin may work any DRAFT, whoever raised it. A draft
+    /// has not been sent to anybody, so there is no handover to cut across — and an admin who can now SEE
+    /// a colleague's unfinished referral needs to be able to finish and send it, which is the whole point
+    /// of their seeing it. The exception stops at draft: once the intake link is out, the stage rules below
+    /// decide, and no admin can take a request another admin is holding.
+    /// </para>
     /// <para>
     /// Says nothing about the engagement being locked for approval — that is the engagement's own status,
     /// checked separately where it applies.
@@ -63,6 +81,11 @@ internal static class RemsSetupAccess
     public static bool CanWork(ClaimsPrincipal user, REMS rems, Guid me)
     {
         if (IsElevated(user))
+        {
+            return true;
+        }
+
+        if (rems.Status == RemsRequestStatuses.Draft && IsRemsAdmin(user))
         {
             return true;
         }
@@ -80,6 +103,6 @@ internal static class RemsSetupAccess
         => RemsRequestStatuses.IsWithInitiator(rems.Status)
             ? "This request is with the person who raised it; only they (or the CSE named on it) can work its engagement setup."
             : rems.AdminAssignedToId is null
-                ? "This request has no reviewing admin. Name one before working its engagement setup."
+                ? "This request is waiting for pickup. Pick it up from EMS Review to work its engagement setup."
                 : "This request is being reviewed by another admin; only they can work its engagement setup.";
 }

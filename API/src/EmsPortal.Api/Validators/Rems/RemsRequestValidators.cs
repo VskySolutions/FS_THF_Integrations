@@ -5,20 +5,21 @@ using FluentValidation;
 namespace EmsPortal.Api.Validators.Rems;
 
 /// <summary>
-/// Validates a REMS request create payload (WO-111): client name and reviewing admin are required; at least one
-/// of customer email / mobile is required (AC-REMS-004.7); type and priority must be known option-set
-/// codes.
+/// Validates a REMS request create payload (WO-111): the client name is required; at least one of customer
+/// email / mobile is required (AC-REMS-004.7); the type must be a known option-set code.
 /// </summary>
 public sealed class CreateRemsRequestRequestValidator : AbstractValidator<CreateRemsRequestRequest>
 {
     public CreateRemsRequestRequestValidator()
     {
         RuleFor(x => x.ClientName).NotEmpty().WithMessage("clientName is required.").MaximumLength(200);
+        // A name particle, not a second name field — the column is nvarchar(16). Free text rather than a
+        // closed set: the five offered in the picker are what most clients need, not all a client may have.
+        RuleFor(x => x.ClientNameSuffix).MaximumLength(16).When(x => !string.IsNullOrWhiteSpace(x.ClientNameSuffix));
         // The partner's message is client-facing now and holds pasted correspondence; the column is
         // nvarchar(max), so nothing is capped here either.
-        RuleFor(x => x.AssignAdminUserId)
-            .NotEmpty()
-            .WithMessage("assignAdminUserId is required — every request names the admin who will review it.");
+        // No reviewing admin is asked for. A request is raised for the admins as a body, not for one of
+        // them, and it stays unassigned until one picks it up.
         RuleFor(x => x.CustomerEmail).EmailAddress().MaximumLength(256).When(x => !string.IsNullOrWhiteSpace(x.CustomerEmail));
         RuleFor(x => x.CustomerMobileNumber).MaximumLength(32).When(x => !string.IsNullOrWhiteSpace(x.CustomerMobileNumber));
 
@@ -39,17 +40,13 @@ public sealed class UpdateRemsRequestRequestValidator : AbstractValidator<Update
     public UpdateRemsRequestRequestValidator()
     {
         RuleFor(x => x.ClientName).NotEmpty().MaximumLength(200).When(x => x.ClientName is not null);
+        // Not NotEmpty: "" is how the suffix is CLEARED, which an omitted field cannot say.
+        RuleFor(x => x.ClientNameSuffix).MaximumLength(16).When(x => x.ClientNameSuffix is not null);
         RuleFor(x => x.CustomerEmail).EmailAddress().MaximumLength(256).When(x => !string.IsNullOrWhiteSpace(x.CustomerEmail));
         RuleFor(x => x.CustomerMobileNumber).MaximumLength(32).When(x => !string.IsNullOrWhiteSpace(x.CustomerMobileNumber));
         RuleFor(x => x.Type).Must(RemsRequestOptionCodes.IsKnownType)
             .WithMessage($"type must be one of: {string.Join(", ", RemsRequestOptionCodes.Types)}.")
             .When(x => x.Type is not null);
-
-        // Naming an admin and handing the request back to the pool are opposite instructions; sending
-        // both leaves the endpoint to guess which one was meant.
-        RuleFor(x => x)
-            .Must(x => !(x.UnassignAdmin && x.AssignAdminUserId.HasValue))
-            .WithMessage("assignAdminUserId and unassignAdmin cannot both be set.");
     }
 }
 
@@ -60,15 +57,6 @@ public sealed class AddRemsFilesRequestValidator : AbstractValidator<AddRemsFile
     {
         RuleFor(x => x.MediaIds).NotEmpty().WithMessage("mediaIds is required.");
         RuleForEach(x => x.MediaIds).NotEmpty().WithMessage("A mediaId cannot be empty.");
-    }
-}
-
-/// <summary>Validates an assign payload (WO-111).</summary>
-public sealed class AssignRemsRequestRequestValidator : AbstractValidator<AssignRemsRequestRequest>
-{
-    public AssignRemsRequestRequestValidator()
-    {
-        RuleFor(x => x.AdminUserId).NotEmpty().WithMessage("adminUserId is required.");
     }
 }
 

@@ -37,19 +37,41 @@ internal sealed class RemsFormRepository : IRemsFormRepository
     public async Task<(IReadOnlyList<RemsClientFormItem> Items, int Total)> ListClientFormsAsync(
         RemsClientFormQuery query, CancellationToken cancellationToken = default)
     {
-        // Every request that has a form. Inner-join REMS (tenant + not-deleted) to its form so both ambient
-        // query filters apply; project the submitted state and the request's assigned Admin/CSE.
+        // Every SUBMITTED request that has a form. Inner-join REMS (tenant + not-deleted) to its form so
+        // both ambient query filters apply; project the submitted state and the request's assigned
+        // Admin/CSE.
         // Order on the SOURCE columns before projecting — EF cannot translate an OrderBy over the
         // projected record. SubmittedOnUtc DESC puts submitted forms first, not-yet-submitted (null) last.
+        //
+        // Drafts are excluded. A form record exists from the moment the initiator saves a CSE and an entity
+        // type, which is well before the request is anybody's but theirs, and this list is the admins'
+        // queue: a draft here would read "Waiting for pickup" over a referral its author is still writing,
+        // and would 403 for every admin who tried to open it (drafts are creator-only — see
+        // RemsRequestsController.CanSee).
+        const string draft = RemsRequestStatuses.Draft;
         var rows =
             from r in _dbContext.Rems
             join f in _dbContext.RemsForms on r.Id equals f.REMSId
+            where r.Status != draft
             select new { Rems = r, Form = f };
+
+        // The list's two quick filters. "All" is every row an admin's queue holds, waiting-for-pickup ones
+        // included, so it needs no clause of its own.
+        if (query.Assignment == RemsClientFormAssignment.Mine)
+        {
+            var me = query.CallerUserId;
+            rows = rows.Where(x => x.Rems.AdminAssignedToId == me);
+        }
 
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
             var t = query.Search.Trim();
-            rows = rows.Where(x => x.Rems.REMSNumber.Contains(t) || x.Rems.RequestedClientName.Contains(t));
+            // Against the name WITH its suffix as well as without: the list shows "John Smith Jr.", so
+            // typing what is on the row has to find the row.
+            rows = rows.Where(x =>
+                x.Rems.REMSNumber.Contains(t)
+                || x.Rems.RequestedClientName.Contains(t)
+                || (x.Rems.RequestedClientName + " " + x.Rems.ClientNameSuffix).Contains(t));
         }
         if (query.Submitted is { } submitted)
         {
@@ -77,8 +99,12 @@ internal sealed class RemsFormRepository : IRemsFormRepository
             .Select(x => new RemsClientFormItem(
                 x.Rems.Id,
                 x.Rems.REMSNumber,
-                x.Rems.RequestedClientName,
-                x.Rems.ParentClientName,
+                // The name with its suffix. REMS.ClientDisplayName says exactly this, but it is
+                // [NotMapped] and cannot cross into SQL, so the join is written out here — a row that
+                // dropped the suffix would show a different client name from the request it opens.
+                x.Rems.ClientNameSuffix == null || x.Rems.ClientNameSuffix == ""
+                    ? x.Rems.RequestedClientName
+                    : x.Rems.RequestedClientName + " " + x.Rems.ClientNameSuffix,
                 x.Rems.Status,
                 x.Form.Status == RemsFormStatus.Submitted || x.Form.SubmittedOnUtc != null,
                 x.Form.SubmittedOnUtc,
@@ -193,7 +219,10 @@ internal sealed class RemsFormRepository : IRemsFormRepository
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
             var t = query.Search.Trim();
-            forms = forms.Where(f => f.Rems!.REMSNumber.Contains(t) || f.Rems!.RequestedClientName.Contains(t));
+            forms = forms.Where(f =>
+                f.Rems!.REMSNumber.Contains(t)
+                || f.Rems!.RequestedClientName.Contains(t)
+                || (f.Rems!.RequestedClientName + " " + f.Rems!.ClientNameSuffix).Contains(t));
         }
         if (!string.IsNullOrWhiteSpace(query.RequestStatus))
         {
@@ -218,7 +247,11 @@ internal sealed class RemsFormRepository : IRemsFormRepository
             {
                 f.REMSId,
                 f.Rems!.REMSNumber,
-                ClientName = f.Rems!.RequestedClientName,
+                // The name with its suffix — REMS.ClientDisplayName written out, since [NotMapped]
+                // cannot cross into SQL.
+                ClientName = f.Rems!.ClientNameSuffix == null || f.Rems!.ClientNameSuffix == ""
+                    ? f.Rems!.RequestedClientName
+                    : f.Rems!.RequestedClientName + " " + f.Rems!.ClientNameSuffix,
                 EngagementType = f.Rems!.Type,
                 RequestStatus = f.Rems!.Status,
                 f.Status,

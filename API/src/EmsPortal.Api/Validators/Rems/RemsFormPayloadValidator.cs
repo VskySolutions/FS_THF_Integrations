@@ -12,10 +12,10 @@ namespace EmsPortal.Api.Validators.Rems;
 /// form was built for. Returns a <see cref="ValidationResult"/> whose failures plug straight into
 /// <c>ApiResponseFactory.ValidationError</c>.
 /// <para>
-/// Required per group: Individual → <c>self</c>; Business → <c>ein</c> + <c>ceo</c>/<c>cfo</c>/
-/// <c>accountsPayable</c>; Government → <c>financeDirector</c>. Every entity's physical address is
-/// required, as are each related entity's name and email address; a required role must carry name and a
-/// valid email.
+/// Required per group: Individual → a first and last name + <c>self</c>; Business → <c>ein</c> +
+/// <c>primaryContact</c>/<c>financialContact</c>/<c>billingContact</c>; Government →
+/// <c>financeDirector</c>. The physical and mailing addresses are both required, as are each related
+/// entity's name and email address; a required role must carry a first name, a last name and a valid email.
 /// </para>
 /// </summary>
 public sealed class RemsFormPayloadValidator
@@ -23,19 +23,26 @@ public sealed class RemsFormPayloadValidator
     public const string Individual = "individual";
     public const string Government = "government";
 
-    // The business FAMILY. "business" was one group until it was split into the three kinds of business
-    // THF actually onboards; they ask for exactly the same things (EIN, CEO/CFO/AP, banker, lawyer), so
-    // the split is about naming what the client is, not about changing the form.
+    // The business FAMILY: the kinds of business THF onboards are asked for exactly the same things, so
+    // what separates them is what the client IS, not what the form asks.
     //
-    // `Business` itself is retired from the picker but STILL RECOGNISED here: forms sent before the split
-    // carry it, and a client part-way through one must be able to finish.
+    // `Business` is not offered in the picker but is STILL RECOGNISED here: forms sent before the split
+    // into three carry the code, and a client part-way through one must be able to finish.
     public const string Business = "business";
     public const string NotForProfit = "not_for_profit";
     public const string Insurance = "insurance";
     public const string Commercial = "commercial";
 
+    /// <summary>
+    /// A trust or a decedent's estate. In the business family because it is asked the same things: it has
+    /// an EIN of its own and is acted for by trustees or personal representatives, so the primary,
+    /// financial and billing contacts are the people who act for it. It is emphatically not an individual
+    /// — treating it as one files the trust's affairs under its trustee's own name.
+    /// </summary>
+    public const string TrustEstate = "trust_estate";
+
     private static readonly HashSet<string> BusinessGroups =
-        new(StringComparer.Ordinal) { Business, NotForProfit, Insurance, Commercial };
+        new(StringComparer.Ordinal) { Business, NotForProfit, Insurance, Commercial, TrustEstate };
 
     /// <summary>True for any industry group that asks the business questions.</summary>
     public static bool IsBusinessGroup(string? industryGroup)
@@ -52,19 +59,24 @@ public sealed class RemsFormPayloadValidator
         }
 
         // ---- Common ----
-        if (string.IsNullOrWhiteSpace(payload.ClientName))
+        // An individual is a person and is asked for a first and a last name; a business or government
+        // body is asked for the one name it has. Both land in ClientName — see EffectiveClientName — but
+        // what has to be FILLED IN differs, and pointing at "clientName" on a form showing two boxes would
+        // highlight neither of them.
+        if (industryGroup == Individual)
+        {
+            RequireField(failures, "clientFirstName", payload.ClientFirstName, "First name is required.");
+            RequireField(failures, "clientLastName", payload.ClientLastName, "Last name is required.");
+        }
+        else if (string.IsNullOrWhiteSpace(payload.ClientName))
         {
             failures.Add(new ValidationFailure("clientName", "Client name is required."));
         }
 
-        // Physical address is always captured for the main entity ("Physical always").
+        // Both are required, unconditionally. The form offers a "copy from" button rather than a "same as"
+        // flag, so there is no flag to read and every client fills both in — which the browser enforces too.
         RequireAddress(failures, "physicalAddress", payload.PhysicalAddress);
-
-        // A separate mailing address is required only when the client says it differs.
-        if (payload.MailingDiffers)
-        {
-            RequireAddress(failures, "mailingAddress", payload.MailingAddress);
-        }
+        RequireAddress(failures, "mailingAddress", payload.MailingAddress);
 
         if (!string.IsNullOrWhiteSpace(payload.BillingEmail) && !IsEmail(payload.BillingEmail))
         {
@@ -79,7 +91,9 @@ public sealed class RemsFormPayloadValidator
         }
 
         // ---- Industry-group role rules ----
-        var roles = payload.Roles ?? new RemsRolesPayload();
+        // Normalized, so a payload written before the business roles were renamed is validated on the
+        // answers it actually carries rather than failing for three contacts it gave under the old keys.
+        var roles = payload.EffectiveRoles;
         // if/else rather than a switch: the business branch matches a FAMILY of codes, not one literal.
         if (industryGroup == Individual)
         {
@@ -93,16 +107,16 @@ public sealed class RemsFormPayloadValidator
                 failures.Add(new ValidationFailure("ein", "EIN is required for a business."));
             }
 
-            RequireRole(failures, "roles.ceo", roles.Ceo);
-            RequireRole(failures, "roles.cfo", roles.Cfo);
-            RequireRole(failures, "roles.accountsPayable", roles.AccountsPayable);
-            OptionalRole(failures, "roles.banker", roles.Banker);
-            OptionalRole(failures, "roles.lawyer", roles.Lawyer);
+            RequireRole(failures, "roles.primaryContact", roles.PrimaryContact);
+            RequireRole(failures, "roles.financialContact", roles.FinancialContact);
+            RequireRole(failures, "roles.billingContact", roles.BillingContact);
+            OptionalRole(failures, "roles.otherContact", roles.OtherContact);
         }
         else if (industryGroup == Government)
         {
             RequireRole(failures, "roles.financeDirector", roles.FinanceDirector);
-            OptionalRole(failures, "roles.accountsPayable", roles.AccountsPayable);
+            OptionalRole(failures, "roles.billingContact", roles.BillingContact);
+            OptionalRole(failures, "roles.otherContact", roles.OtherContact);
         }
         else
         {
@@ -111,9 +125,8 @@ public sealed class RemsFormPayloadValidator
 
         // ---- Additional entities ----
         // Each row is another of the client's businesses for the firm to set up separately, so it needs a
-        // name to file it under and an address to reach it on. The email is not one of two ways to make the
-        // row reachable any more: the request this row exists to prompt is opened by emailing an intake
-        // form, so a row without an address becomes nothing. The phone stays optional, as on every contact.
+        // name to file it under and an email to reach it on — the request this row exists to prompt is
+        // opened by emailing an intake form, so a row without an address becomes nothing. Phone optional.
         for (var i = 0; i < payload.RelatedEntities.Count; i++)
         {
             var related = payload.RelatedEntities[i];
@@ -158,7 +171,7 @@ public sealed class RemsFormPayloadValidator
         RequireField(failures, $"{prefix}.zip", address.Zip, "Zip Code is required.");
     }
 
-    /// <summary>A required role must carry a name and a valid email; the phone is optional.</summary>
+    /// <summary>A required role must carry a first name, a last name and a valid email; the phone is optional.</summary>
     private static void RequireRole(List<ValidationFailure> failures, string prefix, RemsRolePayload? role)
     {
         if (role is null || !role.HasAny)
@@ -180,12 +193,24 @@ public sealed class RemsFormPayloadValidator
     }
 
     /// <summary>
-    /// A contact is a name and a valid email. The phone is optional — captured when known, never a reason
-    /// to block the form.
+    /// A contact is a first name, a last name and a valid email. The phone is optional — captured when
+    /// known, never a reason to block the form.
+    /// <para>
+    /// A payload written before the name was split into two carries only <c>name</c>. It is accepted as
+    /// it stands: the client filled that form in good faith, and re-opening it would ask them to retype a
+    /// name they already gave. Anything typed into the two boxes since is validated as two boxes.
+    /// </para>
     /// </summary>
     private static void ValidateRoleFields(List<ValidationFailure> failures, string prefix, RemsRolePayload role)
     {
-        RequireField(failures, $"{prefix}.name", role.Name, "Name is required.");
+        var preSplit = string.IsNullOrWhiteSpace(role.FirstName)
+            && string.IsNullOrWhiteSpace(role.LastName)
+            && !string.IsNullOrWhiteSpace(role.Name);
+        if (!preSplit)
+        {
+            RequireField(failures, $"{prefix}.firstName", role.FirstName, "First name is required.");
+            RequireField(failures, $"{prefix}.lastName", role.LastName, "Last name is required.");
+        }
 
         if (string.IsNullOrWhiteSpace(role.Email))
         {

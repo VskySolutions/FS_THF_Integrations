@@ -108,6 +108,7 @@ public sealed class ProfileController : ControllerBase
 
     {
         // Personal
+        Apply(request.Prefix, v => person.Prefix = v);
         Apply(request.FirstName, v => person.FirstName = v);
         Apply(request.MiddleName, v => person.MiddleName = v);
         Apply(request.LastName, v => person.LastName = v);
@@ -115,8 +116,6 @@ public sealed class ProfileController : ControllerBase
         Apply(request.Gender, v => person.Gender = v);
         Apply(request.MaritalStatus, v => person.MaritalStatus = v);
         Apply(request.Nationality, v => person.Nationality = v);
-        Apply(request.TimeZone, v => person.TimeZone = v);
-        Apply(request.Language, v => person.Language = v);
         if (request.DateOfBirth.HasValue)
         {
             person.DateOfBirth = request.DateOfBirth;
@@ -138,16 +137,8 @@ public sealed class ProfileController : ControllerBase
 
         // Professional
         Apply(request.EmployeeCode, v => person.EmployeeCode = v);
-        Apply(request.JobTitle, v => person.JobTitle = v);
-        Apply(request.Department, v => person.Department = v);
-        Apply(request.Organization, v => person.Organization = v);
 
         // Social
-        Apply(request.LinkedInUrl, v => person.LinkedInUrl = v);
-        Apply(request.TwitterUrl, v => person.TwitterUrl = v);
-        Apply(request.FacebookUrl, v => person.FacebookUrl = v);
-        Apply(request.InstagramUrl, v => person.InstagramUrl = v);
-        Apply(request.WebsiteUrl, v => person.WebsiteUrl = v);
         Apply(request.Notes, v => person.Notes = v);
 
         // Profile image
@@ -191,7 +182,6 @@ public sealed class ProfileController : ControllerBase
         address.AddressLine1 = input.AddressLine1;
         address.AddressLine2 = input.AddressLine2;
         address.Landmark = input.Landmark;
-        address.Area = input.Area;
         address.BuildingName = input.BuildingName;
         address.FloorNumber = input.FloorNumber;
         address.UnitNumber = input.UnitNumber;
@@ -199,11 +189,8 @@ public sealed class ProfileController : ControllerBase
         address.CountryName = input.CountryName;
         address.StateCode = input.StateCode;
         address.StateName = input.StateName;
-        address.CityCode = input.CityCode;
         address.CityName = input.CityName;
         address.PostalCode = input.PostalCode;
-        address.Latitude = input.Latitude;
-        address.Longitude = input.Longitude;
 
         if (isNew)
         {
@@ -230,7 +217,7 @@ public sealed class ProfileController : ControllerBase
         var fields = new[]
         {
             p.FirstName, p.LastName, p.DisplayName, p.PreferredName, p.Gender,
-            p.PrimaryEmail, p.MobileNumber, p.Nationality, p.JobTitle, p.Organization
+            p.PrimaryEmail, p.MobileNumber, p.Nationality
         };
         var filled = fields.Count(f => !string.IsNullOrWhiteSpace(f));
         var total = fields.Length + 2; // + date of birth + address

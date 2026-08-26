@@ -20,21 +20,25 @@ public static class RemsRequestTypes
     /// two values — "New Engagement" and "Existing Client" — until they were merged, since every new
     /// engagement for an existing client is both; this code is the one that survived the merge (see
     /// <c>MergeRemsExistingClientTypes</c>).
+    /// <para>
+    /// It absorbed a third answer afterwards, "Subsidiary / Child of Existing Client"
+    /// (<c>RetireRemsSubsidiaryType</c>): a child of a client on file is an engagement for a client we
+    /// already have, so the two answers were never distinguishable. The Parent Client field that briefly
+    /// carried the distinction has since gone too (<c>DropRemsParentClient</c>) — REMS records who the
+    /// engagement is for, and nothing about how that client relates to another one.
+    /// </para>
     /// </summary>
     public const string ExistingClient = "existing_client";
-
-    /// <summary>A subsidiary or child of a client already on file — an existing-client answer too.</summary>
-    public const string SubsidiaryChildOfExistingClient = "subsidiary_child_of_existing_client";
 
     /// <summary>The codes that mean an existing client is referenced.</summary>
     public static readonly IReadOnlyList<string> ExistingClientTypes = new[]
     {
-        ExistingClient, SubsidiaryChildOfExistingClient,
+        ExistingClient,
     };
 
     /// <summary>Every offered code, in display order.</summary>
     public static readonly IReadOnlyList<string> All = new[]
     {
-        BrandNewClient, ExistingClient, SubsidiaryChildOfExistingClient,
+        BrandNewClient, ExistingClient,
     };
 }

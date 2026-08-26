@@ -24,18 +24,12 @@ public class Media : AuditableEntity
     public string? StorageProvider { get; set; }
     public string? RelativePath { get; set; }
     public string? PublicUrl { get; set; }
-    public string? ThumbnailUrl { get; set; }
-    public string? PreviewUrl { get; set; }
 
     // ---- Image / media metadata ----
     public int? Width { get; set; }
     public int? Height { get; set; }
-    public string? Resolution { get; set; }
-    /// <summary>Duration in seconds for video/audio.</summary>
-    public int? Duration { get; set; }
 
     // ---- Status ----
     public bool IsPublic { get; set; }
     public bool IsProcessed { get; set; }
-    public bool IsArchived { get; set; }
 }

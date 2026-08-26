@@ -13,8 +13,12 @@
 
     <div class="section-subhead">Name</div>
     <div class="row q-col-gutter-md q-mb-md">
+      <!-- The title, to the left of the name it belongs in front of. It is not part of the name the
+           person is filed under, which is why it is its own box rather than something typed into the
+           one beside it. -->
+      <app-name-prefix-field v-model="form.prefix" class="col-4 col-sm-2" :disable="disable" />
       <app-text-field
-        v-model="form.firstName" label="First Name *" class="col-12 col-sm-6"
+        v-model="form.firstName" label="First Name *" class="col-8 col-sm-4"
         :disable="disable" :rules="[(v) => !!v || 'First name is required']"
       />
       <app-text-field v-model="form.middleName" label="Middle Name" class="col-12 col-sm-6" :disable="disable" />
@@ -42,13 +46,6 @@
         label="Phone Number" class="col-12" :disable="disable"
       />
     </div>
-
-    <div class="section-subhead">Professional</div>
-    <div class="row q-col-gutter-md">
-      <app-text-field v-model="form.jobTitle" label="Job Title" class="col-12 col-sm-6" :disable="disable" />
-      <app-text-field v-model="form.department" label="Department" class="col-12 col-sm-6" :disable="disable" />
-      <app-text-field v-model="form.organization" label="Organization" class="col-12" :disable="disable" />
-    </div>
   </div>
 </template>
 
@@ -58,6 +55,7 @@
 // parent owns; the surrounding q-form validates the nested inputs.
 import AppSelect from "components/common/AppSelect.vue";
 import AppTextField from "components/common/AppTextField.vue";
+import AppNamePrefixField from "components/common/AppNamePrefixField.vue";
 import AppDateField from "components/common/AppDateField.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
 

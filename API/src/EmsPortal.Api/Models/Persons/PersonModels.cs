@@ -12,6 +12,9 @@ public sealed class CreatePersonRequest
     public Guid? TenantId { get; set; }
 
     // Personal
+    /// <summary>The title they are addressed by — Mr., Mrs., Ms., Dr. Free text; not part of the filed name.</summary>
+    public string? Prefix { get; set; }
+
     public string FirstName { get; set; } = string.Empty;
     public string? MiddleName { get; set; }
     public string LastName { get; set; } = string.Empty;
@@ -34,9 +37,6 @@ public sealed class CreatePersonRequest
 
     // Professional
     public string? EmployeeCode { get; set; }
-    public string? JobTitle { get; set; }
-    public string? Department { get; set; }
-    public string? Organization { get; set; }
 
     public string? Notes { get; set; }
 
@@ -51,6 +51,9 @@ public sealed class UpdatePersonRequest
     public Guid? TenantId { get; set; }
 
     // Personal
+    /// <summary>The title they are addressed by. Free text; not part of the filed name.</summary>
+    public string? Prefix { get; set; }
+
     public string? FirstName { get; set; }
     public string? MiddleName { get; set; }
     public string? LastName { get; set; }
@@ -73,9 +76,6 @@ public sealed class UpdatePersonRequest
 
     // Professional
     public string? EmployeeCode { get; set; }
-    public string? JobTitle { get; set; }
-    public string? Department { get; set; }
-    public string? Organization { get; set; }
 
     public string? Notes { get; set; }
     public bool? IsActive { get; set; }
@@ -91,7 +91,6 @@ public sealed record PersonSummary(
     string FullName,
     string? PrimaryEmail,
     string? MobileNumber,
-    string? JobTitle,
     Guid? TenantId,
     string? TenantName,
     bool IsUser,

@@ -54,9 +54,7 @@
 // Values are OptionSetItem ids.
 //
 // Controlled by the page (like the setup form beside it): it holds the selection, announces every change
-// (`change`), and the page's auto-save writes it. It had its own "Save & Next" button teleported into the
-// workspace card's title row — a target that no longer exists, so the button rendered nowhere and
-// marketing could not be saved at all.
+// (`change`), and the page's auto-save writes it. It has no save button of its own: the page has ONE Save.
 import { ref, computed, watch, nextTick } from "vue";
 import { remsApi } from "services/api";
 import AppTextField from "components/common/AppTextField.vue";

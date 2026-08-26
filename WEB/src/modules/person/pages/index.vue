@@ -165,7 +165,6 @@ const columns = computed(() => [
   { name: "fullName", label: "Name", field: "fullName", align: "left", sortable: true, default: true, filterable: false },
   { name: "primaryEmail", label: "Email", field: "primaryEmail", align: "left", sortable: true, default: true, filterable: false },
   { name: "mobileNumber", label: "Phone", field: "mobileNumber", align: "left", filterable: false },
-  { name: "jobTitle", label: "Job Title", field: "jobTitle", align: "left", sortable: true, filterable: false },
   { name: "isUser", label: "Account", field: "isUser", align: "left", sortable: true, default: true, filterOptions: [{ label: "User", value: true }, { label: "Not a user", value: false }] },
   { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true, filterOptions: [{ label: "Active", value: true }, { label: "Inactive", value: false }] },
   // Where the record came from. Filtering is client-side over the loaded page (this list is not

@@ -1,9 +1,10 @@
 <template>
   <!-- Read-only, grouped presentation of the in-progress payload for the public form's Review step
-       (AC-REMS-024.7): Contact · Addresses · Contract Details (Government only) · Additional Contacts ·
-       Other Entities · Billing. That is the order the form asks the questions in, card for card, so
-       checking an answer here means looking where it was typed. Rendered as plain text — no inputs.
-       Mirrors the admin SubmittedFormDialog grouping so the client sees exactly what the admin will. -->
+       (AC-REMS-024.7): Contact · Addresses & Billing · Contract Details (Government only) · Additional
+       Contacts · Other Entities. That is the order the form asks the questions in, card for card, so
+       checking an answer here means looking where it was typed — which is also why the billing contact
+       is inside Addresses & Billing rather than in a block of its own at the end. Rendered as plain
+       text — no inputs. Mirrors the admin's submitted-form panel so the client sees what the admin will. -->
   <div>
     <div v-for="g in groups" :key="g.title" class="review-group">
       <div class="review-group__title">
@@ -57,6 +58,9 @@
 import { computed } from "vue";
 import { addressText } from "modules/rems/remsAddress";
 import { isBusinessIndustryGroup } from "modules/rems/useRemsMeta";
+import {
+  answeredRoleKeys, BILLING_ROLE_KEY, groupKey, normalizeRoles, roleAddressedName, roleDefsFor, roleHasAny
+} from "modules/rems/remsContactRoles";
 
 const props = defineProps({
   payload: { type: Object, required: true },
@@ -87,42 +91,28 @@ const dateOnly = (v) => {
   return m ? `${m[2]}-${m[3]}-${m[1]}` : String(v);
 };
 
-const ROLE_LABELS = {
-  self: "Self",
-  spouse: "Spouse",
-  ceo: "CEO",
-  cfo: "CFO",
-  accountsPayable: "Accounts Payable",
-  banker: "Banker",
-  lawyer: "Lawyer",
-  financeDirector: "Finance Director"
-};
-// Required role per industry group — drives the "*" marker on the review contact rows.
-const REQUIRED_ROLES = {
-  individual: ["self"],
-  business: ["ceo", "cfo", "accountsPayable"],
-  government: ["financeDirector"]
-};
-// The roles relevant to each industry group, in display order.
-const GROUP_ROLES = {
-  individual: ["self", "spouse"],
-  business: ["ceo", "cfo", "accountsPayable", "banker", "lawyer"],
-  government: ["financeDirector", "accountsPayable"]
-};
-const roleHasAny = (r) => !!r && [r?.name, r?.email, r?.phone].some((x) => x && String(x).trim());
+// The role labels, order and required set come from modules/rems/remsContactRoles — the same definition
+// the form above is rendered from, so review shows the questions that were actually asked.
 
 const groups = computed(() => {
   const p = props.payload || {};
   const result = [];
 
-  // Contact
-  const contact = [
-    { label: "Client Name", value: val(p.clientName) },
+  // Contact. An individual's name is reviewed as the two parts they typed, so an error in either one is
+  // visible where it was made; every other entity type has the one name it gave.
+  const contact = isIndividual.value
+    ? [
+      { label: "Prefix", value: val(p.clientPrefix) },
+      { label: "First Name", value: val(p.clientFirstName) },
+      { label: "Last Name", value: val(p.clientLastName) }
+    ]
+    : [{ label: "Client/Entity Name", value: val(p.clientName) }];
+  contact.push(
     { label: "Email (locked)", value: val(props.lockedEmail || p.email) },
     { label: "Phone Number", value: val(p.mobileNumber) },
     { label: "Referral Source", value: referralSourceLabel(p.referralSource), hint: referralSourceHint(p.referralSource) },
     { label: "Referral Details", value: val(p.referralSourceDetail) }
-  ];
+  );
   if (isIndividual.value) {
     // The spouse is asked for once, in the Contacts card, and is reviewed there under "Spouse". These
     // three are retired, and appear only when a draft started before the change still carries one —
@@ -134,17 +124,30 @@ const groups = computed(() => {
   if (isBusiness.value) contact.push({ label: "EIN", value: val(p.ein) });
   result.push({ title: "Contact", icon: "o_person", kind: "fields", rows: contact });
 
-  // Addresses — all three are stored in their own right, so each is simply shown.
-  result.push({
-    title: "Addresses",
-    icon: "o_place",
-    kind: "fields",
-    rows: [
-      { label: "Physical Address", value: addressText(p.physicalAddress) },
-      { label: "Mailing Address", value: addressText(p.mailingAddress) },
-      { label: "Billing Address", value: addressText(p.billingAddress) }
-    ]
-  });
+  // Addresses — all three are stored in their own right, so each is simply shown. The billing CONTACT
+  // rides with them, because that is where the form asks it: the billing address and the person it is
+  // addressed to are two halves of one answer, and reviewing them cards apart is how a form gets sent
+  // with one and not the other.
+  const roles = normalizeRoles(p.roles);
+  const billingRole = roles[BILLING_ROLE_KEY];
+  const addressRows = [
+    { label: "Physical Address", value: addressText(p.physicalAddress) },
+    { label: "Mailing Address", value: addressText(p.mailingAddress) },
+    { label: "Billing Address", value: addressText(p.billingAddress) }
+  ];
+  if (isIndividual.value || !roleHasAny(billingRole)) {
+    // An individual is asked the lighter two-box version; anyone else who left the contact blank still
+    // has the row shown, because blank IS the answer being reviewed.
+    addressRows.push(
+      { label: "Billing Contact", value: val(p.billingContactName) },
+      { label: "Billing Email", value: val(p.billingEmail) });
+  } else {
+    addressRows.push(
+      { label: "Billing Contact", value: roleAddressedName(billingRole) },
+      { label: "Billing Email", value: val(billingRole.email) },
+      { label: "Billing Phone", value: val(billingRole.phone) });
+  }
+  result.push({ title: "Addresses & Billing", icon: "o_place", kind: "fields", rows: addressRows });
 
   // Contract Details (Government)
   if (isGovernment.value) {
@@ -163,15 +166,19 @@ const groups = computed(() => {
     });
   }
 
-  // Additional Contacts (role contacts, in group order)
-  const roles = p.roles || {};
-  // The three business groups share one role set, so they all look up under "business".
-  const key = isBusinessIndustryGroup(props.industryGroup) ? "business" : props.industryGroup;
-  const order = GROUP_ROLES[key] || [];
-  const required = REQUIRED_ROLES[key] || [];
-  const contactRows = order
-    .filter((k) => roleHasAny(roles[k]))
-    .map((k) => ({ role: ROLE_LABELS[k], isRequired: required.includes(k), ...roles[k] }));
+  // Additional Contacts (role contacts, in group order). Any role the client answered that this group is
+  // no longer asked — a Banker on a form started before it was retired — is shown after the rest: the
+  // review step reports what will be submitted, and that contact will be. The billing contact is not
+  // among them: it is reviewed above, with the address it is billed to.
+  const key = groupKey(props.industryGroup, isBusinessIndustryGroup(props.industryGroup));
+  const contactRows = roleDefsFor(key, answeredRoleKeys(roles))
+    .filter((def) => def.key !== BILLING_ROLE_KEY && roleHasAny(roles[def.key]))
+    .map((def) => ({
+      role: def.label,
+      isRequired: def.required,
+      ...roles[def.key],
+      name: roleAddressedName(roles[def.key])
+    }));
   result.push({ title: "Additional Contacts", icon: "o_groups", kind: "contacts", rows: contactRows });
 
   // Other Entities — a contact each, not a second set of business details. Each becomes its own EMS.
@@ -185,17 +192,21 @@ const groups = computed(() => {
     });
   result.push({ title: "Other Entities", icon: "o_apartment", kind: "entities", rows: entities });
 
-  // Billing — the person to bill, and nothing else. The billing ADDRESS lives with the other two in
-  // Addresses, which is where the form asks for it; repeating it here showed one answer in two places.
-  result.push({
-    title: "Billing",
-    icon: "o_receipt_long",
-    kind: "fields",
-    rows: [
-      { label: "Billing Contact", value: val(p.billingContactName) },
-      { label: "Billing Email", value: val(p.billingEmail) }
-    ]
-  });
+  // Billing is reviewed up in Addresses & Billing, where the form asks it. The one exception: a
+  // NON-individual form that ALSO carries the two-box answer, saved before every entity type named a
+  // Billing Contact. That is not a second copy of the contact above — it is a different answer the client
+  // gave, and this step reports what is in hand.
+  if (!isIndividual.value && (p.billingContactName || p.billingEmail)) {
+    result.push({
+      title: "Billing (as previously given)",
+      icon: "o_receipt_long",
+      kind: "fields",
+      rows: [
+        { label: "Billing Contact", value: val(p.billingContactName) },
+        { label: "Billing Email", value: val(p.billingEmail) }
+      ]
+    });
+  }
 
   return result;
 });
@@ -219,7 +230,10 @@ const groups = computed(() => {
 }
 .review-group__body {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* auto-fit rather than a hard pair: two columns of a phone-width dialog leave each answer about a
+     hundred and thirty pixels wide, which wraps an email address over three lines. Under the minimum it
+     drops to one column and every label keeps its value beside it. */
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 10px 24px;
 }
 .field-row--dense {

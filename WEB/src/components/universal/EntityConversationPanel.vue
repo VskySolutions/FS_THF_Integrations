@@ -1,7 +1,8 @@
 <template>
   <div class="column q-gutter-sm">
-    <!-- Header: quick search with loader + Add message -->
-    <div class="row items-center no-wrap q-gutter-sm">
+    <!-- Header: quick search with loader + Add message. Wraps: the search box and the button do not
+         both fit across a phone-width dialog, and no-wrap pushed the button out of the panel. -->
+    <div class="row items-center q-gutter-sm">
       <q-space />
       <q-input
         v-model="search"
@@ -351,6 +352,10 @@ defineExpose({ load });
 
 <style scoped>
 .uf-conversation__search { max-width: 220px; width: 100%; }
+/* Below sm the box takes whatever the Add button leaves rather than holding out for 220px. */
+@media (max-width: 599px) {
+  .uf-conversation__search { flex: 1 1 130px; max-width: none; width: auto; }
+}
 .message-body { white-space: normal; word-break: break-word; }
 .message-body :deep(.uf-mention) { color: #1976d2; font-weight: 500; background: #e3f2fd; border-radius: 4px; padding: 0 2px; }
 .message-body :deep(p) { margin: 0 0 6px; }

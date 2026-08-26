@@ -36,7 +36,7 @@ public sealed class RemsSettingsController : ControllerBase
 
     /// <summary>The tenant's REMS settings: the managing shareholder and the department-director map (WO-114).</summary>
     [HttpGet]
-    [RequirePermission(Permissions.RemsEngagementsManage)]
+    [RequirePermission(Permissions.RemsSettingsManage)]
     [ProducesResponseType<ApiResponse<RemsSettingsView>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
     {
@@ -45,9 +45,9 @@ public sealed class RemsSettingsController : ControllerBase
         return Ok(ApiResponseFactory.Success(view, "REMS settings retrieved."));
     }
 
-    /// <summary>Set the managing shareholder and fully replace the department-director map (WO-114).</summary>
+    /// <summary>Fully replace the department-director map (WO-114).</summary>
     [HttpPut]
-    [RequirePermission(Permissions.RemsEngagementsManage)]
+    [RequirePermission(Permissions.RemsSettingsManage)]
     [ProducesResponseType<ApiResponse<RemsSettingsView>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Update([FromBody] UpdateRemsSettingsRequest request, CancellationToken cancellationToken)
     {
@@ -57,10 +57,6 @@ public sealed class RemsSettingsController : ControllerBase
         }
 
         // Every referenced user must resolve to a real user.
-        if (request.ManagingShareholderUserId is { } msId && await _users.GetByIdAsync(msId, cancellationToken) is null)
-        {
-            return BadRequest(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, "Validation failed.", "Unknown managingShareholderUserId."));
-        }
         foreach (var director in request.DepartmentDirectors)
         {
             if (await _users.GetByIdAsync(director.DirectorUserId, cancellationToken) is null)
@@ -77,8 +73,11 @@ public sealed class RemsSettingsController : ControllerBase
             await _settings.AddAsync(settings, cancellationToken);
         }
 
-        settings.ManagingShareholderUserId = request.ManagingShareholderUserId;
-        _settings.Update(settings);
+        // Deliberately no Update() on the settings row itself. Calling it on a row just Added flips the
+        // tracked entry to Modified — the key is already set, so EF reads it as an existing detached row —
+        // and the UPDATE then matches nothing, surfacing as a concurrency failure on the first save a
+        // tenant ever makes. An existing row is tracked from the read above and needs no such call; the
+        // only thing changing here is its child director rows, which reconcile below.
 
         await ReconcileDepartmentDirectorsAsync(settings, request.DepartmentDirectors, cancellationToken);
 
@@ -133,21 +132,12 @@ public sealed class RemsSettingsController : ControllerBase
     {
         if (settings is null)
         {
-            return new RemsSettingsView(null, Array.Empty<RemsDepartmentDirectorView>());
+            return new RemsSettingsView(Array.Empty<RemsDepartmentDirectorView>());
         }
 
-        var userIds = new List<Guid>();
-        if (settings.ManagingShareholderUserId is { } ms)
-        {
-            userIds.Add(ms);
-        }
-        userIds.AddRange(settings.DepartmentDirectors.Where(d => !d.Deleted).Select(d => d.DirectorUserId));
+        var userIds = settings.DepartmentDirectors.Where(d => !d.Deleted).Select(d => d.DirectorUserId).ToList();
 
         var names = await _users.GetFullNamesAsync(userIds, cancellationToken);
-
-        var managingShareholder = settings.ManagingShareholderUserId is { } msId
-            ? new RemsUserRef(msId, names.TryGetValue(msId, out var n) ? n : string.Empty)
-            : null;
 
         var directors = settings.DepartmentDirectors
             .Where(d => !d.Deleted)
@@ -157,7 +147,7 @@ public sealed class RemsSettingsController : ControllerBase
                 new RemsUserRef(d.DirectorUserId, names.TryGetValue(d.DirectorUserId, out var dn) ? dn : string.Empty)))
             .ToList();
 
-        return new RemsSettingsView(managingShareholder, directors);
+        return new RemsSettingsView(directors);
     }
 
     private static string Normalize(string department) => department.Trim().ToLowerInvariant();

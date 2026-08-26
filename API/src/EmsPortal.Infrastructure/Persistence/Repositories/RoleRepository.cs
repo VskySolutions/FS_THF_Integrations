@@ -16,14 +16,26 @@ internal sealed class RoleRepository : IRoleRepository
     public async Task<IReadOnlyList<Role>> ListAsync(CancellationToken cancellationToken = default)
         => await _dbContext.Roles.OrderByDescending(r => r.UpdatedOnUtc).ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<Role>> ListVisibleToTenantAsync(Guid tenantId, CancellationToken cancellationToken = default)
+        => await _dbContext.Roles
+            .Where(r => r.TenantId == null || r.TenantId == tenantId)
+            .OrderByDescending(r => r.UpdatedOnUtc)
+            .ToListAsync(cancellationToken);
+
     public Task<Role?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
         => _dbContext.Roles.FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
 
     public Task<Role?> GetByNameAsync(string name, CancellationToken cancellationToken = default)
-        => _dbContext.Roles.FirstOrDefaultAsync(r => r.Name == name, cancellationToken);
+        => _dbContext.Roles.FirstOrDefaultAsync(r => r.Name == name && r.TenantId == null, cancellationToken);
 
-    public Task<bool> NameExistsAsync(string name, CancellationToken cancellationToken = default)
-        => _dbContext.Roles.AnyAsync(r => r.Name == name, cancellationToken);
+    public Task<bool> NameExistsAsync(string name, Guid? tenantId, Guid? excludeRoleId = null, CancellationToken cancellationToken = default)
+        => _dbContext.Roles.AnyAsync(
+            r => r.Name == name
+                && (excludeRoleId == null || r.Id != excludeRoleId)
+                // A platform name (tenantId null) must be free platform-wide; a tenant's own name only
+                // has to clear the platform roles and that tenant's.
+                && (tenantId == null || r.TenantId == null || r.TenantId == tenantId),
+            cancellationToken);
 
     public Task AddAsync(Role role, CancellationToken cancellationToken = default)
         => _dbContext.Roles.AddAsync(role, cancellationToken).AsTask();
@@ -36,7 +48,7 @@ internal sealed class RoleRepository : IRoleRepository
     {
         var roleIds = _dbContext.TenantRoles.Where(tr => tr.TenantId == tenantId).Select(tr => tr.RoleId);
         return await _dbContext.Roles
-            .Where(r => roleIds.Contains(r.Id))
+            .Where(r => roleIds.Contains(r.Id) || r.TenantId == tenantId)
             .OrderBy(r => r.Name)
             .ToListAsync(cancellationToken);
     }

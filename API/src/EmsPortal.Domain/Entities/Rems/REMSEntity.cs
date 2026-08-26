@@ -3,8 +3,7 @@ namespace EmsPortal.Domain.Entities;
 /// <summary>
 /// A legal entity belonging to a <see cref="REMSClient"/> (WO-110) — the main entity plus any related
 /// subsidiaries captured on the form. Exactly one entity per client is flagged
-/// <see cref="IsMainEntity"/>. <see cref="SourceEntityKey"/> is the client-supplied key that ties the
-/// entity back to its payload node.
+/// <see cref="IsMainEntity"/>.
 /// </summary>
 public class REMSEntity : AuditableEntity
 {
@@ -16,9 +15,6 @@ public class REMSEntity : AuditableEntity
 
     /// <summary>Owning client.</summary>
     public Guid REMSClientId { get; set; }
-
-    /// <summary>Stable key identifying this entity within the submitted payload.</summary>
-    public string SourceEntityKey { get; set; } = string.Empty;
 
     /// <summary>Entity/legal name.</summary>
     public string Name { get; set; } = string.Empty;

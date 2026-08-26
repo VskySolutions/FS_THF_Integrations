@@ -2,12 +2,12 @@
   <q-page padding>
     <app-detail-header :items="breadcrumbs" :back-to="{ name: 'rems_approvals' }">
       <template #actions>
-        <q-badge v-if="task" :color="engagementStatus.color" class="q-pa-sm text-body2 q-mr-sm">
+        <q-badge v-if="task" :color="engagementStatus.color">
           {{ engagementStatus.label }}
         </q-badge>
-        <q-badge v-if="task" :color="approvalStatusColor(task.status)" class="q-pa-sm text-body2">
+        <!-- <q-badge v-if="task" :color="approvalStatusColor(task.status)" class="q-pa-sm text-body2">
           {{ approvalStatusLabel(task.status) }}
-        </q-badge>
+        </q-badge> -->
       </template>
     </app-detail-header>
 
@@ -86,6 +86,33 @@
                   </div>
                 </div>
 
+                <q-separator class="q-my-md" />
+                <!-- The entity's addresses and contacts, as the client gave them on the intake
+                     form. They read with the request that asked for them, rather than with
+                     Engagement Setup, which is the firm's own work on top of that answer. -->
+                <q-expansion-item icon="o_home_work" label="Addresses & contacts" dense-toggle class="rems-details">
+                  <div class="q-pa-sm">
+                    <div class="row q-col-gutter-md">
+                      <div class="col-12 col-sm-6">
+                        <div class="rems-label">Physical</div>
+                        <div class="rems-value">{{ addressOf("Physical") }}</div>
+                      </div>
+                      <div class="col-12 col-sm-6">
+                        <div class="rems-label">Mailing</div>
+                        <div class="rems-value">{{ addressOf("Mailing") }}</div>
+                      </div>
+                    </div>
+                    <div class="rems-label q-mt-sm">Contacts</div>
+                    <div v-if="entityContacts.length" class="column q-gutter-xs">
+                      <div v-for="c in entityContacts" :key="c.id" class="rems-value">
+                        <span class="text-weight-medium">{{ roleText(c.role) }}:</span> {{ c.name || "—" }}
+                        <span class="text-grey-6">({{ c.email || "no email" }} · {{ c.phone || "no phone" }})</span>
+                      </div>
+                    </div>
+                    <div v-else class="rems-value text-grey-6">No contacts.</div>
+                  </div>
+                </q-expansion-item>
+
                 <template v-if="request.description">
                   <q-separator class="q-my-md" />
                   <div class="rems-label">Description</div>
@@ -140,43 +167,19 @@
 
               <!-- ---------- Setup ---------- -->
               <q-tab-panel name="setup">
-                <!-- The entity's addresses + contacts, as they came in on the submitted form. -->
-                <q-expansion-item icon="o_home_work" label="Addresses & contacts" dense-toggle class="rems-details q-mb-md">
-                  <div class="q-pa-sm">
-                    <div class="row q-col-gutter-md">
-                      <div class="col-12 col-sm-6">
-                        <div class="rems-label">Physical</div>
-                        <div class="rems-value">{{ addressOf("Physical") }}</div>
-                      </div>
-                      <div class="col-12 col-sm-6">
-                        <div class="rems-label">Mailing</div>
-                        <div class="rems-value">{{ addressOf("Mailing") }}</div>
-                      </div>
-                    </div>
-                    <div class="rems-label q-mt-sm">Contacts</div>
-                    <div v-if="entityContacts.length" class="column q-gutter-xs">
-                      <div v-for="c in entityContacts" :key="c.id" class="rems-value">
-                        <span class="text-weight-medium">{{ roleText(c.role) }}:</span> {{ c.name || "—" }}
-                        <span class="text-grey-6">({{ c.email || "no email" }} · {{ c.phone || "no phone" }})</span>
-                      </div>
-                    </div>
-                    <div v-else class="rems-value text-grey-6">No contacts.</div>
-                  </div>
-                </q-expansion-item>
-
                 <div class="row q-col-gutter-md">
                   <div v-for="item in setupRows" :key="item.label" class="col-12 col-sm-6">
                     <div class="rems-label">{{ item.label }}</div>
                     <div class="rems-value">{{ item.value }}</div>
                   </div>
 
-                  <!-- Fee + realization are reserved to the Department Director / Managing Shareholder
-                       (AC-REMS-019.10). Saying so beats an empty field that reads as "never filled in". -->
+                  <!-- Fee + realization are reserved to the Department Director (AC-REMS-019.10).
+                       Saying so beats an empty field that reads as "never filled in". -->
                   <div v-if="engagement.financialsRestricted" class="col-12">
                     <div class="rems-label">First-Year Fee Estimate · % Realization</div>
                     <div class="rems-value text-grey-6">
                       <q-icon name="o_lock" size="16px" class="q-mr-xs" />
-                      Reserved for the Department Director and Managing Shareholder.
+                      Reserved for the Department Director.
                     </div>
                   </div>
                 </div>
@@ -308,15 +311,33 @@
                   </q-banner>
                 </div>
 
-                <!-- Server order: decided first, oldest decision leading, undecided at the bottom. -->
+                <!-- Server order: by role — shareholder, director, CSE, commission recipient, then anyone
+                     added by hand — so the list reads the same way every time, and a row does not move
+                     under the reader each time somebody signs.
+                     A round asks everybody at once rather than one after another, so "whose turn is it" is
+                     answered by every row still waiting, not by one of them. Those are the rows marked
+                     here; the reader's own is marked hardest, because it is the only one they can act
+                     on. -->
                 <div class="rems-label q-mb-xs">Approvers on this round</div>
                 <q-list bordered separator class="rounded-borders">
-                  <q-item v-for="d in round.decisions" :key="d.taskId">
-                    <q-item-section avatar><q-icon :name="approverRoleIcon(d.role)" color="primary" /></q-item-section>
+                  <q-item
+                    v-for="d in round.decisions" :key="d.taskId"
+                    :class="{ 'ar--awaiting': awaitingDecision(d), 'ar--you': d.isYou }"
+                  >
+                    <q-item-section avatar>
+                      <q-icon
+                        :name="approverRoleIcon(d.role)"
+                        :color="awaitingDecision(d) ? 'amber-9' : 'primary'"
+                      />
+                    </q-item-section>
                     <q-item-section>
                       <q-item-label class="text-weight-medium">
                         {{ d.approver?.name || "—" }}
                         <q-badge v-if="d.isYou" color="primary" class="q-ml-xs">You</q-badge>
+                        <q-badge
+                          v-if="awaitingDecision(d)" color="amber-9" class="q-ml-xs"
+                          :label="d.isYou ? 'Your turn' : 'Awaiting decision'"
+                        />
                       </q-item-label>
                       <q-item-label caption>
                         {{ approverRoleLabel(d.role) }}
@@ -331,6 +352,19 @@
                     </q-item-section>
                   </q-item>
                 </q-list>
+
+                <!-- The rounds BEFORE this one. A resubmission opens a NEW round rather than reopening the
+                     last, so what the previous approvers objected to is readable nowhere else on this page.
+                     This round is left out of it: the list above already gives it in full, and the history
+                     leads with the newest, which put the same round twice in a row down the page.
+                     Open on arrival — an approver looking at a repeat round needs the round it repeats in
+                     front of them, not behind a toggle — and absent entirely on a first round, where there
+                     is nothing before this one to read. -->
+                <approval-history
+                  v-if="engagement.engagementId" :engagement-id="engagement.engagementId"
+                  :exclude-round-id="round.id" label="Earlier rounds"
+                  default-opened class="q-mt-md"
+                />
               </q-tab-panel>
             </q-tab-panels>
           </q-card>
@@ -406,7 +440,7 @@
 
     <!-- Reject: a required reason (AC-REMS-020.1). -->
     <q-dialog v-model="rejectOpen" persistent>
-      <q-card style="min-width: 380px; max-width: 90vw;">
+      <q-card style="width: 380px; max-width: 90vw;">
         <q-card-section class="text-subtitle1 text-weight-medium">Reject this approval task</q-card-section>
         <q-separator />
         <q-card-section>
@@ -455,6 +489,7 @@ import AppDetailHeader from "components/common/AppDetailHeader.vue";
 // Explicit import: boot/components.js registers only the Zw* inputs globally, so without this the tag
 // resolves to nothing and the Conversation card renders empty — no error, just a blank panel.
 import EntityConversationPanel from "components/universal/EntityConversationPanel.vue";
+import ApprovalHistory from "modules/rems/components/ApprovalHistory.vue";
 
 const route = useRoute();
 const notify = useNotify();
@@ -480,18 +515,26 @@ const savingItemId = ref(null);
 const TABS = [
   { name: "request", icon: "o_assignment", label: "Request" },
   { name: "client", icon: "o_business", label: "Client" },
-  { name: "setup", icon: "o_engineering", label: "Setup" },
+  { name: "setup", icon: "o_engineering", label: "Engagement Setup" },
   { name: "marketing", icon: "o_campaign", label: "Marketing" },
   { name: "commission", icon: "o_payments", label: "Commission" },
   { name: "approval", icon: "o_approval", label: "Approval" }
 ];
-const tab = ref("setup");
+// Opens on Approval, not on the packet: the approver came here to decide, and that tab carries the
+// round, where the other approvers stand and their own decision. The tabs before it are the material
+// they read on the way to it, left in the order it was filled in.
+const tab = ref("approval");
 
 const request = computed(() => task.value?.request || {});
 const engagement = computed(() => task.value?.engagement || {});
 const client = computed(() => engagement.value.client || {});
 const round = computed(() => task.value?.round || {});
 const engagementStatus = computed(() => engagementStatusMeta(engagement.value.status));
+
+// Whose signature the round is still waiting on. Only meaningful while the round is open: once it closes,
+// a task left undecided is Superseded rather than Pending, and a closed round is waiting on nobody — so
+// nothing on a finished round should read as somebody's turn.
+const awaitingDecision = (d) => round.value.status === "Pending" && d?.status === "Pending";
 const entityContacts = computed(() => engagement.value.entity?.contacts || []);
 const commissionSplits = computed(() => engagement.value.commissionSplits || []);
 const commissionTotal = computed(() =>
@@ -529,9 +572,6 @@ const requestRows = computed(() => {
     // No Title row: a request has no title of its own any more — the client it is for is what names it.
     { label: "Requested Client", value: text(r.requestedClientName) },
     { label: "Type", value: typeLabel(r.type), hint: typeHint(r.type) },
-    // Directly under the Type that raises the question. Present only on a subsidiary, where the approver
-    // is signing off work for a client that belongs to another one already on THF's books.
-    ...(r.parentClientName ? [{ label: "Parent Client", value: r.parentClientName }] : []),
     { label: "Request Status", type: "status" },
     { label: "Customer Email", value: text(r.customerEmail) },
     { label: "Customer Phone Number", value: text(r.customerMobileNumber) },
@@ -546,15 +586,19 @@ const requestRows = computed(() => {
 
 const clientRows = computed(() => {
   const c = client.value;
-  return [
+  const rows = [
     { label: "Name", value: text(c.name) },
     { label: "Email", value: text(c.email) },
     { label: "Phone Number", value: text(c.mobileNumber) },
     { label: "Referral Source", value: text(c.referralSource) },
-    { label: "Billing Contact", value: text(c.billingContactName) },
-    { label: "Billing Email", value: text(c.billingEmail) },
     { label: "Billing Address", value: addressText(c.billingAddress) }
   ];
+  // The billing CONTACT is asked of individuals only now — every other entity type names one among its
+  // contacts, listed above with a name, an email and a phone. Dropped when blank rather than shown as
+  // "—", which beside a Contacts list that has a Billing Contact in it reads as a missing answer.
+  if (c.billingContactName) rows.push({ label: "Billing Contact", value: text(c.billingContactName) });
+  if (c.billingEmail) rows.push({ label: "Billing Email", value: text(c.billingEmail) });
+  return rows;
 });
 
 const setupRows = computed(() => {
@@ -735,6 +779,17 @@ onMounted(load);
   margin-bottom: 2px;
 }
 .rems-value { font-size: 14px; color: #2c3540; word-break: break-word; }
+/* The approvers the round is still waiting on. A tint plus a left edge rather than a badge alone: the
+   list is scanned down its left side, and the point is to find the waiting rows without reading each. */
+.ar--awaiting {
+  background: #fff8e1;
+  box-shadow: inset 3px 0 0 #ff8f00;
+}
+/* The reader's own waiting row — the one they can actually act on — carries the accent in full. */
+.ar--awaiting.ar--you {
+  background: #fff3d6;
+  box-shadow: inset 4px 0 0 var(--q-primary);
+}
 /* Marks a value that carries an explanation on hover; muted so it hints rather than competes. */
 .rems-value__info { margin-left: 4px; color: var(--ink-300); cursor: help; vertical-align: text-bottom; }
 /* Rich-text description: keep the request editor's paragraphs and lists readable inside the panel. */

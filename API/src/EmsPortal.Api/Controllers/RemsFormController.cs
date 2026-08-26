@@ -345,7 +345,7 @@ public sealed class RemsFormController : ControllerBase
         // Whatever the admin left in the dialog wins over the template; leaving both untouched sends the
         // template exactly as the preview showed it.
         _emailNotifier.SendComposedFormLink(
-            tenantId, email, new RemsFormLinkEmail(rems.RequestedClientName, formLink, rems.REMSNumber),
+            tenantId, email, new RemsFormLinkEmail(rems.ClientDisplayName, formLink, rems.REMSNumber),
             request?.Subject, request?.Body, messageId);
 
         var refreshed = await _forms.GetByRemsIdAsync(remsId, cancellationToken) ?? form;
@@ -431,7 +431,7 @@ public sealed class RemsFormController : ControllerBase
         // Enqueued after the event row is durable, as the first send does. Best-effort on a Hangfire
         // worker; a delivery failure must not roll back the record that we tried.
         _emailNotifier.SendComposedFormReminder(
-            tenantId, email, new RemsFormLinkEmail(rems.RequestedClientName, formLink, rems.REMSNumber),
+            tenantId, email, new RemsFormLinkEmail(rems.ClientDisplayName, formLink, rems.REMSNumber),
             request?.Subject, request?.Body, messageId);
 
         // Nobody in-app is notified: this is the admin chasing the client, and telling the team each time
@@ -672,7 +672,7 @@ public sealed class RemsFormController : ControllerBase
                 form.SentOnUtc is not null);
 
         return new RemsFormBuildScreen(
-            rems.Id, rems.REMSNumber, rems.RequestedClientName, rems.Status,
+            rems.Id, rems.REMSNumber, rems.ClientDisplayName, rems.Status,
             rems.CustomerEmail, rems.CustomerMobileNumber, cseRef, formInfo);
     }
 
@@ -692,7 +692,7 @@ public sealed class RemsFormController : ControllerBase
     /// </summary>
     private static Dictionary<string, string?> FormLinkModel(REMS rems, string formLink) => new(StringComparer.OrdinalIgnoreCase)
     {
-        ["ClientName"] = rems.RequestedClientName,
+        ["ClientName"] = rems.ClientDisplayName,
         ["FormLink"] = formLink,
         ["RemsNumber"] = rems.REMSNumber,
     };
@@ -737,7 +737,7 @@ public sealed class RemsFormController : ControllerBase
             recipientId,
             NotificationType.RemsCseAssigned,
             "You were assigned as CSE on a REMS request",
-            $"{rems.REMSNumber} — {rems.RequestedClientName}",
+            $"{rems.REMSNumber} — {rems.ClientDisplayName}",
             EntityType.Rems,
             rems.Id);
 
@@ -746,7 +746,7 @@ public sealed class RemsFormController : ControllerBase
             recipientId,
             NotificationType.RemsFormSent,
             "A REMS onboarding form was sent to the client",
-            $"{rems.REMSNumber} — {rems.RequestedClientName}",
+            $"{rems.REMSNumber} — {rems.ClientDisplayName}",
             EntityType.Rems,
             rems.Id);
 

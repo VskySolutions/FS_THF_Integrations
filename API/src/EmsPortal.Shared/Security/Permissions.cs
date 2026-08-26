@@ -50,8 +50,8 @@ public static class Permissions
     /// <summary>Create, edit, reorder, and delete a tenant's own option lists and values.</summary>
     public const string OptionSetsManage = "optionSets.manage";
 
-    // REMS — Real Estate Management System (WO-110+). The operational roles Partner/Admin/Approver
-    // are composed of these keys (see ForPartner/ForAdmin/ForApprover).
+    // REMS — Real Estate Management System (WO-110+). The operational roles Partner/Admin are composed of
+    // these keys (see ForPartner/ForAdmin). The four seat roles are composed of none of them, deliberately.
     /// <summary>View REMS requests.</summary>
     public const string RemsRequestsRead = "rems.requests.read";
     /// <summary>Create REMS requests.</summary>
@@ -60,12 +60,15 @@ public static class Permissions
     public const string RemsRequestsUpdate = "rems.requests.update";
     /// <summary>Delete REMS requests.</summary>
     public const string RemsRequestsDelete = "rems.requests.delete";
-    /// <summary>Assign a REMS request to a person/pool.</summary>
+    /// <summary>
+    /// Pick a REMS request up from EMS Review, and hand it back. Nobody assigns anybody — the key means
+    /// "may claim work off the shared queue", so it belongs to the admins who work that queue and to
+    /// nobody else. The name is historical; read it as the pick-up right.
+    /// </summary>
     public const string RemsRequestsAssign = "rems.requests.assign";
-    // rems.pool.read is gone with the Admin Pool. The initiator fills the whole request and sends the
-    // intake link to the client themselves, so no request ever waits in a shared pool to be picked up.
-    // The admin's queue is the requests whose clients have answered, and their own assignment is what
-    // scopes it — not a permission.
+    // Which requests an admin may SEE is deliberately not a permission of its own: EMS Review is the whole
+    // tenant's queue and every admin reads all of it, because a request waiting for pickup has to be
+    // visible to the person who might pick it up.
     /// <summary>Create, edit, and configure REMS forms.</summary>
     public const string RemsFormsManage = "rems.forms.manage";
     /// <summary>Send REMS forms to recipients.</summary>
@@ -82,6 +85,22 @@ public static class Permissions
     /// <summary>Read the REMS email log.</summary>
     public const string RemsEmailLogRead = "rems.emailLog.read";
 
+    /// <summary>
+    /// Configure REMS for the tenant: which user directs each department, and whatever else becomes
+    /// tenant-wide REMS setup. Separate from <see cref="RemsEngagementsManage"/> on purpose — working the
+    /// engagements that flow through a configuration is not the same right as deciding the configuration,
+    /// and every REMS Admin holds the former.
+    /// </summary>
+    public const string RemsSettingsManage = "rems.settings.manage";
+
+    /// <summary>
+    /// Arrange REMS delegation on somebody ELSE's behalf — naming who may prepare and send a person's
+    /// requests while they are away. Naming your OWN delegates is self-service and needs no permission.
+    /// Its own key rather than users.write: handing one person another's work is a REMS decision, and
+    /// the right to edit an account says nothing about it.
+    /// </summary>
+    public const string RemsDelegationsManage = "rems.delegations.manage";
+
     /// <summary>Every defined permission key.</summary>
     public static readonly IReadOnlyList<string> All = new[]
     {
@@ -95,7 +114,7 @@ public static class Permissions
         OptionSetsRead, OptionSetsManage,
         RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsDelete, RemsRequestsAssign,
         RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
-        RemsApprovalsSend, RemsEmailLogRead
+        RemsApprovalsSend, RemsEmailLogRead, RemsSettingsManage, RemsDelegationsManage
     };
 
     /// <summary>Permission sets for the seeded system roles.</summary>
@@ -107,10 +126,13 @@ public static class Permissions
         // Deleting persons stays Super-Admin-only (PersonsDelete intentionally excluded here).
         PersonsRead, PersonsWrite,
         UsersRead, UsersWrite, UsersResetPassword, UsersGroupManagement,
-        // Tenant Admins manage the roles of users in their OWN tenant. The permission alone is not the
-        // whole boundary: UsersController confines them to their active tenant, refuses to grant the
-        // Super Admin role, and refuses a Super Admin target.
-        RolesRead, RolesAssign,
+        // Tenant Admins manage the roles of users in their OWN tenant, and build roles of their own to
+        // assign. The permission alone is not the whole boundary. UsersController confines them to their
+        // active tenant, refuses to grant the Super Admin role, refuses a Super Admin target, and refuses
+        // a role another tenant owns; RolesController confines roles.write to the roles their own tenant
+        // owns — the platform roles, this one included, stay a Super Admin's to change — and holds the
+        // keys they may put in one inside the tenant ceiling (ADR-003).
+        RolesRead, RolesWrite, RolesAssign,
         // Tenant Admins manage Permission Groups within their own tenant.
         GroupsManage,
         // Tenant Admins manage their tenant's SMTP email accounts.
@@ -123,16 +145,18 @@ public static class Permissions
         // applies: this widens WHAT they can do in their tenant, never WHICH tenant.
         RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsDelete, RemsRequestsAssign,
         RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
-        RemsApprovalsSend, RemsEmailLogRead
+        RemsApprovalsSend, RemsEmailLogRead, RemsSettingsManage, RemsDelegationsManage
     };
 
-    /// <summary>REMS Partner: works their own requests (read/create/update) and assigns them.</summary>
+    /// <summary>REMS Partner: works their own requests (read/create/update) and sends them to the client.</summary>
     public static IReadOnlyList<string> ForPartner() => new[]
     {
-        // RemsFormsSend is now a Partner permission: the initiator emails the intake link to the client
-        // themselves rather than handing the request to an admin to send. RemsRequestsAssign stays because
-        // naming the reviewing admin is mandatory at intake and reassignment is open to both sides.
-        RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsAssign,
+        // RemsFormsSend is a Partner permission: the initiator emails the intake link to the client
+        // themselves rather than handing the request to an admin to send.
+        //
+        // RemsRequestsAssign is NOT: it means "may pick a request up", which is the admins' move on a
+        // queue a partner never works.
+        RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate,
         // The email log follows the sending: the person chasing a client is the one who needs to know
         // whether the last three emails reached them, and since Phase 16 that person is the initiator
         // rather than an admin. Reading it is still record-scoped on top of this — the endpoint asks
@@ -145,23 +169,30 @@ public static class Permissions
     {
         RemsRequestsRead, RemsRequestsCreate, RemsRequestsUpdate, RemsRequestsDelete, RemsRequestsAssign,
         RemsFormsManage, RemsFormsSend, RemsEngagementsManage,
-        RemsApprovalsSend, RemsEmailLogRead, OptionSetsRead
+        RemsApprovalsSend, RemsEmailLogRead, OptionSetsRead,
+        // The firm's REMS setup and its cover arrangements are run by the people who run REMS.
+        RemsSettingsManage, RemsDelegationsManage
     };
 
     /// <summary>
-    /// REMS Approver: grants nothing, and that is the point. Deciding an approval task is authorised by
-    /// OWNING the task, so no permission is needed to do it — and none could be required without risking
-    /// locking a genuine approver out. The role's job is to mark someone as offerable in the "add
-    /// approvers" picker (<c>RemsApprovalController.ApproverOptionsAsync</c> lists its holders); it is a
-    /// directory, not a capability.
+    /// The REMS seat roles — CSE, Engagement Executive, Billing Manager and Shareholder. They grant
+    /// nothing, and that is the point: each one marks somebody as offerable in the picker that fills that
+    /// seat on an engagement — or, for a Shareholder, as an automatic approver on every engagement —
+    /// and what they may then do follows from being ON the engagement, not from a permission key. A CSE
+    /// approves because they are this engagement's CSE; requiring a permission to do it could only ever
+    /// lock a genuine one out.
+    /// <para>
+    /// One set for all four because there is nothing to tell apart — they are directories, not
+    /// capabilities. The retired Approver role was the same idea and the same empty set.
+    /// </para>
     /// </summary>
-    public static IReadOnlyList<string> ForApprover() => Array.Empty<string>();
+    public static IReadOnlyList<string> ForSeatRole() => Array.Empty<string>();
 
     /// <summary>
-    /// The seeded permission set for a system role name (SuperAdmin/TenantAdmin and the REMS operational
-    /// roles Partner/Admin/Approver), or an empty set for any other name (including custom roles). Used
-    /// as the fallback when an assignment carries no explicit permission keys and when a caller holds
-    /// only a role claim (API-key callers, pre-RBAC tokens).
+    /// The seeded permission set for a system role name (SuperAdmin/TenantAdmin, the REMS operational
+    /// roles Partner/Admin, and the four seat roles), or an empty set for any other name (including custom
+    /// roles). Used as the fallback when an assignment carries no explicit permission keys and when a
+    /// caller holds only a role claim (API-key callers, pre-RBAC tokens).
     /// </summary>
     public static IReadOnlyList<string> ForSystemRole(string? roleName) => roleName switch
     {
@@ -169,7 +200,10 @@ public static class Permissions
         Roles.TenantAdmin => ForTenantAdmin(),
         Roles.Partner => ForPartner(),
         Roles.Admin => ForAdmin(),
-        Roles.Approver => ForApprover(),
+        // Listed rather than left to fall through, so the seat roles are visibly a decision — they grant
+        // nothing on purpose, which reads very differently from a name nobody thought about.
+        Roles.Cse or Roles.EngagementExecutive or Roles.BillingManager or Roles.Shareholder
+            => ForSeatRole(),
         _ => Array.Empty<string>(),
     };
 }

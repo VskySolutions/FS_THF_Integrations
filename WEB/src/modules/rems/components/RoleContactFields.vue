@@ -1,10 +1,19 @@
 <template>
-  <!-- A single contact role (name / email / phone) bound to a RemsRolePayload node. A required role needs a
-       name and a valid email before review/submit — the phone is always optional. An optional role is only
-       validated once the client starts filling it in. -->
+  <!-- A single contact role bound to a RemsRolePayload node. A required role needs a first name, a last
+       name and a valid email before review/submit — the phone is always optional. An optional role is
+       only validated once the client starts filling it in. -->
   <div class="role-block" :class="{ 'role-block--required': required }">
     <div class="role-block__head">
-      <div class="role-block__title">{{ label }}</div>
+      <div class="role-block__title">
+        {{ label }}
+        <!-- What this contact is FOR, where the label alone leaves a real question. On the heading it
+             belongs to rather than as a caption line, so the block keeps its height. -->
+        <q-icon v-if="hint" name="o_info" size="15px" color="grey-6" class="role-block__info">
+          <q-tooltip anchor="top middle" self="bottom middle" max-width="280px" :delay="200">
+            {{ hint }}
+          </q-tooltip>
+        </q-icon>
+      </div>
       <q-badge
         :color="required ? 'red-1' : 'blue-grey-1'"
         :text-color="required ? 'red-8' : 'blue-grey-8'"
@@ -12,18 +21,25 @@
       />
     </div>
     <div class="row q-col-gutter-sm">
-      <!-- One box, and it says so: the payload node is a single `name` string. What the client types is
-           split on the first space when this contact is minted as a Person, so a label of "Name" over a
-           box that wants the whole name is the one thing that must not be ambiguous. -->
+      <!-- How to address them, in front of the name. Never required: plenty of people go by no title at
+           all, and one guessed on their behalf is worse than none. -->
+      <app-name-prefix-field v-model="role.prefix" class="col-4 col-sm-2" />
+      <!-- Two boxes, because a contact becomes a Person and a Person is filed under a given name and a
+           family name. One box asked the client to write a name and left the application guessing where
+           to cut it — which put "Van Der Berg" in a first-name column often enough to matter. -->
       <app-text-field
-        v-model="role.name" label="Full Name" :required="required" class="col-12 col-sm-6"
-        :error="!!err('name')" :error-message="err('name')"
+        v-model="role.firstName" label="First Name" :required="required" class="col-8 col-sm-4"
+        :error="!!err('firstName')" :error-message="err('firstName')"
+      />
+      <app-text-field
+        v-model="role.lastName" label="Last Name" :required="required" class="col-12 col-sm-6"
+        :error="!!err('lastName')" :error-message="err('lastName')"
       />
       <app-text-field
         v-model="role.email" label="Email" type="email" :required="required" class="col-12 col-sm-6"
         :error="!!err('email')" :error-message="err('email')"
       />
-      <div class="col-12">
+      <div class="col-12 col-sm-6">
         <!-- Optional even on a required contact: roleComplete() asks only for a name and a valid email. -->
         <app-phone-input v-model="role.phone" label="Phone Number" />
         <div v-if="err('phone')" class="text-negative text-caption q-mt-xs">{{ err('phone') }}</div>
@@ -34,12 +50,15 @@
 
 <script setup>
 import AppTextField from "components/common/AppTextField.vue";
+import AppNamePrefixField from "components/common/AppNamePrefixField.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
 
 const role = defineModel({ type: Object, required: true });
 
 const props = defineProps({
   label: { type: String, required: true },
+  // What this contact is for. Empty on the roles that explain themselves (Self, Spouse).
+  hint: { type: String, default: "" },
   required: { type: Boolean, default: false },
   // Dotted payload path (e.g. "roles.self") used to look up per-field server messages.
   prefix: { type: String, default: "" },
@@ -69,5 +88,10 @@ const err = (field) => (props.prefix ? props.errors[`${props.prefix}.${field}`] 
   font-size: 13px;
   font-weight: 600;
   color: #2c3540;
+}
+.role-block__info {
+  margin-left: 4px;
+  cursor: help;
+  vertical-align: text-bottom;
 }
 </style>

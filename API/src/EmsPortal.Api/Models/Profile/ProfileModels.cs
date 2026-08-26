@@ -7,7 +7,6 @@ public sealed class AddressInput
     public string? AddressLine1 { get; set; }
     public string? AddressLine2 { get; set; }
     public string? Landmark { get; set; }
-    public string? Area { get; set; }
     public string? BuildingName { get; set; }
     public string? FloorNumber { get; set; }
     public string? UnitNumber { get; set; }
@@ -15,17 +14,17 @@ public sealed class AddressInput
     public string? CountryName { get; set; }
     public string? StateCode { get; set; }
     public string? StateName { get; set; }
-    public string? CityCode { get; set; }
     public string? CityName { get; set; }
     public string? PostalCode { get; set; }
-    public double? Latitude { get; set; }
-    public double? Longitude { get; set; }
 }
 
 /// <summary>Update payload for a person profile. Null fields are left unchanged.</summary>
 public sealed class UpdatePersonProfileRequest
 {
     // Personal
+    /// <summary>The title they are addressed by. Free text; not part of the filed name.</summary>
+    public string? Prefix { get; set; }
+
     public string? FirstName { get; set; }
     public string? MiddleName { get; set; }
     public string? LastName { get; set; }
@@ -35,8 +34,6 @@ public sealed class UpdatePersonProfileRequest
     public DateTime? DateOfBirth { get; set; }
     public string? MaritalStatus { get; set; }
     public string? Nationality { get; set; }
-    public string? TimeZone { get; set; }
-    public string? Language { get; set; }
 
     // Contact
     public string? PrimaryEmail { get; set; }
@@ -50,16 +47,6 @@ public sealed class UpdatePersonProfileRequest
 
     // Professional
     public string? EmployeeCode { get; set; }
-    public string? JobTitle { get; set; }
-    public string? Department { get; set; }
-    public string? Organization { get; set; }
-
-    // Social
-    public string? LinkedInUrl { get; set; }
-    public string? TwitterUrl { get; set; }
-    public string? FacebookUrl { get; set; }
-    public string? InstagramUrl { get; set; }
-    public string? WebsiteUrl { get; set; }
 
     public string? Notes { get; set; }
 
@@ -79,7 +66,6 @@ public sealed record AddressResponse(
     string? AddressLine1,
     string? AddressLine2,
     string? Landmark,
-    string? Area,
     string? BuildingName,
     string? FloorNumber,
     string? UnitNumber,
@@ -87,19 +73,16 @@ public sealed record AddressResponse(
     string? CountryName,
     string? StateCode,
     string? StateName,
-    string? CityCode,
     string? CityName,
-    string? PostalCode,
-    double? Latitude,
-    double? Longitude,
-    bool IsValidated,
-    string? ValidationSource);
+    string? PostalCode);
 
 public sealed record PersonProfileResponse(
     Guid Id,
     string PersonCode,
     Guid? UserId,
     Guid? TenantId,
+    /// <summary>The title they are addressed by (Mr., Dr., …); null when they have none.</summary>
+    string? Prefix,
     string FirstName,
     string? MiddleName,
     string LastName,
@@ -110,8 +93,6 @@ public sealed record PersonProfileResponse(
     DateTime? DateOfBirth,
     string? MaritalStatus,
     string? Nationality,
-    string? TimeZone,
-    string? Language,
     string? PrimaryEmail,
     string? SecondaryEmail,
     string? MobileNumber,
@@ -121,14 +102,6 @@ public sealed record PersonProfileResponse(
     string? EmergencyContactRelationship,
     string? EmergencyContactNumber,
     string? EmployeeCode,
-    string? JobTitle,
-    string? Department,
-    string? Organization,
-    string? LinkedInUrl,
-    string? TwitterUrl,
-    string? FacebookUrl,
-    string? InstagramUrl,
-    string? WebsiteUrl,
     int ProfileCompletionPercentage,
     bool IsProfileVerified,
     DateTime? LastProfileUpdatedOn,

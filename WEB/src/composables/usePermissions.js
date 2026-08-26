@@ -30,13 +30,16 @@ export const Permissions = Object.freeze({
   RemsRequestsUpdate: "rems.requests.update",
   RemsRequestsDelete: "rems.requests.delete",
   RemsRequestsAssign: "rems.requests.assign",
-  // rems.pool.read is gone with the Admin Pool — nothing waits in a shared pool to be picked up now that
-  // the initiator fills the whole request and sends the intake link themselves.
   RemsFormsManage: "rems.forms.manage",
   RemsFormsSend: "rems.forms.send",
   RemsEmailLogRead: "rems.emailLog.read",
   RemsEngagementsManage: "rems.engagements.manage",
-  RemsApprovalsSend: "rems.approvals.send"
+  RemsApprovalsSend: "rems.approvals.send",
+  // Tenant-wide REMS setup (the department-to-director map), kept apart from working the engagements
+  // that flow through it.
+  RemsSettingsManage: "rems.settings.manage",
+  // Arranging cover for somebody ELSE. Naming your own delegates is self-service and needs no key.
+  RemsDelegationsManage: "rems.delegations.manage"
   // No "approvals.act" key: deciding an approval task is authorised by owning the task, not by a
   // permission, so the Approvals inbox and task detail are open to every authenticated user and the
   // server returns only the caller's own tasks. Mirrors EmsPortal.Shared.Security.Permissions.

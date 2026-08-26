@@ -10,7 +10,7 @@
     >
       <template #actions>
         <q-chip v-if="personCode" dense color="blue-grey-1" text-color="blue-grey-8">{{ personCode }}</q-chip>
-        <q-badge :color="isUser ? 'primary' : 'grey-4'" :text-color="isUser ? 'white' : 'grey-8'" class="q-mr-sm">
+        <q-badge :color="isUser ? 'primary' : 'grey-4'" :text-color="isUser ? 'white' : 'grey-8'">
           {{ isUser ? "Linked user account" : "Not a user" }}
         </q-badge>
       </template>
@@ -37,7 +37,10 @@
               v-if="canChooseTenant" v-model="form.tenantId" :options="tenantOptions" label="Tenant"
               class="col-12" :loading="loadingTenants" :disable="!canWrite"
             />
-            <app-text-field v-model="form.firstName" label="First Name" class="col-12 col-sm-6" :disable="!canWrite" :rules="[(v) => !!v || 'Required']" />
+            <!-- The title, to the left of the name it belongs in front of. Held apart from the name
+                 because a person is filed under a given name and a family name, and "Dr." is neither. -->
+            <app-name-prefix-field v-model="form.prefix" class="col-6 col-sm-2" :disable="!canWrite" />
+            <app-text-field v-model="form.firstName" label="First Name" class="col-6 col-sm-4" :disable="!canWrite" :rules="[(v) => !!v || 'Required']" />
             <app-text-field v-model="form.middleName" label="Middle Name" class="col-12 col-sm-6" :disable="!canWrite" />
             <app-text-field v-model="form.lastName" label="Last Name" class="col-12 col-sm-6" :disable="!canWrite" :rules="[(v) => !!v || 'Required']" />
             <app-text-field v-model="form.preferredName" label="Preferred Name" class="col-12 col-sm-6" :disable="!canWrite" />
@@ -64,9 +67,6 @@
           <q-card-section class="text-subtitle1 text-weight-medium">Professional</q-card-section>
           <q-separator />
           <q-card-section class="row q-col-gutter-md">
-            <app-text-field v-model="form.jobTitle" label="Job Title" class="col-12 col-sm-6" :disable="!canWrite" />
-            <app-text-field v-model="form.department" label="Department" class="col-12 col-sm-6" :disable="!canWrite" />
-            <app-text-field v-model="form.organization" label="Organization" class="col-12 col-sm-6" :disable="!canWrite" />
             <app-text-field v-model="form.employeeCode" label="Employee Code" class="col-12 col-sm-6" :disable="!canWrite" />
           </q-card-section>
         </q-card>
@@ -89,6 +89,7 @@ import { useTenantOptions } from "composables/useTenantOptions";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import AppTextField from "components/common/AppTextField.vue";
+import AppNamePrefixField from "components/common/AppNamePrefixField.vue";
 import AppDateField from "components/common/AppDateField.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
 
@@ -112,6 +113,7 @@ const emailRules = [(v) => !v || /.+@.+\..+/.test(v) || "Enter a valid email"];
 
 const form = reactive({
   tenantId: null,
+  prefix: "",
   firstName: "",
   middleName: "",
   lastName: "",
@@ -124,9 +126,6 @@ const form = reactive({
   mobileNumber: "",
   countryCode: null,
   alternateMobileNumber: "",
-  jobTitle: "",
-  department: "",
-  organization: "",
   employeeCode: ""
 });
 
@@ -141,6 +140,7 @@ const load = async () => {
     isUser.value = detail.isUser;
     personCode.value = p.personCode || "";
     form.tenantId = p.tenantId || null;
+    form.prefix = p.prefix || "";
     form.firstName = p.firstName || "";
     form.middleName = p.middleName || "";
     form.lastName = p.lastName || "";
@@ -153,9 +153,6 @@ const load = async () => {
     form.mobileNumber = p.mobileNumber || "";
     form.countryCode = p.countryCode || null;
     form.alternateMobileNumber = p.alternateMobileNumber || "";
-    form.jobTitle = p.jobTitle || "";
-    form.department = p.department || "";
-    form.organization = p.organization || "";
     form.employeeCode = p.employeeCode || "";
   } catch (err) {
     notify.error(getApiErrorMessage(err));

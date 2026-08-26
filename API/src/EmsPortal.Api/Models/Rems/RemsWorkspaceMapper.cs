@@ -67,7 +67,6 @@ internal static class RemsWorkspaceMapper
         return new RemsEngagementView(
             engagement.Id,
             engagement.Department,
-            engagement.ServiceLine,
             engagement.SubServiceLine,
             engagement.SubIndustry,
             UserRef(engagement.DepartmentDirectorId, names),
@@ -76,7 +75,7 @@ internal static class RemsWorkspaceMapper
             engagement.FirstYearFeeEstimate,
             engagement.RealizationPercentage,
             engagement.BillingPeriod,
-            engagement.NumberOfBills,
+            engagement.BillingProcessDescription,
             engagement.Status.ToString(),
             marketing,
             commission,
@@ -87,9 +86,8 @@ internal static class RemsWorkspaceMapper
 
     /// <summary>
     /// The workspace for a request: its client, that client's entities, and the ONE engagement the request
-    /// carries. The engagement used to be indexed per entity so each entity tab could find its own — the
-    /// entities are still listed, because the client's business details belong to them, but the engagement
-    /// now belongs to the request and is reported once alongside them.
+    /// carries. The entities are listed because the client's business details belong to them; the
+    /// engagement belongs to the REQUEST and is reported once alongside them.
     /// <para>
     /// <paramref name="client"/> is null until the intake form comes back. The engagement is filled before
     /// that, so the workspace has to describe a request that has one and no client yet.

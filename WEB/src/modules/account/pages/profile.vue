@@ -40,7 +40,10 @@
         <q-separator />
         <q-card-section class="row q-col-gutter-md">
           <div class="col-12 section-subhead">Name</div>
-          <app-text-field v-model="form.firstName" label="First Name" class="col-12 col-sm-6" />
+          <!-- The title, in front of the name it belongs in front of. Stored apart from the name, which
+               is what everything files and searches you under. -->
+          <app-name-prefix-field v-model="form.prefix" class="col-4 col-sm-2" />
+          <app-text-field v-model="form.firstName" label="First Name" class="col-8 col-sm-4" />
           <app-text-field v-model="form.middleName" label="Middle Name" class="col-12 col-sm-6" />
           <app-text-field v-model="form.lastName" label="Last Name" class="col-12 col-sm-6" />
           <app-text-field v-model="form.preferredName" label="Preferred Name" class="col-12 col-sm-6" />
@@ -174,7 +177,7 @@
     <!-- REMS delegation is self-service — the principal names their own delegates — so it belongs on
          their own profile rather than in an admin screen. Shown only to people who work REMS requests;
          for everyone else there is nothing to delegate. -->
-    <my-delegates-panel v-if="canUseRems" class="q-mt-md" />
+    <rems-delegates-panel v-if="canUseRems" class="q-mt-md" />
 
   </q-page>
 </template>
@@ -189,8 +192,9 @@ import { useNotify } from "composables/useNotify";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import AppSelect from "components/common/AppSelect.vue";
-import MyDelegatesPanel from "modules/rems/components/MyDelegatesPanel.vue";
+import RemsDelegatesPanel from "modules/rems/components/RemsDelegatesPanel.vue";
 import AppTextField from "components/common/AppTextField.vue";
+import AppNamePrefixField from "components/common/AppNamePrefixField.vue";
 import AppDateField from "components/common/AppDateField.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
 import AppAddressFields from "components/common/AppAddressFields.vue";
@@ -220,6 +224,7 @@ const loading = ref(true);
 const saving = ref(false);
 const profile = ref(null);
 const form = reactive({
+  prefix: "",
   firstName: "",
   middleName: "",
   lastName: "",
@@ -259,6 +264,7 @@ const load = async () => {
   try {
     const p = await profileApi.getMine();
     profile.value = p;
+    form.prefix = p.prefix || "";
     form.firstName = p.firstName || "";
     form.middleName = p.middleName || "";
     form.lastName = p.lastName || "";
@@ -353,6 +359,7 @@ const save = async () => {
   const stateName = address.stateName;
 
   const payload = {
+    prefix: form.prefix,
     firstName: form.firstName,
     middleName: form.middleName,
     lastName: form.lastName,

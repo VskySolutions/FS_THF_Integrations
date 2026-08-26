@@ -70,6 +70,7 @@ public sealed class PersonsController : ControllerBase
             // they are currently viewing (the claim follows the Super-Admin tenant scope) rather than
             // nowhere. (Falls back to active-tenant stamping.)
             TenantId = (User.IsSuperAdmin() ? request.TenantId : null) ?? User.GetActiveTenantId(),
+            Prefix = request.Prefix,
             FirstName = request.FirstName,
             MiddleName = request.MiddleName,
             LastName = request.LastName,
@@ -88,9 +89,6 @@ public sealed class PersonsController : ControllerBase
             EmergencyContactRelationship = request.EmergencyContactRelationship,
             EmergencyContactNumber = request.EmergencyContactNumber,
             EmployeeCode = request.EmployeeCode,
-            JobTitle = request.JobTitle,
-            Department = request.Department,
-            Organization = request.Organization,
             Notes = request.Notes,
             IsActive = true,
             LastProfileUpdatedOn = DateTime.UtcNow,
@@ -135,7 +133,7 @@ public sealed class PersonsController : ControllerBase
             search, scopeTenant, isUser, isActive, page, limit, cancellationToken: cancellationToken);
         var names = await ResolveActorNamesAsync(items.SelectMany(p => new[] { p.CreatedById, p.UpdatedById }), cancellationToken);
         var summaries = items.Select(p => new PersonSummary(
-            p.Id, p.PersonCode, p.FullName, p.PrimaryEmail, p.MobileNumber, p.JobTitle,
+            p.Id, p.PersonCode, p.FullName, p.PrimaryEmail, p.MobileNumber,
             p.TenantId, p.Tenant?.Name,
             p.UserId is not null, p.IsActive,
             p.SourceEntityType?.ToString(), p.SourceEntityId,
@@ -176,6 +174,7 @@ public sealed class PersonsController : ControllerBase
         }
 
         // Personal
+        Apply(request.Prefix, v => person.Prefix = v);
         Apply(request.FirstName, v => person.FirstName = v);
         Apply(request.MiddleName, v => person.MiddleName = v);
         Apply(request.LastName, v => person.LastName = v);
@@ -204,9 +203,6 @@ public sealed class PersonsController : ControllerBase
 
         // Professional
         Apply(request.EmployeeCode, v => person.EmployeeCode = v);
-        Apply(request.JobTitle, v => person.JobTitle = v);
-        Apply(request.Department, v => person.Department = v);
-        Apply(request.Organization, v => person.Organization = v);
         Apply(request.Notes, v => person.Notes = v);
         if (request.IsActive.HasValue)
         {
@@ -296,7 +292,6 @@ public sealed class PersonsController : ControllerBase
         address.AddressLine1 = input.AddressLine1;
         address.AddressLine2 = input.AddressLine2;
         address.Landmark = input.Landmark;
-        address.Area = input.Area;
         address.BuildingName = input.BuildingName;
         address.FloorNumber = input.FloorNumber;
         address.UnitNumber = input.UnitNumber;
@@ -304,11 +299,8 @@ public sealed class PersonsController : ControllerBase
         address.CountryName = input.CountryName;
         address.StateCode = input.StateCode;
         address.StateName = input.StateName;
-        address.CityCode = input.CityCode;
         address.CityName = input.CityName;
         address.PostalCode = input.PostalCode;
-        address.Latitude = input.Latitude;
-        address.Longitude = input.Longitude;
 
         if (isNew)
         {
@@ -336,7 +328,7 @@ public sealed class PersonsController : ControllerBase
         var fields = new[]
         {
             p.FirstName, p.LastName, p.DisplayName, p.PreferredName, p.Gender,
-            p.PrimaryEmail, p.MobileNumber, p.Nationality, p.JobTitle, p.Organization
+            p.PrimaryEmail, p.MobileNumber, p.Nationality
         };
         var filled = fields.Count(f => !string.IsNullOrWhiteSpace(f));
         var total = fields.Length + 2; // + date of birth + address

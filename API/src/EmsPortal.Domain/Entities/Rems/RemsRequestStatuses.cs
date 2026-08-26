@@ -23,8 +23,7 @@ namespace EmsPortal.Domain.Entities;
 /// only route into approval, so both rework states hand back to them rather than straight to the approvers.
 /// </para>
 /// <para>
-/// The last three used to be a roll-up of several per-entity engagements. A request now carries exactly
-/// one engagement, so they track it directly.
+/// A request carries exactly one engagement, so the last three track that engagement directly.
 /// </para>
 /// </summary>
 public static class RemsRequestStatuses

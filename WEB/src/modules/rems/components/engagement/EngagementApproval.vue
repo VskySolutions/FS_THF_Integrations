@@ -2,9 +2,9 @@
   <div>
     <div class="row items-center q-mb-md">
       <div class="text-body2 text-grey-8 col">
-        Who this engagement routes to (AC-REMS-018): the managing shareholder, the Department Director and
-        CSE from the setup, and every commission recipient — all four automatically — plus any approvers
-        you add below. Sending for approval locks the list.
+        Who this engagement routes to (AC-REMS-018): the firm's shareholders, the Department Director and
+        CSE from the setup, and every commission recipient — all automatically, and none of them removable
+        — plus anyone you add below. Sending for approval locks the list.
       </div>
       <q-badge :color="statusMeta.color" class="q-pa-sm text-body2">{{ statusMeta.label }}</q-badge>
     </div>
@@ -33,13 +33,13 @@
     </q-banner>
 
     <template v-else>
-      <!-- Extra approvers only: the four automatic ones already route and are shown in the list below.
+      <!-- Extra approvers only: the automatic ones already route and are shown in the list below.
            Selecting saves immediately and the person appears in the list — then Send. -->
       <div v-if="canPick" class="q-mb-md">
         <app-select
           v-model="picked" :options="approverOptions" label="Add approvers" multiple use-input
           :loading="loadingOptions || savingPicks"
-          info="Lists users holding the Approver role in this tenant, shown as Full Name — Job Title. They are ADDED to the four below — the managing shareholder, Department Director, CSE and commission recipients — who approve regardless."
+          info="Lists every user in this tenant with the role they hold here: an engagement can need a signature from anyone. They are ADDED to the ones below — the shareholders, the Department Director, the CSE and the commission recipients — who approve regardless and cannot be removed."
           @update:model-value="savePicks"
         />
       </div>
@@ -56,9 +56,9 @@
         </q-item>
       </q-list>
       <div v-else class="text-grey-6 q-pa-sm">
-        No approvers yet. The four automatic ones come from the engagement itself — name a CSE, pick a
-        department with a director, add commission recipients, or put somebody in the "Managing Shareholder"
-        user group. You can also add approvers above.
+        No approvers yet. The automatic ones come from the firm and from the engagement itself — give
+        somebody the Shareholder role, name a CSE, pick a department that has a director, or add
+        commission recipients. You can also add approvers above.
       </div>
 
       <div v-if="canShowSend" class="row justify-end q-mt-md">
@@ -104,17 +104,18 @@ const notify = useNotify();
 const { confirm } = useConfirm();
 const { engagementStatusMeta } = useRemsMeta();
 
+// In the order the list renders them (the server sorts; these only have to name and picture each role).
 const ROLE_LABELS = {
-  CSE: "CSE",
+  Shareholder: "Shareholder",
   DepartmentDirector: "Department Director",
-  ManagingShareholder: "Managing Shareholder",
+  CSE: "CSE",
   CommissionRecipient: "Commission Recipient",
   Approver: "Approver"
 };
 const ROLE_ICONS = {
-  CSE: "o_support_agent",
+  Shareholder: "o_workspace_premium",
   DepartmentDirector: "o_account_tree",
-  ManagingShareholder: "o_workspace_premium",
+  CSE: "o_support_agent",
   CommissionRecipient: "o_payments",
   Approver: "o_how_to_reg"
 };
@@ -140,8 +141,9 @@ const errorMsg = ref("");
 const canPick = computed(() => ["Draft", "Rejected"].includes(status.value));
 const approverOptions = ref([]);
 const loadingOptions = ref(false);
-// ONLY the added approvers. The automatic ones (CSE, commission recipients) are never in here — they are
-// on the list below regardless, and putting them in the picker would imply they could be removed.
+// ONLY the added approvers. The automatic ones (shareholders, Department Director, CSE, commission
+// recipients) are never in here — they are on the list below regardless, and putting them in the picker
+// would imply they could be removed.
 const picked = ref([]);
 
 // Adopt a returned approver list as both the display list and the picker's current state.
@@ -167,11 +169,14 @@ const loadOptions = async () => {
   loadingOptions.value = true;
   try {
     const rows = await remsApi.approverOptions(props.engagement.id);
-    // "Full Name — Job Title", falling back to the name alone when the person has no title on file.
-    approverOptions.value = (rows || []).map((r) => ({
-      label: r.jobTitle ? `${r.name} — ${r.jobTitle}` : r.name,
-      value: r.userId
-    }));
+    // "Full Name — Role", falling back to the email and then to the name alone. Deciding whose signature
+    // an engagement needs is a question about what somebody IS to the firm — a Partner, a CSE, a
+    // Shareholder — which a list of bare names cannot answer. The email stands in where a person somehow
+    // has no role to show, since a label has to distinguish two people who share a name.
+    approverOptions.value = (rows || []).map((r) => {
+      const qualifier = (r.roles || []).join(", ") || r.email;
+      return { label: qualifier ? `${r.name} — ${qualifier}` : r.name, value: r.userId };
+    });
   } catch (err) {
     notify.error(getApiErrorMessage(err));
   } finally {

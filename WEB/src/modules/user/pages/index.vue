@@ -114,12 +114,6 @@
           :error="!!emailError" :error-message="emailError"
           :rules="[(v) => !!v || 'Username is required', (v) => /.+@.+\..+/.test(v) || 'Enter a valid email']"
         />
-        <!-- Mandatory, from the User.JobTitle option list. The chosen label is what gets stored. -->
-        <app-select
-          v-model="form.jobTitle" :options="jobTitleOptions" label="Job Title *" class="q-mb-md"
-          :loading="loadingJobTitles" :clearable="false" use-input
-          info="From the Job Title option list (Administration → Option Sets), where the values can be added, renamed and re-ordered."
-        />
         <app-select
           v-if="canChooseTenant" v-model="form.tenantId" :options="tenantOptions" label="Tenant *"
           :loading="loadingTenants" class="q-mb-md" :clearable="false" @update:model-value="onTenantChange"
@@ -213,9 +207,6 @@ const columns = computed(() => [
   { name: "fullName", label: "Name", field: "fullName", align: "left", sortable: true, default: true },
   { name: "email", label: "Email", field: "email", align: "left", sortable: true, default: true },
   { name: "phoneNumber", label: "Phone", field: "phoneNumber", align: "left", sortable: true },
-  // Set on the user's detail page (and at creation) from the User.JobTitle option list; read-only here,
-  // so no server-side filter sits behind it.
-  { name: "jobTitle", label: "Job Title", field: "jobTitle", align: "left", sortable: true, default: true, filterable: false },
   { name: "roles", label: "Role", field: (r) => (r.roles || []).join(", "), align: "left", sortable: false, default: true },
   { name: "groups", label: "Groups", field: (r) => (r.groups || []).map((g) => g.name).join(", "), align: "left", sortable: false, default: true },
   // Department placement in the active tenant. Read-only here (it is set on the user's detail page), so
@@ -258,7 +249,6 @@ const formRef = ref(null);
 const form = reactive({
   personId: null,
   email: "",
-  jobTitle: null,
   roleIds: [],
   tenantId: null,
   sendInvitation: false,
@@ -339,9 +329,6 @@ const inActiveTenant = computed(() => !!activeTenantId.value && targetTenantId.v
 const departmentOptions = ref([]);
 const departmentHeads = ref([]);
 const loadingDepartments = ref(false);
-// Job title is NOT tenant-scoped like the two below — it applies to every user, so it loads unconditionally.
-const jobTitleOptions = ref([]);
-const loadingJobTitles = ref(false);
 const groupOptions = ref([]);
 const loadingGroups = ref(false);
 
@@ -370,17 +357,6 @@ const loadDepartments = async () => {
     notify.error(getApiErrorMessage(err));
   } finally {
     loadingDepartments.value = false;
-  }
-};
-
-const loadJobTitles = async () => {
-  loadingJobTitles.value = true;
-  try {
-    jobTitleOptions.value = (await userApi.jobTitles()) || [];
-  } catch (err) {
-    notify.error(getApiErrorMessage(err));
-  } finally {
-    loadingJobTitles.value = false;
   }
 };
 
@@ -439,7 +415,6 @@ const resetForm = () => {
   form.roleIds = [];
   form.tenantId = null;
   form.sendInvitation = false;
-  form.jobTitle = null;
   form.department = null;
   form.isDepartmentHead = false;
   form.groupIds = [];
@@ -451,7 +426,6 @@ const openCreate = async (presetPersonId = null) => {
   resetForm();
   await Promise.all([
     loadPersons(),
-    loadJobTitles(),
     canChooseTenant.value ? loadTenants() : loadRoles(),
     // Both pickers come from the caller's active tenant, so they are pointless without one (a Super Admin
     // who has not switched in) — that is also exactly when the section stays hidden.
@@ -488,10 +462,6 @@ const submitForm = async ({ clearDraft } = {}) => {
     return;
   }
   if (!(await formRef.value?.validate())) return;
-  if (!form.jobTitle) {
-    notify.error("Select a job title.");
-    return;
-  }
   if (!form.roleIds.length) {
     notify.error("Select at least one role.");
     return;
@@ -517,7 +487,6 @@ const submitForm = async ({ clearDraft } = {}) => {
     const payload = {
       personId: form.personId,
       email: form.email,
-      jobTitle: form.jobTitle,
       roleIds: form.roleIds,
       tenantId,
       sendInvitation: form.sendInvitation

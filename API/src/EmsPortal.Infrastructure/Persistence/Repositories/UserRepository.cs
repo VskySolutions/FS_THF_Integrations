@@ -32,7 +32,10 @@ internal sealed class UserRepository : IUserRepository
     {
         if (user?.PersonId is { } personId)
         {
+            // ProfileMedia comes with it: the admin surfaces show the same face the person set on their
+            // own profile, and without it every avatar there falls back to initials.
             user.Person = await _dbContext.Persons.IgnoreQueryFilters()
+                .Include(p => p.ProfileMedia)
                 .FirstOrDefaultAsync(p => p.Id == personId && !p.Deleted, cancellationToken);
         }
     }
@@ -155,6 +158,37 @@ internal sealed class UserRepository : IUserRepository
             .Include(u => u.Person)
             .Where(u => u.TenantRoles.Any(r =>
                 !r.Deleted && r.TenantId == tenantId && r.RoleEntity != null && roleNames.Contains(r.RoleEntity.Name)))
+            .OrderBy(u => u.DisplayName)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<User>> ListByTenantRoleAsync(
+        Guid tenantId, Guid roleId, CancellationToken cancellationToken = default)
+        // One role rather than a set of names, and inactive users included: this is the membership an
+        // admin manages, not a picker of people who can be given work. The tenant's own assignments are
+        // loaded with it so the caller can say what else each holder has here.
+        => await _dbContext.Users
+            .IgnoreQueryFilters()
+            .Where(u => !u.Deleted)
+            .Include(u => u.Person)
+            .Include(u => u.TenantRoles.Where(r => !r.Deleted && r.TenantId == tenantId)).ThenInclude(r => r.RoleEntity)
+            .Where(u => u.TenantRoles.Any(r => !r.Deleted && r.TenantId == tenantId && r.RoleId == roleId))
+            .OrderBy(u => u.DisplayName)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<User>> ListActiveByTenantAsync(
+        Guid tenantId, CancellationToken cancellationToken = default)
+        // The same shape as ListByTenantRolesAsync without the role filter — holding ANY role in the
+        // tenant is what puts a user in it. Unpaged on purpose: its caller is a picker that has to offer
+        // the whole tenant at once, and a firm's staff list is that size.
+        //
+        // The assignments come with them, filtered to THIS tenant, so a picker can say what each person is
+        // to the firm without a query per row — and cannot show a role they hold somewhere else.
+        => await _dbContext.Users
+            .IgnoreQueryFilters()
+            .Where(u => !u.Deleted && u.IsActive)
+            .Include(u => u.Person)
+            .Include(u => u.TenantRoles.Where(r => !r.Deleted && r.TenantId == tenantId)).ThenInclude(r => r.RoleEntity)
+            .Where(u => u.TenantRoles.Any(r => !r.Deleted && r.TenantId == tenantId))
             .OrderBy(u => u.DisplayName)
             .ToListAsync(cancellationToken);
 

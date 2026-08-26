@@ -16,14 +16,25 @@ public sealed record RemsClientFormRow(
     Guid RemsId,
     string RemsNumber,
     string ClientName,
-    /// <summary>The client this one is a subsidiary of, or null on every other request type.</summary>
-    string? ParentClientName,
     string RequestStatus,
     bool HasForm,
     bool Submitted,
     DateTime? SubmittedOnUtc,
+    /// <summary>The admin holding this request, or null while it is still waiting for one to pick it up.</summary>
     RemsUserRef? AssignedAdmin,
     RemsUserRef? Cse,
+    /// <summary>
+    /// This caller may claim the request. True only on an unclaimed one, and only for a caller holding
+    /// <c>rems.requests.assign</c> — the same pair <c>RemsRequestsController.PickUp</c> enforces, asked
+    /// ahead of the click so the list can offer the button rather than let it 409.
+    /// </summary>
+    bool CanPickUp,
+    /// <summary>
+    /// This caller may put the request back in the pool — the undo of Pick up, for the admin who claimed
+    /// something by mistake. True on a request this caller HOLDS, and on any claimed request for an
+    /// elevated caller, which is the same test <c>RemsRequestsController.HandBack</c> applies.
+    /// </summary>
+    bool CanHandBack,
     // The owning REQUEST's audit trail — the row is keyed on it, and it is what the actions open.
     string? CreatedBy,
     DateTime CreatedOnUtc,
@@ -31,9 +42,16 @@ public sealed record RemsClientFormRow(
     DateTime UpdatedOnUtc);
 
 /// <summary>
-/// The read-only submitted-form view (AC-REMS-013.2/3), rendered from the immutable
-/// <c>REMSFormSubmission</c> payload. <see cref="LockedEmail"/> is the request's authoritative customer
-/// email (the payload's echoed email is ignored). Distinct from the editable workspace data.
+/// The submitted-form view (AC-REMS-013.2/3), rendered from the <c>REMSFormSubmission</c> payload.
+/// <see cref="LockedEmail"/> is the request's authoritative customer email (the payload's echoed email is
+/// ignored). Distinct from the editable workspace data.
+/// <para>
+/// The snapshot is the client's own answers and is read-only to everybody EXCEPT an Admin, who may correct
+/// them in place — a client who typed a digit wrong in their EIN should not have to be sent a second form.
+/// A correction overwrites the stored payload rather than filing a second submission, so
+/// <see cref="EditedBy"/> / <see cref="EditedOnUtc"/> are how a reader tells a corrected snapshot from one
+/// still exactly as it arrived. Both are null on an untouched submission.
+/// </para>
 /// </summary>
 public sealed record RemsSubmissionView(
     Guid SubmissionId,
@@ -41,8 +59,21 @@ public sealed record RemsSubmissionView(
     string RemsNumber,
     string IndustryGroup,
     string? LockedEmail,
+    /// <summary>
+    /// The request's generational suffix on the client's name. The payload does not carry one — the intake
+    /// form never asks, because it is the firm's particle on the name rather than something the client
+    /// tells us — so a panel rendering the client's own answer needs this to read it as every other REMS
+    /// surface does.
+    /// </summary>
+    string? ClientNameSuffix,
     DateTime SubmittedOnUtc,
-    RemsFormPayloadV1 Payload);
+    RemsFormPayloadV1 Payload,
+    /// <summary>The staff member who last corrected these answers; null while they are the client's own.</summary>
+    string? EditedBy = null,
+    /// <summary>When they were last corrected; null while they are the client's own.</summary>
+    DateTime? EditedOnUtc = null,
+    /// <summary>Whether THIS caller may correct them — an Admin, on a request no approval round has frozen.</summary>
+    bool CanEdit = false);
 
 // -------------------- Workspace read model --------------------
 
@@ -56,8 +87,8 @@ public sealed record RemsEngagementWorkspace(
     // with no client is the ordinary state of every request that has not been answered yet.
     RemsClientView? Client,
     IReadOnlyList<RemsEntityView> Entities,
-    // The request's single engagement, which used to hang off each entity. Null only before the initiator
-    // has saved the request for the first time.
+    // The request's single engagement. Null only before the initiator has saved the request for the
+    // first time.
     RemsEngagementView? Engagement,
     // The industry group the client's intake was built around. It lives on the form record rather than the
     // engagement, but the setup section shows and edits it, so it travels with the workspace.
@@ -122,7 +153,6 @@ public sealed record RemsEntityContactView(Guid Id, string Role, bool IsRequired
 public sealed record RemsEngagementView(
     Guid Id,
     string? Department,
-    string? ServiceLine,
     string? SubServiceLine,
     string? SubIndustry,
     RemsUserRef? DepartmentDirector,
@@ -131,7 +161,7 @@ public sealed record RemsEngagementView(
     decimal? FirstYearFeeEstimate,
     decimal? RealizationPercentage,
     string? BillingPeriod,
-    int? NumberOfBills,
+    string? BillingProcessDescription,
     string Status,
     IReadOnlyList<Guid> MarketingMethodIds,
     IReadOnlyList<RemsCommissionSplitView> CommissionSplits,
@@ -234,12 +264,6 @@ public sealed class UpdateRemsEngagementRequest
     public string? Department { get; set; }
 
     /// <summary>
-    /// RETIRED, and still accepted only so an old caller is not broken by sending it. The setup form drops
-    /// it from the payload entirely, which is what preserves whatever a historical engagement recorded.
-    /// </summary>
-    public string? ServiceLine { get; set; }
-
-    /// <summary>
     /// The service being sold — the SERVICE LINE as the setup form labels it (option-set
     /// <c>REMS.SubServiceLine</c> code; the key kept its old name). Optional, so — like the client's own
     /// optional fields — an EMPTY string clears it while null leaves it alone.
@@ -261,8 +285,11 @@ public sealed class UpdateRemsEngagementRequest
     /// <summary>How often the client is billed (option-set <c>REMS.BillingPeriod</c> code).</summary>
     public string? BillingPeriod { get; set; }
 
-    /// <summary>How many bills the engagement is billed over. Entered, not derived from the period.</summary>
-    public int? NumberOfBills { get; set; }
+    /// <summary>
+    /// How the client is actually billed, in prose. Was a count (No. of Bills); a schedule is a sentence,
+    /// not a number. Cleared with an empty string, like the other optional text on this record.
+    /// </summary>
+    public string? BillingProcessDescription { get; set; }
 }
 
 /// <summary>The engagement update result: the refreshed engagement plus the director the chosen department maps to (prefill hint).</summary>

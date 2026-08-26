@@ -2,34 +2,29 @@
   <q-page padding>
     <app-detail-header :items="breadcrumbs" :back-to="backTo">
       <template #actions>
-        <!-- EVERY action on the request lives here. The header row itself is no-wrap and this is a badge,
-             a status chip and up to half a dozen buttons — enough to run off the side of a laptop, never
-             mind a phone — so it is wrapped in a flex box of its own that stacks onto a second line
-             instead of pushing the Back button off the card.
+        <!-- EVERY action on the request lives here. There is a badge, a status chip and up to half a
+             dozen buttons — enough to run off the side of a laptop, never mind a phone — so they are
+             wrapped in a box of their own that stacks onto further lines rather than growing the header
+             sideways. The header wraps around it in turn, so on a phone this box and the Back button
+             take a line each instead of one of them running off the card.
              Stepping through the form is the one thing NOT here: Prev / Next / the finish actions sit on
              the tab strip, because they act on the tabs rather than on the request. -->
         <div class="rf-head">
-          <q-badge v-if="request" :color="statusColor(request.status)">
-            {{ statusLabel(request.status) }}
+          <!-- The row helper rather than the bare code, so a request nobody has picked up says so here
+               exactly as it does in EMS Review instead of reading as though an admin is already on it. -->
+          <q-badge v-if="request" :color="requestStatusColor(request)">
+            {{ requestStatusLabel(request) }}
           </q-badge>
 
           <!-- What the page is doing with what has been typed. It stands in for the Save button it
-               replaced, so it is present even while idle: a form with no Save on it has to say why. -->
+               replaced, so it is present even while idle: a form with no Save on it has to say why.
+               An icon and nothing else — beside half a dozen labelled buttons, a status that is not one
+               of them should not read as loudly as they do. The words are on the tooltip. -->
           <div v-if="autoSaveOn" class="rf-save" :class="`rf-save--${saveChip.tone}`">
-            <q-spinner v-if="saveState === 'saving'" size="14px" class="q-mr-xs" />
-            <q-icon v-else :name="saveChip.icon" size="16px" class="q-mr-xs" />
-            {{ saveChip.text }}
-            <q-tooltip v-if="saveMessage">{{ saveMessage }}</q-tooltip>
+            <q-spinner v-if="saveState === 'saving'" size="14px" />
+            <q-icon v-else :name="saveChip.icon" size="15px" />
+            <q-tooltip>{{ saveMessage ? `${saveChip.text} — ${saveMessage}` : saveChip.text }}</q-tooltip>
           </div>
-
-          <!-- Auto-save is a debounce, not a promise that everything already landed. Beside the chip that
-               reports it, and only while something is genuinely outstanding — a way to force the point
-               rather than a Save button that has to be pressed. -->
-          <q-btn
-            v-if="autoSaveOn && (savePending || saveState === 'error')"
-            outline no-caps color="primary" icon="o_save" label="Save now"
-            :loading="saveState === 'saving'" @click="flushSaves"
-          />
 
           <!-- The mode switch. Offered only where the stage actually grants an edit right, so it is never
                a button that turns the page into a form nothing on it can be typed into. A new request has
@@ -43,10 +38,6 @@
             v-if="request" outline no-caps color="primary" icon="o_forum" label="Conversation"
             @click="conversationOpen = true"
           />
-          <q-btn
-            v-if="hasSubmission" outline no-caps color="primary" icon="o_description"
-            label="View submitted form" @click="submittedOpen = true"
-          />
           <!-- What the client has actually been sent, and whether it landed. Beside Send Reminder rather
                than buried on a list, because "have we already chased them twice?" is the question asked
                immediately before pressing it. -->
@@ -54,6 +45,16 @@
             v-if="canReadEmailLog" outline no-caps color="primary" icon="o_mark_email_read"
             label="Email log" @click="emailLogOpen = true"
           />
+
+          <!-- Claiming the request. Filled and first among the workflow moves on a request nobody holds,
+               because on that request it is the ONLY thing an admin can do — every other admin action
+               below belongs to whoever picked it up. -->
+          <q-btn
+            v-if="canPickUp" unelevated no-caps color="amber-8" icon="o_pan_tool_alt"
+            label="Pick up" :loading="acting" @click="pickUp"
+          >
+            <q-tooltip>Take this request on — its engagement setup becomes yours to work</q-tooltip>
+          </q-btn>
 
           <!-- The workflow moves: each one hands the request to somebody else. -->
           <!-- Submitting to the client belongs at the end of the tabs, where the work it completes is.
@@ -80,14 +81,42 @@
           >
             <q-tooltip>Copy the client's intake form link</q-tooltip>
           </q-btn>
+          <!-- The reply to Send back, and the only one of these buttons the INITIATOR or the CSE presses:
+               it appears on a request that came back to them for rework. Named for where the request
+               goes, like the two below it, which is exactly why it says which move it is. -->
           <q-btn
             v-if="canReturnToAdmin" unelevated no-caps color="primary" icon="o_assignment_turned_in"
             label="Return to admin" :loading="acting" @click="returnToAdmin"
-          />
+          >
+            <q-tooltip max-width="300px">
+              Done with the changes — hand the request back to the admin reviewing it, who is told it is
+              waiting
+            </q-tooltip>
+          </q-btn>
+          <!-- Send back and Hand back are two different moves that sound like one, and they sit two
+               buttons apart. This one gives the WORK back to whoever it belongs to and keeps the request;
+               the other gives the REQUEST back to the queue and keeps nothing. Both say which, in as many
+               words, rather than leaving a new admin to find out by pressing one. -->
           <q-btn
             v-if="canSendBack" outline no-caps color="orange-9" icon="o_assignment_return"
             label="Send back" @click="sendBackOpen = true"
-          />
+          >
+            <q-tooltip max-width="300px">
+              Ask the partner or the CSE to change something — the request stays yours and comes back to
+              you once they have
+            </q-tooltip>
+          </q-btn>
+          <!-- Giving the request back to the queue. Last, and outlined: it is the undo of Pick up, not
+               a step in the work. -->
+          <q-btn
+            v-if="canHandBack" outline no-caps color="grey-8" icon="o_undo"
+            label="Hand back" :loading="acting" @click="handBack"
+          >
+            <q-tooltip max-width="300px">
+              Give this request up — it goes back to EMS Review for any admin to pick up, and stops being
+              yours
+            </q-tooltip>
+          </q-btn>
         </div>
       </template>
     </app-detail-header>
@@ -129,196 +158,241 @@
         {{ lockedReason }}
       </q-banner>
 
-      <!-- ─── The form, one tab per part of the referral ──────────────────────────────────────────── -->
-      <q-card flat bordered class="rf-card">
-        <div class="rf-tabbar">
-          <q-tabs
-            v-model="tab" dense align="left" active-color="primary" indicator-color="primary"
-            class="text-grey-7 rf-tabs col" no-caps inline-label
-          >
-            <q-tab
-              v-for="t in tabs" :key="t.name" :name="t.name" :icon="t.icon" :label="t.label" :disable="t.disable"
-            />
-          </q-tabs>
+      <!-- ─── The workspace: the client's answers beside the referral being built from them ────────── -->
+      <!-- Once the client has submitted, this page is two things read against each other — what they
+           told us, and what the firm is filling in on the strength of it. So they sit side by side,
+           with a divider the reader can drag: 40 / 60 to start, because the left pane is a record to
+           consult and the right one is the work. Before the client answers there is nothing to put in
+           the left pane and the form has the page to itself. -->
+      <div ref="workRef" class="rf-work" :class="{ 'rf-work--split': showSubmittedPane }">
+        <template v-if="showSubmittedPane">
+          <div class="rf-work__pane" :style="{ flexBasis: `${splitPct}%` }">
+            <q-card flat bordered class="rf-card rf-submitted">
+              <div class="rf-submitted__head">
+                <q-icon name="o_description" size="18px" color="primary" class="q-mr-xs" />
+                <div class="col">
+                  <div class="text-subtitle2 text-weight-medium">Submitted EMS Form</div>
+                  <div class="text-caption text-grey-7">{{ submittedNote }}</div>
+                </div>
+                <!-- Correcting the client's answers, in the corner of the pane that holds them. Admins
+                     only: the client filled this in once, from a link that is spent, so somebody on this
+                     side has to be able to fix a mistyped EIN without issuing a second intake form —
+                     and that somebody is the Admin reviewing it, not its initiator. Gone once an
+                     approval round has frozen the request, which is the same rule the server applies. -->
+                <q-btn
+                  v-if="canEditSubmission" flat dense no-caps size="sm" color="primary" icon="o_edit"
+                  label="Edit Form" @click="editFormOpen = true"
+                >
+                  <q-tooltip max-width="280px">
+                    Correct what the client submitted. The change is recorded against your name; the
+                    client is not asked again.
+                  </q-tooltip>
+                </q-btn>
+              </div>
+              <q-separator />
+              <div class="rf-submitted__body">
+                <submitted-form-panel ref="submittedPanelRef" :rems-id="remsId" />
+              </div>
+            </q-card>
+          </div>
 
-          <div class="rf-tabs__end">
-            <!-- The one thing the tab strip cannot say for itself — why the rest of it is greyed out —
+          <!-- Draggable, and reachable from the keyboard: the arrow keys move it in steps, Home puts it
+               back to the 40 / 60 it starts at. A divider that only answers a mouse is a divider some
+               readers cannot move. -->
+          <div
+            class="rf-work__gutter" role="separator" tabindex="0"
+            aria-label="Resize the submitted form pane"
+            aria-orientation="vertical"
+            :aria-valuenow="Math.round(splitPct)" :aria-valuemin="MIN_SPLIT" :aria-valuemax="MAX_SPLIT"
+            @pointerdown="startDrag" @dblclick="setSplit(DEFAULT_SPLIT)" @keydown="onGutterKey"
+          >
+            <span class="rf-work__grip" />
+          </div>
+        </template>
+
+        <div class="rf-work__pane rf-work__pane--main">
+          <q-card flat bordered class="rf-card">
+            <div class="rf-tabbar">
+              <q-tabs
+                v-model="tab" dense align="left" active-color="primary" indicator-color="primary"
+                class="text-grey-7 rf-tabs col" no-caps inline-label
+              >
+                <q-tab
+                  v-for="t in tabs" :key="t.name" :name="t.name" :icon="t.icon" :label="t.label" :disable="t.disable"
+                />
+              </q-tabs>
+
+              <div class="rf-tabs__end">
+                <!-- The one thing the tab strip cannot say for itself — why the rest of it is greyed out —
                  parked at the end of the strip it is about, and only while it is still true. A banner
                  over the form said it louder than it deserves and pushed the form down for everyone. -->
-            <q-icon v-if="tabsNote" name="o_info" size="20px" color="primary" class="rf-tabs__note">
-              <q-tooltip anchor="bottom right" self="top right" max-width="320px" :delay="200">
-                {{ tabsNote }}
-              </q-tooltip>
-            </q-icon>
+                <q-icon v-if="tabsNote" name="o_info" size="20px" color="primary" class="rf-tabs__note">
+                  <q-tooltip anchor="bottom right" self="top right" max-width="320px" :delay="200">
+                    {{ tabsNote }}
+                  </q-tooltip>
+                </q-icon>
 
-            <!-- Step back. Absent on the first tab, and on a new request, where there is nowhere behind
+                <!-- Step back. Absent on the first tab, and on a new request, where there is nowhere behind
                  the one tab that works. -->
-            <q-btn
-              v-if="prevTab" flat dense no-caps color="primary" icon="o_chevron_left" label="Prev"
-              class="q-px-sm" @click="goTab(prevTab.name)"
-            >
-              <q-tooltip>{{ prevTab.label }}</q-tooltip>
-            </q-btn>
+                <q-btn
+                  v-if="prevTab" flat dense no-caps color="primary" icon="o_chevron_left" label="Prev"
+                  class="q-px-sm" @click="goTab(prevTab.name)"
+                >
+                  <q-tooltip>{{ prevTab.label }}</q-tooltip>
+                </q-btn>
 
-            <!-- The ONE save left on the page — a request has to exist before anything can be auto-saved
-                 against it, so on a brand-new request the create IS the step forward. It is gone the
-                 moment it has run, which is also when the strip wants its width back. -->
-            <q-btn
-              v-if="isNew" unelevated no-caps dense color="primary" icon-right="o_arrow_right"
-              label="Save as Draft &amp; Next" class="q-px-md" :loading="saving" @click="createDraft"
-            />
+                <!-- The ONE save on the page: a request must exist before anything can be auto-saved
+                 against it, so on a brand-new request the create IS the step forward. It disappears
+                 the moment it has run, which is also when the strip wants its width back. -->
+                <q-btn
+                  v-if="isNew" unelevated no-caps dense color="primary" icon-right="o_arrow_right"
+                  label="Save as Draft &amp; Next" class="q-px-md" :loading="saving" @click="createDraft"
+                />
 
-            <!-- Filled while stepping on is the thing to do here, outlined where it shares the corner
+                <!-- Filled while stepping on is the thing to do here, outlined where it shares the corner
                  with the two ways out — on that tab they are the point and this is the aside. -->
-            <q-btn
-              v-else-if="showNext" dense no-caps color="primary" icon-right="o_chevron_right"
-              label="Next" class="q-px-md" :outline="atFinishTab" :unelevated="!atFinishTab"
-              @click="goTab(nextTab.name)"
-            >
-              <q-tooltip>{{ nextTab.label }}</q-tooltip>
-            </q-btn>
+                <q-btn
+                  v-else-if="showNext" dense no-caps color="primary" icon-right="o_chevron_right"
+                  label="Next" class="q-px-md" :outline="atFinishTab" :unelevated="!atFinishTab"
+                  @click="goTab(nextTab.name)"
+                >
+                  <q-tooltip>{{ nextTab.label }}</q-tooltip>
+                </q-btn>
 
-            <!-- Commission is where the initiator's own work ends: past it the tabs are the client's
+                <!-- Commission is where the initiator's own work ends: past it the tabs are the client's
                  answers and the approvers' round, neither of which they fill in. So instead of stepping
-                 on, this is where the two ways out live. -->
-            <template v-if="atFinishTab">
-              <q-btn
-                v-if="autoSaveOn" outline dense no-caps color="primary" icon="o_save"
-                label="Save and Close" class="q-px-md" :loading="saveState === 'saving'"
-                @click="saveAndClose"
-              />
-              <q-btn
-                v-if="canSendToClient" unelevated dense no-caps color="teal-7" icon="o_send"
-                label="Submit to Client" class="q-px-md" :disable="!readyToSend" @click="openSend"
-              >
-                <q-tooltip v-if="!readyToSend">{{ sendBlockedReason }}</q-tooltip>
-              </q-btn>
-            </template>
-          </div>
-        </div>
-        <q-separator />
+                 on, this is where the request goes to the client. -->
+                <q-btn
+                  v-if="atFinishTab" unelevated dense no-caps color="teal-7" icon="o_send"
+                  label="Submit to Client" class="q-px-md" :disable="!readyToSend" @click="openSend"
+                >
+                  <q-tooltip v-if="!readyToSend">{{ sendBlockedReason }}</q-tooltip>
+                </q-btn>
+              </div>
+            </div>
+            <q-separator />
 
-        <q-tab-panels v-model="tab" keep-alive animated>
-          <!-- ---------- Client Information ---------- -->
-          <q-tab-panel name="client">
-            <detail-grid v-if="!isEditing" :rows="clientRows" />
-            <!-- Entity Type and Industry are the page's to save — one belongs to the request's EMS form
+            <q-tab-panels v-model="tab" keep-alive animated>
+              <!-- ---------- Client Information ---------- -->
+              <q-tab-panel name="client">
+                <detail-grid v-if="!isEditing" :rows="clientRows" />
+                <!-- Entity Type and Industry are the page's to save — one belongs to the request's EMS form
                  record and the other to its engagement, neither to the client row — but this tab's to
                  lay out, because both describe the client. They are v-modelled down rather than rendered
                  in a row of their own up here. -->
-            <client-information-fields
-              v-else
-              ref="clientFieldsRef"
-              v-model="clientForm"
-              v-model:industry-group="setupForm.industryGroup"
-              v-model:sub-industry="setupForm.subIndustry"
-              :readonly="!canEditClient"
-              :client-locked="clientLocked"
-              :setup-readonly="!canEditSetup"
-              :industry-group-options="industryGroupOptions"
-              :industry-locked="industryLocked"
-              :sub-industry-options="subIndustryOptions"
-              :admin-options="adminOptions"
-              :type-options="typeOptions"
-              :files="request?.files || []"
-              :attempted="attempted"
-              @change="markDirty('client')"
-            />
+                <client-information-fields
+                  v-else
+                  ref="clientFieldsRef"
+                  v-model="clientForm"
+                  v-model:industry-group="setupForm.industryGroup"
+                  v-model:sub-industry="setupForm.subIndustry"
+                  :readonly="!canEditClient"
+                  :client-locked="clientLocked"
+                  :compact="showSubmittedPane"
+                  :setup-readonly="!canEditSetup"
+                  :industry-group-options="industryGroupOptions"
+                  :industry-locked="industryLocked"
+                  :sub-industry-options="subIndustryOptions"
+                  :type-options="typeOptions"
+                  :files="request?.files || []"
+                  :attempted="attempted"
+                  @change="markDirty('client')"
+                />
 
-            <!-- The client's other businesses, and whether each has been turned into its own request yet.
+                <!-- The client's other businesses, and whether each has been turned into its own request yet.
                  Shown whether the tab is being read or edited: it is a list with one action, not a field
                  anybody fills in. -->
-            <additional-entities-panel
-              v-if="additionalEntities.length" :rows="additionalEntities" class="q-mt-md"
-              @create-ems="createFollowUp"
-            />
-          </q-tab-panel>
+                <additional-entities-panel
+                  v-if="additionalEntities.length" :rows="additionalEntities" class="q-mt-md"
+                  @create-ems="createFollowUp"
+                />
+              </q-tab-panel>
 
-          <!-- ---------- Engagement Setup ---------- -->
-          <q-tab-panel name="setup">
-            <div v-if="!setupEngagement" class="text-grey-7">{{ noEngagementNote }}</div>
+              <!-- ---------- Engagement Setup ---------- -->
+              <q-tab-panel name="setup">
+                <div v-if="!setupEngagement" class="text-grey-7">{{ noEngagementNote }}</div>
 
-            <detail-grid v-else-if="!isEditing" :rows="setupRows" />
+                <detail-grid v-else-if="!isEditing" :rows="setupRows" />
 
-            <!-- The CSE is the page's to save (it belongs to the request's EMS form record, not to the
+                <!-- The CSE is the page's to save (it belongs to the request's EMS form record, not to the
                  engagement) but the setup form's to lay out — it sits with the other two people who run
                  the engagement, so it is v-modelled down rather than rendered up here in a row of its
                  own. The entity type goes down read-only: the Government Audit card keys off it. -->
-            <engagement-setup-form
-              v-else
-              ref="setupRef"
-              v-model:cse-user-id="setupForm.cseUserId"
-              :engagement="setupEngagement"
-              :cse-options="cseOptions"
-              :cse-hint="cseHint"
-              :industry-group="setupForm.industryGroup"
-              :dept-options="departmentOptions"
-              :sub-service-line-options="subServiceLineOptions"
-              :tax-form-options="taxFormOptions"
-              :tax-form-unavailable="taxFormUnavailable"
-              :department-directors="workspace?.departmentDirectors || []"
-              :executive-options="executiveOptions"
-              :billing-manager-options="billingManagerOptions"
-              :billing-period-options="billingPeriodOptions"
-              :editable="canEditSetup"
-              @change="markDirty('setup')"
-            />
-          </q-tab-panel>
+                <engagement-setup-form
+                  v-else
+                  ref="setupRef"
+                  v-model:cse-user-id="setupForm.cseUserId"
+                  :engagement="setupEngagement"
+                  :cse-options="cseOptions"
+                  :cse-hint="cseHint"
+                  :industry-group="setupForm.industryGroup"
+                  :dept-options="departmentOptions"
+                  :sub-service-line-options="subServiceLineOptions"
+                  :tax-form-options="taxFormOptions"
+                  :tax-form-unavailable="taxFormUnavailable"
+                  :department-directors="workspace?.departmentDirectors || []"
+                  :executive-options="executiveOptions"
+                  :billing-manager-options="billingManagerOptions"
+                  :billing-period-options="billingPeriodOptions"
+                  :editable="canEditSetup"
+                  @change="markDirty('setup')"
+                />
+              </q-tab-panel>
 
-          <!-- ---------- Marketing ---------- -->
-          <q-tab-panel v-if="setupEngagement" name="marketing">
-            <detail-grid v-if="!isEditing" :rows="marketingRows" />
-            <engagement-marketing
-              v-else
-              ref="marketingRef"
-              :engagement="setupEngagement" :marketing-groups="marketingGroups"
-              :marketing-unavailable="marketingUnavailable" :editable="canEditSetup"
-              @change="markDirty('marketing')"
-            />
-          </q-tab-panel>
+              <!-- ---------- Marketing ---------- -->
+              <q-tab-panel v-if="setupEngagement" name="marketing">
+                <detail-grid v-if="!isEditing" :rows="marketingRows" />
+                <engagement-marketing
+                  v-else
+                  ref="marketingRef"
+                  :engagement="setupEngagement" :marketing-groups="marketingGroups"
+                  :marketing-unavailable="marketingUnavailable" :editable="canEditSetup"
+                  @change="markDirty('marketing')"
+                />
+              </q-tab-panel>
 
-          <!-- ---------- Commission ---------- -->
-          <q-tab-panel v-if="setupEngagement" name="commission">
-            <detail-grid v-if="!isEditing" :rows="commissionRows" />
-            <engagement-commission
-              v-else
-              ref="commissionRef"
-              :engagement="setupEngagement" :recipient-options="cseOptions" :editable="canEditSetup"
-              @change="markDirty('commission')"
-            />
-          </q-tab-panel>
+              <!-- ---------- Commission ---------- -->
+              <q-tab-panel v-if="setupEngagement" name="commission">
+                <!-- On the panel rather than inside the form below it, so it is there whether the tab is being
+                 read or filled in. The number is ambiguous either way: "40%" beside a name says nothing
+                 about what it is 40% OF, and the fee and the realization on the setup tab are both
+                 percentages this could plausibly be read against. -->
+                <div class="rf-hint">The percentage represents percentage of commission.</div>
+                <detail-grid v-if="!isEditing" :rows="commissionRows" />
+                <engagement-commission
+                  v-else
+                  ref="commissionRef"
+                  :engagement="setupEngagement" :recipient-options="cseOptions" :editable="canEditSetup"
+                  @change="markDirty('commission')"
+                />
+              </q-tab-panel>
 
-          <!-- The Client Intake tab stood here: the materialised client record and the main entity's
-               addresses, restated on a tab of their own. "View Submitted Form" in the header shows the
-               client's answers already, from the immutable snapshot rather than from a second copy of
-               them, so the tab was the same page twice. Its Other Entities list was not a restatement —
-               it carries the Create EMS action — and moved up to the Client tab with the rest of what is
-               known about the client. -->
-
-          <!-- ---------- Approval ---------- -->
-          <!-- Only ever reached by someone who may read it: the approver list is gated on managing
+              <!-- ---------- Approval ---------- -->
+              <!-- Only ever reached by someone who may read it: the approver list is gated on managing
                engagements, so for everyone else this tab does not exist until a round has actually been
                opened, and then shows the record of it rather than the controls for running one. -->
-          <q-tab-panel v-if="showApprovalTab" name="approval">
-            <template v-if="engagement">
-              <engagement-approval
-                v-if="canManageApproval"
-                :engagement="engagement" :can-send="canRouteForApproval"
-                :marketing-saved="marketingComplete" @status-changed="load"
-              />
-              <q-banner v-else dense class="rf-alert rf-alert--lock">
-                <template #avatar><q-icon name="o_gavel" color="blue-9" /></template>
-                {{ approvalNote }}
-              </q-banner>
-              <approval-history :engagement-id="engagement.id" class="q-mt-md" />
-            </template>
-          </q-tab-panel>
-        </q-tab-panels>
-      </q-card>
+              <q-tab-panel v-if="showApprovalTab" name="approval">
+                <template v-if="engagement">
+                  <engagement-approval
+                    v-if="canManageApproval"
+                    :engagement="engagement" :can-send="canRouteForApproval"
+                    :marketing-saved="marketingComplete" @status-changed="load"
+                  />
+                  <q-banner v-else dense class="rf-alert rf-alert--lock">
+                    <template #avatar><q-icon name="o_gavel" color="blue-9" /></template>
+                    {{ approvalNote }}
+                  </q-banner>
+                  <approval-history :engagement-id="engagement.id" class="q-mt-md" />
+                </template>
+              </q-tab-panel>
+            </q-tab-panels>
+          </q-card>
+        </div>
+      </div>
 
-      <!-- No action bar. Every button that stood here is in one of the two corners at the top of the page
-           — the workflow moves in the header, stepping through the form on the tab strip — so the page
-           ends on the last field of whichever tab is open, with nothing below it to scroll to. -->
+      <!-- No action bar: every button lives in one of the two corners at the top — the workflow moves in
+           the header, stepping through the form on the tab strip — so the page ends on the last field of
+           whichever tab is open, with nothing below it to scroll to. -->
     </template>
 
     <!-- All five act on a saved request, so none of them exist while one is being composed. -->
@@ -332,33 +406,32 @@
       <send-ems-dialog
         v-model="reminderOpen" mode="reminder" :rems-id="remsId" :subtitle="subtitle" @sent="load"
       />
-      <submitted-form-dialog v-model="submittedOpen" :rems-id="remsId" />
       <conversation-dialog v-model="conversationOpen" :request-id="remsId" :subtitle="subtitle" />
       <email-log-dialog v-model="emailLogOpen" :rems-id="remsId" :subtitle="subtitle" @sent="load" />
+      <edit-submitted-form-dialog
+        v-if="canEditSubmission" v-model="editFormOpen" :rems-id="remsId" :subtitle="subtitle"
+        @saved="onSubmissionCorrected"
+      />
     </template>
   </q-page>
 </template>
 
 <script setup>
-// THE REMS form (Phase 16): one tabbed page replacing the create/edit drawer, the entity tab strip and
-// the four-step Setup/Marketing/Commission/Approval wizard.
+// THE REMS form: one tabbed page for creating, editing and reading a request.
 //
 // CREATING, EDITING AND READING ARE THE SAME PAGE, on three paths — /rems/requests/new,
 // /rems/requests/edit/:id and /rems/requests/:id — because they are the same material seen three ways.
 // Which one you are on is the URL itself: the page reads its own route NAME, and nothing is carried in a
-// query flag. (It used to be one path with `:id = "new"` and `?mode=edit`, which made the plainest link in
-// the module — "show me this request" — the longest.)
+// query flag.
 //
 // The tabs are the parts of a referral — the client, the engagement setup, how it was won, who is paid for
 // it, and the approval round — not the steps of a wizard: every tab but the first is reachable in any
 // order and none of them gates another. What the CLIENT answered is not among them: it is a snapshot they
-// sent rather than a part of the referral the firm writes, and the header opens it.
+// sent rather than a part of the referral the firm writes, and the left pane shows it.
 //
 // THERE IS ONE SAVE ON THE PAGE, and it is only there because a request has to EXIST before anything can
 // be written against it: saving the Client Information tab files the draft, and from that moment every
-// edit on every tab saves itself (see the auto-save block below). The Save button that used to write the
-// whole page at once is gone with it — it was the thing that made a half-filled request feel unsafe to
-// leave, and it was also the reason the setup could be typed and then lost.
+// edit on every tab saves itself (see the auto-save block below).
 //
 // The page is the same for everyone; what differs is what it lets you touch. Editability is derived from
 // the request's STAGE rather than from which list you arrived by, because the two rework states hand the
@@ -368,13 +441,15 @@ import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } 
 import { useRoute, useRouter, onBeforeRouteLeave } from "vue-router";
 import { remsApi, getApiErrorMessage, webUrl } from "services/api";
 import { useNotify } from "composables/useNotify";
+import { useConfirm } from "composables/useConfirm";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import {
-  useRemsMeta, useRemsOptionSets, useRemsEngagementOptionSets, useRemsIndustryGroups,
-  REMS_TYPE_SUBSIDIARY
+  useRemsMeta, useRemsOptionSets, useRemsEngagementOptionSets, useRemsIndustryGroups, REMS_SEAT_ROLES
 } from "modules/rems/useRemsMeta";
 import { useAutoSave } from "modules/rems/useAutoSave";
+import { clientDisplayName } from "modules/rems/remsContactRoles";
 import { REMS_STATUS } from "modules/rems/remsStatus";
+import { useAuthStore } from "stores/auth";
 
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import ActingAsBanner from "modules/rems/components/ActingAsBanner.vue";
@@ -388,15 +463,18 @@ import EngagementMarketing from "modules/rems/components/engagement/EngagementMa
 import EngagementCommission from "modules/rems/components/engagement/EngagementCommission.vue";
 import EngagementApproval from "modules/rems/components/engagement/EngagementApproval.vue";
 import SendEmsDialog from "modules/rems/components/SendEmsDialog.vue";
-import SubmittedFormDialog from "modules/rems/components/SubmittedFormDialog.vue";
+import SubmittedFormPanel from "modules/rems/components/SubmittedFormPanel.vue";
+import EditSubmittedFormDialog from "modules/rems/components/EditSubmittedFormDialog.vue";
 import ConversationDialog from "modules/rems/components/ConversationDialog.vue";
 import EmailLogDialog from "modules/rems/components/EmailLogDialog.vue";
 
 const route = useRoute();
 const router = useRouter();
 const notify = useNotify();
+const { confirm } = useConfirm();
 const { has } = usePermissions();
-const { statusLabel, statusColor, emsFormActivity } = useRemsMeta();
+const auth = useAuthStore();
+const { emsFormActivity, requestStatusLabel, requestStatusColor, approverRoleLabel } = useRemsMeta();
 const { typeOptions, load: loadTypes } = useRemsOptionSets();
 const { industryGroupOptions, load: loadIndustryGroups } = useRemsIndustryGroups();
 const {
@@ -432,7 +510,6 @@ const engagementLive = ref(null);
 const workspaceDenied = ref(false);
 const sendBacks = ref([]);
 const additionalEntities = ref([]);
-const adminOptions = ref([]);
 const cseOptions = ref([]);
 const executiveOptions = ref([]);
 const billingManagerOptions = ref([]);
@@ -443,23 +520,21 @@ const marketingRef = ref(null);
 const commissionRef = ref(null);
 
 const conversationOpen = ref(false);
-const submittedOpen = ref(false);
 const emailLogOpen = ref(false);
+const editFormOpen = ref(false);
+const submittedPanelRef = ref(null);
 const sendOpen = ref(false);
 const reminderOpen = ref(false);
 const sendBackOpen = ref(false);
 
 const blankClient = () => ({
   clientName: "",
+  // The generational suffix, kept apart from the name — see ClientInformationFields for why.
+  clientNameSuffix: "",
   customerEmail: "",
   customerMobileNumber: "",
   type: "",
-  existingClientReferenceId: null,
-  // The client a subsidiary hangs off. The name rides along with the id so the picker can show it back
-  // without a lookup, and so the read view has something to print.
-  parentClientReferenceId: null,
-  parentClientName: "",
-  assignAdminUserId: null
+  existingClientReferenceId: null
 });
 const clientForm = reactive(blankClient());
 // The fields the page owns rather than a tab: each is written by an endpoint of its own, and two of the
@@ -493,7 +568,7 @@ const newEngagement = Object.freeze({
   firstYearFeeEstimate: null,
   realizationPercentage: null,
   billingPeriod: null,
-  numberOfBills: null,
+  billingProcessDescription: "",
   status: "Draft",
   marketingMethodIds: [],
   commissionSplits: [],
@@ -532,16 +607,35 @@ const frozen = computed(() =>
 
 const isAdmin = computed(() => has(Permissions.RemsEngagementsManage));
 
+// THE admin on this request, not just an admin. A request is nobody's until one picks it up, and it stays
+// that one's while they hold it — so holding the permission is not the same as being the person this
+// request is with. The server draws exactly this line (RemsSetupAccess.CanWork); asking it here is what
+// stops an Edit button that opens a form every save 403s on.
+const assignedAdminId = computed(() => request.value?.assignedAdmin?.id || null);
+// Super Admins and Tenant Admins are exempt from the whole ownership rule, so a request can be worked
+// around when the admin holding it is away. Mirrors RemsSetupAccess.IsElevated, which is what the server
+// actually enforces — the SPA only has to agree with it or the page hides what a save would accept.
+const isElevated = computed(() =>
+  auth.roles.includes("SuperAdmin") || auth.roles.includes("TenantAdmin"));
+const isHoldingAdmin = computed(() =>
+  isElevated.value ||
+  (isAdmin.value && !!assignedAdminId.value && assignedAdminId.value === auth.user?.userId));
+// Nobody has taken this one. Any stage but draft, which is not out with anybody yet — an admin may claim a
+// request while the client is still filling their form, and often should: it settles who will handle the
+// answers before they arrive rather than after.
+const awaitingPickUp = computed(() =>
+  !isNew.value && status.value !== REMS_STATUS.DRAFT && !assignedAdminId.value);
+
 // The client tab belongs to the initiator while the request is theirs, and to the admin while it is his.
 // In the two REWORK states it is read-only even to the initiator: only the setup was sent back.
 const canEditClient = computed(() => {
   if (frozen.value) return false;
-  if (isAdminStage.value) return isAdmin.value;
+  if (isAdminStage.value) return isHoldingAdmin.value;
   return [REMS_STATUS.DRAFT, REMS_STATUS.AWAITING_CUSTOMER].includes(status.value);
 });
 const canEditSetup = computed(() => {
   if (frozen.value) return false;
-  if (isAdminStage.value) return isAdmin.value;
+  if (isAdminStage.value) return isHoldingAdmin.value;
   return isInitiatorStage.value;
 });
 // Whether there is anything on this page this user could change at this stage — what decides if the Edit
@@ -567,6 +661,14 @@ const lockedReason = computed(() => {
   if (status.value === REMS_STATUS.APPROVED) return "This engagement is approved and permanently read-only.";
   if (status.value === REMS_STATUS.AWAITING_CUSTOMER && !canEditClient.value) {
     return "The intake form is with the client.";
+  }
+  // The state this whole page is read-only in for a reason the reader can do something about. Only said to
+  // the admins: to the initiator it is simply a request they have handed on, and to an elevated caller it
+  // is not read-only at all.
+  if (isAdminStage.value && isAdmin.value && !isHoldingAdmin.value) {
+    return assignedAdminId.value
+      ? `${request.value?.assignedAdmin?.name || "Another admin"} picked this request up. Only they can work it.`
+      : "Nobody has picked this request up yet. Pick it up to work its engagement setup.";
   }
   return "";
 });
@@ -602,9 +704,64 @@ const copyClientFormLink = async () => {
 };
 const canReturnToAdmin = computed(() =>
   [REMS_STATUS.RETURNED_TO_INITIATOR, REMS_STATUS.CHANGES_REQUESTED].includes(status.value));
-const canSendBack = computed(() => isAdminStage.value && isAdmin.value);
+// Both are moves only the admin HOLDING the request can make — returning it for rework and routing it to
+// the approvers are the two ways it leaves their desk.
+const canSendBack = computed(() => isAdminStage.value && isHoldingAdmin.value);
 const canRouteForApproval = computed(() =>
-  isAdminStage.value && has(Permissions.RemsApprovalsSend));
+  isAdminStage.value && isHoldingAdmin.value && has(Permissions.RemsApprovalsSend));
+
+// Claiming the request, and giving it back. Pick-up is offered on any unclaimed request an admin can
+// reach; handing back is the holder's own move, and it is what puts a request taken by mistake back in
+// front of everybody. Both ask for the admin's own permission on top of the stage, so the buttons never
+// appear to the initiator reading their own request.
+const canPickUp = computed(() =>
+  awaitingPickUp.value && isAdmin.value && has(Permissions.RemsRequestsAssign));
+const canHandBack = computed(() => isHoldingAdmin.value && has(Permissions.RemsRequestsAssign));
+
+const pickUp = async () => {
+  // Asked the same way Hand back is, and for the same reason: this moves the request from everybody to
+  // one person. Until it is handed back no other admin can work it, so it is worth a beat — and on a
+  // request opened from a notification or a link, the button is right where Edit would be.
+  const ok = await confirm({
+    title: "Pick this request up",
+    message: "The request becomes yours and its engagement setup opens for you to work. No other admin " +
+      "can take it while you hold it — Hand back is what returns it to the queue. Continue?",
+    confirmLabel: "Pick up"
+  });
+  if (!ok) return;
+  acting.value = true;
+  try {
+    await remsApi.pickUp(remsId.value);
+    notify.success(`${request.value?.remsNumber || "This request"} is yours. Its engagement setup is now open to you.`);
+  } catch (err) {
+    // Most often "somebody else got there first" — the reload below is what shows who.
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    acting.value = false;
+    await load();
+  }
+};
+
+const handBack = async () => {
+  const ok = await confirm({
+    title: "Hand back to the queue",
+    message: "This puts the request back in EMS Review as waiting for pickup, and its engagement setup " +
+      "goes read-only to you. Any admin can take it from there — including you. Continue?",
+    confirmLabel: "Hand back"
+  });
+  if (!ok) return;
+  acting.value = true;
+  try {
+    await flushSaves();
+    await remsApi.handBack(remsId.value);
+    notify.success("Handed back. It is waiting for pickup again.");
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    acting.value = false;
+    await load();
+  }
+};
 
 // The lighter of the two completeness bars: enough to ask the client for their details. The full one —
 // the engagement team, realization, a marketing method, the signed CAF on an audit — is enforced when the
@@ -620,19 +777,113 @@ const sendBlockedReason = computed(() => {
   return "";
 });
 
-// Whether the client has answered — what puts "View Submitted Form" in the header.
+// Whether the client has answered — what puts their form in the left pane.
 const hasSubmission = computed(() => !!workspace.value?.client);
+
+// ---- The submitted-form pane ----
+// Shown whenever there is a submission to show, in BOTH modes: reading a request and correcting one are
+// each done against what the client actually said. A request being composed has no client and no
+// answers, so no pane.
+const showSubmittedPane = computed(() => !isNew.value && hasSubmission.value);
+
+// Whether the client's answers are this caller's to correct. Mirrors the endpoint exactly — an Admin
+// (rems.engagements.manage, which is what the Admin / Tenant Admin / Super Admin roles carry), and not
+// once an approval round has frozen the request. Deliberately NOT narrowed to the admin HOLDING the
+// request: a typo in the client's own answers is a fact about the client, not part of the setup one
+// admin is working, and the endpoint draws the same line.
+const canEditSubmission = computed(() => showSubmittedPane.value && isAdmin.value && !frozen.value);
+
+// The pane's caption. It stops claiming to be untouched once somebody has touched it: an admin reading
+// an EIN here is entitled to know whether it is what the client typed or what a colleague corrected it
+// to. The panel below fills in who and when.
+const submittedNote = computed(() => (canEditSubmission.value
+  ? "What the client submitted. Corrections are recorded against the admin who makes them."
+  : "Read-only snapshot of exactly what the client submitted."));
+
+// A correction replaces the stored snapshot, so the pane behind the dialog has to re-read it.
+const onSubmissionCorrected = () => { submittedPanelRef.value?.reload(); };
+
+// 40 / 60 — the left pane is a record to consult, the right one is the work. Kept per browser once the
+// reader moves it: a preference about how somebody reads, not a fact about the request, so it is not
+// worth a round trip and it should not follow them onto a colleague's screen.
+const DEFAULT_SPLIT = 40;
+const MIN_SPLIT = 25;
+const MAX_SPLIT = 65;
+const SPLIT_KEY = "rems.request.splitPct";
+
+const clampSplit = (pct) => Math.min(MAX_SPLIT, Math.max(MIN_SPLIT, pct));
+
+const readStoredSplit = () => {
+  try {
+    const stored = Number(window.localStorage.getItem(SPLIT_KEY));
+    // Clamped on the way in as well as on the way out: what comes back is whatever is in that browser's
+    // storage, which a previous version's limits — or a person with the developer tools open — may not
+    // agree with.
+    return Number.isFinite(stored) && stored > 0 ? clampSplit(stored) : DEFAULT_SPLIT;
+  } catch {
+    // Private windows and blocked site data throw on the accessor itself. The default is a fine answer.
+    return DEFAULT_SPLIT;
+  }
+};
+
+const workRef = ref(null);
+const splitPct = ref(readStoredSplit());
+
+const setSplit = (pct) => {
+  splitPct.value = clampSplit(pct);
+  try {
+    window.localStorage.setItem(SPLIT_KEY, String(splitPct.value));
+  } catch { /* nothing to do — the pane simply starts at the default next time */ }
+};
+
+// Pointer events rather than mouse: the same handler then covers a trackpad, a touch screen and a pen,
+// and setPointerCapture keeps the drag alive when the pointer outruns the four-pixel gutter.
+const startDrag = (event) => {
+  const box = workRef.value?.getBoundingClientRect();
+  if (!box?.width) return;
+  event.preventDefault();
+  const target = event.currentTarget;
+  target.setPointerCapture?.(event.pointerId);
+
+  const move = (e) => setSplit(((e.clientX - box.left) / box.width) * 100);
+  const stop = () => {
+    // Throws NotFoundError when the pointer is already gone, which is exactly the case a pointercancel
+    // reports — and the listeners below still have to come off either way.
+    try { target.releasePointerCapture?.(event.pointerId); } catch { /* already released */ }
+    target.removeEventListener("pointermove", move);
+    target.removeEventListener("pointerup", stop);
+    target.removeEventListener("pointercancel", stop);
+    document.body.classList.remove("rf-dragging");
+  };
+
+  // On the gutter itself, which holds the capture — a listener on the document would keep firing after
+  // the page navigated away mid-drag.
+  target.addEventListener("pointermove", move);
+  target.addEventListener("pointerup", stop);
+  target.addEventListener("pointercancel", stop);
+  // Stops the drag from selecting the text it passes over, and keeps the resize cursor throughout.
+  document.body.classList.add("rf-dragging");
+};
+
+const onGutterKey = (event) => {
+  const step = event.shiftKey ? 10 : 2;
+  if (event.key === "ArrowLeft") setSplit(splitPct.value - step);
+  else if (event.key === "ArrowRight") setSplit(splitPct.value + step);
+  else if (event.key === "Home") setSplit(DEFAULT_SPLIT);
+  else return;
+  event.preventDefault();
+};
 const marketingComplete = computed(() => (engagement.value?.marketingMethodIds?.length || 0) > 0);
 const openSendBack = computed(() => sendBacks.value.find((s) => !s.resolvedOnUtc) || null);
 const declinedReasons = ref([]);
 
 const cseHint = computed(() => (cseOptions.value.length
   ? ""
-  : "No members in the \"CSE\" group — add them in Administration → User Groups."));
+  : "Nobody holds the \"CSE\" role — assign it on a user's page in Administration → Users."));
 
 // ---- The Approval tab ----
-// Reading the approver list is gated on managing engagements. The initiator does not hold that, so the
-// section used to load, call it, and render a bare 403 on a tab they could do nothing with anyway.
+// Reading the approver list is gated on managing engagements, which the initiator does not hold — so
+// showing them the section would render a bare 403 on a tab they could do nothing with anyway.
 //
 // Approval is not their step: the admin opens the round once the client's intake is in. So for anyone who
 // cannot run one, the tab appears only once a round HAS been opened — at which point there is something
@@ -690,8 +941,8 @@ const tabsNote = computed(() => (isNew.value
     "remaining tabs are filled against — and from that point everything you type saves itself."
   : ""));
 
-// In the URL like `mode`, so a reload or a shared link comes back to the tab that was open. A tab that is
-// not on this record (a stale link, or one whose section has gone) falls back to the first rather than
+// Held in the URL, so a reload or a shared link comes back to the tab that was open. A tab that is not on
+// this record — a stale link, or one whose section does not apply — falls back to the first rather than
 // rendering an empty card.
 const tab = computed({
   get: () => {
@@ -722,11 +973,11 @@ const nextTab = computed(() => stepTab(1));
 // Where the initiator's own work ends. What lies past Commission is somebody else's: the approvers' round.
 const FINISH_TAB = "commission";
 const hasFinishTab = computed(() => tabs.value.some((t) => t.name === FINISH_TAB && !t.disable));
-const atFinishTab = computed(() =>
-  tab.value === FINISH_TAB && (autoSaveOn.value || canSendToClient.value));
+// Only where there is something to finish WITH — Submit to Client is the whole of finishing here.
+const atFinishTab = computed(() => tab.value === FINISH_TAB && canSendToClient.value);
 // Finishing does not REPLACE stepping on. For the initiator in draft there is nothing past Commission, so
-// the two ways out are all there is — but once a round has been opened, Approval sits behind it and the
-// admin reviewing it still needs the step.
+// submitting is all there is — but once a round has been opened, Approval sits behind it and the admin
+// reviewing it still needs the step.
 const showNext = computed(() => !!nextTab.value);
 
 // ---- View mode: the same fields, as a record rather than a form ----
@@ -752,19 +1003,19 @@ const commissionLabels = computed(() =>
     .map((s) => `${s.employee?.name || nameOf(cseOptions.value, s.employeeId)} — ${s.percentage}%`));
 
 const clientRows = computed(() => [
-  { label: "Client", value: clientForm.clientName },
+  // Read as one name, with the suffix on it — the pair is edited as two boxes because they are two
+  // different things to store, not because they are two things about the client.
+  { label: "Client", value: clientDisplayName(clientForm.clientName, clientForm.clientNameSuffix) },
   { label: "Client Email Address", value: clientForm.customerEmail },
   { label: "Client Phone Number", value: clientForm.customerMobileNumber },
   { label: "Relationship to THF", value: labelOf(typeOptions.value, clientForm.type) },
-  // Only on a subsidiary — on any other type there is no parent, and a blank row would suggest one is
-  // missing rather than not applicable.
-  { label: "Parent Client", value: clientForm.parentClientName, hideWhenEmpty: true },
   { label: "Entity Type", value: labelOf(industryGroupOptions.value, setupForm.industryGroup) },
   { label: "Industry", value: labelOf(subIndustryOptions.value, setupForm.subIndustry) },
-  { label: "Reviewing Admin", value: nameOf(adminOptions.value, clientForm.assignAdminUserId) },
-  // The retired "Message from Partner". Shown only where an older request actually carries one — the
-  // field is gone from the form, so this never appears on anything raised since, but deleting the row
-  // outright would hide text somebody wrote and nothing else displays.
+  // Read off the request rather than a picker: nobody chooses this, an admin claims it. Blank until one
+  // does, and the badge in the header is what says the request is waiting for that.
+  { label: "Reviewing Admin", value: request.value?.assignedAdmin?.name || "Waiting for pickup" },
+  // "Message from Partner" is not asked for any more, so this shows only on the older requests that
+  // carry one — dropping the row outright would hide text somebody wrote and nothing else displays.
   {
     label: "Message from Partner",
     value: request.value?.description,
@@ -794,8 +1045,8 @@ const setupRows = computed(() => {
     { label: "Billing Manager", value: e.billingManager?.name },
     { label: "First-Year Fee Estimate", value: currency(e.firstYearFeeEstimate) },
     { label: "% Realization", value: e.realizationPercentage == null ? "" : `${e.realizationPercentage}%` },
-    { label: "Billing Period", value: labelOf(billingPeriodOptions.value, e.billingPeriod) },
-    { label: "No. of Bills", value: e.numberOfBills },
+    { label: "Billing Frequency", value: labelOf(billingPeriodOptions.value, e.billingPeriod) },
+    { label: "Description of Billing Process", value: e.billingProcessDescription, wide: true },
     // The conditional blocks say nothing when they do not apply to this engagement, so they are hidden
     // rather than shown empty — unlike the fields above, where blank IS the record.
     { label: "Fiscal Year End", value: e.tax?.fiscalYearEnd, hideWhenEmpty: true },
@@ -812,24 +1063,19 @@ const marketingRows = computed(() => [{ label: "Marketing", value: marketingLabe
 const commissionRows = computed(() => [{ label: "Commission", value: commissionLabels.value, wide: true }]);
 
 // ---- Load ----
-// Every people picker here is scoped to a user group of the same name, kept in Administration → User
-// Groups. An absent or empty group yields an empty list on purpose rather than quietly offering everyone.
-const GROUPS = {
-  cse: "CSE",
-  executive: "Engagement Executive",
-  billingManager: "Billing Manager"
-};
+// Every people picker here is scoped to the ROLE of the same name, held on the user's own page. A role
+// nobody holds yields an empty list on purpose rather than quietly offering everyone.
 
 const toOptions = (rows) => (rows || []).map((r) => ({ label: r.name, value: r.id }));
 
+// The unscoped admin list is not fetched any more: it fed the "Assign to Admin" picker, and every picker
+// left here names the seat it fills.
 const loadPickers = async () => {
-  const [admins, cse, execs, billing] = await Promise.all([
-    remsApi.admins().catch(() => []),
-    remsApi.admins(GROUPS.cse).catch(() => []),
-    remsApi.admins(GROUPS.executive).catch(() => []),
-    remsApi.admins(GROUPS.billingManager).catch(() => [])
+  const [cse, execs, billing] = await Promise.all([
+    remsApi.admins(REMS_SEAT_ROLES.CSE).catch(() => []),
+    remsApi.admins(REMS_SEAT_ROLES.ENGAGEMENT_EXECUTIVE).catch(() => []),
+    remsApi.admins(REMS_SEAT_ROLES.BILLING_MANAGER).catch(() => [])
   ]);
-  adminOptions.value = toOptions(admins);
   cseOptions.value = toOptions(cse);
   executiveOptions.value = toOptions(execs);
   billingManagerOptions.value = toOptions(billing);
@@ -843,14 +1089,14 @@ const loadPickers = async () => {
 let pendingSetupPick = null;
 
 const seedForms = (detail, ws) => {
-  clientForm.clientName = detail.clientName || "";
+  // requestedClientName, not clientName: the latter is the pair already joined, and seeding it into the
+  // search box would put "John Smith Jr." into a field that looks its clients up by name.
+  clientForm.clientName = detail.requestedClientName ?? detail.clientName ?? "";
+  clientForm.clientNameSuffix = detail.clientNameSuffix || "";
   clientForm.customerEmail = detail.customerEmail || "";
   clientForm.customerMobileNumber = detail.customerMobileNumber || "";
   clientForm.type = detail.type || "";
   clientForm.existingClientReferenceId = detail.existingClientReferenceId || null;
-  clientForm.parentClientReferenceId = detail.parentClientReferenceId || null;
-  clientForm.parentClientName = detail.parentClientName || "";
-  clientForm.assignAdminUserId = detail.assignedAdmin?.id || null;
   setupForm.cseUserId = detail.cse?.id || null;
   setupForm.industryGroup =
     ws?.industryGroup || detail.industryGroup || pendingSetupPick?.industryGroup || null;
@@ -858,13 +1104,17 @@ const seedForms = (detail, ws) => {
 };
 
 // The reasons behind the LAST failed round, so the initiator sees what to fix without opening history.
+// The history comes back newest round first, so the first Rejected one IS the latest — this used to
+// reverse the list to reach it, back when the server returned the rounds oldest first. Reversing now would
+// quietly surface the reasons from the FIRST failed round instead, which on a request that has been round
+// three times is somebody else's objection, already answered.
 const loadDeclineReasons = async (id) => {
   if (!id || status.value !== REMS_STATUS.CHANGES_REQUESTED) return [];
   const rounds = await remsApi.approvalHistory(id).catch(() => []);
-  const last = [...rounds].reverse().find((r) => r.status === "Rejected");
+  const last = rounds.find((r) => r.status === "Rejected");
   return (last?.decisions || [])
     .filter((d) => d.status === "Rejected" && d.reason)
-    .map((d) => `${d.approver} (${d.role}): ${d.reason}`);
+    .map((d) => `${d.approver} (${approverRoleLabel(d.role)}): ${d.reason}`);
 };
 
 // The engagement as the server now holds it, WITHOUT re-seeding the tabs from it — read after the page's
@@ -890,28 +1140,21 @@ const clientProblem = () => {
   if (!clientForm.customerEmail?.trim()) {
     return "Give the client's email address — the intake form is emailed to them.";
   }
-  // A subsidiary with no parent is the one answer the type does not finish. Required here rather than on
-  // the server, so a request raised before this field existed can still be saved by somebody editing it
-  // for an unrelated reason — but not left half-answered by anyone filling the form now.
-  if (clientForm.type === REMS_TYPE_SUBSIDIARY && !clientForm.parentClientReferenceId) {
-    return "Pick the client this one is a subsidiary of.";
-  }
-  if (!clientForm.assignAdminUserId) return "Name the admin who will review this request.";
   return "";
 };
 
-// No `description`. "Message from Partner" is gone from the form, and leaving the field out of the payload
-// is also what preserves it — the endpoint reads an omitted field as "leave this alone", so whatever an
-// older request recorded stays recorded.
+// No `description`: "Message from Partner" is not on the form, and leaving the field out of the payload is
+// what preserves it — the endpoint reads an omitted field as "leave this alone", so whatever an older
+// request recorded stays recorded.
 const clientPayload = () => ({
   type: clientForm.type,
   clientName: clientForm.clientName,
+  // "" rather than null, deliberately: the endpoint reads an omitted field as "leave it alone", so a
+  // suffix taken back off would otherwise stay on the record.
+  clientNameSuffix: clientForm.clientNameSuffix || "",
   customerEmail: clientForm.customerEmail || null,
   customerMobileNumber: clientForm.customerMobileNumber || null,
-  existingClientReferenceId: clientForm.existingClientReferenceId || null,
-  // Always sent, even as null — unlike the fields above, the server derives this from the TYPE, so a null
-  // here on a non-subsidiary is what clears a parent left behind by a change of answer.
-  parentClientReferenceId: clientForm.parentClientReferenceId || null
+  existingClientReferenceId: clientForm.existingClientReferenceId || null
 });
 
 // ---- Auto-save ----
@@ -928,8 +1171,7 @@ const autoSaveOn = computed(() =>
 // What the request said last time the page read or wrote it. Compared before a write so opening a record,
 // touching nothing, and switching tabs does not file a save of the identical thing.
 let clientBaseline = "";
-const clientSnapshot = () =>
-  JSON.stringify({ ...clientPayload(), assignAdminUserId: clientForm.assignAdminUserId });
+const clientSnapshot = () => JSON.stringify(clientPayload());
 
 const {
   state: saveState, message: saveMessage, pending: savePending,
@@ -947,13 +1189,7 @@ const {
     // The fields and the attachments are marked by the same flag but are two different writes, and
     // either can be the only one there is — a file picked with nothing retyped must still upload.
     if (clientSnapshot() !== clientBaseline) {
-      request.value = await remsApi.update(remsId.value, {
-        ...clientPayload(),
-        // Said only when it changed: a null on its own means "leave the assignment alone".
-        ...(clientForm.assignAdminUserId !== (request.value?.assignedAdmin?.id || null)
-          ? { assignAdminUserId: clientForm.assignAdminUserId }
-          : {})
-      });
+      request.value = await remsApi.update(remsId.value, clientPayload());
       clientBaseline = clientSnapshot();
     }
     // Uploaded now rather than on selection, so the files land on a request that exists.
@@ -1120,10 +1356,7 @@ const createDraft = async () => {
   // afterwards, or a second attempt would file a second copy of it.
   let created = null;
   try {
-    created = await remsApi.create({
-      ...clientPayload(),
-      assignAdminUserId: clientForm.assignAdminUserId
-    });
+    created = await remsApi.create(clientPayload());
     const mediaIds = (await clientFieldsRef.value?.uploadAttachments(created.id)) || [];
     if (mediaIds.length) await remsApi.addFiles(created.id, mediaIds);
     notify.success(`${created.remsNumber} saved as a draft. Everything from here saves itself.`);
@@ -1154,17 +1387,6 @@ const openSend = async () => {
   sendOpen.value = true;
 };
 
-// Done for now: commit the debounce and go back to the list. It refuses to leave on anything the last
-// pass could not write — "Close" over unsaved work is the one thing auto-save must never do quietly.
-const saveAndClose = async () => {
-  await flushSaves();
-  if (savePending.value) {
-    notify.warning(saveMessage.value || "Some changes have not saved yet — they are still on this page.");
-    return;
-  }
-  router.push(backTo.value);
-};
-
 const openReminder = async () => {
   await flushSaves();
   reminderOpen.value = true;
@@ -1191,6 +1413,16 @@ const sendBack = async (payload) => {
 };
 
 const returnToAdmin = async () => {
+  // Confirmed because it is the initiator's last move on the request: the setup goes read-only to them
+  // the moment it lands with the admin, and getting it back means asking for another send-back.
+  const admin = request.value?.assignedAdmin?.name || "the admin";
+  const ok = await confirm({
+    title: "Return to admin",
+    message: `This hands the revised engagement setup to ${admin} to confirm, and notifies them. ` +
+      "The setup is read-only to you until they act on it. Continue?",
+    confirmLabel: "Return to admin"
+  });
+  if (!ok) return;
   acting.value = true;
   try {
     await flushSaves();
@@ -1213,7 +1445,6 @@ const createFollowUp = async (row) => {
       customerEmail: row.emailAddress || undefined,
       customerMobileNumber: row.phoneNumber || undefined,
       type: clientForm.type,
-      assignAdminUserId: clientForm.assignAdminUserId,
       fromAdditionalEntityId: row.id
     });
     notify.success(`${follow.remsNumber} created for ${row.fullName}.`);
@@ -1244,6 +1475,96 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", warnOnUnload));
 <style scoped>
 .rf-card {
   border-radius: 12px;
+}
+
+/* ── The two panes ────────────────────────────────────────────────────────────────────────────────
+   With a submission to show this is a flex row: the submitted form on a flex-basis the reader drags, the
+   referral form taking whatever is left. WITHOUT one — a new request, a draft, anything the client has
+   not answered yet — it is an ordinary block and the form has the page, exactly as it did before the
+   pane existed.
+   The flex declarations belong to --split for that reason. Left on the wrapper unconditionally, a lone
+   pane is a flex item at its initial `flex: 0 1 auto`, which sizes it to its CONTENT rather than to the
+   row: the form came out about 60% wide on /rems/requests/new and narrower still on a short tab. */
+.rf-work {
+  min-width: 0;
+}
+.rf-work--split {
+  display: flex;
+  align-items: flex-start;
+}
+.rf-work__pane {
+  min-width: 0;   /* without it a wide table inside a pane sets the pane's width and the drag does nothing */
+}
+/* flex-basis is set inline from the split percentage; growing is the other pane's job. */
+.rf-work--split .rf-work__pane { flex: 0 0 auto; }
+.rf-work--split .rf-work__pane--main { flex: 1 1 0; }
+
+.rf-work__gutter {
+  flex: 0 0 12px;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  /* The hit area is twelve pixels; the line drawn inside it is two. A four-pixel target is a target
+     people miss. */
+  touch-action: none;
+}
+.rf-work__grip {
+  width: 2px;
+  height: 44px;
+  border-radius: 2px;
+  background: var(--line);
+  transition: background 0.15s, height 0.15s;
+}
+.rf-work__gutter:hover .rf-work__grip,
+.rf-work__gutter:focus-visible .rf-work__grip {
+  background: var(--q-primary);
+  height: 72px;
+}
+.rf-work__gutter:focus-visible {
+  outline: 2px solid var(--teal-500);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+/* The submitted form scrolls inside its own pane rather than making the page taller: the point of the
+   split is that both halves are on screen together. Sticky so the pane keeps pace as the form beside it
+   is scrolled. */
+.rf-submitted {
+  position: sticky;
+  top: 12px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 140px);
+}
+.rf-submitted__head {
+  display: flex;
+  align-items: flex-start;
+  padding: 12px 14px;
+}
+.rf-submitted__body {
+  overflow: auto;
+  padding: 14px;
+}
+
+/* Under a laptop there is no width to split: two panes of a 1024px page leave the left one too narrow to
+   read an address in and the right one too narrow to lay a form out in. They stack instead, the client's
+   answers first — they are what the rest is filled in against. */
+@media (max-width: 1023px) {
+  .rf-work--split {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  /* `auto` basis, !important, because the inline flex-basis from the drag would otherwise set the
+     HEIGHT of the stacked pane. */
+  .rf-work--split .rf-work__pane { flex: 1 1 auto !important; }
+  .rf-work__gutter { display: none; }
+  .rf-submitted {
+    position: static;
+    max-height: 60vh;
+    margin-bottom: 16px;
+  }
 }
 .rf-tabs {
   padding: 0 4px;
@@ -1290,7 +1611,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", warnOnUnload));
   margin-bottom: 14px;
 }
 
-/* min-width:0 is what lets this shrink inside the header's no-wrap row; without it the box refuses to go
+/* min-width:0 is what lets this shrink inside the header's action group; without it the box refuses to go
    below the width of everything in it and nothing ever wraps. */
 .rf-head {
   display: flex;
@@ -1301,16 +1622,18 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", warnOnUnload));
   min-width: 0;
 }
 
-/* The save indicator. It replaces a button, so it is sized and spaced like one rather than like a badge
-   tucked into the corner — a form with no Save on it has to be obvious about where its saving went. */
+/* The save indicator. It reports; it does not act — so it takes the header's STATUS size rather than its
+   button size, and comes out a dot rather than a square that would sit among the buttons looking like
+   one more of them. Round, because it carries an icon and no words: the badges beside it are pills for
+   the same reason, and neither is the rounded rectangle a button is. Both numbers are inherited down the
+   actions row, so this stays in step with them without repeating either here. */
 .rf-save {
   display: inline-flex;
   align-items: center;
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 12.5px;
-  font-weight: 500;
-  white-space: nowrap;
+  justify-content: center;
+  width: var(--dh-status-height, 24px);
+  height: var(--dh-status-height, 24px);
+  border-radius: 50%;
 }
 .rf-save--idle { border: 1px solid var(--line); color: var(--ink-500); }
 .rf-save--busy { background: var(--teal-050); color: var(--teal-900); }
@@ -1325,6 +1648,24 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", warnOnUnload));
 .rf-alert--reject { background: #fdecea; color: #8a1c12; }
 .rf-alert--lock { background: var(--teal-050); color: var(--teal-900); }
 
-/* The action bar that used to close the page is gone — every button is in the header or on the tab strip
-   now, so the form ends on its last field. */
+/* A phone spends the panel gutter on the fields instead, and the header actions line up with the
+   breadcrumb above them once they have a line of their own. */
+@media (max-width: 599px) {
+  .rf-card :deep(.q-tab-panel) {
+    padding: 12px 10px;
+  }
+  .rf-head {
+    justify-content: flex-start;
+  }
+}
+
+</style>
+
+<style>
+/* Unscoped, because it is set on <body>: while the divider is being dragged the pointer travels over
+   text, and without this every pass selects a paragraph and the cursor keeps flicking back to an I-beam. */
+body.rf-dragging {
+  cursor: col-resize;
+  user-select: none;
+}
 </style>

@@ -50,11 +50,11 @@ public static class ActivityEventTypes
     // ---- REMS request lifecycle (WO-111) ----
     public const string RemsCreated = "RemsCreated";
     public const string RemsAssigned = "RemsAssigned";
-    public const string RemsDuplicated = "RemsDuplicated";
     public const string RemsDeleted = "RemsDeleted";
 
-    // RemsSubmitted is gone with the Admin Pool it recorded entry into. What takes a request out of draft
-    // now is the initiator sending the intake link, which RemsFormSent already records.
+    // What takes a request out of draft is the initiator sending the intake link, which RemsFormSent
+    // records — there is no separate "submitted" event. Rows written under retired type names are left as
+    // they are; the timeline renders an unmapped type by its own name.
 
     /// <summary>The Admin returned a request to its initiator for engagement-setup rework, with a reason.</summary>
     public const string RemsSentBack = "RemsSentBack";
@@ -71,6 +71,12 @@ public static class ActivityEventTypes
 
     // ---- REMS public client form (WO-113) ----
     public const string RemsFormSubmitted = "RemsFormSubmitted";
+
+    /// <summary>
+    /// An Admin corrected what the client submitted. The correction overwrites the snapshot, so this row
+    /// is the timeline's record that the answers on file are no longer only the client's own.
+    /// </summary>
+    public const string RemsFormCorrected = "RemsFormCorrected";
 
     // ---- REMS engagement workspace + approval (WO-114) ----
     public const string RemsEngagementUpdated = "RemsEngagementUpdated";

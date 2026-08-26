@@ -24,7 +24,6 @@
             </q-badge>
           </div>
           <div class="text-body2 text-grey-7">{{ email }}</div>
-          <div v-if="jobLine" class="text-body2 text-grey-7">{{ jobLine }}</div>
           <div v-if="roleChips.length" class="q-mt-sm row q-gutter-xs">
             <q-chip
               v-for="r in roleChips" :key="r" dense color="primary" text-color="white" class="text-capitalize"
@@ -145,9 +144,6 @@ const initials = computed(() => {
   return (a + b).toUpperCase() || "U";
 });
 
-const jobLine = computed(() =>
-  [profile.value?.jobTitle, profile.value?.organization].filter(Boolean).join(" · "));
-
 // Assignments come from the tenant store (kept in sync with the auth profile).
 const assignments = computed(() => tenantStore.assignments || authStore.user?.tenants || []);
 // Distinct role names across every tenant assignment (multi-role, WO-123).
@@ -155,9 +151,7 @@ const roleChips = computed(() => [...new Set(assignments.value.flatMap((t) => t.
 
 const contactRows = computed(() => [
   { icon: "o_mail", label: "Email", value: email.value },
-  { icon: "o_smartphone", label: "Phone Number", value: profile.value?.mobileNumber },
-  { icon: "o_work", label: "Job title", value: profile.value?.jobTitle },
-  { icon: "o_business", label: "Organization", value: profile.value?.organization }
+  { icon: "o_smartphone", label: "Phone Number", value: profile.value?.mobileNumber }
 ]);
 
 onMounted(load);

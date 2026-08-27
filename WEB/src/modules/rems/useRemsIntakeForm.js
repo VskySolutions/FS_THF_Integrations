@@ -6,6 +6,7 @@ import {
 // Only the group predicate, which is a plain frozen list. useRemsMeta reaches for the auth store inside
 // its composable, never at import time — this form renders on an anonymous page and must not wake one.
 import { isBusinessIndustryGroup } from "modules/rems/useRemsMeta";
+import { nameIssue } from "utils/personName";
 
 // The client intake form's DATA, in one place — its shape, how a stored payload is read into it, how it
 // is written back out, and what still has to be filled in before it can be sent.
@@ -25,6 +26,8 @@ const s = (v) => (v == null ? "" : String(v));
 const filled = (v) => !!String(v ?? "").trim();
 const emailOk = (v) => /^\S+@\S+\.\S+$/.test(String(v ?? "").trim());
 const dateOrNull = (v) => (filled(v) ? v : null);
+// Adds a validator's complaint to the issue list, and nothing at all when it had none.
+const pushIf = (out, issue) => { if (issue) out.push(issue); };
 
 const blankRole = () => ({ prefix: "", firstName: "", lastName: "", email: "", phone: "" });
 const blankRoles = () => Object.fromEntries(ALL_ROLE_KEYS.map((k) => [k, blankRole()]));
@@ -265,6 +268,10 @@ export function intakeIssues (payload, industryGroup) {
   if (individual) {
     if (!filled(payload.clientFirstName)) out.push("First name is required.");
     if (!filled(payload.clientLastName)) out.push("Last name is required.");
+    // A name that is filled in but is not a name — digits, punctuation, "N/A" — fails the same gate the
+    // missing one does, rather than being caught only by the server after the client presses Submit.
+    pushIf(out, nameIssue(payload.clientFirstName, "First name"));
+    pushIf(out, nameIssue(payload.clientLastName, "Last name"));
   } else if (!filled(payload.clientName)) {
     out.push("Client / entity name is required.");
   }
@@ -292,6 +299,9 @@ export function intakeIssues (payload, industryGroup) {
     } else if (roleAny(role) && !roleComplete(role)) {
       out.push(`${label} is partly filled — complete the name and email, or clear it.`);
     }
+    // Whatever HAS been typed into the two name boxes has to be a name, required contact or not.
+    pushIf(out, nameIssue(role?.firstName, `${label} first name`));
+    pushIf(out, nameIssue(role?.lastName, `${label} last name`));
   });
 
   // Name and email both required — the phone stays optional, as on every contact on this form.

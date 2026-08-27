@@ -18,9 +18,10 @@ const META = {
     icon: "o_groups",
     route: () => ({ name: "user_groups" })
   },
-  // REMS request/approval. REMS notifications carry the REMS request id, so they deep-link to the request
-  // (/rems/requests/:id) — clicking the notification navigates there + marks read. That route is the form
-  // in its read-only mode, which IS the request detail now; there is no separate detail page.
+  // REMS request/approval. REMS notifications carry the REMS request id, so this is where they land by
+  // default: /rems/requests/:id, the form in its read-only mode, which IS the request detail now — there
+  // is no separate detail page. An APPROVER following one goes to their own task instead; that is decided
+  // by useNotificationRoute, which asks whether the reader holds a task before falling back to here.
   [EntityType.Rems]: {
     label: "REMS",
     icon: "o_assignment",

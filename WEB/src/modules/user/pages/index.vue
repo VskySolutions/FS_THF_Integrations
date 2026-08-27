@@ -108,8 +108,8 @@
             </q-btn>
           </template>
         </app-select>
-        <q-input
-          v-model="form.email" outlined stack-label hide-bottom-space type="email" label="Username *" class="q-mb-md"
+        <app-text-field
+          v-model="form.email" type="email" label="Username" required class="q-mb-md"
           hint="The user signs in with this email."
           :error="!!emailError" :error-message="emailError"
           :rules="[(v) => !!v || 'Username is required', (v) => /.+@.+\..+/.test(v) || 'Enter a valid email']"
@@ -184,6 +184,7 @@ import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppSelect from "components/common/AppSelect.vue";
+import AppTextField from "components/common/AppTextField.vue";
 import PersonFormDialog from "components/person/PersonFormDialog.vue";
 import TempPasswordDialog from "components/temp_password_dialog.vue";
 

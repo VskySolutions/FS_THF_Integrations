@@ -13,13 +13,10 @@
     </q-banner>
 
     <q-form greedy @submit.prevent.stop="login">
-      <q-input
+      <app-text-field
         v-model="model.email"
-        outlined
         type="email"
         label="Email"
-        stack-label
-        hide-bottom-space
         maxlength="128"
         autofocus
         class="q-mb-md"
@@ -30,17 +27,13 @@
         <template #prepend>
           <q-icon name="o_mail" />
         </template>
-      </q-input>
+      </app-text-field>
 
-      <q-input
+      <app-password-field
         v-model="model.password"
-        outlined
         label="Password"
-        stack-label
-        hide-bottom-space
-        autocomplete="off"
         maxlength="28"
-        :type="isPassword ? 'password' : 'text'"
+        autocomplete="off"
         :error="v$.password.$error"
         :error-message="v$.password.$errors[0]?.$message"
         @blur="v$.password.$touch"
@@ -48,10 +41,7 @@
         <template #prepend>
           <q-icon name="o_lock" />
         </template>
-        <template #append>
-          <q-icon :name="isPassword ? 'o_visibility_off' : 'o_visibility'" class="cursor-pointer" @click="isPassword = !isPassword" />
-        </template>
-      </q-input>
+      </app-password-field>
 
       <div class="row items-center justify-between q-mt-sm q-mb-lg">
         <q-checkbox v-model="model.isRememberMeChecked" dense label="Remember me" color="primary" />
@@ -71,12 +61,13 @@ import { useRouter } from "vue-router";
 import { useAuthStore } from "stores/auth";
 import { getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
 import { setLocalStorage, getLocalStorage, clearLocalStorage } from "assets/utils";
+import AppTextField from "components/common/AppTextField.vue";
+import AppPasswordField from "components/common/AppPasswordField.vue";
 
 const router = useRouter();
 const authStore = useAuthStore();
 
 const loading = ref(false);
-const isPassword = ref(true);
 const errorMessage = ref("");
 
 // Remember-me persistence (email only; never persist the password).

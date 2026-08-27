@@ -44,7 +44,7 @@
         <q-card-section class="q-pt-none column q-gutter-sm">
           <app-text-field v-model="form.title" label="Title" />
           <app-text-field v-model="form.body" label="Note *" type="textarea" autogrow />
-          <q-input v-model="form.expiresAt" type="datetime-local" outlined dense label="Expires (optional)" />
+          <app-text-field v-model="form.expiresAt" type="datetime-local" label="Expires (optional)" />
         </q-card-section>
         <q-card-actions align="right">
           <q-btn v-close-popup flat no-caps label="Cancel" />

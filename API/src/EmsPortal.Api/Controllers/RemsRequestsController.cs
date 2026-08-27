@@ -399,6 +399,53 @@ public sealed class RemsRequestsController : ControllerBase
         return Ok(ApiResponseFactory.Success(detail, "REMS request attachments added."));
     }
 
+    /// <summary>
+    /// Takes one attached file off a request. The wrong document attached to a request is a document
+    /// every approver then reads, so whoever may edit the request may take it off again — the same bar
+    /// <see cref="AddFiles"/> applies, since attaching and detaching are the same edit in two directions.
+    /// <para>
+    /// The link row is soft-deleted; the stored media itself is left alone. The blob may be referenced
+    /// elsewhere, and a request's history should still be able to say what was once filed under it.
+    /// </para>
+    /// </summary>
+    [HttpDelete("{id:guid}/files/{fileId:guid}")]
+    [RequirePermission(Permissions.RemsRequestsUpdate)]
+    [ProducesResponseType<ApiResponse<RemsRequestDetail>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> RemoveFile(Guid id, Guid fileId, CancellationToken cancellationToken)
+    {
+        if (User.GetUserId() is not { } me)
+        {
+            return Unauthorized(ApiResponseFactory.Unauthorized("No user context."));
+        }
+
+        var rems = await _rems.GetByIdAsync(id, cancellationToken);
+        if (rems is null)
+        {
+            return NotFound(ApiResponseFactory.NotFound("REMS request not found."));
+        }
+
+        var privileged = IsPrivileged();
+        if (!CanAct(rems, me, privileged))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponseFactory.Forbidden("Not permitted to edit this request."));
+        }
+
+        var file = rems.Files.FirstOrDefault(f => f.Id == fileId && !f.Deleted);
+        if (file is null)
+        {
+            return NotFound(ApiResponseFactory.NotFound("Attachment not found on this request."));
+        }
+
+        // The DbContext converts the delete into a soft-delete (Deleted flag).
+        _rems.RemoveFile(file);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        var refreshed = await _rems.GetByIdAsync(rems.Id, cancellationToken) ?? rems;
+        var detail = await BuildDetailAsync(refreshed, me, privileged, cancellationToken);
+        return Ok(ApiResponseFactory.Success(detail, "REMS request attachment removed."));
+    }
+
     // -------------------- Pick up / hand back --------------------
 
     /// <summary>

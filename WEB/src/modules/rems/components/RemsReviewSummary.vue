@@ -57,6 +57,7 @@
 <script setup>
 import { computed } from "vue";
 import { addressText } from "modules/rems/remsAddress";
+import { formatDateOnly } from "composables/useDateFormat";
 import { isBusinessIndustryGroup } from "modules/rems/useRemsMeta";
 import {
   answeredRoleKeys, BILLING_ROLE_KEY, groupKey, normalizeRoles, roleAddressedName, roleDefsFor, roleHasAny
@@ -84,12 +85,8 @@ const referralSourceHint = (v) => (v ? (referralOption(v)?.description || "") : 
 
 const val = (v) => (v == null || String(v).trim() === "" ? "—" : v);
 
-// Calendar-date fields (DateOnly "YYYY-MM-DD") are shown as-is (MM-DD-YYYY), never timezone-shifted.
-const dateOnly = (v) => {
-  if (!v) return "—";
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));
-  return m ? `${m[2]}-${m[3]}-${m[1]}` : String(v);
-};
+// Calendar dates read MM/DD/YYYY and are never timezone-shifted — see formatDateOnly.
+const dateOnly = formatDateOnly;
 
 // The role labels, order and required set come from modules/rems/remsContactRoles — the same definition
 // the form above is rendered from, so review shows the questions that were actually asked.

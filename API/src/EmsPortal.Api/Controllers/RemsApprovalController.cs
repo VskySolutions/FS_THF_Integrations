@@ -487,6 +487,42 @@ public sealed class RemsApprovalController : ControllerBase
     }
 
     /// <summary>
+    /// The caller's own approval task on a REMS request, so an approver following a notification lands on
+    /// the task rather than on the request.
+    /// <para>
+    /// A REMS notification carries the REQUEST id — it is the one id every recipient of it has in common,
+    /// and the initiator, the CSE and the admin all want the request. An approver does not: they were
+    /// written to because a decision is being asked of them, and the request detail is not where they make
+    /// it. The task id is per-approver, so it cannot travel on the notification; the client resolves it
+    /// here when the reader turns out to be an approver.
+    /// </para>
+    /// <para>
+    /// Task-isolated like the rest of this surface: it answers only for the CALLER's own task, so it can
+    /// never be used to discover whose signature a request is waiting on. 404 — not 403 — when they hold
+    /// none, which is also the ordinary answer for every non-approver recipient, and the client's cue to
+    /// fall back to the request.
+    /// </para>
+    /// </summary>
+    [HttpGet("approval-tasks/for-request/{remsId:guid}")]
+    [Authorize]
+    [ProducesResponseType<ApiResponse<RemsApprovalTaskRef>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetMyTaskForRequest(Guid remsId, CancellationToken cancellationToken)
+    {
+        if (User.GetUserId() is not { } me)
+        {
+            return Unauthorized(ApiResponseFactory.Unauthorized("No user context."));
+        }
+
+        var taskId = await _approvals.GetCurrentTaskIdOnRequestAsync(remsId, me, cancellationToken);
+        if (taskId is not { } id)
+        {
+            return NotFound(ApiResponseFactory.NotFound("You hold no approval task on this request."));
+        }
+
+        return Ok(ApiResponseFactory.Success(new RemsApprovalTaskRef(id), "Approval task resolved."));
+    }
+
+    /// <summary>
     /// The caller's own task with the full review packet (AC-REMS-019.9): the originating request, the
     /// client, the entity under review, the complete engagement setup with its audit/government/tax detail,
     /// the marketing tags, the commission splits, the round's other decisions, and the caller's checklist —
@@ -579,7 +615,7 @@ public sealed class RemsApprovalController : ControllerBase
         }
         if (round.Status != RemsApprovalRoundStatus.Pending)
         {
-            return ConflictResult(CodeRoundClosed, "This approval round is already closed.");
+            return ConflictResult(CodeRoundClosed, "This approval is already closed.");
         }
 
         // Re-verify server-side that every checklist item is completed (AC-REMS-019.7/8).
@@ -682,7 +718,7 @@ public sealed class RemsApprovalController : ControllerBase
         }
         if (round.Status != RemsApprovalRoundStatus.Pending)
         {
-            return ConflictResult(CodeRoundClosed, "This approval round is already closed.");
+            return ConflictResult(CodeRoundClosed, "This approval is already closed.");
         }
 
         var now = DateTime.UtcNow;
@@ -710,7 +746,7 @@ public sealed class RemsApprovalController : ControllerBase
             var openView = await BuildTaskViewAsync(task, cancellationToken);
             return Ok(ApiResponseFactory.Success(
                 openView,
-                $"Declined. {declines} of {threshold} declines needed to send this back — the round is still open."));
+                $"Declined. {declines} of {threshold} declines needed to send this back — the approval is still open."));
         }
 
         round.Status = RemsApprovalRoundStatus.Rejected;
@@ -767,14 +803,14 @@ public sealed class RemsApprovalController : ControllerBase
         {
             await _notifications.DispatchAsync(new CreateNotificationDto(
                 userId, NotificationType.RemsEngagementRejected,
-                "A REMS engagement approval round was declined",
+                "A REMS engagement was declined",
                 $"{rems.REMSNumber} — {rems.ClientDisplayName}: {string.Join(" | ", reasons)}", EntityType.Rems, rems.Id), cancellationToken);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var view = await BuildTaskViewAsync(task, cancellationToken);
-        return Ok(ApiResponseFactory.Success(view, "Declined. The round is closed and the request is back with its initiator."));
+        return Ok(ApiResponseFactory.Success(view, "Declined. The request is back with its initiator."));
     }
 
     // -------------------- Request-status roll-up --------------------
@@ -1014,12 +1050,15 @@ public sealed class RemsApprovalController : ControllerBase
             return ConflictResult(CodeMarketingRequired, "At least one marketing tag is required before sending for approval.");
         }
 
-        if (RemsEngagementCodes.IsAudit(engagement.Department))
+        // Audit AND Assurance: the client-acceptance form is the same compliance artifact under both, and a
+        // card that shows it without anything enforcing it is a card people learn to scroll past.
+        if (RemsEngagementCodes.RequiresClientAcceptanceForm(engagement.Department))
         {
             var audit = await _engagements.GetAuditDetailAsync(engagement.Id, cancellationToken);
             if (audit?.ClientAcceptanceFormMediaId is null)
             {
-                return ConflictResult(CodeCafRequired, "A signed client-acceptance form is required for an audit engagement.");
+                return ConflictResult(CodeCafRequired,
+                    $"A signed client-acceptance form is required for {(RemsEngagementCodes.IsAssurance(engagement.Department) ? "an assurance" : "an audit")} engagement.");
             }
         }
 
@@ -1232,15 +1271,25 @@ public sealed class RemsApprovalController : ControllerBase
                 ? await _media.GetByIdAsync(mediaId, cancellationToken)
                 : null;
             auditView = new RemsApprovalAuditDetailView(
-                audit.Id, audit.ClientAcceptanceFormMediaId, media?.OriginalFileName, media?.PublicUrl);
+                audit.Id, audit.ClientAcceptanceFormMediaId, media?.OriginalFileName, media?.PublicUrl,
+                audit.ClientFiscalYearEnd, audit.AdminFeesApply, audit.AdminFeesAmount);
         }
 
         RemsApprovalTaxDetailView? taxView = null;
         if (tax is not null)
         {
             var taxFormIds = tax.TaxForms.Where(f => !f.Deleted).Select(f => f.TaxFormId).ToList();
+            // The stored schedule, not a fresh calculation: the two dates are editable now, and an
+            // approver has to read the ones the engagement was actually sent with. Rows written before the
+            // columns existed still carry only the JSON, which is why that is the fallback rather than the
+            // other way round.
+            var schedule = RemsTaxDueDates.TryDeserialize(tax.CalculatedDueDates);
+            if (tax.FiscalYearEnd is { } taxFye && (tax.OriginalDueDate is not null || tax.FirstExtensionDueDate is not null))
+            {
+                schedule = RemsTaxDueDates.Effective(taxFye, tax.OriginalDueDate, tax.FirstExtensionDueDate);
+            }
             taxView = new RemsApprovalTaxDetailView(
-                tax.Id, tax.FiscalYearEnd, RemsTaxDueDates.TryDeserialize(tax.CalculatedDueDates),
+                tax.Id, tax.FiscalYearEnd, schedule,
                 await ResolveOptionRefsAsync(TaxFormSetKey, taxFormIds, cancellationToken));
         }
 
@@ -1283,6 +1332,7 @@ public sealed class RemsApprovalController : ControllerBase
             RemsWorkspaceMapper.UserRef(engagement.EngagementExecutiveId, names),
             RemsWorkspaceMapper.UserRef(engagement.BillingManagerId, names),
             maySeeFinancials ? engagement.FirstYearFeeEstimate : null,
+            maySeeFinancials ? engagement.EngagementFee : null,
             maySeeFinancials ? engagement.RealizationPercentage : null,
             FinancialsRestricted: !maySeeFinancials,
             auditView,
@@ -1291,7 +1341,13 @@ public sealed class RemsApprovalController : ControllerBase
                 : new RemsGovernmentDetailView(
                     government.Id, government.ContractNumber, government.FloridaOnePercentStateFeeApplies,
                     government.ContractStartDate, government.ContractEndDate, government.OriginalTerm,
-                    government.RenewalTerms, government.PurchaseOrderStartDate, government.PurchaseOrderEndDate),
+                    government.RenewalTerms, government.PurchaseOrderStartDate, government.PurchaseOrderEndDate,
+                    government.PurchaseOrderNumber,
+                    // The PO's value is money, so it is withheld from a role that may not see the fee.
+                    maySeeFinancials ? government.PurchaseOrderAmount : null,
+                    government.PurchaseOrderMediaId, government.PurchaseOrderMedia?.OriginalFileName,
+                    government.PersonnelLevel,
+                    maySeeFinancials ? government.BillRatePerHour : null),
             taxView,
             marketing,
             engagement.CommissionSplits

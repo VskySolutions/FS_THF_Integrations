@@ -4,6 +4,7 @@ using EmsPortal.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace EmsPortal.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(EmsPortalDbContext))]
-    partial class EmsPortalDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260826113812_DropRoundWordingFromRemsStatusOptions")]
+    partial class DropRoundWordingFromRemsStatusOptions
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2097,10 +2100,6 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("EngagementExecutiveId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<decimal?>("EngagementFee")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
                     b.Property<decimal?>("FirstYearFeeEstimate")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
@@ -2212,18 +2211,8 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<decimal?>("AdminFeesAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<bool?>("AdminFeesApply")
-                        .HasColumnType("bit");
-
                     b.Property<Guid?>("ClientAcceptanceFormMediaId")
                         .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateOnly?>("ClientFiscalYearEnd")
-                        .HasColumnType("date");
 
                     b.Property<Guid?>("CreatedById")
                         .HasColumnType("uniqueidentifier");
@@ -2261,10 +2250,7 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasFilter("[Deleted] = 0");
 
-                    b.ToTable("REMSEngagementAuditDetail", null, t =>
-                        {
-                            t.HasCheckConstraint("CK_REMSEngagementAuditDetail_AdminFeesAmount", "[AdminFeesAmount] IS NULL OR [AdminFeesAmount] >= 0");
-                        });
+                    b.ToTable("REMSEngagementAuditDetail", (string)null);
                 });
 
             modelBuilder.Entity("EmsPortal.Domain.Entities.REMSEngagementCommissionSplit", b =>
@@ -2328,10 +2314,6 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<decimal?>("BillRatePerHour")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
                     b.Property<DateOnly?>("ContractEndDate")
                         .HasColumnType("date");
 
@@ -2361,23 +2343,8 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
-                    b.Property<string>("PersonnelLevel")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<decimal?>("PurchaseOrderAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
                     b.Property<DateOnly?>("PurchaseOrderEndDate")
                         .HasColumnType("date");
-
-                    b.Property<Guid?>("PurchaseOrderMediaId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("PurchaseOrderNumber")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
 
                     b.Property<DateOnly?>("PurchaseOrderStartDate")
                         .HasColumnType("date");
@@ -2400,8 +2367,6 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("PurchaseOrderMediaId");
-
                     b.HasIndex("REMSEngagementId");
 
                     b.HasIndex("TenantId");
@@ -2410,10 +2375,7 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasFilter("[Deleted] = 0");
 
-                    b.ToTable("REMSEngagementGovernmentDetail", null, t =>
-                        {
-                            t.HasCheckConstraint("CK_REMSEngagementGovernmentDetail_PoAmounts", "([PurchaseOrderAmount] IS NULL OR [PurchaseOrderAmount] >= 0) AND ([BillRatePerHour] IS NULL OR [BillRatePerHour] >= 0)");
-                        });
+                    b.ToTable("REMSEngagementGovernmentDetail", (string)null);
                 });
 
             modelBuilder.Entity("EmsPortal.Domain.Entities.REMSEngagementMarketingMethod", b =>
@@ -2485,13 +2447,7 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("DeletedOnUtc")
                         .HasColumnType("datetime2");
 
-                    b.Property<DateOnly?>("FirstExtensionDueDate")
-                        .HasColumnType("date");
-
                     b.Property<DateOnly?>("FiscalYearEnd")
-                        .HasColumnType("date");
-
-                    b.Property<DateOnly?>("OriginalDueDate")
                         .HasColumnType("date");
 
                     b.Property<Guid>("REMSEngagementId")
@@ -4447,11 +4403,6 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("EmsPortal.Domain.Entities.REMSEngagementGovernmentDetail", b =>
                 {
-                    b.HasOne("EmsPortal.Domain.Entities.Media", "PurchaseOrderMedia")
-                        .WithMany()
-                        .HasForeignKey("PurchaseOrderMediaId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("EmsPortal.Domain.Entities.REMSEngagement", "Engagement")
                         .WithMany()
                         .HasForeignKey("REMSEngagementId")
@@ -4465,8 +4416,6 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Engagement");
-
-                    b.Navigation("PurchaseOrderMedia");
                 });
 
             modelBuilder.Entity("EmsPortal.Domain.Entities.REMSEngagementMarketingMethod", b =>

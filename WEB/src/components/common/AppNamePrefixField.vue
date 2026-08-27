@@ -11,6 +11,7 @@
     :disable="disable"
     :error="tooLong"
     :error-message="`A ${label.toLowerCase()} is at most ${MAX_LENGTH} characters.`"
+    @blur="emit('blur', $event)"
   >
     <template #append>
       <q-icon v-if="readonly" name="o_lock" size="18px" color="grey-6" />
@@ -23,7 +24,7 @@
             <q-item
               v-for="opt in NAME_PREFIXES" :key="opt.value"
               clickable :active="model === opt.value" active-class="bg-grey-2 text-primary"
-              @click="model = opt.value"
+              @click="pick(opt.value)"
             >
               <q-item-section>
                 <q-item-label>{{ opt.label }}</q-item-label>
@@ -31,7 +32,7 @@
               </q-item-section>
             </q-item>
             <q-separator />
-            <q-item clickable :disable="!model" @click="model = ''">
+            <q-item clickable :disable="!model" @click="pick('')">
               <q-item-section class="text-grey-7">No {{ label.toLowerCase() }}</q-item-section>
             </q-item>
           </q-list>
@@ -52,10 +53,15 @@
 // One component for every screen that asks it — the public intake form and its contacts, the Person
 // record, a user's account, somebody's own profile — so the suggestions, the cap and the way it clears
 // are the same wherever it is asked.
-import { computed } from "vue";
+import { computed, nextTick } from "vue";
 import AppTextField from "components/common/AppTextField.vue";
 
 const model = defineModel({ type: String, default: "" });
+
+// Forwarded from the box, and raised for a suggestion picked off the menu too — a screen that saves as
+// you leave a field (the User page) has to hear about a title chosen from the list as well as one typed,
+// or picking "Dr." would sit there unsaved until something else was clicked.
+const emit = defineEmits(["blur"]);
 
 defineProps({
   // "Prefix" everywhere today. A prop because the box is small and the word above it is all the
@@ -70,6 +76,13 @@ defineProps({
 // says so while it is being typed rather than the save coming back with a 400 on a courtesy title.
 const MAX_LENGTH = 16;
 const tooLong = computed(() => (model.value?.trim().length || 0) > MAX_LENGTH);
+
+// A tick, so the new value is on the model before anything listening to `blur` reads it back.
+const pick = async (value) => {
+  model.value = value;
+  await nextTick();
+  emit("blur");
+};
 
 // The suggestions. Deliberately short: these are the titles nearly every record needs, and the field
 // stays free text for the ones it does not cover — Rev., Hon., a rank, a title in another language.

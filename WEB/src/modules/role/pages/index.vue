@@ -74,8 +74,8 @@
       @submit="submitForm" @cancel="resetForm"
     >
       <q-form ref="formRef" greedy>
-        <q-input
-          v-model="form.name" outlined stack-label hide-bottom-space label="Name *" class="q-mb-md"
+        <app-text-field
+          v-model="form.name" label="Name" required class="q-mb-md"
           :rules="[(v) => !!v || 'Name is required']"
         />
         <app-rich-text-field v-model="form.description" label="Description" class="q-mb-md" />
@@ -110,6 +110,7 @@ import AppListHeader from "components/common/AppListHeader.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppSelect from "components/common/AppSelect.vue";
+import AppTextField from "components/common/AppTextField.vue";
 import AppRichTextField from "components/common/AppRichTextField.vue";
 
 const auditColumns = useAuditColumns();

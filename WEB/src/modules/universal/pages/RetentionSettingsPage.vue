@@ -10,8 +10,10 @@
       <p class="text-grey-7">
         Soft-deleted records are kept for this many days before they are flagged as overdue for permanent deletion.
       </p>
-      <div class="row items-center q-gutter-sm">
-        <q-input v-model.number="retentionDays" type="number" outlined dense label="Retention (days)" style="max-width: 180px;" />
+      <div class="row items-end q-gutter-sm">
+        <app-text-field
+          v-model.number="retentionDays" type="number" label="Retention (days)" style="max-width: 180px;"
+        />
         <q-btn unelevated no-caps color="primary" icon="o_save" label="Save" :loading="saving" @click="save" />
       </div>
     </q-card>
@@ -37,6 +39,7 @@ import { ufDeletedApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useEntityMeta } from "composables/uf/useEntityMeta";
 import AppListHeader from "components/common/AppListHeader.vue";
+import AppTextField from "components/common/AppTextField.vue";
 
 const notify = useNotify();
 const { labelFor } = useEntityMeta();

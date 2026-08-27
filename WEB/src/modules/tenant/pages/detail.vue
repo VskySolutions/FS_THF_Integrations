@@ -19,8 +19,8 @@
         <q-card-section class="text-subtitle1 text-weight-medium">Basic information</q-card-section>
         <q-separator />
         <q-card-section class="row q-col-gutter-md">
-          <q-input v-model="name" outlined dense stack-label label="Name" class="col-12 col-sm-6" />
-          <q-input :model-value="tenant.identifier" outlined dense stack-label readonly label="Identifier" class="col-12 col-sm-6" />
+          <app-text-field v-model="name" label="Name" class="col-12 col-sm-6" />
+          <app-text-field :model-value="tenant.identifier" readonly label="Identifier" class="col-12 col-sm-6" />
         </q-card-section>
         <q-card-actions align="right">
           <q-btn unelevated no-caps color="primary" label="Save" :loading="savingName" :disable="name === tenant.name" @click="saveName" />
@@ -69,6 +69,7 @@ import { tenantApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
+import AppTextField from "components/common/AppTextField.vue";
 
 const route = useRoute();
 const router = useRouter();

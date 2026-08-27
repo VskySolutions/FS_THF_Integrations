@@ -126,6 +126,17 @@ internal sealed class RemsApprovalRepository : IRemsApprovalRepository
         => _dbContext.RemsApprovalTasks
             .AnyAsync(t => t.ApproverId == userId && t.Round!.Engagement!.REMSId == remsId, cancellationToken);
 
+    // The same task the inbox row for this request opens, picked by the same rule the inbox collapse uses:
+    // highest round number of THEIR OWN tasks, id as the tie-break. Projected to the id alone — the caller
+    // is deciding where to navigate, and the task detail endpoint loads the packet.
+    public Task<Guid?> GetCurrentTaskIdOnRequestAsync(Guid remsId, Guid userId, CancellationToken cancellationToken = default)
+        => _dbContext.RemsApprovalTasks
+            .Where(t => t.ApproverId == userId && t.Round!.Engagement!.REMSId == remsId)
+            .OrderByDescending(t => t.Round!.RoundNumber)
+            .ThenByDescending(t => t.Id)
+            .Select(t => (Guid?)t.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
     public async Task AddRoundAsync(REMSApprovalRound round, CancellationToken cancellationToken = default)
         => await _dbContext.RemsApprovalRounds.AddAsync(round, cancellationToken);
 

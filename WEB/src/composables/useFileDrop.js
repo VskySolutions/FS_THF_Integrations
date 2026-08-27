@@ -17,20 +17,45 @@ export function extOf (name) {
   return i >= 0 ? String(name).slice(i).toLowerCase() : "";
 }
 
-// True when a File is an image (by MIME type or extension) — used to show a thumbnail preview.
-export function isImageFile (file) {
-  return (file?.type || "").startsWith("image/") || IMAGE_EXTS.includes(extOf(file?.name));
+/**
+ * An extension in the one shape the helpers below compare against: lower-cased, with a leading dot.
+ *
+ * Both shapes are in circulation. A picked File carries its extension inside the name (".pdf"), while a
+ * stored Media row keeps it in a column of its own with the dot stripped ("pdf") — so a helper written
+ * for one silently answered "unknown file" for the other, which is why every saved attachment used to
+ * render the generic document icon whatever it actually was.
+ */
+export function normalizeExt (ext) {
+  const raw = String(ext || "").trim().toLowerCase();
+  if (!raw) return "";
+  return raw.startsWith(".") ? raw : `.${raw}`;
 }
 
-// A Material icon representing a file's type, by extension (for non-image previews).
-export function iconForFile (file) {
-  const e = extOf(file?.name);
+// True for an extension the browser renders as a picture.
+export function isImageExtension (ext) {
+  return IMAGE_EXTS.includes(normalizeExt(ext));
+}
+
+// True when a File is an image (by MIME type or extension) — used to show a thumbnail preview.
+export function isImageFile (file) {
+  return (file?.type || "").startsWith("image/") || isImageExtension(extOf(file?.name));
+}
+
+// A Material icon representing a file type, by extension. Takes either shape (".pdf" or "pdf").
+export function iconForExtension (ext) {
+  const e = normalizeExt(ext);
   if (IMAGE_EXTS.includes(e)) return "o_image";
   if (e === ".pdf") return "o_picture_as_pdf";
   if ([".xls", ".xlsx", ".csv"].includes(e)) return "o_table_chart";
   if ([".doc", ".docx", ".txt", ".rtf", ".md"].includes(e)) return "o_description";
+  if ([".ppt", ".pptx"].includes(e)) return "o_slideshow";
   if ([".zip", ".rar", ".7z"].includes(e)) return "o_folder_zip";
   return "o_insert_drive_file";
+}
+
+// A Material icon representing a picked File's type (for non-image previews).
+export function iconForFile (file) {
+  return iconForExtension(extOf(file?.name));
 }
 
 // Validate a picked/dropped FileList against an accept list (extensions, e.g. ".pdf,.png") and an

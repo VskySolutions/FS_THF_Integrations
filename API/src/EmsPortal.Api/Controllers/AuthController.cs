@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using EmsPortal.Api.Models.Auth;
@@ -273,7 +274,11 @@ public sealed class AuthController : ControllerBase
                 new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["FullName"] = user.DisplayName,
-                    ["ChangedAtUtc"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm"),
+                    // The app's display format, MM/DD/YYYY with a 12-hour clock — this string is read by a
+                    // person in an email, not parsed by anything. Invariant culture so the AM/PM reads the
+                    // same whatever the server's locale happens to be. Still UTC: the token says so, and
+                    // an email dispatched outside any request has no tenant time zone to render against.
+                    ["ChangedAtUtc"] = DateTime.UtcNow.ToString("MM/dd/yyyy hh:mm tt", CultureInfo.InvariantCulture),
                 });
         }
 

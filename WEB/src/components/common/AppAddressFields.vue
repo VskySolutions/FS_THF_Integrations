@@ -34,7 +34,6 @@
       :dense="dense" :readonly="readonly" :disable="disable || cityMode === 'pending'"
       :rules="rulesFor('City is required')"
       :error="!!errorFor('cityName')" :error-message="errorFor('cityName')"
-
     />
     <app-text-field
       v-else v-model="address.cityName" :label="label('City')" :required="required"

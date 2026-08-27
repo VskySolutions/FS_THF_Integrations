@@ -78,7 +78,7 @@
           <app-select v-model="form.scope" :options="scopeOptions" label="Visible on" emit-value map-options />
           <template v-if="canTenant">
             <q-toggle v-model="form.isTenant" label="Team note (visible to everyone)" />
-            <q-input v-if="form.isTenant" v-model="form.expiresAt" type="datetime-local" outlined dense label="Expires (optional)" />
+            <app-text-field v-if="form.isTenant" v-model="form.expiresAt" type="datetime-local" label="Expires (optional)" />
           </template>
         </q-card-section>
         <q-card-actions align="right">

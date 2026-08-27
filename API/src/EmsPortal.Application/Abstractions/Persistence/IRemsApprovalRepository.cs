@@ -72,6 +72,22 @@ public interface IRemsApprovalRepository
     /// </summary>
     Task<bool> IsApproverOnRequestAsync(Guid remsId, Guid userId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// The id of the caller's CURRENT task on a request — their own task on the latest round they were
+    /// routed — or null if they were never an approver on it.
+    /// <para>
+    /// Deliberately the same task the inbox row for that request opens: the newest of THEIR OWN tasks
+    /// (highest round number, id as the tie-break), not the request's newest round. An approver dropped
+    /// from a later round — a commission recipient taken off the split — still holds the last round they
+    /// were actually on, and that is the one they are sent to.
+    /// </para>
+    /// <para>
+    /// Backs the approver deep-link: a REMS notification carries the REQUEST id, so an approver following
+    /// one landed on the request rather than on the task it was asking them to decide.
+    /// </para>
+    /// </summary>
+    Task<Guid?> GetCurrentTaskIdOnRequestAsync(Guid remsId, Guid userId, CancellationToken cancellationToken = default);
+
     Task AddRoundAsync(REMSApprovalRound round, CancellationToken cancellationToken = default);
 
     void UpdateRound(REMSApprovalRound round);

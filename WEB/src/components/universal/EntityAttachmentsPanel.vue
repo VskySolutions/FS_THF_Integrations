@@ -20,25 +20,20 @@
     <q-inner-loading :showing="loading && !attachments.length" />
     <div v-if="!loading && !attachments.length" class="text-grey-6 q-pa-md text-center">No attachments yet.</div>
 
-    <q-list separator>
-      <q-item v-for="a in attachments" :key="a.id">
-        <q-item-section avatar>
-          <q-icon :name="iconFor(a.fileExtension)" size="28px" color="primary" />
-        </q-item-section>
-        <q-item-section>
-          <q-item-label class="ellipsis">{{ a.fileName }}</q-item-label>
-          <q-item-label caption>
-            {{ formatSize(a.fileSize) }} · {{ a.uploadedByName || "Unknown" }} · {{ formatDate(a.createdOnUtc) }}
-          </q-item-label>
-        </q-item-section>
-        <q-item-section side>
-          <div class="row">
-            <q-btn flat round dense size="sm" icon="o_download" @click="download(a)" />
-            <q-btn flat round dense size="sm" icon="o_delete" color="negative" @click="remove(a)" />
-          </div>
-        </q-item-section>
-      </q-item>
-    </q-list>
+    <!-- Same preview row every other list of saved files uses: the icon for the type, a click that opens
+         it in a new tab, and an ✕ that takes it off the record. Who uploaded it and when goes underneath
+         — it is the one thing this list carries that the others do not. -->
+    <div class="column q-gutter-xs">
+      <div v-for="a in attachments" :key="a.id">
+        <app-stored-file-item
+          :file="a" removable :fetch-blob="fetchAttachment"
+          @remove="remove(a)"
+        />
+        <div class="text-caption text-grey-6 q-pl-sm q-pt-xs">
+          {{ a.uploadedByName || "Unknown" }} · {{ formatDate(a.createdOnUtc) }}
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -49,6 +44,7 @@ import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
 import AppMultiFileUpload from "components/common/AppMultiFileUpload.vue";
+import AppStoredFileItem from "components/common/AppStoredFileItem.vue";
 
 const props = defineProps({
   entityType: { type: Number, required: true },
@@ -99,21 +95,9 @@ const uploadAll = async () => {
   }
 };
 
-const download = async (a) => {
-  try {
-    const blob = await ufAttachmentsApi.download(a.id);
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = a.fileName;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
-  } catch (err) {
-    notify.error(getApiErrorMessage(err));
-  }
-};
+// UF attachments live behind an endpoint of their own rather than in the media store, so the preview
+// row is handed the fetch that reaches them.
+const fetchAttachment = (a) => ufAttachmentsApi.download(a.id);
 
 const remove = async (a) => {
   const ok = await confirm({
@@ -130,22 +114,6 @@ const remove = async (a) => {
   } catch (err) {
     notify.error(getApiErrorMessage(err));
   }
-};
-
-const formatSize = (bytes) => {
-  if (!bytes) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return `${(bytes / Math.pow(1024, i)).toFixed(i ? 1 : 0)} ${units[i]}`;
-};
-
-const iconFor = (ext) => {
-  const e = (ext || "").toLowerCase();
-  if ([".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg"].includes(e)) return "o_image";
-  if (e === ".pdf") return "o_picture_as_pdf";
-  if ([".xls", ".xlsx", ".csv"].includes(e)) return "o_table_chart";
-  if ([".zip"].includes(e)) return "o_folder_zip";
-  return "o_description";
 };
 
 onMounted(load);

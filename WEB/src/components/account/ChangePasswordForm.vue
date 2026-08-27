@@ -1,48 +1,32 @@
 <template>
   <q-form greedy @submit.prevent.stop="onSubmit">
     <q-card-section>
-      <q-input
-        v-model="model.oldPassword" outlined stack-label hide-bottom-space label="Current Password *" maxlength="20"
-        :type="showCurrent ? 'text' : 'password'" :autofocus="autofocus" class="q-mb-md"
-        :error="v$.oldPassword.$error" :error-message="v$.oldPassword.$errors[0]?.$message" @blur="v$.oldPassword.$touch"
+      <!-- The standard password box (label above the field, one eye toggle), so these three read like
+           every other field in the application rather than carrying their labels inside the box. -->
+      <app-password-field
+        v-model="model.oldPassword" label="Current Password" required maxlength="20"
+        :autofocus="autofocus" class="q-mb-md" autocomplete="current-password"
+        :error="v$.oldPassword.$error" :error-message="v$.oldPassword.$errors[0]?.$message"
+        @blur="v$.oldPassword.$touch"
       >
         <template #prepend><q-icon name="o_lock" /></template>
-        <template #append>
-          <q-icon
-            :name="showCurrent ? 'o_visibility' : 'o_visibility_off'" class="cursor-pointer"
-            @click="showCurrent = !showCurrent"
-          />
-        </template>
-      </q-input>
+      </app-password-field>
 
-      <q-input
-        v-model="model.newPassword" outlined stack-label hide-bottom-space label="New Password *" maxlength="20"
-        :type="showNew ? 'text' : 'password'" class="q-mb-md"
-        :error="v$.newPassword.$error" :error-message="v$.newPassword.$errors[0]?.$message" @blur="v$.newPassword.$touch"
+      <app-password-field
+        v-model="model.newPassword" label="New Password" required maxlength="20" class="q-mb-md"
+        :error="v$.newPassword.$error" :error-message="v$.newPassword.$errors[0]?.$message"
+        @blur="v$.newPassword.$touch"
       >
         <template #prepend><q-icon name="o_lock_reset" /></template>
-        <template #append>
-          <q-icon
-            :name="showNew ? 'o_visibility' : 'o_visibility_off'" class="cursor-pointer"
-            @click="showNew = !showNew"
-          />
-        </template>
-      </q-input>
+      </app-password-field>
 
-      <q-input
-        v-model="model.confirmPassword" outlined stack-label hide-bottom-space label="Confirm Password *" maxlength="20"
-        :type="showConfirm ? 'text' : 'password'"
+      <app-password-field
+        v-model="model.confirmPassword" label="Confirm Password" required maxlength="20"
         :error="v$.confirmPassword.$error" :error-message="v$.confirmPassword.$errors[0]?.$message"
         @blur="v$.confirmPassword.$touch"
       >
         <template #prepend><q-icon name="o_lock_reset" /></template>
-        <template #append>
-          <q-icon
-            :name="showConfirm ? 'o_visibility' : 'o_visibility_off'" class="cursor-pointer"
-            @click="showConfirm = !showConfirm"
-          />
-        </template>
-      </q-input>
+      </app-password-field>
 
       <q-banner dense class="bg-grey-2 text-grey-8 q-mt-md account-hint">
         <template #avatar><q-icon name="o_info" color="primary" /></template>
@@ -76,6 +60,7 @@ import { useRouter } from "vue-router";
 import { authApi, getApiErrorMessage } from "services/api";
 import { useAuthStore } from "stores/auth";
 import { useNotify } from "composables/useNotify";
+import AppPasswordField from "components/common/AppPasswordField.vue";
 
 defineProps({
   // Renders a Cancel button pointing at this route; omit for an embedded card that has nothing to leave.
@@ -92,9 +77,6 @@ const router = useRouter();
 const authStore = useAuthStore();
 const { notifySuccess, notifyError } = useNotify();
 
-const showCurrent = ref(false);
-const showNew = ref(false);
-const showConfirm = ref(false);
 const loading = ref(false);
 
 const model = ref({ oldPassword: "", newPassword: "", confirmPassword: "" });

@@ -78,4 +78,14 @@ public static class RemsRequestStatuses
     /// <summary>The stages where the request sits with the reviewing Admin (the client has answered).</summary>
     public static bool IsWithAdmin(string? status)
         => status is AdminReview or AwaitingAdminConfirmation;
+
+    /// <summary>
+    /// The two SEND-BACK stages: the setup has been sent back for rework, either by the Admin
+    /// (<see cref="ReturnedToInitiator"/>) or by the approvers declining a round
+    /// (<see cref="ChangesRequested"/>). Both sit with the initiator, and in both the Admin keeps the
+    /// ability to work the setup — see <c>RemsSetupAccess.CanWork</c>: a send-back asks the initiator for
+    /// changes, it does not hand the request away.
+    /// </summary>
+    public static bool IsRework(string? status)
+        => status is ReturnedToInitiator or ChangesRequested;
 }

@@ -39,11 +39,11 @@
         <q-badge color="primary" class="count-badge" data-test="key-count">{{ selectedKeys.length }} selected</q-badge>
       </div>
 
-      <q-input
-        v-model="keySearch" outlined dense clearable label="Filter keys" class="q-mb-sm"
+      <app-text-field
+        v-model="keySearch" label="Filter keys" clearable class="q-mb-sm"
       >
         <template #prepend><q-icon name="o_search" /></template>
-      </q-input>
+      </app-text-field>
 
       <div v-if="loadingCatalog" class="row flex-center q-pa-md"><q-spinner color="primary" size="28px" /></div>
 

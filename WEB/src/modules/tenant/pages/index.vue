@@ -98,21 +98,17 @@
       @cancel="resetForm"
     >
       <q-form ref="formRef" greedy>
-        <q-input
+        <app-text-field
           v-model="form.name"
-          outlined
-          stack-label
-          hide-bottom-space
-          label="Name *"
+          label="Name"
+          required
           class="q-mb-md"
           :rules="[(v) => !!v || 'Name is required']"
         />
-        <q-input
+        <app-text-field
           v-model="form.identifier"
-          outlined
-          stack-label
-          hide-bottom-space
-          label="Identifier *"
+          label="Identifier"
+          required
           :disable="editing"
           hint="Lowercase letters, numbers and hyphens"
           :error="!!identifierError"
@@ -122,17 +118,14 @@
             (v) => /^[a-z0-9-]+$/.test(v) || 'Use lowercase letters, numbers and hyphens only'
           ]"
         />
-        <q-select
+        <app-select
           v-model="form.timeZoneId"
-          outlined
-          stack-label
-          hide-bottom-space
-          label="Time Zone *"
+          label="Time Zone"
+          required
           class="q-mt-md"
           use-input
-          input-debounce="200"
-          :options="filteredZones"
-          @filter="filterZones"
+          :clearable="false"
+          :options="allZones"
         />
       </q-form>
     </app-form-drawer>
@@ -155,6 +148,7 @@ import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppSelect from "components/common/AppSelect.vue";
+import AppTextField from "components/common/AppTextField.vue";
 
 const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
@@ -212,14 +206,9 @@ const identifierError = ref("");
 const formRef = ref(null);
 const form = reactive({ tenantId: null, name: "", identifier: "", timeZoneId: "UTC" });
 
+// The whole list goes to AppSelect, which narrows it as you type: it filters in a computed rather than
+// through QSelect's filter/done-callback round trip, so there is nothing left here to filter.
 const allZones = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : ["UTC"];
-const filteredZones = ref([...allZones]);
-const filterZones = (val, update) => {
-  update(() => {
-    const needle = val.toLowerCase();
-    filteredZones.value = needle ? allZones.filter((z) => z.toLowerCase().includes(needle)) : [...allZones];
-  });
-};
 
 const resetForm = () => {
   form.tenantId = null;

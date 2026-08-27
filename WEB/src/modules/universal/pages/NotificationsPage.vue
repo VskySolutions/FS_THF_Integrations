@@ -115,7 +115,7 @@ import { useColumnFilters } from "composables/useColumnFilters";
 import { useNotify } from "composables/useNotify";
 import { useDateFormat } from "composables/useDateFormat";
 import { useNotificationMeta } from "composables/uf/useNotificationMeta";
-import { useEntityMeta } from "composables/uf/useEntityMeta";
+import { useNotificationRoute } from "composables/uf/useNotificationRoute";
 
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
@@ -127,7 +127,7 @@ const router = useRouter();
 const notify = useNotify();
 const fmt = useDateFormat();
 const { metaFor, allTypes } = useNotificationMeta();
-const { routeFor } = useEntityMeta();
+const { routeForNotification } = useNotificationRoute();
 
 // Read/unread is a bool server-side but a filter value is always a string, so it is sent as one and
 // parsed back on the way out — the same shape the REMS "form submitted" filter uses.
@@ -201,7 +201,7 @@ const open = async (row) => {
   if (!row.isRead) {
     try { await ufNotificationApi.markRead(row.id); } catch { /* the navigation matters more */ }
   }
-  if (row.entityType && row.entityId) router.push(routeFor(row.entityType, row.entityId));
+  if (row.entityType && row.entityId) router.push(await routeForNotification(row));
   else load();
 };
 

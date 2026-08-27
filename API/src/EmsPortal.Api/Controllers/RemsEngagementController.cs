@@ -576,6 +576,10 @@ public sealed class RemsEngagementController : ControllerBase
         if (request.EngagementExecutiveId.HasValue) engagement.EngagementExecutiveId = request.EngagementExecutiveId;
         if (request.BillingManagerId.HasValue) engagement.BillingManagerId = request.BillingManagerId;
         if (request.FirstYearFeeEstimate.HasValue) engagement.FirstYearFeeEstimate = request.FirstYearFeeEstimate;
+        // Assurance's own fee, kept apart from the first-year estimate above rather than sharing a column
+        // with it: they are different questions, and a department corrected from one to the other should
+        // not read its predecessor's answer back as its own.
+        if (request.EngagementFee.HasValue) engagement.EngagementFee = request.EngagementFee;
         if (request.RealizationPercentage.HasValue) engagement.RealizationPercentage = request.RealizationPercentage;
         // The billing schedule: how often, and how it actually works. The frequency is normalized like
         // the other option-set codes on this record; the description is free prose, so it is only trimmed
@@ -680,12 +684,106 @@ public sealed class RemsEngagementController : ControllerBase
         detail.RenewalTerms = Normalize(request.RenewalTerms);
         detail.PurchaseOrderStartDate = request.PurchaseOrderStartDate;
         detail.PurchaseOrderEndDate = request.PurchaseOrderEndDate;
+        // GCS. Every field on this record is written from the request, blanks included, which is why the
+        // setup form sends the whole row back rather than only the half its card shows — a government
+        // audit's contract block and a GCS purchase order live here together.
+        detail.PurchaseOrderNumber = Normalize(request.PurchaseOrderNumber);
+        detail.PurchaseOrderAmount = request.PurchaseOrderAmount;
+        detail.PersonnelLevel = Normalize(request.PersonnelLevel);
+        detail.BillRatePerHour = request.BillRatePerHour;
 
         await LogEngagementUpdatedAsync(engagement, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var view = await BuildEngagementViewAsync(id, cancellationToken);
         return Ok(ApiResponseFactory.Success(view!, "Government audit detail updated."));
+    }
+
+    /// <summary>
+    /// Set the ASSURANCE detail: the client's fiscal year end and the administrative fees. Shares the
+    /// audit detail row with the signed client-acceptance form, which is linked by its own endpoint above.
+    /// </summary>
+    [HttpPut("engagements/{id:guid}/audit")]
+    [RequireAnyPermission(Permissions.RemsEngagementsManage, Permissions.RemsRequestsUpdate)]
+    [ProducesResponseType<ApiResponse<RemsEngagementView>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateAuditDetail(Guid id, [FromBody] UpdateRemsAuditDetailRequest request, CancellationToken cancellationToken)
+    {
+        var engagement = await _engagements.GetWithContextAsync(id, cancellationToken);
+        if (engagement is null)
+        {
+            return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
+        }
+
+        if (await GuardSetupOwnerAsync(engagement.REMSId, cancellationToken) is { } denied)
+        {
+            return denied;
+        }
+        if (!IsEditable(engagement))
+        {
+            return EngagementLocked();
+        }
+
+        var detail = await _engagements.GetAuditDetailAsync(id, cancellationToken);
+        if (detail is null)
+        {
+            detail = new REMSEngagementAuditDetail { Id = Guid.NewGuid(), REMSEngagementId = id };
+            await _engagements.AddAuditDetailAsync(detail, cancellationToken);
+        }
+
+        detail.ClientFiscalYearEnd = request.ClientFiscalYearEnd;
+        detail.AdminFeesApply = request.AdminFeesApply;
+        // An amount without a "yes" beside it is an amount nobody is charging. Answering "no" clears it
+        // rather than leaving a figure behind that no screen shows and every report would still sum.
+        detail.AdminFeesAmount = request.AdminFeesApply == true ? request.AdminFeesAmount : null;
+
+        await LogEngagementUpdatedAsync(engagement, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        var view = await BuildEngagementViewAsync(id, cancellationToken);
+        return Ok(ApiResponseFactory.Success(view!, "Assurance engagement detail updated."));
+    }
+
+    /// <summary>
+    /// Link a previously-uploaded media id as the GCS engagement's purchase-order document. The government
+    /// detail is created on first link, exactly as the audit detail is for the client-acceptance form.
+    /// </summary>
+    [HttpPost("engagements/{id:guid}/government/purchase-order")]
+    [RequireAnyPermission(Permissions.RemsEngagementsManage, Permissions.RemsRequestsUpdate)]
+    [ProducesResponseType<ApiResponse<RemsEngagementView>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> LinkPurchaseOrder(Guid id, [FromBody] LinkPurchaseOrderRequest request, CancellationToken cancellationToken)
+    {
+        var engagement = await _engagements.GetWithContextAsync(id, cancellationToken);
+        if (engagement is null)
+        {
+            return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
+        }
+
+        if (await GuardSetupOwnerAsync(engagement.REMSId, cancellationToken) is { } denied)
+        {
+            return denied;
+        }
+        if (!IsEditable(engagement))
+        {
+            return EngagementLocked();
+        }
+        if (await _media.GetByIdAsync(request.MediaId, cancellationToken) is null)
+        {
+            return BadRequest(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, "Validation failed.", "Unknown mediaId."));
+        }
+
+        var detail = await _engagements.GetGovernmentDetailAsync(id, cancellationToken);
+        if (detail is null)
+        {
+            detail = new REMSEngagementGovernmentDetail { Id = Guid.NewGuid(), REMSEngagementId = id };
+            await _engagements.AddGovernmentDetailAsync(detail, cancellationToken);
+        }
+        detail.PurchaseOrderMediaId = request.MediaId;
+
+        await LogEngagementUpdatedAsync(engagement, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        var view = await BuildEngagementViewAsync(id, cancellationToken);
+        return Ok(ApiResponseFactory.Success(view!, "Purchase order linked."));
     }
 
     /// <summary>
@@ -732,7 +830,23 @@ public sealed class RemsEngagementController : ControllerBase
         }
 
         detail.FiscalYearEnd = request.FiscalYearEnd;
-        detail.CalculatedDueDates = request.FiscalYearEnd is { } fye ? RemsTaxDueDates.ComputeJson(fye) : null;
+        // The rule fills in what was left blank and steps aside for what was typed. The JSON snapshot is
+        // written from the SAME effective pair, so the approver's packet and the setup form can never show
+        // one schedule each. No fiscal year end means no schedule at all — there is nothing to derive from
+        // and nothing the two pickers could be anchored to.
+        if (request.FiscalYearEnd is { } fye)
+        {
+            var schedule = RemsTaxDueDates.Effective(fye, request.OriginalDueDate, request.FirstExtensionDueDate);
+            detail.OriginalDueDate = schedule.OriginalDueDate;
+            detail.FirstExtensionDueDate = schedule.ExtendedDueDate;
+            detail.CalculatedDueDates = RemsTaxDueDates.EffectiveJson(fye, request.OriginalDueDate, request.FirstExtensionDueDate);
+        }
+        else
+        {
+            detail.OriginalDueDate = null;
+            detail.FirstExtensionDueDate = null;
+            detail.CalculatedDueDates = null;
+        }
 
         // Reconcile the tax-form checklist rows by TaxFormId.
         var existingForms = detail.TaxForms.Where(f => !f.Deleted).ToList();

@@ -80,7 +80,7 @@
 // submission arrive can ask for it without remounting.
 import { ref, computed, watch } from "vue";
 import { remsApi, getApiErrorMessage } from "services/api";
-import { useDateFormat } from "composables/useDateFormat";
+import { useDateFormat, formatDateOnly } from "composables/useDateFormat";
 import { useRemsMeta, isBusinessIndustryGroup } from "modules/rems/useRemsMeta";
 import { addressText } from "modules/rems/remsAddress";
 import {
@@ -124,12 +124,8 @@ const clientName = computed(() => {
   return clientDisplayName(joined || String(p.clientName ?? "").trim(), view.value?.clientNameSuffix);
 });
 
-// Calendar-date fields (DateOnly "YYYY-MM-DD") are shown as-is (MM-DD-YYYY), never timezone-shifted.
-const dateOnly = (v) => {
-  if (!v) return "—";
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));
-  return m ? `${m[2]}-${m[3]}-${m[1]}` : String(v);
-};
+// Calendar dates read MM/DD/YYYY and are never timezone-shifted — see formatDateOnly.
+const dateOnly = formatDateOnly;
 
 const groups = computed(() => {
   const p = payload.value;

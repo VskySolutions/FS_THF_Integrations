@@ -27,12 +27,16 @@
       <!-- Two boxes, because a contact becomes a Person and a Person is filed under a given name and a
            family name. One box asked the client to write a name and left the application guessing where
            to cut it — which put "Van Der Berg" in a first-name column often enough to matter. -->
+      <!-- A contact becomes a Person record, so the two name boxes are held to what a name actually is:
+           letters, and the hyphen / apostrophe / period that appear inside real ones. See utils/personName. -->
       <app-text-field
         v-model="role.firstName" label="First Name" :required="required" class="col-8 col-sm-4"
+        :rules="nameRules('First Name')"
         :error="!!err('firstName')" :error-message="err('firstName')"
       />
       <app-text-field
         v-model="role.lastName" label="Last Name" :required="required" class="col-12 col-sm-6"
+        :rules="nameRules('Last Name')"
         :error="!!err('lastName')" :error-message="err('lastName')"
       />
       <app-text-field
@@ -49,6 +53,7 @@
 </template>
 
 <script setup>
+import { nameRules } from "utils/personName";
 import AppTextField from "components/common/AppTextField.vue";
 import AppNamePrefixField from "components/common/AppNamePrefixField.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";

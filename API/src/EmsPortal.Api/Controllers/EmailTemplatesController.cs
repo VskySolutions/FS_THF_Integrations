@@ -35,7 +35,7 @@ public sealed class EmailTemplatesController : ControllerBase
         ["LoginUrl"] = "https://app.example.com",
         ["AppBaseUrl"] = "https://app.example.com",
         ["TenantName"] = "Acme Corporation",
-        ["ChangedAtUtc"] = "2026-06-24 14:05",
+        ["ChangedAtUtc"] = "06/24/2026 02:05 PM",
     };
 
     private readonly IEmailTemplateService _templates;

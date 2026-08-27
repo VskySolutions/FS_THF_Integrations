@@ -1,12 +1,35 @@
 import { useTenantStore } from "stores/tenant";
 
+/**
+ * A calendar date — a DateOnly "YYYY-MM-DD" — as MM/DD/YYYY.
+ *
+ * Deliberately NOT part of the composable below and deliberately not routed through a time zone. A
+ * DateOnly is a date, not an instant: a fiscal year end of 31 December is the 31st of December wherever
+ * it is read. Converting one is how it becomes the 30th for everybody west of Greenwich — which is also
+ * why this reformats the STRING rather than going near a Date object, since `new Date("2026-12-31")`
+ * parses as UTC midnight and reads back a day early in the Americas.
+ *
+ * Being a plain function rather than a composable member matters too: it needs no tenant store, so the
+ * anonymous client-facing screens can use it.
+ *
+ * Anything that is not a recognisable ISO date is passed through untouched — a value this cannot read is
+ * better shown as it stands than swallowed.
+ */
+export function formatDateOnly (value, placeholder = "—") {
+  if (!value) return placeholder;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value));
+  return m ? `${m[2]}/${m[3]}/${m[1]}` : String(value);
+}
+
 // Renders UTC timestamps in the active tenant's time zone. The whole app stores
 // and transmits UTC; display conversion happens only here.
 //
 //   const { formatDateTime, tenantTimeZone } = useDateFormat();
-//   formatDateTime(row.updatedOnUtc) // -> "06-09-2026 11:42 AM" in the tenant's tz
+//   formatDateTime(row.updatedOnUtc) // -> "06/24/2025 01:01 AM" in the tenant's tz
 //
-// App-wide display format: MM-DD-YYYY with a 12-hour (AM/PM) clock.
+// THE app-wide display format, for every date the application shows: MM/DD/YYYY, with a 12-hour (AM/PM)
+// clock on anything carrying a time. Calendar dates read the same way through formatDateOnly above — the
+// separator does not change between a date and a timestamp, or between one screen and another.
 export function useDateFormat () {
   const tenantStore = useTenantStore();
 
@@ -34,14 +57,14 @@ export function useDateFormat () {
     const d = toUtcDate(value);
     if (!d) return placeholder;
     const p = partsFor(d, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: true });
-    return `${p.month}-${p.day}-${p.year} ${p.hour}:${p.minute} ${p.dayPeriod}`;
+    return `${p.month}/${p.day}/${p.year} ${p.hour}:${p.minute} ${p.dayPeriod}`;
   };
 
   const formatDate = (value, placeholder = "—") => {
     const d = toUtcDate(value);
     if (!d) return placeholder;
     const p = partsFor(d, { year: "numeric", month: "2-digit", day: "2-digit" });
-    return `${p.month}-${p.day}-${p.year}`;
+    return `${p.month}/${p.day}/${p.year}`;
   };
 
   // How far the tenant's clock runs ahead of UTC at a given instant (DST-aware, since the offset is

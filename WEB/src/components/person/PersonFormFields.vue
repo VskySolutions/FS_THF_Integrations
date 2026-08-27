@@ -17,16 +17,24 @@
            person is filed under, which is why it is its own box rather than something typed into the
            one beside it. -->
       <app-name-prefix-field v-model="form.prefix" class="col-4 col-sm-2" :disable="disable" />
+      <!-- Held to what a name is — letters, and the hyphen / apostrophe / period that appear inside real
+           ones. See utils/personName, which the server's PersonNames mirrors. -->
       <app-text-field
         v-model="form.firstName" label="First Name *" class="col-8 col-sm-4"
-        :disable="disable" :rules="[(v) => !!v || 'First name is required']"
+        :disable="disable" :rules="nameRules('First name', { required: true })"
       />
-      <app-text-field v-model="form.middleName" label="Middle Name" class="col-12 col-sm-6" :disable="disable" />
+      <app-text-field
+        v-model="form.middleName" label="Middle Name" class="col-12 col-sm-6"
+        :disable="disable" :rules="nameRules('Middle name')"
+      />
       <app-text-field
         v-model="form.lastName" label="Last Name *" class="col-12 col-sm-6"
-        :disable="disable" :rules="[(v) => !!v || 'Last name is required']"
+        :disable="disable" :rules="nameRules('Last name', { required: true })"
       />
-      <app-text-field v-model="form.preferredName" label="Preferred Name" class="col-12 col-sm-6" :disable="disable" />
+      <app-text-field
+        v-model="form.preferredName" label="Preferred Name" class="col-12 col-sm-6"
+        :disable="disable" :rules="nameRules('Preferred name')"
+      />
     </div>
 
     <div class="section-subhead">Demographics</div>
@@ -53,6 +61,7 @@
 // The Person create/edit field set, defined once and reused (People list drawer + the
 // quick-add dialog on the user form). Binds directly to the reactive `form` object the
 // parent owns; the surrounding q-form validates the nested inputs.
+import { nameRules } from "utils/personName";
 import AppSelect from "components/common/AppSelect.vue";
 import AppTextField from "components/common/AppTextField.vue";
 import AppNamePrefixField from "components/common/AppNamePrefixField.vue";

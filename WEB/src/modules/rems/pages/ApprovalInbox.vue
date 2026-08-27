@@ -18,7 +18,7 @@
     </app-filter-drawer>
 
     <div class="text-body2 text-grey-8 q-mb-md">
-      The requests routed to you to review — one row each, showing where the latest round stands. You only
+      The requests routed to you to review — one row each, showing where each one's approval stands. You only
       ever see your own tasks; a decision is final once made.
     </div>
 
@@ -36,15 +36,14 @@
       @refresh="load"
       @row-click="(_, row) => openTask(row)"
     >
-      <!-- The round number only where it says something. Every request has a Round 1, so printing it under
-           every REMS number was a caption that never varied; a request on its second or third round is the
-           one worth flagging, because the row is a repeat of a review that already failed once. -->
+      <!-- Flagged only where it says something. A request that is back in front of the approvers is a
+           repeat of a review that already failed once, and the row reads very differently for it. HOW MANY
+           times is not on screen: the count is machinery, and one word is the whole of what a reader
+           does with it. -->
       <template #body-cell-remsNumber="cell">
         <q-td :props="cell">
           <div class="text-weight-medium">{{ cell.row.remsNumber || "—" }}</div>
-          <div v-if="cell.row.roundNumber > 1" class="text-caption text-orange-9">
-            Round {{ cell.row.roundNumber }} · re-routed
-          </div>
+          <div v-if="cell.row.roundNumber > 1" class="text-caption text-orange-9">Resubmitted</div>
         </q-td>
       </template>
 
@@ -170,9 +169,7 @@ const columns = [
   // Off by default, but offered in the Columns menu so nothing the row returns is unreachable. The Entity
   // column went with the field behind it: an approval is about a request and its one engagement, the row
   // stopped carrying an entity name to put here, and the column had been rendering "—" on every row.
-  // Round is the caller's CURRENT round on the request — the cell above flags it only past the first.
-  { name: "roundNumber", label: "Round", field: (r) => `#${r.roundNumber}`, align: "left", sortable: true, default: false, filterable: false },
-  { name: "roundStatus", label: "Round Status", field: (r) => approvalStatusLabel(r.roundStatus), align: "left", default: false, filterable: false },
+  { name: "roundStatus", label: "Approval Status", field: (r) => approvalStatusLabel(r.roundStatus), align: "left", default: false, filterable: false },
   { name: "decidedOnUtc", label: "Decided", field: (r) => (r.decidedOnUtc ? fmt.formatDateTime(r.decidedOnUtc) : "—"), align: "left", sortable: true, default: false, filterable: false },
   ...auditColumns(),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
@@ -203,7 +200,7 @@ const pendingOf = (row) => Math.max(0, (row.approverCount || 0) - (row.approvedC
 
 const progressHint = (row) => {
   const parts = [`${row.approvedCount || 0} of ${row.approverCount || 0} approved`];
-  if (row.rejectedCount > 0) parts.push(`${row.rejectedCount} rejected — the round ended`);
+  if (row.rejectedCount > 0) parts.push(`${row.rejectedCount} rejected — no further approvals needed`);
   else if (pendingOf(row) > 0) parts.push(`${pendingOf(row)} still to decide`);
   return parts.join(" · ");
 };

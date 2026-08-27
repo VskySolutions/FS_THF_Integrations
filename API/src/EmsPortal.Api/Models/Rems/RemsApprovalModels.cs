@@ -156,6 +156,8 @@ public sealed record RemsApprovalEngagementView(
     RemsUserRef? EngagementExecutive,
     RemsUserRef? BillingManager,
     decimal? FirstYearFeeEstimate,
+    /// <summary>Assurance prices the engagement rather than its first year; only one of the two is ever set.</summary>
+    decimal? EngagementFee,
     decimal? RealizationPercentage,
     bool FinancialsRestricted,
     RemsApprovalAuditDetailView? Audit,
@@ -168,6 +170,13 @@ public sealed record RemsApprovalEngagementView(
 /// One approval round as history. Rounds are immutable and numbered from 1: a resubmission creates a new
 /// one rather than resetting the last, so the list is the whole record of what the approvers did.
 /// </summary>
+/// <summary>
+/// A pointer to one approval task and nothing else — what the approver deep-link needs to navigate. It
+/// carries no round, no engagement and no client: the caller is about to open the task itself, which
+/// returns the whole packet under its own permission rule.
+/// </summary>
+public sealed record RemsApprovalTaskRef(Guid TaskId);
+
 public sealed record RemsApprovalRoundHistory(
     Guid RoundId,
     int RoundNumber,
@@ -230,12 +239,16 @@ public sealed record RemsApprovalAuditDetailView(
     Guid Id,
     Guid? ClientAcceptanceFormMediaId,
     string? FileName,
-    string? Url);
+    string? Url,
+    DateOnly? ClientFiscalYearEnd,
+    bool? AdminFeesApply,
+    decimal? AdminFeesAmount);
 
 /// <summary>Tax detail with the due-date schedule deserialized and the form checklist resolved to labels.</summary>
 public sealed record RemsApprovalTaxDetailView(
     Guid Id,
     DateOnly? FiscalYearEnd,
+    /// <summary>Derived from the fiscal year end, then whatever was typed over it. Never recomputed here.</summary>
     RemsTaxDueDateSet? DueDates,
     IReadOnlyList<RemsApprovalOptionRef> TaxForms);
 

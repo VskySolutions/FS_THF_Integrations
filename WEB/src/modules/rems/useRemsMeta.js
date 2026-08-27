@@ -280,6 +280,9 @@ export function useRemsMeta () {
   const departmentLabel = (v) => labelFrom(options.department, v);
   const subServiceLineLabel = (v) => labelFrom(options.subServiceLine, v);
   const subIndustryLabel = (v) => labelFrom(options.subIndustry, v);
+  // GCS staffing level. Resolved here because the approver's packet carries the CODE — that screen's
+  // option labels are resolved server-side only for the sets keyed by item id (marketing, tax forms).
+  const personnelLevelLabel = (v) => labelFrom(options.personnelLevel, v);
 
   // Colours stay in code: they key off the CODE, which is closed and validated server-side, so a rename
   // never strands a badge on grey. Only the wording is the tenant's to change.
@@ -352,6 +355,7 @@ export function useRemsMeta () {
     departmentLabel,
     subServiceLineLabel,
     subIndustryLabel,
+    personnelLevelLabel,
     statusColor,
     emsStateLabel,
     emsStateColor,
@@ -396,7 +400,9 @@ export function useRemsOptionSets () {
 
 // Department + Entity Type are stored as string codes, so — like Type — the closed seed lists are a safe
 // fallback when the resolve endpoint 403s (the REMS Admin role lacks optionSets.read).
-export const REMS_DEPARTMENT_CODES = Object.freeze({ CAS: "cas", TAX: "tax", AUDIT: "audit", GCS: "gcs" });
+export const REMS_DEPARTMENT_CODES = Object.freeze({
+  CAS: "cas", TAX: "tax", AUDIT: "audit", GCS: "gcs", ASSURANCE: "assurance", ADMIN: "admin"
+});
 
 // The Entity Type code (REMS.IndustryGroup value) that makes an audit a GOVERNMENT audit. Read off the
 // entity type rather than anything on the engagement, because it is required and frozen once the
@@ -420,6 +426,30 @@ export const isTaxDepartment = (department) => department === REMS_DEPARTMENT_CO
 // lives on the form record rather than on the engagement, so callers pass it in.
 export const isGovernmentAudit = (department, entityType) =>
   isAuditDepartment(department) && entityType === REMS_ENTITY_TYPE_GOVERNMENT;
+
+// Client Accounting Services. The one department billed on a schedule of its own — a recurring
+// arrangement whose frequency and process are part of the engagement — so it is the only one asked for a
+// Billing Frequency and a Description of Billing Process. The other departments bill against the work,
+// and the two boxes sat empty on every one of their engagements.
+//
+// Unlike the three above this has NO backend twin: it decides what the setup form asks for, not what the
+// API stores. The columns stay on the engagement for every department, so a value recorded under CAS
+// survives a department correction and comes back if the department is put back — see saveSetup, which
+// omits the pair rather than blanking it.
+export const isCasDepartment = (department) => department === REMS_DEPARTMENT_CODES.CAS;
+
+// Attest work priced for the engagement rather than for its first year. Asked the signed client-acceptance
+// form Audit is, plus the client fiscal year end and the administrative fees. A department in its own
+// right beside Audit, not a rename of it — engagements already filed under `audit` stay there.
+export const isAssuranceDepartment = (department) => department === REMS_DEPARTMENT_CODES.ASSURANCE;
+
+// Government Consulting Services: set up against a purchase order rather than a fee.
+export const isGcsDepartment = (department) => department === REMS_DEPARTMENT_CODES.GCS;
+
+// The departments asked for a signed client-acceptance form. Mirrors
+// RemsEngagementCodes.RequiresClientAcceptanceForm, which is what actually gates the approval.
+export const requiresClientAcceptanceForm = (department) =>
+  isAuditDepartment(department) || isAssuranceDepartment(department);
 
 // Loads the engagement's code-valued option sets (Department, Service Line and Industry) plus Marketing /
 // Tax Form for the workspace. The code-valued ones degrade to the closed lists in the
@@ -497,6 +527,8 @@ export function useRemsEngagementOptionSets () {
     // How often the client is billed (REMS.BillingPeriod). Code-valued like Department and Service Line,
     // so it comes from the shared catalogue rather than being resolved by id.
     billingPeriodOptions: computed(() => catalog.billingPeriod),
+    // How a GCS engagement is staffed (REMS.PersonnelLevel) — code-valued, so likewise from the catalogue.
+    personnelLevelOptions: computed(() => catalog.personnelLevel),
     marketingGroups,
     marketingUnavailable,
     taxFormOptions,

@@ -53,10 +53,18 @@ public class REMSEngagement : AuditableEntity
     /// <summary>Billing manager (User).</summary>
     public Guid? BillingManagerId { get; set; }
 
-    /// <summary>Estimated first-year fee.</summary>
+    /// <summary>Estimated first-year fee. Asked of every department except Assurance and GCS.</summary>
     public decimal? FirstYearFeeEstimate { get; set; }
 
-    /// <summary>Expected realization percentage (0–100).</summary>
+    /// <summary>
+    /// The Assurance department's fee. A column of its own rather than a relabelling of
+    /// <see cref="FirstYearFeeEstimate"/>: an assurance engagement is priced for the engagement, not for
+    /// its first year, so the two are different questions and reporting has to be able to tell them apart.
+    /// Only Assurance is asked it; every other department leaves it null.
+    /// </summary>
+    public decimal? EngagementFee { get; set; }
+
+    /// <summary>Expected realization percentage (0–100). Asked of every department.</summary>
     public decimal? RealizationPercentage { get; set; }
 
     /// <summary>How often the client is billed (option-set <c>REMS.BillingPeriod</c> code).</summary>

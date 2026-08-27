@@ -102,48 +102,29 @@
             </q-card-section>
             <q-separator />
             <q-card-section class="row q-col-gutter-md">
-              <!-- The title, to the left of the name. Saved on the way past with the rest of the basics;
-                   it lives on the same Person record the two name fields do. -->
-              <q-input
-                v-model="prefix" outlined dense stack-label label="Prefix" placeholder="Mr."
-                class="col-4 col-sm-2" :readonly="!canEdit" maxlength="16" @blur="autoSaveBasics"
-              >
-                <template v-if="canEdit" #append>
-                  <q-btn flat dense round size="sm" icon="o_arrow_drop_down" color="grey-7" aria-label="Prefix suggestions">
-                    <q-menu anchor="bottom end" self="top end" auto-close>
-                      <q-list dense style="min-width: 150px;">
-                        <q-item
-                          v-for="opt in PREFIX_OPTIONS" :key="opt" clickable :active="prefix === opt"
-                          active-class="bg-grey-2 text-primary" @click="pickPrefix(opt)"
-                        >
-                          <q-item-section>{{ opt }}</q-item-section>
-                        </q-item>
-                        <q-separator />
-                        <q-item clickable :disable="!prefix" @click="pickPrefix('')">
-                          <q-item-section class="text-grey-7">No prefix</q-item-section>
-                        </q-item>
-                      </q-list>
-                    </q-menu>
-                  </q-btn>
-                </template>
-              </q-input>
-              <q-input
-                v-model="firstName" outlined dense stack-label label="First Name" class="col-8 col-sm-4"
-                :readonly="!canEdit" @blur="autoSaveBasics"
+              <!-- The title, to the left of the name. The same box every other screen asks it in, so the
+                   suggestions and the cap match; saved on the way past with the rest of the basics,
+                   because it lives on the same Person record the two name fields do. -->
+              <app-name-prefix-field
+                v-model="prefix" class="col-4 col-sm-2" :readonly="!canEdit" @blur="autoSaveBasics"
               />
-              <q-input
-                v-model="lastName" outlined dense stack-label label="Last Name" class="col-12 col-sm-6"
-                :readonly="!canEdit" @blur="autoSaveBasics"
+              <app-text-field
+                v-model="firstName" label="First Name" class="col-8 col-sm-4"
+                :readonly="!canEdit" :rules="nameRules('First name')" @blur="autoSaveBasics"
+              />
+              <app-text-field
+                v-model="lastName" label="Last Name" class="col-12 col-sm-6"
+                :readonly="!canEdit" :rules="nameRules('Last name')" @blur="autoSaveBasics"
               />
               <!-- This IS the sign-in credential, not a contact address — labelled so whoever edits it
                    knows, and committed through its own path rather than saved on the way past. -->
-              <q-input
-                v-model="email" outlined dense stack-label label="Username (Email)" class="col-12 col-sm-6"
+              <app-text-field
+                v-model="email" label="Username (Email)" type="email" class="col-12 col-sm-6"
                 :readonly="!canEdit" hint="Used to sign in. Changing it signs the user out of their sessions."
                 @blur="commitEmail"
               />
-              <q-input
-                v-model="phoneNumber" outlined dense stack-label label="Phone Number" class="col-12 col-sm-6"
+              <app-text-field
+                v-model="phoneNumber" label="Phone Number" class="col-12 col-sm-6"
                 :readonly="!canEdit" @blur="autoSaveBasics"
               />
             </q-card-section>
@@ -353,10 +334,12 @@ import { useRoleOptions, roleCategoryChip } from "composables/useRoleOptions";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
+import { nameRules } from "utils/personName";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import AppTextField from "components/common/AppTextField.vue";
+import AppNamePrefixField from "components/common/AppNamePrefixField.vue";
 import AppInfoTip from "components/common/AppInfoTip.vue";
 import AppAutoSaveState from "components/common/AppAutoSaveState.vue";
 import TempPasswordDialog from "components/temp_password_dialog.vue";
@@ -384,10 +367,9 @@ const canReadPersons = computed(() => has(Permissions.PersonsRead));
 const userId = route.params.id;
 const user = ref(null);
 const loading = ref(false);
-// The title the person is addressed by. This page edits the same Person record the People screens do,
-// so it is offered here too — the suggestions are inline rather than through AppNamePrefixField because
-// every field on this card is a bare q-input saved on blur, not one of the labelled app fields.
-const PREFIX_OPTIONS = ["Mr.", "Mrs.", "Ms.", "Miss", "Mx.", "Dr.", "Prof."];
+// The title the person is addressed by. This page edits the same Person record the People screens do, so
+// it is offered here too — through AppNamePrefixField, like everywhere else, now that this card's fields
+// carry their labels above them rather than inside the box.
 const prefix = ref("");
 const firstName = ref("");
 const lastName = ref("");
@@ -598,13 +580,6 @@ const autoSaveBasics = async () => {
     });
     await load({ syncFields: false });
   });
-};
-
-// Choosing from the menu is an edit like any other, and the menu closes rather than blurring the box —
-// so the save is fired here instead of waiting for a blur that will not come.
-const pickPrefix = async (value) => {
-  prefix.value = value;
-  await autoSaveBasics();
 };
 
 // The username is the one field that cannot simply be saved on the way past: the API only rejects

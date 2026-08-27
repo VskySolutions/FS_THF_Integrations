@@ -47,6 +47,9 @@ public sealed class UpdateRemsEngagementRequestValidator : AbstractValidator<Upd
         RuleFor(x => x.FirstYearFeeEstimate)
             .GreaterThanOrEqualTo(0).WithMessage("firstYearFeeEstimate must be zero or greater.")
             .When(x => x.FirstYearFeeEstimate.HasValue);
+        RuleFor(x => x.EngagementFee)
+            .GreaterThanOrEqualTo(0).WithMessage("engagementFee must be zero or greater.")
+            .When(x => x.EngagementFee.HasValue);
         RuleFor(x => x.RealizationPercentage)
             .InclusiveBetween(0, 100).WithMessage("realizationPercentage must be between 0 and 100.")
             .When(x => x.RealizationPercentage.HasValue);
@@ -65,7 +68,27 @@ public sealed class LinkClientAcceptanceFormRequestValidator : AbstractValidator
     }
 }
 
-/// <summary>Validates a government-audit detail update (WO-114).</summary>
+/// <summary>Validates linking a GCS purchase-order document.</summary>
+public sealed class LinkPurchaseOrderRequestValidator : AbstractValidator<LinkPurchaseOrderRequest>
+{
+    public LinkPurchaseOrderRequestValidator()
+    {
+        RuleFor(x => x.MediaId).NotEmpty().WithMessage("mediaId is required.");
+    }
+}
+
+/// <summary>Validates an Assurance detail update: the administrative fee cannot be negative.</summary>
+public sealed class UpdateRemsAuditDetailRequestValidator : AbstractValidator<UpdateRemsAuditDetailRequest>
+{
+    public UpdateRemsAuditDetailRequestValidator()
+    {
+        RuleFor(x => x.AdminFeesAmount)
+            .GreaterThanOrEqualTo(0).WithMessage("adminFeesAmount must be zero or greater.")
+            .When(x => x.AdminFeesAmount.HasValue);
+    }
+}
+
+/// <summary>Validates a government-audit detail update (WO-114) and the GCS purchase order on the same row.</summary>
 public sealed class UpdateRemsGovernmentDetailRequestValidator : AbstractValidator<UpdateRemsGovernmentDetailRequest>
 {
     public UpdateRemsGovernmentDetailRequestValidator()
@@ -73,6 +96,14 @@ public sealed class UpdateRemsGovernmentDetailRequestValidator : AbstractValidat
         RuleFor(x => x.ContractNumber).MaximumLength(64).When(x => !string.IsNullOrWhiteSpace(x.ContractNumber));
         RuleFor(x => x.OriginalTerm).MaximumLength(500).When(x => !string.IsNullOrWhiteSpace(x.OriginalTerm));
         RuleFor(x => x.RenewalTerms).MaximumLength(500).When(x => !string.IsNullOrWhiteSpace(x.RenewalTerms));
+        RuleFor(x => x.PurchaseOrderNumber).MaximumLength(64).When(x => !string.IsNullOrWhiteSpace(x.PurchaseOrderNumber));
+        RuleFor(x => x.PersonnelLevel).MaximumLength(64).When(x => !string.IsNullOrWhiteSpace(x.PersonnelLevel));
+        RuleFor(x => x.PurchaseOrderAmount)
+            .GreaterThanOrEqualTo(0).WithMessage("purchaseOrderAmount must be zero or greater.")
+            .When(x => x.PurchaseOrderAmount.HasValue);
+        RuleFor(x => x.BillRatePerHour)
+            .GreaterThanOrEqualTo(0).WithMessage("billRatePerHour must be zero or greater.")
+            .When(x => x.BillRatePerHour.HasValue);
     }
 }
 

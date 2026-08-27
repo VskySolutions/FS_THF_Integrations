@@ -147,7 +147,7 @@
 
       <q-banner v-if="declinedReasons.length" dense class="rf-alert rf-alert--reject q-mb-md">
         <template #avatar><q-icon name="o_gavel" color="red-9" /></template>
-        <div class="text-weight-medium">The approvers declined this round</div>
+        <div class="text-weight-medium">The approvers declined this request</div>
         <ul class="q-my-xs q-pl-md">
           <li v-for="(r, i) in declinedReasons" :key="i">{{ r }}</li>
         </ul>
@@ -297,6 +297,7 @@
                   :files="request?.files || []"
                   :attempted="attempted"
                   @change="markDirty('client')"
+                  @remove-file="removeAttachment"
                 />
 
                 <!-- The client's other businesses, and whether each has been turned into its own request yet.
@@ -334,6 +335,7 @@
                   :executive-options="executiveOptions"
                   :billing-manager-options="billingManagerOptions"
                   :billing-period-options="billingPeriodOptions"
+                  :personnel-level-options="personnelLevelOptions"
                   :editable="canEditSetup"
                   @change="markDirty('setup')"
                 />
@@ -441,14 +443,16 @@ import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } 
 import { useRoute, useRouter, onBeforeRouteLeave } from "vue-router";
 import { remsApi, getApiErrorMessage, webUrl } from "services/api";
 import { useNotify } from "composables/useNotify";
+import { formatDateOnly } from "composables/useDateFormat";
 import { useConfirm } from "composables/useConfirm";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import {
-  useRemsMeta, useRemsOptionSets, useRemsEngagementOptionSets, useRemsIndustryGroups, REMS_SEAT_ROLES
+  useRemsMeta, useRemsOptionSets, useRemsEngagementOptionSets, useRemsIndustryGroups, REMS_SEAT_ROLES,
+  isCasDepartment, isAssuranceDepartment, isGcsDepartment, isTaxDepartment, requiresClientAcceptanceForm
 } from "modules/rems/useRemsMeta";
 import { useAutoSave } from "modules/rems/useAutoSave";
 import { clientDisplayName } from "modules/rems/remsContactRoles";
-import { REMS_STATUS } from "modules/rems/remsStatus";
+import { REMS_STATUS, REMS_REWORK_STATUSES } from "modules/rems/remsStatus";
 import { useAuthStore } from "stores/auth";
 
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
@@ -480,7 +484,8 @@ const { industryGroupOptions, load: loadIndustryGroups } = useRemsIndustryGroups
 const {
   departmentOptions, subServiceLineOptions, subIndustryOptions,
   marketingGroups, marketingUnavailable,
-  taxFormOptions, taxFormUnavailable, billingPeriodOptions, load: loadEngagementOptions
+  taxFormOptions, taxFormUnavailable, billingPeriodOptions, personnelLevelOptions,
+  load: loadEngagementOptions
 } = useRemsEngagementOptionSets();
 
 // The three routes this page answers on. Which one is live is the whole of "what am I doing here": there
@@ -601,6 +606,9 @@ const isInitiatorStage = computed(() =>
     REMS_STATUS.CHANGES_REQUESTED].includes(status.value));
 const isAdminStage = computed(() =>
   [REMS_STATUS.ADMIN_REVIEW, REMS_STATUS.AWAITING_ADMIN_CONFIRMATION].includes(status.value));
+// Sent back for rework — by the admin, or by the approvers declining a round. It sits with the initiator,
+// but it has not left the admin's desk: they asked for the change, and they are the only route onward.
+const isReworkStage = computed(() => REMS_REWORK_STATUSES.includes(status.value));
 // Everything freezes once a round is open, and stays frozen once approved.
 const frozen = computed(() =>
   [REMS_STATUS.PENDING_APPROVAL, REMS_STATUS.APPROVED].includes(status.value));
@@ -627,12 +635,17 @@ const awaitingPickUp = computed(() =>
   !isNew.value && status.value !== REMS_STATUS.DRAFT && !assignedAdminId.value);
 
 // The client tab belongs to the initiator while the request is theirs, and to the admin while it is his.
-// In the two REWORK states it is read-only even to the initiator: only the setup was sent back.
+// In the two REWORK states it is read-only to the INITIATOR — only the setup was sent back — but not to an
+// admin: a send-back asks the initiator for changes, it does not hand the request away, and an admin
+// locked out of a request they were reviewing minutes earlier cannot fix the typo they sent it back over.
 const canEditClient = computed(() => {
   if (frozen.value) return false;
   if (isAdminStage.value) return isHoldingAdmin.value;
+  if (isReworkStage.value) return isAdmin.value;
   return [REMS_STATUS.DRAFT, REMS_STATUS.AWAITING_CUSTOMER].includes(status.value);
 });
+// The setup is what the rework IS, so it stays open to the initiator and the CSE throughout — and to an
+// admin, for the same reason the client tab is (the server agrees: RemsSetupAccess.CanWork).
 const canEditSetup = computed(() => {
   if (frozen.value) return false;
   if (isAdminStage.value) return isHoldingAdmin.value;
@@ -899,9 +912,9 @@ const approvalNote = computed(() => {
   if (s === "PendingApproval") return "This engagement is with its approvers. You will be notified when they decide.";
   if (s === "Approved") return "This engagement is fully approved.";
   if (s === "Rejected") {
-    return "The approvers declined this round and the setup is back with you. Revise it, then return the request to the admin.";
+    return "The approvers declined and the setup is back with you. Revise it, then return the request to the admin.";
   }
-  return "The admin opens the approval round once the client's intake has been reviewed.";
+  return "The admin sends this for approval once the client's intake has been reviewed.";
 });
 
 // ---- Tabs ----
@@ -991,6 +1004,11 @@ const nameOf = (options, id) => (id ? options.find((o) => o.value === id)?.label
 const currency = (v) =>
   (v === null || v === undefined || v === "" ? "" : `$${Number(v).toLocaleString()}`);
 
+// Calendar dates read MM/DD/YYYY and are never timezone-shifted — see formatDateOnly. Blank rather than
+// an em dash for a missing one: these rows go through DetailGrid, which renders its own placeholder and
+// drops the ones marked hideWhenEmpty.
+const dateOnly = (v) => formatDateOnly(v, "");
+
 // Marketing options arrive grouped for the picker; flattened here to turn stored ids back into labels.
 const marketingLabels = computed(() => {
   const byId = new Map();
@@ -1043,17 +1061,56 @@ const setupRows = computed(() => {
     { label: "CSE", value: nameOf(cseOptions.value, setupForm.cseUserId) },
     { label: "Engagement Executive", value: e.engagementExecutive?.name },
     { label: "Billing Manager", value: e.billingManager?.name },
-    { label: "First-Year Fee Estimate", value: currency(e.firstYearFeeEstimate) },
+    // Every row from here down is asked of some departments and not others, so the summary asks the same
+    // questions the form did. A field the form never offered has to be absent here rather than blank —
+    // otherwise the review reads as an engagement somebody failed to finish.
+    ...(isAssuranceDepartment(e.department)
+      ? [{ label: "Engagement Fee", value: currency(e.engagementFee) }]
+      : isGcsDepartment(e.department)
+        ? []
+        : [{ label: "First-Year Fee Estimate", value: currency(e.firstYearFeeEstimate) }]),
     { label: "% Realization", value: e.realizationPercentage == null ? "" : `${e.realizationPercentage}%` },
-    { label: "Billing Frequency", value: labelOf(billingPeriodOptions.value, e.billingPeriod) },
-    { label: "Description of Billing Process", value: e.billingProcessDescription, wide: true },
-    // The conditional blocks say nothing when they do not apply to this engagement, so they are hidden
-    // rather than shown empty — unlike the fields above, where blank IS the record.
-    { label: "Fiscal Year End", value: e.tax?.fiscalYearEnd, hideWhenEmpty: true },
+    ...(isCasDepartment(e.department)
+      ? [
+        { label: "Billing Frequency", value: labelOf(billingPeriodOptions.value, e.billingPeriod) },
+        { label: "Description of Billing Process", value: e.billingProcessDescription, wide: true }
+      ]
+      : []),
+    ...(isAssuranceDepartment(e.department)
+      ? [
+        { label: "Fiscal Year End of Client", value: dateOnly(e.audit?.clientFiscalYearEnd) },
+        {
+          label: "Admin Fees",
+          value: e.audit?.adminFeesApply ? (currency(e.audit.adminFeesAmount) || "Yes") : "No"
+        }
+      ]
+      : []),
+    ...(isGcsDepartment(e.department)
+      ? [
+        { label: "Purchase Order No.", value: e.government?.purchaseOrderNumber },
+        { label: "Purchase Order Amount", value: currency(e.government?.purchaseOrderAmount) },
+        { label: "PO Beginning Date", value: dateOnly(e.government?.purchaseOrderStartDate) },
+        { label: "PO Ending Date", value: dateOnly(e.government?.purchaseOrderEndDate) },
+        { label: "Purchase Order", value: e.government?.purchaseOrderMediaId ? "On file" : "Not yet provided" },
+        { label: "Personnel Level", value: labelOf(personnelLevelOptions.value, e.government?.personnelLevel) },
+        { label: "Bill Rate / Hour", value: currency(e.government?.billRatePerHour) }
+      ]
+      : []),
+    ...(isTaxDepartment(e.department)
+      ? [
+        { label: "Fiscal Year End", value: dateOnly(e.tax?.fiscalYearEnd) },
+        { label: "Original Due Date", value: dateOnly(e.tax?.originalDueDate) },
+        { label: "First Extension Due Date", value: dateOnly(e.tax?.firstExtensionDueDate) }
+      ]
+      : []),
+    // The remaining conditional blocks say nothing when they do not apply, so they are hidden rather than
+    // shown empty — unlike the fields above, where blank IS the record.
     { label: "Contract Number", value: e.government?.contractNumber, hideWhenEmpty: true },
     {
       label: "Signed Client Acceptance Form",
-      value: e.audit ? (e.audit.clientAcceptanceFormMediaId ? "On file" : "Not yet provided") : "",
+      value: requiresClientAcceptanceForm(e.department)
+        ? (e.audit?.clientAcceptanceFormMediaId ? "On file" : "Not yet provided")
+        : "",
       hideWhenEmpty: true
     }
   ];
@@ -1376,6 +1433,28 @@ const createDraft = async () => {
       // Nothing was created, so nothing reloads and the picks are still on screen where they were made.
       pendingSetupPick = null;
     }
+  }
+};
+
+// Takes one already-saved attachment off the request. Confirmed first: it is not part of the autosaved
+// form — it writes immediately, and the document it detaches is one the approvers would otherwise read.
+// The link row goes; the stored file itself is left where it is.
+const removeAttachment = async (file, done) => {
+  try {
+    const ok = await confirm({
+      title: "Remove attachment",
+      message: `Take "${file.fileName || "this file"}" off this request? It stops being part of what the ` +
+        "approvers see. This does not delete the file itself.",
+      confirmLabel: "Remove",
+      type: "danger"
+    });
+    if (!ok) return;
+    request.value = await remsApi.removeFile(remsId.value, file.id);
+    notify.success("Attachment removed.");
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  } finally {
+    done?.();
   }
 };
 

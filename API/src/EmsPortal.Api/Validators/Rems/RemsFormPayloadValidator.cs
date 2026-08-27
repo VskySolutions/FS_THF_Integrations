@@ -67,6 +67,10 @@ public sealed class RemsFormPayloadValidator
         {
             RequireField(failures, "clientFirstName", payload.ClientFirstName, "First name is required.");
             RequireField(failures, "clientLastName", payload.ClientLastName, "Last name is required.");
+            // …and what IS typed has to read as a name. An individual client becomes a Person record under
+            // exactly these two boxes. See PersonNames, which the browser mirrors.
+            RequireName(failures, "clientFirstName", payload.ClientFirstName, "First name");
+            RequireName(failures, "clientLastName", payload.ClientLastName, "Last name");
         }
         else if (string.IsNullOrWhiteSpace(payload.ClientName))
         {
@@ -210,6 +214,8 @@ public sealed class RemsFormPayloadValidator
         {
             RequireField(failures, $"{prefix}.firstName", role.FirstName, "First name is required.");
             RequireField(failures, $"{prefix}.lastName", role.LastName, "Last name is required.");
+            RequireName(failures, $"{prefix}.firstName", role.FirstName, "First name");
+            RequireName(failures, $"{prefix}.lastName", role.LastName, "Last name");
         }
 
         if (string.IsNullOrWhiteSpace(role.Email))
@@ -227,6 +233,19 @@ public sealed class RemsFormPayloadValidator
         if (string.IsNullOrWhiteSpace(value))
         {
             failures.Add(new ValidationFailure(property, message));
+        }
+    }
+
+    /// <summary>
+    /// The value must read as a person's name where one was given. Silent on an empty value — the
+    /// <see cref="RequireField"/> beside it is what says the box has to be filled in, and reporting both
+    /// against one field would show the client two messages about one empty box.
+    /// </summary>
+    private static void RequireName(List<ValidationFailure> failures, string property, string? value, string label)
+    {
+        if (PersonNames.Issue(value, label) is { } issue)
+        {
+            failures.Add(new ValidationFailure(property, issue));
         }
     }
 

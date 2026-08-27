@@ -22,7 +22,7 @@
       <template #avatar><q-icon name="o_cancel" color="red-9" /></template>
       <div class="text-weight-medium">This engagement was rejected and returned for rework.</div>
       <div v-if="rejectionReason" class="q-mt-xs" style="white-space: pre-wrap;">Reason: {{ rejectionReason }}</div>
-      <div class="q-mt-xs">Update the setup as needed, then resubmit for a fresh approval round.</div>
+      <div class="q-mt-xs">Update the setup as needed, then resubmit for approval.</div>
     </q-banner>
 
     <div v-if="loading" class="row flex-center q-pa-lg"><q-spinner color="primary" size="28px" /></div>
@@ -232,7 +232,7 @@ const resubmitting = ref(false);
 const resubmit = async () => {
   const ok = await confirm({
     title: "Resubmit for approval",
-    message: "This creates a fresh approval round from the regenerated approver list and re-notifies every approver. Continue?",
+    message: "This sends the engagement to the regenerated approver list again and re-notifies every approver. Continue?",
     confirmLabel: "Resubmit"
   });
   if (!ok) return;

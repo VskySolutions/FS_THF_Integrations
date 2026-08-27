@@ -27,7 +27,11 @@
               <q-icon :name="metaFor(n.type).icon" :color="metaFor(n.type).color" />
             </q-item-section>
             <q-item-section>
-              <q-item-label class="text-weight-medium ellipsis">{{ n.title }}</q-item-label>
+              <!-- The title WRAPS. It was `ellipsis` — one line, cut off with a "…" — and a title is the
+                   one part of a notification that has to be readable without opening it: "A REMS
+                   engagement was declined…" could be any engagement, and the reader had no way to tell
+                   which without clicking through. A dropdown row is cheap; a wrong guess is not. -->
+              <q-item-label class="text-weight-medium notif__title">{{ n.title }}</q-item-label>
               <q-item-label caption lines="2">{{ n.body }}</q-item-label>
               <q-item-label caption>{{ formatDateTime(n.createdOnUtc) }}</q-item-label>
             </q-item-section>
@@ -49,12 +53,12 @@ import { useRouter } from "vue-router";
 import { ufNotificationApi } from "services/api";
 import { useDateFormat } from "composables/useDateFormat";
 import { useNotificationMeta } from "composables/uf/useNotificationMeta";
-import { useEntityMeta } from "composables/uf/useEntityMeta";
+import { useNotificationRoute } from "composables/uf/useNotificationRoute";
 
 const router = useRouter();
 const { formatDateTime } = useDateFormat();
 const { metaFor } = useNotificationMeta();
-const { routeFor } = useEntityMeta();
+const { routeForNotification } = useNotificationRoute();
 
 const unread = ref(0);
 const latest = ref([]);
@@ -90,7 +94,7 @@ const openNotification = async (n) => {
     } catch { /* ignore */ }
   }
   if (n.entityType && n.entityId) {
-    router.push(routeFor(n.entityType, n.entityId));
+    router.push(await routeForNotification(n));
   }
 };
 
@@ -101,3 +105,13 @@ onMounted(() => {
 
 onBeforeUnmount(() => clearInterval(timer));
 </script>
+
+<style scoped>
+/* q-item-label truncates by default inside a q-item — the class above only removed Quasar's `ellipsis`,
+   and the label still needs telling it may wrap. Words break where a long client or entity name would
+   otherwise push the row wider than the menu. */
+.notif__title {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+</style>

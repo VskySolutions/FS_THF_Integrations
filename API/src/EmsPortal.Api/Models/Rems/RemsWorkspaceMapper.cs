@@ -51,17 +51,24 @@ internal static class RemsWorkspaceMapper
             .Select(s => new RemsCommissionSplitView(s.Id, UserRef(s.EmployeeId, names)!, s.CommissionPercentage))
             .ToList();
 
-        var auditView = audit is null ? null : new RemsAuditDetailView(audit.Id, audit.ClientAcceptanceFormMediaId);
+        var auditView = audit is null
+            ? null
+            : new RemsAuditDetailView(
+                audit.Id, audit.ClientAcceptanceFormMediaId, audit.ClientAcceptanceFormMedia?.OriginalFileName,
+                audit.ClientFiscalYearEnd, audit.AdminFeesApply, audit.AdminFeesAmount);
         var govView = government is null
             ? null
             : new RemsGovernmentDetailView(
                 government.Id, government.ContractNumber, government.FloridaOnePercentStateFeeApplies,
                 government.ContractStartDate, government.ContractEndDate, government.OriginalTerm, government.RenewalTerms,
-                government.PurchaseOrderStartDate, government.PurchaseOrderEndDate);
+                government.PurchaseOrderStartDate, government.PurchaseOrderEndDate,
+                government.PurchaseOrderNumber, government.PurchaseOrderAmount,
+                government.PurchaseOrderMediaId, government.PurchaseOrderMedia?.OriginalFileName,
+                government.PersonnelLevel, government.BillRatePerHour);
         var taxView = tax is null
             ? null
             : new RemsTaxDetailView(
-                tax.Id, tax.FiscalYearEnd, tax.CalculatedDueDates,
+                tax.Id, tax.FiscalYearEnd, tax.OriginalDueDate, tax.FirstExtensionDueDate, tax.CalculatedDueDates,
                 tax.TaxForms.Where(f => !f.Deleted).Select(f => f.TaxFormId).ToList());
 
         return new RemsEngagementView(
@@ -73,6 +80,7 @@ internal static class RemsWorkspaceMapper
             UserRef(engagement.EngagementExecutiveId, names),
             UserRef(engagement.BillingManagerId, names),
             engagement.FirstYearFeeEstimate,
+            engagement.EngagementFee,
             engagement.RealizationPercentage,
             engagement.BillingPeriod,
             engagement.BillingProcessDescription,

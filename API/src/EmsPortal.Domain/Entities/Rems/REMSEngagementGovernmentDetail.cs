@@ -39,6 +39,30 @@ public class REMSEngagementGovernmentDetail : AuditableEntity
     /// <summary>Whether the Florida 1% state fee applies.</summary>
     public bool? FloridaOnePercentStateFeeApplies { get; set; }
 
+    // ---- GCS ----
+    // The GCS department is set up against a purchase order, and it is the SAME purchase order the two
+    // date columns above already carry — a government client is asked for its PO start and end on the
+    // intake form, and those answers are copied here. So GCS extends this row rather than opening a table
+    // of its own: a second copy of the PO dates is a second copy that can disagree with the first.
+    // A government AUDIT leaves everything below null, and a GCS engagement leaves the contract block above
+    // it null unless the client happens to have answered for it.
+
+    /// <summary>GCS: the purchase order's own reference. Alphanumeric — it is a reference, not a number.</summary>
+    public string? PurchaseOrderNumber { get; set; }
+
+    /// <summary>GCS: what the purchase order is worth.</summary>
+    public decimal? PurchaseOrderAmount { get; set; }
+
+    /// <summary>GCS: the uploaded purchase order document (Media).</summary>
+    public Guid? PurchaseOrderMediaId { get; set; }
+
+    /// <summary>GCS: the level the work is staffed at (option-set <c>REMS.PersonnelLevel</c> code).</summary>
+    public string? PersonnelLevel { get; set; }
+
+    /// <summary>GCS: the hourly rate billed at that level.</summary>
+    public decimal? BillRatePerHour { get; set; }
+
     // ---- Navigations ----
     public REMSEngagement? Engagement { get; set; }
+    public Media? PurchaseOrderMedia { get; set; }
 }

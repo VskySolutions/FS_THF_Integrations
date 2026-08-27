@@ -84,8 +84,8 @@
             </q-card-section>
             <q-separator />
             <q-card-section>
-              <q-input
-                v-model="form.name" outlined dense stack-label label="Name *" class="q-mb-md"
+              <app-text-field
+                v-model="form.name" label="Name" required class="q-mb-md"
                 :readonly="!canEditName"
                 :hint="role.isSystem ? 'System role names are fixed; permissions can still be tuned.' : undefined"
                 @blur="autoSaveName"
@@ -174,6 +174,7 @@ import { stripHtml } from "utils/richText";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppSelect from "components/common/AppSelect.vue";
+import AppTextField from "components/common/AppTextField.vue";
 import AppRichTextField from "components/common/AppRichTextField.vue";
 import AppInfoTip from "components/common/AppInfoTip.vue";
 import AppAutoSaveState from "components/common/AppAutoSaveState.vue";

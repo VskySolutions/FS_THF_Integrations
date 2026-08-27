@@ -17,10 +17,12 @@
             <app-name-prefix-field v-model="payload.clientPrefix" class="col-4 col-sm-2" />
             <app-text-field
               v-model="payload.clientFirstName" label="First Name" required class="col-8 col-sm-4"
+              :rules="nameRules('First Name')"
               :error="!!errors.clientFirstName" :error-message="errors.clientFirstName"
             />
             <app-text-field
               v-model="payload.clientLastName" label="Last Name" required class="col-12 col-sm-6"
+              :rules="nameRules('Last Name')"
               :error="!!errors.clientLastName" :error-message="errors.clientLastName"
             />
           </template>
@@ -111,7 +113,9 @@
           v-model="payload.physicalAddress" required :errors="addressErrors(errors, 'physicalAddress')"
         />
 
-        <div class="cif-addr-head q-mt-lg">
+        <q-separator class="cif-rule" />
+
+        <div class="cif-addr-head">
           <div class="cif-subhead">
             Mailing Address
             <q-icon name="o_info" size="15px" color="grey-6" class="cif-subhead__info">
@@ -130,7 +134,9 @@
           v-model="payload.mailingAddress" required :errors="addressErrors(errors, 'mailingAddress')"
         />
 
-        <div class="cif-addr-head q-mt-lg">
+        <q-separator class="cif-rule" />
+
+        <div class="cif-addr-head">
           <div class="cif-subhead">
             Billing Address
             <q-icon name="o_info" size="15px" color="grey-6" class="cif-subhead__info">
@@ -163,7 +169,9 @@
              this here: an individual in two plain boxes (it is usually them, so it is optional and asked
              lightly), everyone else as the full Billing Contact — a first name, a last name, an email and
              a phone. -->
-        <div class="cif-subhead q-mt-lg">
+        <q-separator class="cif-rule" />
+
+        <div class="cif-subhead">
           Billing Contact
           <q-icon name="o_info" size="15px" color="grey-6" class="cif-subhead__info">
             <q-tooltip anchor="top middle" self="bottom middle" max-width="300px" :delay="200">
@@ -304,6 +312,7 @@ import {
   addressHasContent, copyIntakeAddress, intakeRoleDefs, newRelatedEntity, relatedEntityHasData
 } from "modules/rems/useRemsIntakeForm";
 
+import { nameRules } from "utils/personName";
 import AppTextField from "components/common/AppTextField.vue";
 import AppNamePrefixField from "components/common/AppNamePrefixField.vue";
 import AppSelect from "components/common/AppSelect.vue";
@@ -409,6 +418,14 @@ function onToggleRelated (val) {
   text-transform: uppercase;
   color: var(--q-primary);
   margin-bottom: 8px;
+}
+/* The rule between two groups of fields inside one card. Three addresses one under another are three
+   answers to three different questions, and whitespace alone left them reading as one long block —
+   which is how a mailing address ends up typed into the physical one. The line does the separating and
+   carries the spacing with it, so the headings below it sit where the old q-mt-lg put them. */
+.cif-rule {
+  margin: 22px 0 16px;
+  background: var(--line, #e0e6ed);
 }
 /* Heading and its copy button on one baseline. The button sits with the label it fills in, so it reads as
    "this address, copied from that one" rather than as a stray action above the fields. */

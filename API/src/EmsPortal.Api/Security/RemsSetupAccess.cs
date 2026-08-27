@@ -67,11 +67,23 @@ internal static class RemsSetupAccess
     /// has answered it is the Admin who picked the request up, and only them — which is why a request
     /// nobody has picked up is nobody's to work until somebody does.
     /// <para>
-    /// One exception to "whoever it is with": a REMS Admin may work any DRAFT, whoever raised it. A draft
-    /// has not been sent to anybody, so there is no handover to cut across — and an admin who can now SEE
-    /// a colleague's unfinished referral needs to be able to finish and send it, which is the whole point
-    /// of their seeing it. The exception stops at draft: once the intake link is out, the stage rules below
-    /// decide, and no admin can take a request another admin is holding.
+    /// Two exceptions to "whoever it is with", and both are a REMS Admin's:
+    /// </para>
+    /// <para>
+    /// A REMS Admin may work any DRAFT, whoever raised it. A draft has not been sent to anybody, so there
+    /// is no handover to cut across — and an admin who can now SEE a colleague's unfinished referral needs
+    /// to be able to finish and send it, which is the whole point of their seeing it.
+    /// </para>
+    /// <para>
+    /// A REMS Admin may also work a request in either REWORK state — returned by the admin, or sent back
+    /// after the approvers declined it. A send-back asks the initiator for the changes; it does not take
+    /// the request off the admin's desk, and it is the admin who routes it onward once it comes back. The
+    /// old rule read the rework states as plain initiator stages and locked the admin out of a request
+    /// they had been reviewing minutes earlier, over a correction they were the ones who asked for.
+    /// </para>
+    /// <para>
+    /// Neither exception reaches the ADMIN stages: once the client has answered, only the admin holding the
+    /// request may work it, and no admin can take one another admin is holding.
     /// </para>
     /// <para>
     /// Says nothing about the engagement being locked for approval — that is the engagement's own status,
@@ -85,14 +97,11 @@ internal static class RemsSetupAccess
             return true;
         }
 
-        if (rems.Status == RemsRequestStatuses.Draft && IsRemsAdmin(user))
-        {
-            return true;
-        }
-
         if (RemsRequestStatuses.IsWithInitiator(rems.Status))
         {
-            return IsInitiator(rems, me) || rems.CSEId == me;
+            return IsInitiator(rems, me)
+                || rems.CSEId == me
+                || (IsRemsAdmin(user) && (rems.Status == RemsRequestStatuses.Draft || RemsRequestStatuses.IsRework(rems.Status)));
         }
 
         return rems.AdminAssignedToId is { } admin && admin == me;
@@ -101,7 +110,7 @@ internal static class RemsSetupAccess
     /// <summary>The refusal that goes with a failed <see cref="CanWork"/>, worded for the stage it failed at.</summary>
     public static string WorkDeniedReason(REMS rems)
         => RemsRequestStatuses.IsWithInitiator(rems.Status)
-            ? "This request is with the person who raised it; only they (or the CSE named on it) can work its engagement setup."
+            ? "This request is with the person who raised it; only they (or the CSE named on it), or a REMS Admin, can work its engagement setup."
             : rems.AdminAssignedToId is null
                 ? "This request is waiting for pickup. Pick it up from EMS Review to work its engagement setup."
                 : "This request is being reviewed by another admin; only they can work its engagement setup.";

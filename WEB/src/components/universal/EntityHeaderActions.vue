@@ -48,7 +48,7 @@
     <!-- Reminder drawer -->
     <app-form-drawer v-model="reminderOpen" title="Set reminder" :saving="savingReminder" @submit="saveReminder" @cancel="reminderOpen = false">
       <q-form>
-        <q-input v-model="reminderForm.dueAt" type="datetime-local" outlined dense label="Remind me at *" />
+        <app-text-field v-model="reminderForm.dueAt" type="datetime-local" label="Remind me at" required />
         <app-text-field v-model="reminderForm.note" label="Note" type="textarea" autogrow class="q-mt-sm" />
       </q-form>
       <template #footer-actions>

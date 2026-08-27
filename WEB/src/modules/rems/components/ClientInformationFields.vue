@@ -209,15 +209,19 @@
     </div>
 
     <!-- Already-attached files, so a request being edited says what it is already carrying rather than
-         showing an empty picker over documents nobody can see from here. -->
+         showing an empty picker over documents nobody can see from here. Same row as the picker below
+         puts under a freshly chosen file — the icon for its type, its size, and a click that opens it —
+         so a document looks the same before and after it is saved. The ✕ is offered only while the form
+         is editable: the wrong document attached to a request is one every approver then reads. -->
     <div v-if="files.length" class="rf-files q-mt-md">
-      <div class="rf-files__title">Attached</div>
-      <a
-        v-for="file in files" :key="file.id" class="rf-file"
-        :href="fileUrl(file)" target="_blank" rel="noopener"
-      >
-        <q-icon name="o_description" size="16px" />{{ file.fileName || "Attachment" }}
-      </a>
+      <app-field-label label="Attached" />
+      <div class="column q-gutter-xs">
+        <app-stored-file-item
+          v-for="file in files" :key="file.id"
+          :file="file" :removable="!readonly" :disable="removingId === file.id"
+          @remove="removeFile(file)"
+        />
+      </div>
     </div>
 
     <app-multi-file-upload
@@ -252,6 +256,7 @@ import AppSelect from "components/common/AppSelect.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
 import AppFieldLabel from "components/common/AppFieldLabel.vue";
 import AppMultiFileUpload from "components/common/AppMultiFileUpload.vue";
+import AppStoredFileItem from "components/common/AppStoredFileItem.vue";
 
 const props = defineProps({
   modelValue: { type: Object, required: true },
@@ -292,7 +297,11 @@ const props = defineProps({
 // to the object the page owns (see `model` below), so the page watches that and sees those itself; files
 // wait here until save time and are invisible to it until then. The two classification updates are
 // ordinary v-models: the page owns those values and writes them with endpoints of their own.
-const emit = defineEmits(["update:modelValue", "change", "update:industryGroup", "update:subIndustry"]);
+// `remove-file` is handed up rather than called here: detaching writes to the server against the request
+// id, and it is the page that knows the request exists and owns the `files` list this reads.
+const emit = defineEmits([
+  "update:modelValue", "change", "update:industryGroup", "update:subIndustry", "remove-file"
+]);
 
 const notify = useNotify();
 const { typeHint, industryGroupLabel, subIndustryLabel } = useRemsMeta();
@@ -325,7 +334,13 @@ const attachmentError = computed(() => {
   return `These files total ${(total / 1024 / 1024).toFixed(1)} MB — the limit is 100 MB across all of them.`;
 });
 
-const fileUrl = (file) => mediaApi.absoluteUrl(file.url);
+// The file currently being detached, so its row greys out rather than the whole list doing so.
+const removingId = ref(null);
+const removeFile = (file) => {
+  removingId.value = file.id;
+  // The page answers by re-seeding `files`; either way the row stops being busy once the list changes.
+  emit("remove-file", file, () => { removingId.value = null; });
+};
 
 // Uploading happens at the page's save, not as a side effect of picking a file: on a brand-new request
 // there is nothing to attach media TO until the request has been created. So the files wait here and the
@@ -652,25 +667,9 @@ onBeforeUnmount(() => {
 }
 .rf-hint--error { color: #c10015; }
 
-.rf-files {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 14px;
-}
-.rf-files__title {
-  font-size: 12px;
-  color: var(--ink-500);
-}
-.rf-file {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 13px;
-  color: var(--q-primary);
-  text-decoration: none;
-}
-.rf-file:hover { text-decoration: underline; }
+/* The attached files stack as preview rows (AppStoredFileItem) rather than wrapping as a line of links,
+   so each one carries its type icon, its size and its own ✕. */
+.rf-files { display: block; }
 
 .rf-question {
   margin: 10px 0 10px;

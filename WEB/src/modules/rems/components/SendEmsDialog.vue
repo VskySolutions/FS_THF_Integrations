@@ -1,6 +1,6 @@
 <template>
   <q-dialog v-model="open" persistent>
-    <q-card style="width: 620px; max-width: 92vw;">
+    <q-card class="send-dialog">
       <q-card-section class="row items-center no-wrap">
         <div>
           <div class="text-h6">{{ phase === "sent" ? copy.sentTitle : copy.title }}</div>
@@ -221,6 +221,22 @@ watch(() => props.modelValue, (isOpen) => {
 </script>
 
 <style scoped>
+/* This dialog is not a confirmation — it is the email itself, edited before it goes, and the body is a
+   rich-text editor holding the tenant's template. At the 620px a dialog usually gets, that template
+   wrapped into a narrow ribbon that read nothing like what the client receives. So it takes 70% of the
+   window, which needs `max-width` as well as `width`: Quasar caps a minimized dialog at 560px, and a
+   width alone loses to it. Below a laptop the percentage stops helping and it goes near-full-width. */
+.send-dialog {
+  width: 70vw;
+  max-width: 70vw;
+}
+@media (max-width: 1023px) {
+  .send-dialog {
+    width: 92vw;
+    max-width: 92vw;
+  }
+}
+
 /* The email fields stack with even spacing; the rich-text editor needs the room, and a long template
    body should scroll inside the dialog rather than pushing the actions off-screen. */
 .send-body {

@@ -8,7 +8,8 @@
 export const NotificationType = Object.freeze({
   Mention: 1,
   ReminderDue: 2,
-  // REMS (Phase 15, WO-111..114). All in-app only; each deep-links to the REMS request via EntityType.Rems.
+  // REMS (Phase 15, WO-111..114). All in-app only; each carries the REMS request id via EntityType.Rems.
+  // The three an APPROVER can receive send them to their own task instead — see useNotificationRoute.
   RemsRequestAssigned: 7,
   RemsCseAssigned: 8,
   RemsFormSent: 9,

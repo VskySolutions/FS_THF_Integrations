@@ -31,6 +31,7 @@ internal sealed class RemsEngagementConfiguration : IEntityTypeConfiguration<REM
         // sentences a schedule takes, short enough that nobody pastes an engagement letter into it.
         builder.Property(e => e.BillingProcessDescription).HasMaxLength(1000);
         builder.Property(e => e.FirstYearFeeEstimate).HasPrecision(18, 2);
+        builder.Property(e => e.EngagementFee).HasPrecision(18, 2);
         builder.Property(e => e.RealizationPercentage).HasPrecision(5, 2);
         builder.Property(e => e.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
 
@@ -54,8 +55,17 @@ internal sealed class RemsEngagementAuditDetailConfiguration : IEntityTypeConfig
 {
     public void Configure(EntityTypeBuilder<REMSEngagementAuditDetail> builder)
     {
-        builder.ToTable("REMSEngagementAuditDetail");
+        builder.ToTable("REMSEngagementAuditDetail", t =>
+        {
+            // Assurance's administrative fees. A negative charge is not a fee, and the browser and the API
+            // both refuse one — this is the floor under both.
+            t.HasCheckConstraint(
+                "CK_REMSEngagementAuditDetail_AdminFeesAmount",
+                "[AdminFeesAmount] IS NULL OR [AdminFeesAmount] >= 0");
+        });
         builder.HasKey(d => d.Id);
+
+        builder.Property(d => d.AdminFeesAmount).HasPrecision(18, 2);
 
         builder.HasOne<Tenant>().WithMany().HasForeignKey(d => d.TenantId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(d => d.TenantId);
@@ -71,17 +81,29 @@ internal sealed class RemsEngagementGovernmentDetailConfiguration : IEntityTypeC
 {
     public void Configure(EntityTypeBuilder<REMSEngagementGovernmentDetail> builder)
     {
-        builder.ToTable("REMSEngagementGovernmentDetail");
+        builder.ToTable("REMSEngagementGovernmentDetail", t =>
+        {
+            // GCS's two money columns. Neither can be negative — a purchase order is worth what it is
+            // worth, and an hour is billed at a rate, not a credit.
+            t.HasCheckConstraint(
+                "CK_REMSEngagementGovernmentDetail_PoAmounts",
+                "([PurchaseOrderAmount] IS NULL OR [PurchaseOrderAmount] >= 0) AND ([BillRatePerHour] IS NULL OR [BillRatePerHour] >= 0)");
+        });
         builder.HasKey(d => d.Id);
 
         builder.Property(d => d.OriginalTerm).HasMaxLength(500);
         builder.Property(d => d.RenewalTerms).HasMaxLength(500);
         builder.Property(d => d.ContractNumber).HasMaxLength(64);
+        builder.Property(d => d.PurchaseOrderNumber).HasMaxLength(64);
+        builder.Property(d => d.PersonnelLevel).HasMaxLength(64);
+        builder.Property(d => d.PurchaseOrderAmount).HasPrecision(18, 2);
+        builder.Property(d => d.BillRatePerHour).HasPrecision(18, 2);
 
         builder.HasOne<Tenant>().WithMany().HasForeignKey(d => d.TenantId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(d => d.TenantId);
 
         builder.HasOne(d => d.Engagement).WithMany().HasForeignKey(d => d.REMSEngagementId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(d => d.PurchaseOrderMedia).WithMany().HasForeignKey(d => d.PurchaseOrderMediaId).OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(d => new { d.TenantId, d.REMSEngagementId }).IsUnique().HasFilter("[Deleted] = 0");
     }

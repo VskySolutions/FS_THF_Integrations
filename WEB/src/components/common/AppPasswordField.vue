@@ -12,7 +12,13 @@
     :disable="disable"
     :readonly="readonly"
     :autocomplete="autocomplete"
+    :maxlength="maxlength"
+    :autofocus="autofocus"
+    @blur="emit('blur', $event)"
   >
+    <template v-if="$slots.prepend" #prepend>
+      <slot name="prepend" />
+    </template>
     <template #append>
       <!-- Toggle masking. Reused everywhere a password is entered (UI consistency / DRY). -->
       <q-icon
@@ -44,10 +50,12 @@ const props = defineProps({
   disable: { type: Boolean, default: false },
   readonly: { type: Boolean, default: false },
   // Discourage browser autofill on credential forms by default.
-  autocomplete: { type: String, default: "new-password" }
+  autocomplete: { type: String, default: "new-password" },
+  maxlength: { type: [String, Number], default: undefined },
+  autofocus: { type: Boolean, default: false }
 });
 
-const emit = defineEmits(["update:modelValue"]);
+const emit = defineEmits(["update:modelValue", "blur"]);
 
 const model = computed({
   get: () => props.modelValue,

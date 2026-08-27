@@ -88,9 +88,9 @@ public static class DefaultOptionSets
             new ItemDefinition("awaiting_admin_confirmation", "Awaiting Admin Confirmation", 5, Description:
                 "The initiator revised the setup and handed it back for the Admin to confirm."),
             new ItemDefinition("pending_approval", "Pending Approval", 6, Description:
-                "Routed to the approvers. Every field is read-only while a round is open."),
+                "Routed to the approvers. Every field is read-only while the approval is open."),
             new ItemDefinition("changes_requested", "Changes Requested", 7, Description:
-                "Enough approvers declined to close the round. Back with the initiator to rework the setup."),
+                "Enough approvers declined. Back with the initiator to rework the setup."),
             new ItemDefinition("approved", "Approved", 8, Description:
                 "Fully approved. Permanently read-only."),
         }),
@@ -212,11 +212,26 @@ public static class DefaultOptionSets
             new ItemDefinition("tax", "Tax", 2),
             new ItemDefinition("audit", "Audit", 3),
             new ItemDefinition("gcs", "GCS", 4),
+            // Attest work priced for the engagement rather than for its first year. It is asked the signed
+            // client-acceptance form the Audit department is, plus the client's fiscal year end and whether
+            // administrative fees are charged — see RemsEngagementCodes.IsAssurance.
+            new ItemDefinition("assurance", "Assurance", 5),
             // The firm's own internal work, booked as an engagement so it routes through the same setup and
             // approval as client work. Carries no conditional detail: the audit and tax cards key off the
             // "audit" and "tax" codes specifically, so an Admin engagement asks for neither a signed CAF
             // nor a fiscal year end.
-            new ItemDefinition("admin", "Admin", 5),
+            new ItemDefinition("admin", "Admin", 6),
+        }),
+        // How a GCS engagement is staffed, which with the bill rate beside it is how the work is priced.
+        // One level per engagement — a single rate for the whole piece of work, not a rate card.
+        new Definition(EntityType.Rems, "REMS.PersonnelLevel", "REMS Personnel Level", OptionItemSortMode.Custom, new[]
+        {
+            new ItemDefinition("principal", "Principal", 1),
+            new ItemDefinition("senior_consultant", "Senior Consultant", 2),
+            new ItemDefinition("consultant", "Consultant", 3),
+            new ItemDefinition("junior_consultant", "Junior Consultant", 4),
+            new ItemDefinition("project_analyst", "Project Analyst", 5),
+            new ItemDefinition("program_admin_support", "Program and Administrative Support", 6),
         }),
         // The service actually being sold. This IS "Service Line" now (its key stays REMS.SubServiceLine,
         // because a tenant's own copy of a list is keyed by it and renaming the key would orphan theirs).

@@ -41,6 +41,9 @@ internal sealed class RemsEngagementRepository : IRemsEngagementRepository
         => engagementIds.Count == 0
             ? Array.Empty<REMSEngagementAuditDetail>()
             : await _dbContext.RemsEngagementAuditDetails
+                // The signed client-acceptance form travels with the detail: the workspace names the
+                // document on screen, and a media id on its own is not something anyone can read.
+                .Include(d => d.ClientAcceptanceFormMedia)
                 .Where(d => engagementIds.Contains(d.REMSEngagementId))
                 .ToListAsync(cancellationToken);
 
@@ -48,6 +51,9 @@ internal sealed class RemsEngagementRepository : IRemsEngagementRepository
         => engagementIds.Count == 0
             ? Array.Empty<REMSEngagementGovernmentDetail>()
             : await _dbContext.RemsEngagementGovernmentDetails
+                // The uploaded purchase order travels with the detail, for the same reason the CAF does:
+                // the workspace names the document on screen, and a media id is not a name.
+                .Include(d => d.PurchaseOrderMedia)
                 .Where(d => engagementIds.Contains(d.REMSEngagementId))
                 .ToListAsync(cancellationToken);
 

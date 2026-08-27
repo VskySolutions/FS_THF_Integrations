@@ -15,8 +15,10 @@ namespace EmsPortal.Api.Controllers;
 /// <summary>
 /// Conversations — the freeform, @mention-aware thread on any entity record, addressed through the
 /// shared <c>(EntityType, EntityId)</c> key. A record has one conversation; each row here is one
-/// message in it. Access requires the read permission of the parent entity; editing is author-only;
-/// deletion is author-or-admin. Tenant-scoped via the ambient query filter.
+/// message in it. Access requires the read permission of the parent entity — or, on a REMS
+/// request, an approval task routed to the caller on it, which is how the REMS seat roles reach the
+/// thread on a request they hold no permission key for. Editing is author-only; deletion is
+/// author-or-admin. Tenant-scoped via the ambient query filter.
 /// </summary>
 [ApiController]
 [Authorize]
@@ -39,19 +41,22 @@ public sealed class ConversationMessagesController : ControllerBase
     private readonly IActivityEventWriter _activity;
     private readonly INotificationDispatcher _notifications;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IRemsApprovalRepository _approvals;
 
     public ConversationMessagesController(
         IConversationMessageRepository messages,
         IUserRepository users,
         IActivityEventWriter activity,
         INotificationDispatcher notifications,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IRemsApprovalRepository approvals)
     {
         _messages = messages;
         _users = users;
         _activity = activity;
         _notifications = notifications;
         _unitOfWork = unitOfWork;
+        _approvals = approvals;
     }
 
     [HttpGet]
@@ -65,7 +70,7 @@ public sealed class ConversationMessagesController : ControllerBase
         [FromQuery] int limit = 20,
         CancellationToken cancellationToken = default)
     {
-        if (!User.CanAccess(entityType))
+        if (!await CanReadConversationAsync(entityType, entityId, cancellationToken))
         {
             return Forbid();
         }
@@ -82,7 +87,7 @@ public sealed class ConversationMessagesController : ControllerBase
     [ProducesResponseType<ApiResponse<ConversationMessageResponse>>(StatusCodes.Status201Created)]
     public async Task<IActionResult> Create([FromBody] CreateConversationMessageRequest request, CancellationToken cancellationToken)
     {
-        if (!User.CanAccess(request.EntityType))
+        if (!await CanReadConversationAsync(request.EntityType, request.EntityId, cancellationToken))
         {
             return Forbid();
         }
@@ -171,6 +176,43 @@ public sealed class ConversationMessagesController : ControllerBase
         _messages.Remove(message);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return Ok(ApiResponseFactory.Success(new { conversationMessageId = id }, "Message deleted."));
+    }
+
+    /// <summary>
+    /// Whether the caller may read or post on this record's conversation: the parent entity's read
+    /// permission, or — on a REMS request — having been routed an approval task on that request.
+    /// <para>
+    /// The second path is what the REMS seat roles need. CSE, Engagement Executive, Billing Manager and
+    /// Shareholder grant no permission keys at all, and that is deliberate (see
+    /// <c>Permissions.ForSeatRole</c>): what a seat holder may do follows from being ON the engagement,
+    /// not from a key. So an approver holding only a seat role failed
+    /// <see cref="UniversalFeatureEntityAccess.CanAccess"/> against every REMS record — including the one
+    /// their own approval task was asking them to sign off — and the conversation panel on that task
+    /// answered them with a 403. Which is the panel there for: an approver's question has to reach the
+    /// partner who raised the request and the CSE, and a thread they cannot open is no route at all.
+    /// </para>
+    /// <para>
+    /// The same rule and the same query already admit them to the request itself
+    /// (<c>RemsRequestsController.Get</c>), so this closes a gap between two surfaces rather than opening
+    /// anything new: an approver who can read the request can now read the thread hanging off it.
+    /// </para>
+    /// <para>
+    /// Scoped to the ONE request they were routed — it is asked with that record's id, so it admits nobody
+    /// to conversations at large. Asked only after the permission check says no, so an ordinary reader
+    /// still costs no query.
+    /// </para>
+    /// </summary>
+    private async Task<bool> CanReadConversationAsync(
+        EntityType entityType, Guid entityId, CancellationToken cancellationToken)
+    {
+        if (User.CanAccess(entityType))
+        {
+            return true;
+        }
+
+        return entityType == EntityType.Rems
+            && User.GetUserId() is { } me
+            && await _approvals.IsApproverOnRequestAsync(entityId, me, cancellationToken);
     }
 
     private async Task NotifyMentionsAsync(ConversationMessage message, IReadOnlyCollection<Guid> mentionIds, CancellationToken cancellationToken)

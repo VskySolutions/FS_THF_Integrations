@@ -90,9 +90,22 @@ const SEED = {
     { label: "Tax", value: "tax" },
     { label: "Audit", value: "audit" },
     { label: "GCS", value: "gcs" },
+    // Attest work priced for the engagement rather than for its first year — asked the signed
+    // client-acceptance form Audit is, plus the client's fiscal year end and the administrative fees.
+    { label: "Assurance", value: "assurance" },
     // The firm's own internal work. Carries no conditional detail — the audit and tax cards on the setup
     // key off the "audit" and "tax" codes specifically.
     { label: "Admin", value: "admin" }
+  ],
+  // How a GCS engagement is staffed. With the bill rate beside it, this is how the work is priced — one
+  // level per engagement rather than a rate card.
+  personnelLevel: [
+    { label: "Principal", value: "principal" },
+    { label: "Senior Consultant", value: "senior_consultant" },
+    { label: "Consultant", value: "consultant" },
+    { label: "Junior Consultant", value: "junior_consultant" },
+    { label: "Project Analyst", value: "project_analyst" },
+    { label: "Program and Administrative Support", value: "program_admin_support" }
   ],
   // Pairs with the engagement's Description of Billing Process, which is where a schedule that does not
   // reduce to a frequency gets written out. There is deliberately no "Custom" — that is what the
@@ -198,7 +211,8 @@ const SET_KEYS = {
   department: "REMS.Department",
   subServiceLine: "REMS.SubServiceLine",
   subIndustry: "REMS.SubIndustry",
-  billingPeriod: "REMS.BillingPeriod"
+  billingPeriod: "REMS.BillingPeriod",
+  personnelLevel: "REMS.PersonnelLevel"
 };
 
 // Module-level and shared: these lists are per-tenant and change rarely, so resolving them once beats

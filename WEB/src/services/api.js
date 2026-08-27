@@ -227,7 +227,15 @@ export const mediaApi = {
     return api.post("/api/media", form, { headers: { "Content-Type": "multipart/form-data" } }).then(unwrap);
   },
   // Absolute URL for a media public path (the API serves public media anonymously).
-  absoluteUrl: (publicUrl) => (publicUrl ? `${process.env.API_BASE_URL || ""}${publicUrl}` : null)
+  // ONLY profile pictures are public — everything else 401s on a bare URL, so use `content` below
+  // (or openStoredFile in composables/useFilePreview) for attachments.
+  absoluteUrl: (publicUrl) => (publicUrl ? `${process.env.API_BASE_URL || ""}${publicUrl}` : null),
+  // The file's bytes, fetched through the AUTHENTICATED client. /api/media/{id}/content refuses an
+  // anonymous caller for anything but a profile picture, and a browser following a plain href — an
+  // <a target="_blank">, an <img src>, a new tab — sends no Authorization header, which is what made
+  // every attachment answer {"code":"UNAUTHORIZED","details":"Authentication required."}. Fetching the
+  // blob here and handing THAT to the tab is what makes an attachment openable.
+  content: (mediaId) => api.get(`/api/media/${mediaId}/content`, { responseType: "blob" }).then((r) => r?.data)
 };
 
 // Per-tenant SMTP email accounts (WO-80/81). Reads require users.read; writes require email.manage.
@@ -490,6 +498,8 @@ export const remsApi = {
   // Attach already-uploaded media (POST /api/media first) to an existing request. Media the request
   // already carries is ignored, so a retried save cannot file the same document twice. Returns the detail.
   addFiles: (id, mediaIds) => api.post(`/api/rems/requests/${id}/files`, { mediaIds }).then(unwrap),
+  // Takes one attached file off the request (the link row, not the stored blob). Returns the detail.
+  removeFile: (id, fileId) => api.delete(`/api/rems/requests/${id}/files/${fileId}`).then(unwrap),
 
   // ---- The admin ↔ initiator rework loop ----
   // The admin returns a request for engagement-setup rework. Only valid while the request is with the
@@ -627,18 +637,30 @@ export const remsApi = {
   // more: what the client submitted is read from the immutable snapshot rather than edited. The three
   // endpoints stand; add the wrapper back with whatever screen wants them.
   // payload: any subset of { department, subServiceLine, subIndustry, departmentDirectorId,
-  //   engagementExecutiveId, billingManagerId, firstYearFeeEstimate, realizationPercentage, billingPeriod,
-  //   billingProcessDescription } — null fields are left unchanged. Service Line (`subServiceLine`),
-  //   Industry (`subIndustry`) and the billing description are optional and therefore CLEARED with an
-  //   empty string, not with null.
+  //   engagementExecutiveId, billingManagerId, firstYearFeeEstimate, engagementFee, realizationPercentage,
+  //   billingPeriod, billingProcessDescription } — null fields are left unchanged. Service Line
+  //   (`subServiceLine`), Industry (`subIndustry`) and the billing description are optional and therefore
+  //   CLEARED with an empty string, not with null. `engagementFee` is Assurance's own fee and a column of
+  //   its own — it is not a relabelled `firstYearFeeEstimate`.
   // Returns { engagement, mappedDepartmentDirectorId } — the director the chosen department maps to (hint).
   updateEngagement: (id, payload) => api.put(`/api/rems/engagements/${id}`, payload).then(unwrap),
-  // Link a previously-uploaded media id as the signed client-acceptance form (audit engagements).
+  // Link a previously-uploaded media id as the signed client-acceptance form (Audit and Assurance).
   uploadCaf: (id, mediaId) => api.post(`/api/rems/engagements/${id}/audit/client-acceptance-form`, { mediaId }).then(unwrap),
+  // payload: { clientFiscalYearEnd?, adminFeesApply?, adminFeesAmount? } — the Assurance half of the attest
+  // detail the CAF above shares. Answering adminFeesApply=false clears the amount server-side.
+  updateAuditDetail: (id, payload) => api.put(`/api/rems/engagements/${id}/audit`, payload).then(unwrap),
   // payload: { contractNumber?, floridaOnePercentStateFeeApplies?, contractStartDate?, contractEndDate?,
-  //   originalTerm?, renewalTerms?, purchaseOrderStartDate?, purchaseOrderEndDate? } (government audit).
+  //   originalTerm?, renewalTerms?, purchaseOrderStartDate?, purchaseOrderEndDate?,
+  //   purchaseOrderNumber?, purchaseOrderAmount?, personnelLevel?, billRatePerHour? }.
+  // ONE row holds the government audit's contract block and the GCS purchase order, and every field is
+  // written from the payload — so send the whole row back, not just the half your card shows.
   updateGovernment: (id, payload) => api.put(`/api/rems/engagements/${id}/government`, payload).then(unwrap),
-  // payload: { fiscalYearEnd?, taxFormIds:[] } — the response tax detail carries the recomputed due dates.
+  // Link a previously-uploaded media id as the GCS engagement's purchase-order document.
+  uploadPurchaseOrder: (id, mediaId) =>
+    api.post(`/api/rems/engagements/${id}/government/purchase-order`, { mediaId }).then(unwrap),
+  // payload: { fiscalYearEnd?, originalDueDate?, firstExtensionDueDate?, taxFormIds:[] }. A due date left
+  // null is DERIVED from the fiscal year end rather than cleared — the rule is the default, not the only
+  // answer — so the response carries the effective pair either way.
   updateTax: (id, payload) => api.put(`/api/rems/engagements/${id}/tax`, payload).then(unwrap),
   // Every approval round on an engagement, oldest first:
   //   [{ roundId, roundNumber, status, sentOnUtc, sentBy, completedOnUtc, declineThreshold, declineCount,
@@ -703,6 +725,12 @@ export const remsApi = {
   // `firstYearFeeEstimate`/`realizationPercentage` are null with `financialsRestricted` true for roles
   // other than Department Director (AC-REMS-019.10).
   approvalTask: (taskId) => api.get(`/api/rems/approval-tasks/${taskId}`).then(unwrap),
+  // The caller's OWN approval task on a request — `{ taskId }`, or a 404 when they hold none. REMS
+  // notifications carry the REQUEST id (the one id every recipient shares), so an approver following one
+  // needs the task resolved before it can send them to the right screen. The 404 is the ordinary answer
+  // for every non-approver recipient and the caller's cue to fall back to the request.
+  myApprovalTaskForRequest: (remsId) =>
+    api.get(`/api/rems/approval-tasks/for-request/${remsId}`).then(unwrap),
   // Check / uncheck one checklist item on the caller's own task. Returns the updated item view.
   setChecklistItem: (taskId, itemId, isCompleted) =>
     api.put(`/api/rems/approval-tasks/${taskId}/checklist/${itemId}`, { isCompleted }).then(unwrap),

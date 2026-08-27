@@ -40,10 +40,10 @@
             <!-- The title, to the left of the name it belongs in front of. Held apart from the name
                  because a person is filed under a given name and a family name, and "Dr." is neither. -->
             <app-name-prefix-field v-model="form.prefix" class="col-6 col-sm-2" :disable="!canWrite" />
-            <app-text-field v-model="form.firstName" label="First Name" class="col-6 col-sm-4" :disable="!canWrite" :rules="[(v) => !!v || 'Required']" />
-            <app-text-field v-model="form.middleName" label="Middle Name" class="col-12 col-sm-6" :disable="!canWrite" />
-            <app-text-field v-model="form.lastName" label="Last Name" class="col-12 col-sm-6" :disable="!canWrite" :rules="[(v) => !!v || 'Required']" />
-            <app-text-field v-model="form.preferredName" label="Preferred Name" class="col-12 col-sm-6" :disable="!canWrite" />
+            <app-text-field v-model="form.firstName" label="First Name" class="col-6 col-sm-4" :disable="!canWrite" :rules="nameRules('First name', { required: true })" />
+            <app-text-field v-model="form.middleName" label="Middle Name" class="col-12 col-sm-6" :disable="!canWrite" :rules="nameRules('Middle name')" />
+            <app-text-field v-model="form.lastName" label="Last Name" class="col-12 col-sm-6" :disable="!canWrite" :rules="nameRules('Last name', { required: true })" />
+            <app-text-field v-model="form.preferredName" label="Preferred Name" class="col-12 col-sm-6" :disable="!canWrite" :rules="nameRules('Preferred name')" />
             <app-text-field v-model="form.displayName" label="Display Name" class="col-12 col-sm-6" :disable="!canWrite" />
             <app-select v-model="form.gender" :options="genderOptions" label="Gender" class="col-12 col-sm-6" />
             <app-date-field v-model="form.dateOfBirth" label="Date of Birth" class="col-12 col-sm-6" :disable="!canWrite" />
@@ -86,6 +86,7 @@ import { personApi, getApiErrorMessage } from "services/api";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import { useNotify } from "composables/useNotify";
 import { useTenantOptions } from "composables/useTenantOptions";
+import { nameRules } from "utils/personName";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import AppTextField from "components/common/AppTextField.vue";

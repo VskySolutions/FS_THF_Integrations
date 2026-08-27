@@ -159,6 +159,7 @@ public sealed record RemsEngagementView(
     RemsUserRef? EngagementExecutive,
     RemsUserRef? BillingManager,
     decimal? FirstYearFeeEstimate,
+    decimal? EngagementFee,
     decimal? RealizationPercentage,
     string? BillingPeriod,
     string? BillingProcessDescription,
@@ -172,10 +173,22 @@ public sealed record RemsEngagementView(
 /// <summary>A commission split (employee + percentage).</summary>
 public sealed record RemsCommissionSplitView(Guid Id, RemsUserRef Employee, decimal Percentage);
 
-/// <summary>Audit engagement detail: the linked signed client-acceptance-form media.</summary>
-public sealed record RemsAuditDetailView(Guid Id, Guid? ClientAcceptanceFormMediaId);
+/// <summary>
+/// Attest detail: the linked signed client-acceptance-form media (Audit and Assurance both), plus the
+/// three answers Assurance alone is asked — the client's fiscal year end and the administrative fees.
+/// </summary>
+public sealed record RemsAuditDetailView(
+    Guid Id,
+    Guid? ClientAcceptanceFormMediaId,
+    string? FileName,
+    DateOnly? ClientFiscalYearEnd,
+    bool? AdminFeesApply,
+    decimal? AdminFeesAmount);
 
-/// <summary>Government audit detail: contract number, Florida 1% flag, and the copied contract/PO dates.</summary>
+/// <summary>
+/// Government audit detail — contract number, Florida 1% flag and the copied contract/PO dates — plus the
+/// GCS purchase order, which hangs off the SAME PO dates rather than a second copy of them.
+/// </summary>
 public sealed record RemsGovernmentDetailView(
     Guid Id,
     string? ContractNumber,
@@ -185,12 +198,23 @@ public sealed record RemsGovernmentDetailView(
     string? OriginalTerm,
     string? RenewalTerms,
     DateOnly? PurchaseOrderStartDate,
-    DateOnly? PurchaseOrderEndDate);
+    DateOnly? PurchaseOrderEndDate,
+    string? PurchaseOrderNumber,
+    decimal? PurchaseOrderAmount,
+    Guid? PurchaseOrderMediaId,
+    string? PurchaseOrderFileName,
+    string? PersonnelLevel,
+    decimal? BillRatePerHour);
 
-/// <summary>Tax engagement detail: fiscal year end, calculated due dates (JSON), and the form checklist.</summary>
+/// <summary>
+/// Tax engagement detail: fiscal year end, the two due dates (derived from it and then editable), the
+/// snapshot JSON the approver's packet reads, and the form checklist.
+/// </summary>
 public sealed record RemsTaxDetailView(
     Guid Id,
     DateOnly? FiscalYearEnd,
+    DateOnly? OriginalDueDate,
+    DateOnly? FirstExtensionDueDate,
     string? CalculatedDueDates,
     IReadOnlyList<Guid> TaxFormIds);
 
@@ -280,6 +304,10 @@ public sealed class UpdateRemsEngagementRequest
     public Guid? EngagementExecutiveId { get; set; }
     public Guid? BillingManagerId { get; set; }
     public decimal? FirstYearFeeEstimate { get; set; }
+
+    /// <summary>The Assurance department's fee — its own column, not a relabelled fee estimate.</summary>
+    public decimal? EngagementFee { get; set; }
+
     public decimal? RealizationPercentage { get; set; }
 
     /// <summary>How often the client is billed (option-set <c>REMS.BillingPeriod</c> code).</summary>
@@ -301,7 +329,25 @@ public sealed class LinkClientAcceptanceFormRequest
     public Guid MediaId { get; set; }
 }
 
-/// <summary>Set the government-audit contract detail (AC-REMS-014.13).</summary>
+/// <summary>Link a previously-uploaded media id as the GCS engagement's purchase-order document.</summary>
+public sealed class LinkPurchaseOrderRequest
+{
+    public Guid MediaId { get; set; }
+}
+
+/// <summary>
+/// Set the ASSURANCE detail: the client's fiscal year end and the administrative fees. The signed
+/// client-acceptance form is not here — it is linked by its own endpoint, because it arrives as an upload
+/// rather than as a typed field, and Audit engagements use that endpoint too.
+/// </summary>
+public sealed class UpdateRemsAuditDetailRequest
+{
+    public DateOnly? ClientFiscalYearEnd { get; set; }
+    public bool? AdminFeesApply { get; set; }
+    public decimal? AdminFeesAmount { get; set; }
+}
+
+/// <summary>Set the government-audit contract detail (AC-REMS-014.13) and the GCS purchase order.</summary>
 public sealed class UpdateRemsGovernmentDetailRequest
 {
     public string? ContractNumber { get; set; }
@@ -310,14 +356,33 @@ public sealed class UpdateRemsGovernmentDetailRequest
     public DateOnly? ContractEndDate { get; set; }
     public string? OriginalTerm { get; set; }
     public string? RenewalTerms { get; set; }
+
+    /// <summary>
+    /// The purchase order's dates. Copied here from the client's intake answers for a government entity,
+    /// and typed directly by the GCS card — one PO, one pair of dates.
+    /// </summary>
     public DateOnly? PurchaseOrderStartDate { get; set; }
     public DateOnly? PurchaseOrderEndDate { get; set; }
+
+    // ---- GCS ----
+    public string? PurchaseOrderNumber { get; set; }
+    public decimal? PurchaseOrderAmount { get; set; }
+
+    /// <summary>Option-set <c>REMS.PersonnelLevel</c> code.</summary>
+    public string? PersonnelLevel { get; set; }
+    public decimal? BillRatePerHour { get; set; }
 }
 
-/// <summary>Set the tax detail: fiscal year end (due dates are recomputed) + the tax-form checklist (AC-REMS-014.14).</summary>
+/// <summary>
+/// Set the tax detail: fiscal year end, the two due dates, and the tax-form checklist (AC-REMS-014.14).
+/// A due date left null is DERIVED from the fiscal year end rather than cleared — the rule is the default,
+/// not the only answer, so a caller that sends neither still gets the schedule it always got.
+/// </summary>
 public sealed class UpdateRemsTaxDetailRequest
 {
     public DateOnly? FiscalYearEnd { get; set; }
+    public DateOnly? OriginalDueDate { get; set; }
+    public DateOnly? FirstExtensionDueDate { get; set; }
     public List<Guid> TaxFormIds { get; set; } = new();
 }
 
@@ -355,6 +420,15 @@ internal static class RemsEngagementCodes
 {
     public const string DepartmentAudit = "audit";
     public const string DepartmentTax = "tax";
+    public const string DepartmentCas = "cas";
+    public const string DepartmentGcs = "gcs";
+
+    /// <summary>
+    /// Attest work priced for the engagement rather than for its first year. Added beside Audit rather
+    /// than in place of it — the two are separate departments with separate directors, and engagements
+    /// already filed under <see cref="DepartmentAudit"/> stay exactly where they are.
+    /// </summary>
+    public const string DepartmentAssurance = "assurance";
 
     /// <summary>
     /// The <c>REMS.IndustryGroup</c> code shown as Entity Type = "Government". A government AUDIT used to
@@ -368,6 +442,22 @@ internal static class RemsEngagementCodes
 
     public static bool IsTax(string? department)
         => string.Equals(department, DepartmentTax, StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsCas(string? department)
+        => string.Equals(department, DepartmentCas, StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsGcs(string? department)
+        => string.Equals(department, DepartmentGcs, StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsAssurance(string? department)
+        => string.Equals(department, DepartmentAssurance, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The departments asked for a signed client-acceptance form: Audit and Assurance. The form is the
+    /// same compliance artifact under both, so it is stored, uploaded and gated on identically.
+    /// </summary>
+    public static bool RequiresClientAcceptanceForm(string? department)
+        => IsAudit(department) || IsAssurance(department);
 
     /// <summary>
     /// An audit engagement for a government entity — the one that additionally needs a contract number and
@@ -389,17 +479,39 @@ public sealed record RemsTaxDueDateSet(DateOnly FiscalYearEnd, DateOnly Original
 /// </summary>
 internal static class RemsTaxDueDates
 {
-    public static RemsTaxDueDateSet Compute(DateOnly fiscalYearEnd)
+    /// <summary>The 15th of the fourth month after the fiscal year end.</summary>
+    public static DateOnly OriginalDueFor(DateOnly fiscalYearEnd)
     {
         var monthStart = new DateOnly(fiscalYearEnd.Year, fiscalYearEnd.Month, 1);
         var fourthMonth = monthStart.AddMonths(4);
-        var originalDue = new DateOnly(fourthMonth.Year, fourthMonth.Month, 15);
-        var extendedDue = originalDue.AddMonths(6);
-        return new RemsTaxDueDateSet(fiscalYearEnd, originalDue, extendedDue);
+        return new DateOnly(fourthMonth.Year, fourthMonth.Month, 15);
+    }
+
+    /// <summary>Six months after the original due date.</summary>
+    public static DateOnly FirstExtensionFor(DateOnly originalDue) => originalDue.AddMonths(6);
+
+    public static RemsTaxDueDateSet Compute(DateOnly fiscalYearEnd)
+    {
+        var originalDue = OriginalDueFor(fiscalYearEnd);
+        return new RemsTaxDueDateSet(fiscalYearEnd, originalDue, FirstExtensionFor(originalDue));
+    }
+
+    /// <summary>
+    /// The schedule as it should actually be recorded: whatever was typed wins, and the rule fills in
+    /// only what was left blank. This is what the snapshot JSON is written from, so the approver's packet
+    /// reads the dates the engagement was saved with rather than the ones the rule would produce today.
+    /// </summary>
+    public static RemsTaxDueDateSet Effective(DateOnly fiscalYearEnd, DateOnly? originalDue, DateOnly? firstExtension)
+    {
+        var original = originalDue ?? OriginalDueFor(fiscalYearEnd);
+        return new RemsTaxDueDateSet(fiscalYearEnd, original, firstExtension ?? FirstExtensionFor(original));
     }
 
     public static string ComputeJson(DateOnly fiscalYearEnd)
         => JsonSerializer.Serialize(Compute(fiscalYearEnd), Options);
+
+    public static string EffectiveJson(DateOnly fiscalYearEnd, DateOnly? originalDue, DateOnly? firstExtension)
+        => JsonSerializer.Serialize(Effective(fiscalYearEnd, originalDue, firstExtension), Options);
 
     /// <summary>
     /// Reads back a stored schedule. The STORED value wins over recomputing from the fiscal year end, so a

@@ -43,10 +43,10 @@
           <!-- The title, in front of the name it belongs in front of. Stored apart from the name, which
                is what everything files and searches you under. -->
           <app-name-prefix-field v-model="form.prefix" class="col-4 col-sm-2" />
-          <app-text-field v-model="form.firstName" label="First Name" class="col-8 col-sm-4" />
-          <app-text-field v-model="form.middleName" label="Middle Name" class="col-12 col-sm-6" />
-          <app-text-field v-model="form.lastName" label="Last Name" class="col-12 col-sm-6" />
-          <app-text-field v-model="form.preferredName" label="Preferred Name" class="col-12 col-sm-6" />
+          <app-text-field v-model="form.firstName" label="First Name" class="col-8 col-sm-4" :rules="nameRules('First name')" />
+          <app-text-field v-model="form.middleName" label="Middle Name" class="col-12 col-sm-6" :rules="nameRules('Middle name')" />
+          <app-text-field v-model="form.lastName" label="Last Name" class="col-12 col-sm-6" :rules="nameRules('Last name')" />
+          <app-text-field v-model="form.preferredName" label="Preferred Name" class="col-12 col-sm-6" :rules="nameRules('Preferred name')" />
           <app-text-field v-model="form.displayName" label="Display Name" class="col-12 col-sm-6" />
 
           <div class="col-12 section-subhead">Demographics</div>
@@ -190,6 +190,7 @@ import { humanizeKey } from "composables/usePermissionCategories";
 import { useAuthStore } from "stores/auth";
 import { useNotify } from "composables/useNotify";
 import { usePermissions, Permissions } from "composables/usePermissions";
+import { nameRules } from "utils/personName";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import RemsDelegatesPanel from "modules/rems/components/RemsDelegatesPanel.vue";

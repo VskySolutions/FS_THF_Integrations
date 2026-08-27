@@ -35,7 +35,7 @@
       </q-banner>
       <q-banner v-else-if="!task.canDecide" dense class="bg-grey-2 text-grey-8 rounded-borders q-mb-md">
         <template #avatar><q-icon name="o_lock" color="grey-7" /></template>
-        This approval round has closed. No further action is required on your task.
+        This approval is already closed. No further action is required.
       </q-banner>
       <q-banner v-else dense class="bg-teal-1 text-blue-9 rounded-borders q-mb-md">
         <template #avatar><q-icon name="o_fact_check" color="blue-9" /></template>
@@ -122,16 +122,11 @@
 
                 <q-separator class="q-my-md" />
                 <div class="rems-label q-mb-xs">Attachments</div>
-                <q-list v-if="request.files && request.files.length" dense separator>
-                  <q-item v-for="f in request.files" :key="f.id" clickable tag="a" :href="fileUrl(f)" target="_blank">
-                    <q-item-section avatar><q-icon name="o_description" color="grey-7" /></q-item-section>
-                    <q-item-section>
-                      <q-item-label class="rems-value">{{ f.fileName || "Attachment" }}</q-item-label>
-                      <q-item-label caption>{{ formatSize(f.fileSize) }}</q-item-label>
-                    </q-item-section>
-                    <q-item-section side><q-icon name="o_open_in_new" color="grey-6" /></q-item-section>
-                  </q-item>
-                </q-list>
+                <!-- The same preview row the request form shows, minus the ✕: an approver reads the
+                     packet, they do not edit it. Clicking opens the document in a new tab. -->
+                <div v-if="request.files && request.files.length" class="column q-gutter-xs">
+                  <app-stored-file-item v-for="f in request.files" :key="f.id" :file="f" />
+                </div>
                 <div v-else class="rems-value text-grey-6">No attachments.</div>
               </q-tab-panel>
 
@@ -184,33 +179,38 @@
                   </div>
                 </div>
 
-                <!-- Audit: the signed client-acceptance form. -->
+                <!-- Audit and Assurance: the signed client-acceptance form, and for Assurance the client's
+                     fiscal year end and the administrative fees underneath it. -->
                 <q-card v-if="engagement.audit" flat bordered class="rems-inner q-mt-md">
                   <q-card-section class="q-py-sm text-subtitle2 text-primary">
-                    <q-icon name="o_fact_check" size="18px" class="q-mr-xs" />Audit — Client Acceptance Form
+                    <q-icon name="o_fact_check" size="18px" class="q-mr-xs" />{{ attestCardTitle }}
                   </q-card-section>
                   <q-separator />
                   <q-card-section>
-                    <q-banner v-if="engagement.audit.url" dense class="bg-green-1 text-green-9 rounded-borders">
-                      <template #avatar><q-icon name="o_verified" color="green-9" /></template>
-                      <div class="row items-center">
-                        <div class="col">A signed client-acceptance form is on file.</div>
-                        <q-btn
-                          flat dense no-caps color="green-9" icon="o_open_in_new"
-                          :label="engagement.audit.fileName || 'Open'"
-                          :href="mediaUrl(engagement.audit.url)" target="_blank"
-                        />
-                      </div>
-                    </q-banner>
+                    <template v-if="cafFile">
+                      <q-banner dense class="bg-green-1 text-green-9 rounded-borders q-mb-sm">
+                        <template #avatar><q-icon name="o_verified" color="green-9" /></template>
+                        A signed client-acceptance form is on file.
+                      </q-banner>
+                      <app-stored-file-item :file="cafFile" />
+                    </template>
                     <q-banner v-else dense class="bg-orange-1 text-orange-9 rounded-borders">
                       <template #avatar><q-icon name="o_warning" color="orange-9" /></template>
                       No signed client-acceptance form is on file.
                     </q-banner>
+
+                    <div v-if="showAssurance" class="row q-col-gutter-md q-mt-xs">
+                      <div v-for="item in assuranceRows" :key="item.label" class="col-12 col-sm-6">
+                        <div class="rems-label">{{ item.label }}</div>
+                        <div class="rems-value">{{ item.value }}</div>
+                      </div>
+                    </div>
                   </q-card-section>
                 </q-card>
 
-                <!-- Government audit: the contract block. -->
-                <q-card v-if="engagement.government" flat bordered class="rems-inner q-mt-md">
+                <!-- Government audit: the contract block. Not shown for a GCS engagement, whose own card is
+                     below — the two share a stored row but answer different questions. -->
+                <q-card v-if="engagement.government && !showGcs" flat bordered class="rems-inner q-mt-md">
                   <q-card-section class="q-py-sm text-subtitle2 text-primary">
                     <q-icon name="o_gavel" size="18px" class="q-mr-xs" />Government Audit — Contract
                   </q-card-section>
@@ -225,27 +225,51 @@
                   </q-card-section>
                 </q-card>
 
-                <!-- Tax: fiscal year end, the calculated schedule, and the form checklist. -->
+                <!-- GCS: the purchase order the engagement is set up against, and the rate it is staffed
+                     at. Shown for a GCS department only — the card above it is the government AUDIT's
+                     contract block, which shares the same stored row but answers a different question. -->
+                <q-card v-if="showGcs" flat bordered class="rems-inner q-mt-md">
+                  <q-card-section class="q-py-sm text-subtitle2 text-primary">
+                    <q-icon name="o_request_quote" size="18px" class="q-mr-xs" />GCS — Purchase Order &amp; Rate
+                  </q-card-section>
+                  <q-separator />
+                  <q-card-section>
+                    <div class="row q-col-gutter-md">
+                      <div v-for="item in gcsRows" :key="item.label" class="col-12 col-sm-6">
+                        <div class="rems-label">{{ item.label }}</div>
+                        <div class="rems-value">{{ item.value }}</div>
+                      </div>
+                    </div>
+                    <!-- The purchase order itself, openable, the same way the signed CAF is. -->
+                    <div v-if="purchaseOrderFile" class="q-mt-md">
+                      <div class="rems-label q-mb-xs">Purchase Order</div>
+                      <app-stored-file-item :file="purchaseOrderFile" />
+                    </div>
+                  </q-card-section>
+                </q-card>
+
+                <!-- Tax: fiscal year end, the due-date schedule, and the form checklist. -->
                 <q-card v-if="engagement.tax" flat bordered class="rems-inner q-mt-md">
                   <q-card-section class="q-py-sm text-subtitle2 text-primary">
                     <q-icon name="o_receipt_long" size="18px" class="q-mr-xs" />Tax — Fiscal Year &amp; Forms
                   </q-card-section>
                   <q-separator />
                   <q-card-section>
+                    <!-- The dates the engagement was SENT with. They are derived from the fiscal year end
+                         and then editable, so an approver reads what staff actually recorded rather than
+                         what the rule would produce today. -->
                     <div class="row q-col-gutter-md">
-                      <div class="col-12 col-sm-6">
+                      <div class="col-12 col-sm-4">
                         <div class="rems-label">Fiscal Year End</div>
                         <div class="rems-value">{{ dateOnly(engagement.tax.fiscalYearEnd) }}</div>
                       </div>
-                      <div class="col-12 col-sm-6">
-                        <div class="rems-label">Calculated Due Dates</div>
-                        <div class="rems-value">
-                          <template v-if="engagement.tax.dueDates">
-                            Original: {{ dateOnly(engagement.tax.dueDates.originalDueDate) }} ·
-                            Extended: {{ dateOnly(engagement.tax.dueDates.extendedDueDate) }}
-                          </template>
-                          <template v-else>—</template>
-                        </div>
+                      <div class="col-12 col-sm-4">
+                        <div class="rems-label">Original Due Date</div>
+                        <div class="rems-value">{{ dateOnly(engagement.tax.dueDates?.originalDueDate) }}</div>
+                      </div>
+                      <div class="col-12 col-sm-4">
+                        <div class="rems-label">First Extension Due Date</div>
+                        <div class="rems-value">{{ dateOnly(engagement.tax.dueDates?.extendedDueDate) }}</div>
                       </div>
                     </div>
                     <div class="rems-label q-mt-md q-mb-xs">Tax Forms</div>
@@ -306,7 +330,7 @@
                 <div v-if="round.rejectionReason" class="q-mb-md">
                   <q-banner dense class="bg-red-1 text-red-9 rounded-borders">
                     <template #avatar><q-icon name="o_cancel" color="red-9" /></template>
-                    <div class="text-weight-medium">This round was rejected.</div>
+                    <div class="text-weight-medium">This request was rejected.</div>
                     <div class="q-mt-xs" style="white-space: pre-wrap;">Reason: {{ round.rejectionReason }}</div>
                   </q-banner>
                 </div>
@@ -318,7 +342,7 @@
                      answered by every row still waiting, not by one of them. Those are the rows marked
                      here; the reader's own is marked hardest, because it is the only one they can act
                      on. -->
-                <div class="rems-label q-mb-xs">Approvers on this round</div>
+                <div class="rems-label q-mb-xs">Approvers</div>
                 <q-list bordered separator class="rounded-borders">
                   <q-item
                     v-for="d in round.decisions" :key="d.taskId"
@@ -353,17 +377,13 @@
                   </q-item>
                 </q-list>
 
-                <!-- The rounds BEFORE this one. A resubmission opens a NEW round rather than reopening the
-                     last, so what the previous approvers objected to is readable nowhere else on this page.
-                     This round is left out of it: the list above already gives it in full, and the history
-                     leads with the newest, which put the same round twice in a row down the page.
-                     Open on arrival — an approver looking at a repeat round needs the round it repeats in
-                     front of them, not behind a toggle — and absent entirely on a first round, where there
-                     is nothing before this one to read. -->
+                <!-- What the approvers objected to BEFORE now. A resubmission is routed afresh rather than
+                     reopening the last attempt, so those earlier objections are readable nowhere else on
+                     this page. The current ones are left out of it: the list above already gives them in
+                     full. Absent entirely where there is nothing earlier to read. -->
                 <approval-history
                   v-if="engagement.engagementId" :engagement-id="engagement.engagementId"
-                  :exclude-round-id="round.id" label="Earlier rounds"
-                  default-opened class="q-mt-md"
+                  :exclude-round-id="round.id" class="q-mt-md"
                 />
               </q-tab-panel>
             </q-tab-panels>
@@ -448,9 +468,9 @@
             The engagement is returned for rework. A reason is required and shared with the staff/CSE.
           </div>
           <q-form ref="rejectFormRef" greedy>
-            <q-input
-              v-model="rejectReason" outlined type="textarea" autogrow label="Reason for rejection *"
-              hide-bottom-space :rules="[(v) => (!!v && v.trim().length > 0) || 'A reason is required']"
+            <app-text-field
+              v-model="rejectReason" label="Reason for rejection" required type="textarea" autogrow
+              :rules="[(v) => (!!v && v.trim().length > 0) || 'A reason is required']"
             />
           </q-form>
         </q-card-section>
@@ -477,15 +497,17 @@
 // a 409 is surfaced), and Reject requires a reason. Once decided, the task is read-only.
 import { ref, computed, onMounted } from "vue";
 import { useRoute } from "vue-router";
-import { remsApi, mediaApi, EntityType, getApiErrorMessage } from "services/api";
+import { remsApi, EntityType, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
-import { useDateFormat } from "composables/useDateFormat";
-import { useRemsMeta } from "modules/rems/useRemsMeta";
+import { useDateFormat, formatDateOnly } from "composables/useDateFormat";
+import { useRemsMeta, isAssuranceDepartment, isGcsDepartment } from "modules/rems/useRemsMeta";
 import { addressText } from "modules/rems/remsAddress";
 import { renderRichText } from "utils/richText";
 
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
+import AppStoredFileItem from "components/common/AppStoredFileItem.vue";
+import AppTextField from "components/common/AppTextField.vue";
 // Explicit import: boot/components.js registers only the Zw* inputs globally, so without this the tag
 // resolves to nothing and the Conversation card renders empty — no error, just a blank panel.
 import EntityConversationPanel from "components/universal/EntityConversationPanel.vue";
@@ -498,7 +520,7 @@ const fmt = useDateFormat();
 const {
   typeLabel, typeHint, requestStatusLabel, requestStatusColor,
   industryGroupLabel, emsStateLabel, submissionStateLabel, departmentLabel,
-  subServiceLineLabel, subIndustryLabel,
+  subServiceLineLabel, subIndustryLabel, personnelLevelLabel,
   approverRoleLabel, approverRoleIcon, approvalStatusLabel, approvalStatusColor, engagementStatusMeta
 } = useRemsMeta();
 
@@ -557,13 +579,8 @@ const money = (v) => (v == null ? "—" : formatMoney(v));
 const text = (v) => (v == null || v === "" ? "—" : v);
 const yesNo = (v) => (v == null ? "—" : v ? "Yes" : "No");
 
-// Calendar-date fields (DateOnly "YYYY-MM-DD") are shown as-is (MM-DD-YYYY), never timezone-shifted — the
-// tenant-tz formatter would corrupt a date-only value (mirrors the workspace's handling).
-const dateOnly = (v) => {
-  if (!v) return "—";
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));
-  return m ? `${m[2]}-${m[3]}-${m[1]}` : String(v);
-};
+// Calendar dates read MM/DD/YYYY and are never timezone-shifted — see formatDateOnly.
+const dateOnly = formatDateOnly;
 
 const requestRows = computed(() => {
   const r = request.value;
@@ -616,12 +633,60 @@ const setupRows = computed(() => {
   ];
   // Withheld figures get their own explanatory block in the template instead of a blank pair of fields.
   if (!e.financialsRestricted) {
-    rows.push(
-      { label: "First-Year Fee Estimate", value: money(e.firstYearFeeEstimate) },
-      { label: "% Realization", value: e.realizationPercentage == null ? "—" : `${e.realizationPercentage}%` }
-    );
+    // One fee question per engagement — Assurance prices the engagement, GCS prices neither (its purchase
+    // order and bill rate are on its own card), everyone else quotes a first year. The row the department
+    // was never asked is absent rather than blank.
+    if (showAssurance.value) {
+      rows.push({ label: "Engagement Fee", value: money(e.engagementFee) });
+    } else if (!showGcs.value) {
+      rows.push({ label: "First-Year Fee Estimate", value: money(e.firstYearFeeEstimate) });
+    }
+    rows.push({ label: "% Realization", value: e.realizationPercentage == null ? "—" : `${e.realizationPercentage}%` });
   }
   return rows;
+});
+
+// Which questions this engagement was put, read off its department the same way the setup form decides
+// what to ask. An approver has to read the packet the staff actually filled in.
+const showAssurance = computed(() => isAssuranceDepartment(engagement.value.department));
+const showGcs = computed(() => isGcsDepartment(engagement.value.department));
+
+const attestCardTitle = computed(() =>
+  (showAssurance.value ? "Assurance — Client Acceptance Form & Fees" : "Audit — Client Acceptance Form"));
+
+const assuranceRows = computed(() => {
+  const a = engagement.value.audit || {};
+  return [
+    { label: "Fiscal Year End of Client", value: dateOnly(a.clientFiscalYearEnd) },
+    {
+      label: "Admin Fees",
+      value: a.adminFeesApply
+        ? (engagement.value.financialsRestricted ? "Yes" : (money(a.adminFeesAmount) || "Yes"))
+        : "No"
+    }
+  ];
+});
+
+const gcsRows = computed(() => {
+  const g = engagement.value.government || {};
+  const restricted = engagement.value.financialsRestricted;
+  return [
+    { label: "Purchase Order No.", value: text(g.purchaseOrderNumber) },
+    // The PO's value and the bill rate are money, and are withheld from a role that may not see the fee.
+    { label: "Purchase Order Amount", value: restricted ? "Reserved" : money(g.purchaseOrderAmount) },
+    { label: "PO Beginning Date", value: dateOnly(g.purchaseOrderStartDate) },
+    { label: "PO Ending Date", value: dateOnly(g.purchaseOrderEndDate) },
+    { label: "Personnel Level", value: text(personnelLevelLabel(g.personnelLevel)) },
+    { label: "Bill Rate / Hour", value: restricted ? "Reserved" : money(g.billRatePerHour) }
+  ];
+});
+
+// The uploaded purchase order as a stored-file row, so the approver can open it.
+const purchaseOrderFile = computed(() => {
+  const g = engagement.value.government;
+  return g?.purchaseOrderMediaId
+    ? { mediaId: g.purchaseOrderMediaId, fileName: g.purchaseOrderFileName || "Purchase Order" }
+    : null;
 });
 
 const governmentRows = computed(() => {
@@ -641,8 +706,7 @@ const governmentRows = computed(() => {
 const roundRows = computed(() => {
   const r = round.value;
   return [
-    { label: "Round", value: `#${r.roundNumber}` },
-    { label: "Round Status", value: approvalStatusLabel(r.status) },
+    { label: "Approval Status", value: approvalStatusLabel(r.status) },
     { label: "Sent", value: `${r.sentBy?.name || "—"} · ${fmt.formatDateTime(r.sentOnUtc)}` },
     { label: "Completed", value: r.completedOnUtc ? fmt.formatDateTime(r.completedOnUtc) : "—" }
   ];
@@ -666,14 +730,16 @@ const addressOf = (type) => {
   return addressText(row?.address);
 };
 const roleText = (r) => (r || "").replace(/([a-z])([A-Z])/g, "$1 $2");
-const fileUrl = (file) => mediaApi.absoluteUrl(file.url);
-const mediaUrl = (url) => mediaApi.absoluteUrl(url);
-const formatSize = (bytes) => {
-  if (!bytes && bytes !== 0) return "";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-};
+
+// The signed CAF as a stored-file row. The packet resolves the media to a name and a URL, but the URL is
+// not a link anyone can follow — /api/media is refused without a bearer token — so what the row needs
+// from it is the media ID, which is what AppStoredFileItem fetches the bytes by.
+const cafFile = computed(() => {
+  const audit = engagement.value.audit;
+  return audit?.clientAcceptanceFormMediaId
+    ? { mediaId: audit.clientAcceptanceFormMediaId, fileName: audit.fileName || "Client Acceptance Form" }
+    : null;
+});
 
 const load = async () => {
   loading.value = true;

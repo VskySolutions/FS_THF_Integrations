@@ -13,6 +13,8 @@
       :hint="hint"
       :autogrow="autogrow"
       :mask="mask"
+      :maxlength="maxlength"
+      :autofocus="autofocus"
       :clearable="clearable"
       :autocomplete="autocomplete"
       :aria-label="ariaLabel"
@@ -54,6 +56,10 @@ const props = defineProps({
   hint: { type: String, default: "" },
   autogrow: { type: Boolean, default: false },
   mask: { type: String, default: undefined },
+  // Declared rather than left to fall through: an undeclared attribute lands on the wrapper div, where
+  // maxlength does nothing at all and the field silently accepts more than the column holds.
+  maxlength: { type: [String, Number], default: undefined },
+  autofocus: { type: Boolean, default: false },
   clearable: { type: Boolean, default: false },
   dense: { type: Boolean, default: true },
   // Browser autofill is disabled by default across the app; pass a value (e.g. "on") to opt back in.

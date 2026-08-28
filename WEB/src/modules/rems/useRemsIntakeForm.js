@@ -29,7 +29,10 @@ const dateOrNull = (v) => (filled(v) ? v : null);
 // Adds a validator's complaint to the issue list, and nothing at all when it had none.
 const pushIf = (out, issue) => { if (issue) out.push(issue); };
 
-const blankRole = () => ({ prefix: "", firstName: "", lastName: "", email: "", phone: "" });
+// `prefix` is still in the shape although the form no longer asks for one: a submission saved when the
+// contact block asked for a courtesy title carries one, and a draft re-opened must not lose it. `suffix`
+// is what the block asks for now.
+const blankRole = () => ({ prefix: "", suffix: "", firstName: "", lastName: "", email: "", phone: "" });
 const blankRoles = () => Object.fromEntries(ALL_ROLE_KEYS.map((k) => [k, blankRole()]));
 
 /**
@@ -55,6 +58,11 @@ export const blankIntakePayload = () => reactive({
   billingContactName: "",
   billingEmail: "",
   billingAddress: blankAddress(),
+  // Everyone the invoice should ALSO go to. The first billing contact is `roles.billingContact` — the one
+  // the entity type asks for, and the one that is required where it is required — and these are the rest.
+  // A list rather than a fixed second and third slot, because a client with four people in accounts
+  // payable has four, and the form should not be the thing that decides they have two.
+  additionalBillingContacts: [],
   spouseName: "",
   spousePhone: "",
   spouseEmail: "",
@@ -100,6 +108,7 @@ const roleComplete = (r) =>
 /** A draft saved before the name was split keeps its single `name` until somebody edits the two boxes. */
 function fillRole (target, src) {
   target.prefix = src?.prefix ?? "";
+  target.suffix = src?.suffix ?? "";
   target.firstName = src?.firstName ?? "";
   target.lastName = src?.lastName ?? "";
   target.name = src?.firstName || src?.lastName ? "" : (src?.name ?? "");
@@ -123,6 +132,21 @@ export const newRelatedEntity = (index = 0) => ({
   emailAddress: "",
   phoneNumber: ""
 });
+
+// How many people one client may be invoiced through, BEYOND the first. Not a limit anybody should meet
+// — it is the guard against a stuck key adding four hundred blocks to one form. Mirrors the server's
+// RemsFormPayloadValidator.MaxAdditionalBillingContacts, which is what actually enforces it.
+export const MAX_ADDITIONAL_BILLING_CONTACTS = 9;
+
+// A stable identity for each extra billing contact's ROW, so removing the second of three does not make
+// Vue re-use the third's inputs for the second. It is local to the browser and never sent: outRole picks
+// the fields it writes, and `key` is not one of them.
+let billingContactSeq = 0;
+export const newBillingContact = (stored = null) => {
+  const row = { key: `billing-${++billingContactSeq}`, ...blankRole() };
+  if (stored) fillRole(row, stored);
+  return row;
+};
 
 /**
  * Read a stored payload into the editable one, in place.
@@ -167,18 +191,25 @@ export function seedIntakePayload (payload, stored, prefill = null) {
   // they belong in the boxes those roles are called by now.
   const storedRoles = normalizeRoles(d.roles);
   ALL_ROLE_KEYS.forEach((k) => fillRole(payload.roles[k], storedRoles[k]));
+  payload.additionalBillingContacts = (d.additionalBillingContacts || []).map((r) => newBillingContact(r));
 
   payload.relatedEntities = (d.relatedEntities || []).map(makeEntity);
 }
 
 // `name` is sent alongside the two parts, not instead of them: it is the pair already joined, so every
 // reader of "the contact's name" — the review summary, the staff panel, the Person that gets minted —
-// has one field to read. A pre-split contact nobody has retouched keeps whatever it arrived with. The
-// prefix is NOT folded in: a title is not part of the name a Person is filed under.
+// has one field to read. A pre-split contact nobody has retouched keeps whatever it arrived with.
+//
+// Neither particle is folded into it. A title and a generational suffix are not part of the name a Person
+// is FILED under — "Smith Jr." in a surname column is a contact nobody finds by searching for their name
+// — so both travel in fields of their own and are joined back on only where the name is READ.
+//
+// `prefix` is echoed back although the form no longer asks for one, for the reason blankRole gives.
 const outRole = (r) => {
   const joined = [r.firstName, r.lastName].map((v) => s(v).trim()).filter(Boolean).join(" ");
   return {
     prefix: s(r.prefix),
+    suffix: s(r.suffix),
     firstName: s(r.firstName),
     lastName: s(r.lastName),
     name: joined || s(r.name),
@@ -222,6 +253,9 @@ export function buildIntakePayload (payload, industryGroup) {
     billingContactName: s(payload.billingContactName),
     billingEmail: s(payload.billingEmail),
     billingAddress: fromAddress(payload.billingAddress),
+    // Blank rows are dropped rather than sent: adding a block and leaving it empty is somebody changing
+    // their mind, not an answer, and it would otherwise become a nameless contact on the entity.
+    additionalBillingContacts: (payload.additionalBillingContacts || []).filter(roleAny).map(outRole),
     spouseName: s(payload.spouseName),
     spousePhone: s(payload.spousePhone),
     spouseEmail: s(payload.spouseEmail),
@@ -300,6 +334,19 @@ export function intakeIssues (payload, industryGroup) {
       out.push(`${label} is partly filled — complete the name and email, or clear it.`);
     }
     // Whatever HAS been typed into the two name boxes has to be a name, required contact or not.
+    pushIf(out, nameIssue(role?.firstName, `${label} first name`));
+    pushIf(out, nameIssue(role?.lastName, `${label} last name`));
+  });
+
+  // The extra billing contacts. Each is optional — nobody has to name a second — but one that has been
+  // started has to be finished, exactly as an optional role is: a half-typed contact is an invoice
+  // addressed to a name with no way to send it. Numbered from 2, because the first billing contact is the
+  // one asked above.
+  (payload.additionalBillingContacts || []).forEach((role, i) => {
+    const label = `Billing Contact ${i + 2}`;
+    if (roleAny(role) && !roleComplete(role)) {
+      out.push(`${label} needs a first name, a last name and a valid email.`);
+    }
     pushIf(out, nameIssue(role?.firstName, `${label} first name`));
     pushIf(out, nameIssue(role?.lastName, `${label} last name`));
   });

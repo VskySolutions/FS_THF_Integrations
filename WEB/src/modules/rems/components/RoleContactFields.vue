@@ -20,10 +20,12 @@
         :label="required ? 'Required' : 'Optional'"
       />
     </div>
-    <div class="row q-col-gutter-sm">
-      <!-- How to address them, in front of the name. Never required: plenty of people go by no title at
-           all, and one guessed on their behalf is worse than none. -->
-      <app-name-prefix-field v-model="role.prefix" class="col-4 col-sm-2" />
+    <div class="row q-col-gutter-md">
+      <!-- The generational particle on their name — Jr., Sr., III. Never required: most people have none,
+           and one guessed on their behalf is worse than none. In a box of its own because a Person is
+           filed under a given name and a family name, and "Jr." is neither — typed into the surname it
+           makes a contact nobody finds by searching for their name. -->
+      <app-name-suffix-field v-model="role.suffix" class="col-4 col-sm-2" />
       <!-- Two boxes, because a contact becomes a Person and a Person is filed under a given name and a
            family name. One box asked the client to write a name and left the application guessing where
            to cut it — which put "Van Der Berg" in a first-name column often enough to matter. -->
@@ -55,7 +57,7 @@
 <script setup>
 import { nameRules } from "utils/personName";
 import AppTextField from "components/common/AppTextField.vue";
-import AppNamePrefixField from "components/common/AppNamePrefixField.vue";
+import AppNameSuffixField from "components/common/AppNameSuffixField.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
 
 const role = defineModel({ type: Object, required: true });

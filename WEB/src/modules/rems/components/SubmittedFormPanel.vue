@@ -69,6 +69,25 @@
           </div>
           <div v-else class="text-grey-6">No other entities provided.</div>
         </div>
+
+        <!-- People belonging to a FIELDS group — the billing contacts, under the addresses they are the
+             other half of. A card each, so one person is told from the next at a glance rather than by
+             counting rows in the grid above.
+
+             Outside the kind chain rather than inside it: a v-else-if has to follow its v-if with nothing
+             in between, and this is an ADDITION to the fields group, not a fourth kind of one. -->
+        <div v-if="g.people && g.people.length" class="submitted-people">
+          <div class="submitted-people__title">{{ g.peopleTitle }}</div>
+          <div class="submitted-people__grid">
+            <div v-for="(person, i) in g.people" :key="i" class="submitted-person">
+              <div class="rems-label">{{ person.role }}</div>
+              <div class="rems-value">{{ person.name || "—" }}</div>
+              <div class="text-caption text-grey-7">
+                {{ person.email || "no email" }}<template v-if="person.phone !== null"> · {{ person.phone || "no phone" }}</template>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </template>
   </div>
@@ -166,17 +185,41 @@ const groups = computed(() => {
     { label: "Mailing Address", value: addressText(p.mailingAddress) },
     { label: "Billing Address", value: addressText(p.billingAddress) }
   ];
-  if (isIndividual.value || !roleHasAny(billingRole)) {
-    addressRows.push(
-      { label: "Billing Contact", value: val(p.billingContactName) },
-      { label: "Billing Email", value: val(p.billingEmail) });
-  } else {
-    addressRows.push(
-      { label: "Billing Contact", value: roleAddressedName(billingRole) },
-      { label: "Billing Email", value: val(billingRole.email) },
-      { label: "Billing Phone", value: val(billingRole.phone) });
-  }
-  result.push({ title: "Addresses & Billing", icon: "o_place", kind: "fields", rows: addressRows });
+  // A client may name several people to invoice, and they are rendered as PEOPLE — one block each, the
+  // name with the email and phone beneath it — rather than three label/value rows apiece. Flattened into
+  // the address grid, a second contact became fields called "Billing Contact 2 Email" and "Billing
+  // Contact 2 Phone" sitting beside "Mailing Address", and an admin checking who to invoice had to count
+  // rows to work out where one person ended. The client's review step shows the same shape, which is the
+  // point of this panel mirroring it.
+  //
+  // Numbered only where they named more than one — a "1" over a lone contact answers a question nobody
+  // asked — and in the order they gave them.
+  const extraBilling = (p.additionalBillingContacts || []).filter(roleHasAny);
+  const billingLabel = (i) => (extraBilling.length ? `Billing Contact ${i}` : "Billing Contact");
+  // `phone: null` on the lighter two-box version records that the question was never PUT, which is what
+  // stops the line reporting "no phone" about a box the client was never shown.
+  const billingPeople = isIndividual.value || !roleHasAny(billingRole)
+    ? [{ role: billingLabel(1), name: p.billingContactName, email: p.billingEmail, phone: null }]
+    : [{
+      role: billingLabel(1),
+      name: roleAddressedName(billingRole),
+      email: billingRole.email,
+      phone: billingRole.phone
+    }];
+  extraBilling.forEach((role, i) => billingPeople.push({
+    role: `Billing Contact ${i + 2}`,
+    name: roleAddressedName(role),
+    email: role.email,
+    phone: role.phone
+  }));
+  result.push({
+    title: "Addresses & Billing",
+    icon: "o_place",
+    kind: "fields",
+    rows: addressRows,
+    people: billingPeople,
+    peopleTitle: billingPeople.length > 1 ? "Billing Contacts" : "Billing Contact"
+  });
 
   // A non-individual submission that ALSO carries the retired two-box billing answer — sent before every
   // entity type named a Billing Contact. Not a duplicate of the contact above: a different answer the
@@ -293,18 +336,27 @@ defineExpose({ reload: load });
 .field-row--dense {
   margin-top: 4px;
 }
-.rems-label {
-  font-size: 11px;
+
+/* The billing contacts sit under the addresses they belong to, but outside their grid: a person is not a
+   field, and putting three of them in it was what made the section unreadable. */
+.submitted-people { margin-top: 14px; }
+.submitted-people__title {
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: #7a8699;
-  margin-bottom: 2px;
+  color: var(--ink-500, #5a6675);
+  margin-bottom: 8px;
 }
-.rems-value {
-  font-size: 14px;
-  color: #2c3540;
-  word-break: break-word;
-  white-space: pre-wrap;
+.submitted-people__grid {
+  display: grid;
+  /* Same auto-fit rule as the field grid, at a wider minimum: a card carries a whole email address on one
+     line, and in this pane — 40% of the page — it will usually be the single column that rule falls to. */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+.submitted-person {
+  border: 1px solid #e0e6ed;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fbfcfd;
 }
 </style>

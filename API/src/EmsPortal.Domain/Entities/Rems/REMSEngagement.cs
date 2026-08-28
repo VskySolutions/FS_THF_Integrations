@@ -26,15 +26,25 @@ public class REMSEngagement : AuditableEntity
     /// <summary>The request this engagement belongs to (one-to-one).</summary>
     public Guid REMSId { get; set; }
 
-    /// <summary>Owning department (option-set code).</summary>
-    public string? Department { get; set; }
+    /// <summary>
+    /// Owning department: a foreign key to the <c>REMS.Department</c> option-set item.
+    ///
+    /// <para>
+    /// The conditional half of the setup keys off the CODE this id resolves to -- a signed CAF on audit and
+    /// assurance, a fiscal year end on tax, a purchase order on gcs, the billing pair on cas
+    /// (RemsEngagementCodes). Read it through the <see cref="Department"/> navigation, whose
+    /// <c>Value</c> is that code; the seeded values are locked against deletion and re-coding, so it is
+    /// stable to branch on.
+    /// </para>
+    /// </summary>
+    public Guid? DepartmentId { get; set; }
 
     /// <summary>
     /// The service actually being sold — what the setup form calls the SERVICE LINE (option-set
     /// <c>REMS.SubServiceLine</c> code; the key keeps its old name so each tenant's own copy of the list
     /// stays theirs). Classification only — nothing branches on it.
     /// </summary>
-    public string? SubServiceLine { get; set; }
+    public Guid? SubServiceLineId { get; set; }
 
     /// <summary>
     /// The client's trade — what the setup form calls the INDUSTRY (option-set <c>REMS.SubIndustry</c>
@@ -42,7 +52,7 @@ public class REMSEngagement : AuditableEntity
     /// what the client is asked and is frozen once the intake goes out; this is internal classification, so
     /// it belongs to the engagement and stays editable for as long as the setup does.
     /// </summary>
-    public string? SubIndustry { get; set; }
+    public Guid? SubIndustryId { get; set; }
 
     /// <summary>Department director (User).</summary>
     public Guid? DepartmentDirectorId { get; set; }
@@ -67,8 +77,8 @@ public class REMSEngagement : AuditableEntity
     /// <summary>Expected realization percentage (0–100). Asked of every department.</summary>
     public decimal? RealizationPercentage { get; set; }
 
-    /// <summary>How often the client is billed (option-set <c>REMS.BillingPeriod</c> code).</summary>
-    public string? BillingPeriod { get; set; }
+    /// <summary>How often the client is billed: a foreign key to the <c>REMS.BillingPeriod</c> item.</summary>
+    public Guid? BillingPeriodId { get; set; }
 
     /// <summary>
     /// How this engagement is actually billed, in the firm's own words — "three progress bills against
@@ -90,6 +100,12 @@ public class REMSEngagement : AuditableEntity
     // "one active per parent" can be enforced by a filtered unique index (WHERE [Deleted] = 0) rather
     // than EF's non-filtered convention 1:1 index, which would block soft-delete + re-create.
     public REMS? Rems { get; set; }
+    // The four option-set references above. Every read goes through these — `.Value` is the code the
+    // application branches on and the API puts on the wire.
+    public OptionSetItem? Department { get; set; }
+    public OptionSetItem? SubServiceLine { get; set; }
+    public OptionSetItem? SubIndustry { get; set; }
+    public OptionSetItem? BillingPeriod { get; set; }
     public ICollection<REMSEngagementMarketingMethod> MarketingMethods { get; set; } = new List<REMSEngagementMarketingMethod>();
     public ICollection<REMSEngagementCommissionSplit> CommissionSplits { get; set; } = new List<REMSEngagementCommissionSplit>();
     public ICollection<REMSEngagementApprover> Approvers { get; set; } = new List<REMSEngagementApprover>();

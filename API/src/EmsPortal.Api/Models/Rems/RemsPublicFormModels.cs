@@ -65,6 +65,19 @@ public sealed class RemsFormPayloadV1
     public string? BillingEmail { get; set; }
     public RemsAddressPayload? BillingAddress { get; set; }
 
+    /// <summary>
+    /// Everyone else the invoice should reach. The FIRST billing contact is
+    /// <c>Roles.BillingContact</c> — the one an entity type asks for, and the one that is required where
+    /// it is required — and these are the rest, in the order the client gave them.
+    /// <para>
+    /// A list rather than a second and third slot: a client whose accounts payable is four people has
+    /// four, and the form should not be the thing that decides they have one. Each becomes a
+    /// <c>BillingContact</c> on the entity exactly as the first does, marked not-required — being named
+    /// second does not make somebody a different kind of contact.
+    /// </para>
+    /// </summary>
+    public List<RemsRolePayload> AdditionalBillingContacts { get; set; } = new();
+
     // ---- Individual ----
     public string? SpouseName { get; set; }
     public string? SpousePhone { get; set; }
@@ -167,8 +180,22 @@ public sealed class RemsRolePayload
     /// for the same reason it is kept out of the client's: the joined name is what the contact's
     /// <c>Person</c> is filed under, and a title is not part of it. It travels to
     /// <c>Person.Prefix</c> when the contact is materialised.
+    /// <para>
+    /// RETIRED from the form — a contact is asked for its generational <see cref="Suffix"/> instead. Still
+    /// read and still round-tripped, because a submission saved while the box asked for a title carries
+    /// one, and a submission is the immutable record of what the client sent.
+    /// </para>
     /// </summary>
     public string? Prefix { get; set; }
+
+    /// <summary>
+    /// The generational particle on this contact's name — Jr., Sr., II, III, IV. Out of
+    /// <see cref="DisplayName"/> for exactly the reason the prefix is: the joined name is what the
+    /// contact's <c>Person</c> is filed and searched under, and "Smith Jr." in a surname column is a
+    /// contact nobody finds by searching for their name. It is joined back on in
+    /// <see cref="AddressedName"/>, which is what the materialised Person is DISPLAYED as.
+    /// </summary>
+    public string? Suffix { get; set; }
 
     public string? FirstName { get; set; }
     public string? LastName { get; set; }
@@ -192,6 +219,33 @@ public sealed class RemsRolePayload
         }
     }
 
+    /// <summary>
+    /// The joined name with its generational particle on the end — "Jane Smith Jr.". What a materialised
+    /// contact's <c>Person.DisplayName</c> is set from, since a Person has no suffix column of its own and
+    /// DisplayName is its "as it reads" field.
+    /// <para>
+    /// The PREFIX is deliberately not in here: it has a column of its own on Person, and folding it in as
+    /// well would store the title twice and read it back as "Mr. Mr. Jane Smith" anywhere the two are
+    /// joined. The two name columns stay clean either way, so the person is still filed and found under
+    /// the name alone.
+    /// </para>
+    /// </summary>
+    [JsonIgnore]
+    public string NameWithSuffix
+    {
+        get
+        {
+            var name = DisplayName;
+            if (name.Length == 0)
+            {
+                return string.Empty;
+            }
+
+            var suffix = Suffix?.Trim();
+            return string.IsNullOrWhiteSpace(suffix) ? name : $"{name} {suffix}";
+        }
+    }
+
     /// <summary>The given name, falling back to the first word of a pre-split <see cref="Name"/>.</summary>
     [JsonIgnore]
     public string EffectiveFirstName =>
@@ -202,7 +256,11 @@ public sealed class RemsRolePayload
     public string EffectiveLastName =>
         !string.IsNullOrWhiteSpace(LastName) ? LastName.Trim() : RemsNameSplit.Split(Name).Last;
 
-    /// <summary>True when any field carries content (an all-blank role is treated as absent).</summary>
+    /// <summary>
+    /// True when any field carries content (an all-blank role is treated as absent). Neither particle
+    /// counts: a suffix picked out of curiosity beside five empty boxes is not a contact, and treating it
+    /// as one would make an otherwise-blank optional role start failing validation as "partly filled".
+    /// </summary>
     [JsonIgnore]
     public bool HasAny =>
         !string.IsNullOrWhiteSpace(FirstName) || !string.IsNullOrWhiteSpace(LastName)
@@ -424,13 +482,24 @@ public sealed record RemsReviewAddressGroup(
     RemsAddressPayload? Mailing,
     RemsAddressPayload? Billing);
 
-/// <summary>A role contact row on review. <see cref="Name"/> is the two parts joined, for reading.</summary>
+/// <summary>
+/// A role contact row on review. <see cref="Name"/> is the two parts joined, for reading; the particles
+/// stay beside it. <see cref="Prefix"/> is present only on a contact answered before the form asked for a
+/// generational <see cref="Suffix"/> instead.
+/// </summary>
 public sealed record RemsReviewContactRow(
-    string Role, bool IsRequired, string? Prefix, string? FirstName, string? LastName, string? Name,
-    string? Email, string? Phone);
+    string Role, bool IsRequired, string? Prefix, string? Suffix, string? FirstName, string? LastName,
+    string? Name, string? Email, string? Phone);
 
-/// <summary>Billing block.</summary>
-public sealed record RemsReviewBilling(string? BillingContactName, string? BillingEmail, RemsAddressPayload? BillingAddress);
+/// <summary>
+/// Billing block. <see cref="AdditionalContacts"/> is everyone the client named to invoice BEYOND the
+/// first — the first is the <c>billingContact</c> role, listed among the contacts above.
+/// </summary>
+public sealed record RemsReviewBilling(
+    string? BillingContactName,
+    string? BillingEmail,
+    RemsAddressPayload? BillingAddress,
+    IReadOnlyList<RemsReviewContactRow> AdditionalContacts);
 
 /// <summary>Shared JSON options for (de)serializing the stored draft / submission payloads (web defaults: camelCase, case-insensitive).</summary>
 public static class RemsFormPayloadJson

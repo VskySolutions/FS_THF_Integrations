@@ -42,6 +42,9 @@ public static class TenantOptionSetSeeder
                 Name = def.Name,
                 ItemSortMode = def.ItemSortMode,
                 IsSystem = false,
+                // A list the application branches on keeps its closed-ness through the copy: the tenant
+                // owns the row and every label on it, but the CODES are the workflow's.
+                IsClosed = def.IsClosed,
                 IsActive = true,
                 Items = def.Items.Select(i => new OptionSetItem
                 {
@@ -53,6 +56,13 @@ public static class TenantOptionSetSeeder
                     SortOrder = i.SortOrder,
                     IsActive = true,
                     MetadataJson = i.MetadataJson,
+                    BackgroundColor = i.BackgroundColor,
+                    TextColor = i.TextColor,
+                    Icon = i.Icon,
+                    // Seeded values on a closed list are the ones the server writes and reads back, so
+                    // they cannot be deleted, deactivated or re-coded. Everything else about them is the
+                    // tenant's to change.
+                    IsSystem = def.SeedsSystemValues,
                 }).ToList(),
             };
 

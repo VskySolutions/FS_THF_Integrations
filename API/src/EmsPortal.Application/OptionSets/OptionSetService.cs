@@ -15,12 +15,34 @@ public sealed class OptionSetService : IOptionSetService
     private readonly IOptionSetRepository _sets;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ITenantContext _tenantContext;
+    private readonly IOptionCodeResolver _codes;
 
-    public OptionSetService(IOptionSetRepository sets, IUnitOfWork unitOfWork, ITenantContext tenantContext)
+    public OptionSetService(
+        IOptionSetRepository sets,
+        IUnitOfWork unitOfWork,
+        ITenantContext tenantContext,
+        IOptionCodeResolver codes)
     {
         _sets = sets;
         _unitOfWork = unitOfWork;
         _tenantContext = tenantContext;
+        _codes = codes;
+    }
+
+    /// <summary>
+    /// Saves, and retires the resolver's cached id/code maps.
+    ///
+    /// <para>
+    /// Every write in this class goes through here. Those maps are what turns the option-item id stored on
+    /// a row back into the code the application branches on, so a list edited while a stale map is in
+    /// memory would keep resolving to the value it USED to have. A tenant taking their own copy of a
+    /// standard list changes which ids are effective for them from that moment too.
+    /// </para>
+    /// </summary>
+    private async Task SaveChangesAsync(CancellationToken cancellationToken)
+    {
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _codes.Invalidate();
     }
 
     private Guid TenantId =>
@@ -52,7 +74,7 @@ public sealed class OptionSetService : IOptionSetService
         };
 
         await _sets.AddSetAsync(set, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await SaveChangesAsync(cancellationToken);
         return set;
     }
 
@@ -69,7 +91,7 @@ public sealed class OptionSetService : IOptionSetService
         set.IsActive = input.IsActive;
 
         _sets.UpdateSet(set);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await SaveChangesAsync(cancellationToken);
         return set;
     }
 
@@ -84,7 +106,7 @@ public sealed class OptionSetService : IOptionSetService
         EnsureDeletable(set);
 
         _sets.RemoveSet(set);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await SaveChangesAsync(cancellationToken);
         return true;
     }
 
@@ -95,6 +117,17 @@ public sealed class OptionSetService : IOptionSetService
         if (set is null)
         {
             return null;
+        }
+
+        // A closed list's values are the application's own: it writes them and branches on them, so a value
+        // nothing ever sets is a value nothing can reach, and a picker offering it is a dead end.
+        // Everything about the values that ARE there stays editable.
+        if (set.IsClosed)
+        {
+            throw new OptionSetException(
+                OptionSetErrorCodes.ClosedSet,
+                $"'{set.Name}' is a list the application depends on, so no value can be added to it. "
+                + "The values it has can be renamed, described, coloured and re-ordered.");
         }
 
         var value = input.Value.Trim();
@@ -122,11 +155,12 @@ public sealed class OptionSetService : IOptionSetService
             IsActive = true,
             BackgroundColor = NullIfBlank(input.BackgroundColor),
             TextColor = NullIfBlank(input.TextColor),
+            Icon = NullIfBlank(input.Icon),
             MetadataJson = NullIfBlank(input.MetadataJson),
         };
 
         await _sets.AddItemAsync(item, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await SaveChangesAsync(cancellationToken);
         return item;
     }
 
@@ -151,6 +185,28 @@ public sealed class OptionSetService : IOptionSetService
             throw new OptionSetException(OptionSetErrorCodes.DuplicateValue, $"A value '{value}' already exists in this list.");
         }
 
+        // A system value is the CODE the server writes and reads back, and now the FK every row holding it
+        // points at. Re-coding it would strand every one of those rows, so it is always refused; the rest
+        // of the row — label, description, colours, icon, order — is edited as any other value's is.
+        if (item.IsSystem && !string.Equals(item.Value, value, StringComparison.Ordinal))
+        {
+            throw new OptionSetException(
+                OptionSetErrorCodes.SystemItem,
+                $"'{item.Label}' is a value the application writes, so its code cannot change. "
+                + "Rename the label instead — that is what everybody sees.");
+        }
+
+        // Hiding one is refused only on a CLOSED list, where the value is a state the workflow still
+        // reaches and a hidden one leaves the badge with nothing to render. On an open list, hiding a
+        // seeded value is a firm saying "we do not do GCS work" — reasonable, and the engagements already
+        // recorded against it keep pointing at it either way.
+        if (item.IsSystem && set.IsClosed && !input.IsActive)
+        {
+            throw new OptionSetException(
+                OptionSetErrorCodes.SystemItem,
+                $"'{item.Label}' is a state the application still sets, so it cannot be hidden.");
+        }
+
         item.Value = value;
         item.Label = input.Label.Trim();
         item.Description = NullIfBlank(input.Description);
@@ -159,10 +215,11 @@ public sealed class OptionSetService : IOptionSetService
         item.IsActive = input.IsActive;
         item.BackgroundColor = NullIfBlank(input.BackgroundColor);
         item.TextColor = NullIfBlank(input.TextColor);
+        item.Icon = NullIfBlank(input.Icon);
         item.MetadataJson = NullIfBlank(input.MetadataJson);
 
         _sets.UpdateItem(item);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await SaveChangesAsync(cancellationToken);
         return item;
     }
 
@@ -180,8 +237,19 @@ public sealed class OptionSetService : IOptionSetService
             return null;
         }
 
+        // Deleting a value the server still writes leaves every row already pointing at it with a dangling
+        // reference. The database refuses that too, now the columns are foreign keys — this says so in
+        // words rather than letting the save come back as a constraint violation.
+        if (item.IsSystem)
+        {
+            throw new OptionSetException(
+                OptionSetErrorCodes.SystemItem,
+                $"'{item.Label}' is a value the application writes, so it cannot be deleted. Rename it, "
+                + "recolour it or re-order it instead.");
+        }
+
         _sets.RemoveItem(item);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await SaveChangesAsync(cancellationToken);
         return true;
     }
 
@@ -213,7 +281,7 @@ public sealed class OptionSetService : IOptionSetService
             }
         }
 
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await SaveChangesAsync(cancellationToken);
         return true;
     }
 

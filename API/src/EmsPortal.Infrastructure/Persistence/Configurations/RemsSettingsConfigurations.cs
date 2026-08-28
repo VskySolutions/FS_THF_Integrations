@@ -28,7 +28,8 @@ internal sealed class RemsDepartmentDirectorConfiguration : IEntityTypeConfigura
         builder.ToTable("RemsDepartmentDirector");
         builder.HasKey(d => d.Id);
 
-        builder.Property(d => d.Department).IsRequired().HasMaxLength(64);
+        builder.HasOne(d => d.Department).WithMany().HasForeignKey(d => d.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+        builder.Navigation(d => d.Department).AutoInclude();
 
         builder.HasOne<Tenant>().WithMany().HasForeignKey(d => d.TenantId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(d => d.TenantId);
@@ -37,6 +38,6 @@ internal sealed class RemsDepartmentDirectorConfiguration : IEntityTypeConfigura
         builder.HasOne<User>().WithMany().HasForeignKey(d => d.DirectorUserId).OnDelete(DeleteBehavior.Restrict);
 
         // One director per (tenant, department).
-        builder.HasIndex(d => new { d.TenantId, d.Department }).IsUnique().HasFilter("[Deleted] = 0");
+        builder.HasIndex(d => new { d.TenantId, d.DepartmentId }).IsUnique().HasFilter("[Deleted] = 0");
     }
 }

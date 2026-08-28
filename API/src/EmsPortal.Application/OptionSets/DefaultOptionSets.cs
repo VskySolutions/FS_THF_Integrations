@@ -11,6 +11,24 @@ namespace EmsPortal.Application.OptionSets;
 /// </summary>
 public static class DefaultOptionSets
 {
+    // ---- The badge palette, as hex ----
+    // These are the values the REMS badges used to carry as hardcoded Quasar colour names, written out
+    // once here so a status list arrives already looking the way it always has. They are a STARTING
+    // point like every label beside them: a tenant recolours a status in Administration → Option Sets and
+    // every badge for it follows, because nothing downstream holds a colour of its own any more.
+    private const string OnDark = "#ffffff";
+    private const string Grey = "#9e9e9e";
+    private const string Teal = "#00897b";
+    private const string Purple = "#673ab7";
+    private const string PurpleLight = "#9575cd";
+    private const string Amber = "#ffa000";
+    private const string AmberSoft = "#ffb300";
+    private const string Orange = "#f57c00";
+    private const string OrangeDeep = "#ef6c00";
+    private const string Red = "#C10015";
+    private const string Green = "#21BA45";
+    private const string Brand = "#1f6478";
+
     /// <summary>
     /// <paramref name="Description"/> is what the value MEANS, surfaced as its tooltip wherever the value
     /// is offered or displayed. Worth filling in wherever the labels alone could be mistaken for one
@@ -21,14 +39,42 @@ public static class DefaultOptionSets
         string Label,
         int SortOrder,
         string? MetadataJson = null,
-        string? Description = null);
+        string? Description = null,
+        /// <summary>Badge background, as hex. Seeded so a status list arrives already coloured.</summary>
+        string? BackgroundColor = null,
+        /// <summary>Badge text colour, as hex.</summary>
+        string? TextColor = null,
+        /// <summary>Material icon name shown beside the value, e.g. <c>o_support_agent</c>.</summary>
+        string? Icon = null);
 
+    /// <summary>
+    /// Two different kinds of protection, because two different things can be true of a list.
+    /// <para>
+    /// <paramref name="IsClosed"/> — the application branches on the values AND the set of them is fixed.
+    /// Nothing may be added, and no seeded value may be deleted, re-coded or hidden. The seven lists that
+    /// mirror a C# enum are these: a status the server never writes is a status nothing can reach.
+    /// </para>
+    /// <para>
+    /// <paramref name="LockSeededValues"/> — the application branches on the values it SEEDED, but the
+    /// list itself is open. A firm may add a department of its own and hide one it does not use; what it
+    /// may not do is delete or re-code <c>audit</c>, because the conditional CAF card, the government
+    /// contract block and the approval prerequisites are all written against that exact string.
+    /// </para>
+    /// Everything a tenant would actually want to change — the label, the description, the colours, the
+    /// icon, the order — stays theirs on both.
+    /// </summary>
     public sealed record Definition(
         EntityType EntityType,
         string Key,
         string Name,
         OptionItemSortMode ItemSortMode,
-        IReadOnlyList<ItemDefinition> Items);
+        IReadOnlyList<ItemDefinition> Items,
+        bool IsClosed = false,
+        bool LockSeededValues = false)
+    {
+        /// <summary>Whether the values seeded into this list are the application's own.</summary>
+        public bool SeedsSystemValues => IsClosed || LockSeededValues;
+    }
 
     /// <summary>
     /// The platform-standard option lists to seed. Most of the REMS lists keyed to
@@ -51,7 +97,10 @@ public static class DefaultOptionSets
             new ItemDefinition("existing_client", "New Engagement, Existing Client", 2, Description:
                 "The person or company already has an active client record with THF, and this request " +
                 "creates an additional engagement under that same client."),
-        }),
+        // The client lookup marks the request by these two codes BY NAME (REMS_TYPE_BRAND_NEW_CLIENT /
+        // REMS_TYPE_EXISTING_CLIENT), so neither may be deleted or re-coded. The list itself stays open —
+        // a firm that classifies a referral a third way is welcome to say so.
+        }, LockSeededValues: true),
         // How the client heard about THF, asked on the public EMS form. The descriptions double as the
         // examples the client needs to place themselves, so they carry the "Friend, Family, or Colleague"
         // detail rather than crowding it into the label.
@@ -78,22 +127,39 @@ public static class DefaultOptionSets
             // back, not staff starting the engagement setup, which happens before any of this. The code
             // keeps its older name because rows already hold it.
             new ItemDefinition("draft", "Draft", 1, Description:
-                "With its initiator. Saved but not yet sent to the client."),
+                "With its initiator. Saved but not yet sent to the client.",
+                BackgroundColor: Grey, TextColor: OnDark),
             new ItemDefinition("awaiting_customer", "Awaiting Customer", 2, Description:
-                "The intake form has been emailed. The ball is with the client."),
+                "The intake form has been emailed. The ball is with the client.",
+                BackgroundColor: Teal, TextColor: OnDark),
             new ItemDefinition("customer_submitted", "Admin Review", 3, Description:
-                "The client's answers are in and the named Admin is reviewing them."),
-            new ItemDefinition("returned_to_initiator", "Returned to Initiator", 4, Description:
-                "The Admin sent the engagement setup back for rework, with a reason. Client intake is read-only."),
-            new ItemDefinition("awaiting_admin_confirmation", "Awaiting Admin Confirmation", 5, Description:
-                "The initiator revised the setup and handed it back for the Admin to confirm."),
-            new ItemDefinition("pending_approval", "Pending Approval", 6, Description:
-                "Routed to the approvers. Every field is read-only while the approval is open."),
-            new ItemDefinition("changes_requested", "Changes Requested", 7, Description:
-                "Enough approvers declined. Back with the initiator to rework the setup."),
-            new ItemDefinition("approved", "Approved", 8, Description:
-                "Fully approved. Permanently read-only."),
-        }),
+                "The client's answers are in and the named Admin is reviewing them.",
+                BackgroundColor: Purple, TextColor: OnDark),
+            // NOT a stored status. `customer_submitted` covers both "an admin has this" and "nobody has
+            // picked it up yet", and those read very differently to somebody waiting on the request — so
+            // the badge says which. The application decides WHEN to show it (RemsRequestStatuses); what
+            // it is CALLED, what it explains and what colour it is are the tenant's, like every other
+            // value here. Without this row those three would be a hardcoded string in the front end.
+            new ItemDefinition("waiting_for_pickup", "Waiting For Pickup", 4, Description:
+                "The client's answers are in and the request is with the admins, but no admin has picked "
+                + "it up yet. Until one does, its engagement setup is nobody's to work.",
+                BackgroundColor: Amber, TextColor: OnDark),
+            new ItemDefinition("returned_to_initiator", "Returned to Initiator", 5, Description:
+                "The Admin sent the engagement setup back for rework, with a reason. Client intake is read-only.",
+                BackgroundColor: OrangeDeep, TextColor: OnDark),
+            new ItemDefinition("awaiting_admin_confirmation", "Awaiting Admin Confirmation", 6, Description:
+                "The initiator revised the setup and handed it back for the Admin to confirm.",
+                BackgroundColor: PurpleLight, TextColor: OnDark),
+            new ItemDefinition("pending_approval", "Pending Approval", 7, Description:
+                "Routed to the approvers. Every field is read-only while the approval is open.",
+                BackgroundColor: Orange, TextColor: OnDark),
+            new ItemDefinition("changes_requested", "Changes Requested", 8, Description:
+                "Enough approvers declined. Back with the initiator to rework the setup.",
+                BackgroundColor: Red, TextColor: OnDark),
+            new ItemDefinition("approved", "Approved", 9, Description:
+                "Fully approved. Permanently read-only.",
+                BackgroundColor: Green, TextColor: OnDark),
+        }, IsClosed: true),
         new Definition(EntityType.Rems, "REMS.BillingPeriod", "REMS Billing Period", OptionItemSortMode.Custom, new[]
         {
             // How often the client is billed. Pairs with the engagement's Description of Billing Process,
@@ -130,7 +196,11 @@ public static class DefaultOptionSets
             new ItemDefinition("trust_estate", "Trust and Estate", 6, Description:
                 "A trust or a decedent's estate. Asked the same questions as a business — it has an EIN " +
                 "and is acted for by trustees or personal representatives rather than by an individual."),
-        }),
+        // The client's intake form is SHAPED by these codes: individual asks for a spouse, the business
+        // family for an EIN and three contacts, government for a finance director and a contract block
+        // (RemsFormPayloadValidator). Deleting or re-coding one would leave submitted forms nobody can
+        // validate, so the seeded six are locked — while the list stays open to an entity type a firm adds.
+        }, LockSeededValues: true),
         // The client's trade. Shown as "Industry"; the key stays REMS.SubIndustry for the same reason as
         // the entity type above. Unlike the entity type — which decides which questions the client's
         // intake form asks and is therefore frozen once that form goes out — this is an internal
@@ -221,7 +291,11 @@ public static class DefaultOptionSets
             // "audit" and "tax" codes specifically, so an Admin engagement asks for neither a signed CAF
             // nor a fiscal year end.
             new ItemDefinition("admin", "Admin", 6),
-        }),
+        // Everything conditional on the engagement setup keys off these codes by name — the signed CAF on
+        // audit and assurance, the fiscal year end on tax, the purchase order on gcs, the billing pair on
+        // cas, and the approval prerequisites behind all of them (RemsEngagementCodes). So the seeded six
+        // cannot be deleted or re-coded. A department a firm adds is its own, and asks nothing conditional.
+        }, LockSeededValues: true),
         // How a GCS engagement is staffed, which with the bill rate beside it is how the work is priced.
         // One level per engagement — a single rate for the whole piece of work, not a rate card.
         new Definition(EntityType.Rems, "REMS.PersonnelLevel", "REMS Personnel Level", OptionItemSortMode.Custom, new[]
@@ -274,6 +348,158 @@ public static class DefaultOptionSets
             new ItemDefinition("1065", "1065 — Partnership", 4),
             new ItemDefinition("990", "990 — Tax-Exempt", 5),
         }),
+
+        // ---------------------------------------------------------------------------------------------
+        // The seven lists below mirror C# enums the workflow BRANCHES on — RemsFormStatus,
+        // RemsApproverRole, RemsApprovalTaskStatus, RemsApprovalRoundStatus, RemsEngagementStatus,
+        // RemsFormEmailEventType, and the submission state derived from the first.
+        //
+        // They are seeded as CLOSED lists: the codes are the enum's and cannot be added to, deleted or
+        // renamed, because the server writes them and reads them back. What a firm actually wants to
+        // change is open — the wording on the badge, the sentence behind its tooltip, the colour, the
+        // icon, the order. Until now all of that lived in a hardcoded map in the front end, which meant
+        // a firm that calls a Shareholder a Principal had no way to say so.
+        // ---------------------------------------------------------------------------------------------
+
+        // RemsFormStatus. Worded from the FIRM's side: a form that has come back reads "Received", not
+        // "Submitted" — submitting is the client's act and it is over; what staff want to know is whether
+        // the answers are in hand.
+        //
+        // Draft and Saved are STORED values that the dashboard never shows: both mean the client has not
+        // been written to, so RemsWorkspaceMapper.FormState folds them into Not started. They stay on the
+        // list because REMSForm.Status still holds them and they are what the send guard reads.
+        new Definition(EntityType.Rems, "REMS.FormStatus", "REMS Form Status", OptionItemSortMode.Custom, new[]
+        {
+            new ItemDefinition("NotStarted", "Not started", 1, Description:
+                "The intake form has not gone out to the client yet — whether or not staff have prepared it.",
+                BackgroundColor: Grey, TextColor: OnDark),
+            new ItemDefinition("Draft", "Draft", 2, Description:
+                "The intake form exists but has not been sent to the client.",
+                BackgroundColor: Grey, TextColor: OnDark),
+            new ItemDefinition("Saved", "Saved", 3, Description:
+                "The intake form has been prepared and saved, ready to send.",
+                BackgroundColor: Brand, TextColor: OnDark),
+            new ItemDefinition("Sent", "Sent", 4, Description:
+                "The intake form has been emailed to the client and is waiting on them.",
+                BackgroundColor: Teal, TextColor: OnDark),
+            new ItemDefinition("Submitted", "Received", 5, Description:
+                "The client filled the intake form in and sent it back.",
+                BackgroundColor: Green, TextColor: OnDark),
+            new ItemDefinition("Cancelled", "Cancelled", 6, Description:
+                "The intake form was cancelled — the client cannot fill it in.",
+                BackgroundColor: Red, TextColor: OnDark),
+        }, IsClosed: true),
+
+        // Whether the client's answers are in hand. Derived from the form status rather than stored, but
+        // rendered as a value of its own on the request lists — so it is a list of its own.
+        new Definition(EntityType.Rems, "REMS.ClientSubmissionState", "REMS Client Submission", OptionItemSortMode.Custom, new[]
+        {
+            new ItemDefinition("AwaitingCustomer", "Awaiting customer", 1, Description:
+                "The intake form is out with the client and they have not answered yet.",
+                BackgroundColor: Teal, TextColor: OnDark),
+            new ItemDefinition("Submitted", "Received", 2, Description:
+                "The client's answers are in hand.",
+                BackgroundColor: Green, TextColor: OnDark),
+        }, IsClosed: true),
+
+        // RemsApproverRole — what puts somebody on an engagement's approver list. The icon is part of the
+        // value here: the approver list and the inbox are read down their left edge.
+        new Definition(EntityType.Rems, "REMS.ApproverRole", "REMS Approver Role", OptionItemSortMode.Custom, new[]
+        {
+            new ItemDefinition("Shareholder", "Shareholder", 1, Description:
+                "A holder of the Shareholder role — on every engagement's list by standing, and not removable.",
+                BackgroundColor: Brand, TextColor: OnDark, Icon: "o_workspace_premium"),
+            new ItemDefinition("DepartmentDirector", "Department Director", 2, Description:
+                "The head of the department the engagement was placed in.",
+                BackgroundColor: Brand, TextColor: OnDark, Icon: "o_account_tree"),
+            new ItemDefinition("CSE", "CSE", 3, Description:
+                "The Client Service Executive who owns the client relationship.",
+                BackgroundColor: Brand, TextColor: OnDark, Icon: "o_support_agent"),
+            new ItemDefinition("CommissionRecipient", "Commission Recipient", 4, Description:
+                "Named for a share of the commission on this engagement, which is why they are asked to accept it.",
+                BackgroundColor: Brand, TextColor: OnDark, Icon: "o_payments"),
+            new ItemDefinition("Approver", "Approver", 5, Description:
+                "Added to the round by hand, with no other standing on the engagement.",
+                BackgroundColor: Brand, TextColor: OnDark, Icon: "o_how_to_reg"),
+        }, IsClosed: true),
+
+        // RemsApprovalTaskStatus — ONE approver's decision, which is not the request's outcome. The
+        // description on Approved says so, because that is the confusion this list exists to end.
+        new Definition(EntityType.Rems, "REMS.ApprovalStatus", "REMS Approval Decision", OptionItemSortMode.Custom, new[]
+        {
+            new ItemDefinition("Pending", "Pending", 1, Description:
+                "Waiting on this approver's decision.",
+                BackgroundColor: Orange, TextColor: OnDark),
+            new ItemDefinition("Approved", "Approved", 2, Description:
+                "This approver signed off. It does not mean the request is approved — the round is "
+                + "approved only once every approver has.",
+                BackgroundColor: Green, TextColor: OnDark),
+            new ItemDefinition("Rejected", "Rejected", 3, Description:
+                "This approver declined, with a reason. A decline ends the round and sends the setup back for rework.",
+                BackgroundColor: Red, TextColor: OnDark),
+            new ItemDefinition("Superseded", "No longer required", 4, Description:
+                "The round closed on somebody else's decline before this approver decided, so no decision "
+                + "is needed from them.",
+                BackgroundColor: Grey, TextColor: OnDark),
+        }, IsClosed: true),
+
+        // RemsApprovalRoundStatus — where the whole ROUND stands. `partially_approved` is the one value
+        // the enum does not have: a round is Pending from the moment it is sent until the last signature,
+        // which cannot tell "nobody has looked at this" from "everybody but you has signed". The
+        // application decides when to show it; its wording, colour and explanation live here like the rest.
+        new Definition(EntityType.Rems, "REMS.ApprovalRoundStatus", "REMS Approval Status", OptionItemSortMode.Custom, new[]
+        {
+            new ItemDefinition("Pending", "Pending", 1, Description:
+                "Routed to the approvers. Nobody has signed yet.",
+                BackgroundColor: Orange, TextColor: OnDark),
+            new ItemDefinition("partially_approved", "Partially Approved", 2, Description:
+                "Some of the approvers have signed. The request is approved only once all of them have.",
+                BackgroundColor: AmberSoft, TextColor: OnDark),
+            new ItemDefinition("Approved", "Approved", 3, Description:
+                "Every approver signed. The engagement is approved.",
+                BackgroundColor: Green, TextColor: OnDark),
+            new ItemDefinition("Rejected", "Declined", 4, Description:
+                "An approver declined. The round is closed and the setup went back for rework.",
+                BackgroundColor: Red, TextColor: OnDark),
+        }, IsClosed: true),
+
+        // RemsEngagementStatus — the engagement's own lifecycle, shown beside the request's.
+        new Definition(EntityType.Rems, "REMS.EngagementStatus", "REMS Engagement Status", OptionItemSortMode.Custom, new[]
+        {
+            new ItemDefinition("Draft", "Draft", 1, Description:
+                "Being set up. It has not been routed to the approvers.",
+                BackgroundColor: Grey, TextColor: OnDark),
+            new ItemDefinition("PendingApproval", "Pending Approval", 2, Description:
+                "With its approvers. It becomes Approved only once every one of them has signed.",
+                BackgroundColor: Orange, TextColor: OnDark),
+            new ItemDefinition("Rejected", "Rejected", 3, Description:
+                "An approver declined. The setup is back with staff to rework and resubmit.",
+                BackgroundColor: Red, TextColor: OnDark),
+            new ItemDefinition("Approved", "Approved", 4, Description:
+                "Every approver signed. The engagement is approved and permanently read-only.",
+                BackgroundColor: Green, TextColor: OnDark),
+        }, IsClosed: true),
+
+        // RemsFormEmailEventType — what the provider reported about the client's intake email. These are
+        // never synthesised: the log shows exactly what came back.
+        new Definition(EntityType.Rems, "REMS.EmailEvent", "REMS Email Event", OptionItemSortMode.Custom, new[]
+        {
+            new ItemDefinition("Sent", "Sent", 1, Description:
+                "The intake form was emailed to the client.",
+                BackgroundColor: Teal, TextColor: OnDark, Icon: "o_send"),
+            new ItemDefinition("Reminder", "Reminder sent", 2, Description:
+                "The client was chased about a form already sent to them.",
+                BackgroundColor: Amber, TextColor: OnDark, Icon: "o_notifications_active"),
+            new ItemDefinition("Delivered", "Delivered", 3, Description:
+                "The provider confirmed the message reached the client's mail server.",
+                BackgroundColor: Green, TextColor: OnDark, Icon: "o_mark_email_read"),
+            new ItemDefinition("Opened", "Opened", 4, Description:
+                "The provider reported the client opening the message.",
+                BackgroundColor: Brand, TextColor: OnDark, Icon: "o_drafts"),
+            new ItemDefinition("Failed", "Failed", 5, Description:
+                "The message could not be delivered. The reason is on the row.",
+                BackgroundColor: Red, TextColor: OnDark, Icon: "o_error"),
+        }, IsClosed: true),
     };
 
     /// <summary>Builds the <c>MetadataJson</c> for a REMS marketing-method item: its group and behaviour flags.</summary>

@@ -30,24 +30,22 @@
           :hint="directorHint" :hint-alert="directorHintAlert" class="col-12 col-sm-4"
         />
 
-        <!-- ── The three people who run it ──────────────────────────────────────────────────────── -->
+        <!-- ── The two people who run it ────────────────────────────────────────────────────────── -->
         <!-- Each is scoped to the ROLE of its own name. When nobody holds the role the picker is empty on
-             purpose and the hint names the role to assign. -->
-        <app-select
-          :model-value="cseUserId" :options="cseOptions" label="CSE" required
-          class="col-12 col-sm-4" :readonly="!editable" :clearable="false" :hint="cseHint"
-          info="Users holding the &quot;CSE&quot; role. The CSE becomes an approver on this engagement."
-          @update:model-value="$emit('update:cseUserId', $event)"
-        />
+             purpose and the hint names the role to assign.
+             The CSE is NOT here. It belongs to the request rather than to its engagement — it is filed on
+             the EMS form record the client's invite is minted from, and it has to be answered before the
+             form can go out at all — so it is asked on the Client Information tab, beside the entity type
+             it is saved with. -->
         <app-select
           v-model="core.engagementExecutiveId" :options="executiveOptions" label="Engagement Executive"
-          required class="col-12 col-sm-4" :readonly="!editable"
+          required class="col-12 col-sm-6" :readonly="!editable"
           :rules="[requiredRule('an Engagement Executive')]" :hint="executiveHint"
           info="Lists users holding the &quot;Engagement Executive&quot; role, assigned on a user's page in Administration → Users."
         />
         <app-select
           v-model="core.billingManagerId" :options="billingManagerOptions" label="Billing Manager"
-          required class="col-12 col-sm-4" :readonly="!editable"
+          required class="col-12 col-sm-6" :readonly="!editable"
           :rules="[requiredRule('a Billing Manager')]" :hint="billingManagerHint"
           info="Lists users holding the &quot;Billing Manager&quot; role, assigned on a user's page in Administration → Users."
         />
@@ -120,16 +118,18 @@
         </q-card-section>
         <q-separator />
         <q-card-section>
-          <template v-if="hasCaf">
-            <q-banner dense class="bg-green-1 text-green-9 rounded-borders q-mb-sm">
-              <template #avatar><q-icon name="o_verified" color="green-9" /></template>
-              A signed client-acceptance form is on file.
-            </q-banner>
-            <!-- The document itself, not just the claim that one exists: the same preview row every other
-                 saved file gets, and a click opens it in a new tab. Uploading again replaces it, which is
-                 what the picker underneath says, so there is no ✕ here. -->
-            <app-stored-file-item :file="storedCaf" class="q-mb-sm" />
-          </template>
+          <!-- Where the form stands, then the picker, then the document itself — and the document is at
+               the BOTTOM in both states. A file waiting to be saved is previewed by the picker, which
+               renders its row underneath the dropzone; the saved row used to sit ABOVE it, so the same
+               document jumped from one end of the card to the other the moment the auto-save landed. -->
+          <q-banner v-if="hasCaf && cafFile" dense class="bg-teal-1 text-teal-9 rounded-borders q-mb-sm">
+            <template #avatar><q-icon name="o_swap_horiz" color="teal-9" /></template>
+            Saving replaces the signed client-acceptance form on file with the one you have just chosen.
+          </q-banner>
+          <q-banner v-else-if="hasCaf" dense class="bg-green-1 text-green-9 rounded-borders q-mb-sm">
+            <template #avatar><q-icon name="o_verified" color="green-9" /></template>
+            A signed client-acceptance form is on file.
+          </q-banner>
           <q-banner v-else-if="cafFile" dense class="bg-teal-1 text-teal-9 rounded-borders q-mb-sm">
             <template #avatar><q-icon name="o_upload_file" color="teal-9" /></template>
             The signed client-acceptance form is attached when you save this request.
@@ -141,9 +141,17 @@
           </q-banner>
           <app-single-file-upload
             v-if="editable"
-            v-model="cafFile" accept=".pdf" :max-size-mb="25"
+            v-model="cafFile" accept=".pdf" :max-size-mb="MAX_UPLOAD_MB"
             :label="hasCaf ? 'Replace signed CAF (PDF)' : 'Upload signed CAF (PDF)'"
-            hint="PDF up to 25 MB"
+            :hint="`PDF only, up to ${MAX_UPLOAD_MB} MB`"
+          />
+          <!-- The document itself, not just the claim that one exists: the same preview row every other
+               saved file gets, and a click opens it in a new tab. The ✕ takes it back off the engagement —
+               uploading again replaces it, but "replace" is not an answer to a form that should never have
+               been attached, and until this existed there was no way back to none. -->
+          <app-stored-file-item
+            v-if="hasCaf" :file="storedCaf" :removable="editable" :disable="removingCaf" class="q-mt-sm"
+            @remove="removeCaf"
           />
 
           <!-- Assurance only. The client's fiscal year end DATES the period being examined — it is not the
@@ -253,19 +261,30 @@
 
           <!-- The purchase order itself. Same shape as the signed CAF above: held until the page saves,
                because a brand-new request has no engagement to link it to yet. -->
+          <!-- Same order as the CAF card above: what is on file, the picker, then the document at the
+               bottom — which is where the picker previews an unsaved one, so the row does not move when
+               the save lands. -->
           <div class="q-mt-md">
-            <template v-if="hasPurchaseOrderFile">
-              <app-stored-file-item :file="storedPurchaseOrder" class="q-mb-sm" />
-            </template>
+            <q-banner v-if="hasPurchaseOrderFile && poFile" dense class="bg-teal-1 text-teal-9 rounded-borders q-mb-sm">
+              <template #avatar><q-icon name="o_swap_horiz" color="teal-9" /></template>
+              Saving replaces the purchase order on file with the one you have just chosen.
+            </q-banner>
             <q-banner v-else-if="poFile" dense class="bg-teal-1 text-teal-9 rounded-borders q-mb-sm">
               <template #avatar><q-icon name="o_upload_file" color="teal-9" /></template>
               The purchase order is attached when you save this request.
             </q-banner>
             <app-single-file-upload
               v-if="editable"
-              v-model="poFile" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx" :max-size-mb="25"
+              v-model="poFile" :accept="PURCHASE_ORDER_ACCEPT" :max-size-mb="MAX_UPLOAD_MB"
               :label="hasPurchaseOrderFile ? 'Replace purchase order' : 'Upload purchase order'"
-              hint="Up to 25 MB"
+              :hint="`PDF, image, Word or Excel, up to ${MAX_UPLOAD_MB} MB`"
+            />
+            <!-- The ✕ takes it back off the engagement, as it does on the CAF above: uploading again
+                 replaces the order, but "replace" is no answer to one that should never have been
+                 attached, and until this there was no way back to none on file. -->
+            <app-stored-file-item
+              v-if="hasPurchaseOrderFile" :file="storedPurchaseOrder" :removable="editable"
+              :disable="removingPurchaseOrder" class="q-mt-sm" @remove="removePurchaseOrder"
             />
           </div>
         </q-card-section>
@@ -318,9 +337,9 @@
 // The request's engagement setup (AC-REMS-014/015): what the firm does, where the work sits and the mapped
 // department director (read-only), the engagement team, and then whatever the chosen DEPARTMENT is asked.
 //
-// Six fields are asked of every engagement — Service Line, Department, Department Director, CSE,
-// Engagement Executive, Billing Manager — and % Realization is asked of every one too. Everything else
-// keys off the department:
+// Five fields are asked of every engagement — Service Line, Department, Department Director, Engagement
+// Executive, Billing Manager — and % Realization is asked of every one too. Everything else keys off the
+// department:
 //
 //   Tax        first-year fee · fiscal year end · original + first-extension due dates · tax forms
 //   Assurance  ENGAGEMENT fee · signed CAF · client's fiscal year end · admin fees (yes/no + amount)
@@ -332,9 +351,11 @@
 // Switching department HIDES what no longer applies and leaves what is stored alone: saveSetup writes only
 // the blocks on screen, so a department picked by mistake and corrected does not take the answers with it.
 //
-// The two classifications that describe THE CLIENT — Entity Type and Industry — are asked on the Client
-// Information tab instead. The entity type still arrives here as a prop, because the Government Audit card
-// keys off it together with the department chosen below.
+// Three answers that are asked on the CLIENT INFORMATION tab are not here: Entity Type and Industry, which
+// describe the client rather than the engagement, and the CSE, which belongs to the REQUEST — it is filed
+// on the EMS form record the client's invite is minted from, and the invite cannot be sent without it. The
+// entity type still arrives here as a prop, because the Government Audit card keys off it together with
+// the department chosen below.
 //
 // Service Line is labelled here differently from the data it holds — it is `subServiceLine`. The note at
 // the top of useRemsMeta says why the data kept its name.
@@ -345,8 +366,11 @@
 // once the page has filed it. `remsId` rides along because the signed CAF is filed under the request on
 // the server, not under the engagement: one request has one engagement, so one folder holds both.
 import { ref, computed, watch, nextTick } from "vue";
-import { remsApi, mediaApi } from "services/api";
+import { remsApi, mediaApi, getApiErrorMessage } from "services/api";
+import { useNotify } from "composables/useNotify";
+import { useConfirm } from "composables/useConfirm";
 import { formatDateOnly } from "composables/useDateFormat";
+import { MAX_UPLOAD_MB } from "composables/useFileDrop";
 import {
   isTaxDepartment, isGovernmentAudit, isCasDepartment, isAssuranceDepartment,
   isGcsDepartment, requiresClientAcceptanceForm
@@ -377,21 +401,15 @@ const props = defineProps({
   billingManagerOptions: { type: Array, default: () => [] },
   editable: { type: Boolean, default: true },
 
-  // The CSE is NOT the engagement's. It lives on the request's EMS form record — what the client's invite
-  // is minted from — and is written by a different endpoint, so it is v-modelled through to the page
-  // rather than held in `core` below. It is rendered here because it belongs with the other two people
-  // who run the engagement: reading who owns this work should not mean reading it in two places.
-  cseUserId: { type: String, default: null },
-  cseOptions: { type: Array, default: () => [] },
-  cseHint: { type: String, default: "" },
   // Read-only here, and owned by the Client Information tab. Present because the Government Audit card
   // below appears only for an Audit department on a Government entity.
   industryGroup: { type: String, default: null }
 });
 // `change` says the engagement half has something to save — the page cannot see the local copies below.
-// The CSE is an ordinary v-model update: the page owns that value and writes it itself.
-const emit = defineEmits(["change", "update:cseUserId"]);
+const emit = defineEmits(["change"]);
 const formRef = ref(null);
+const notify = useNotify();
+const { confirm } = useConfirm();
 
 // Set while this component is writing to its own state rather than the user: re-seeding from a fresh
 // engagement view, or clearing the CAF picker once its file is uploaded. Neither is an edit, and
@@ -488,13 +506,17 @@ const buildTax = (t) => {
 };
 const tax = ref(buildTax(props.engagement.tax));
 
-// Re-sync every local form when the parent adopts a fresh engagement view.
+// Re-sync every local form when the parent adopts a fresh engagement view. Both document overrides go
+// with them: a re-seed is the page telling this form what the server now holds, which is exactly the
+// question they were standing in for.
 watch(() => props.engagement, (e) => {
   syncing = true;
   core.value = buildCore(e);
   gov.value = buildGov(e.government);
   audit.value = buildAudit(e.audit);
   tax.value = buildTax(e.tax);
+  cafOverride.value = undefined;
+  govOverride.value = undefined;
   nextTick(() => { syncing = false; });
 });
 
@@ -580,23 +602,97 @@ const directorHint = computed(() => {
 const directorHintAlert = computed(() =>
   directorsKnown.value && (departmentChangedUnsaved.value || (!!core.value.department && !directorName.value)));
 
-const hasCaf = computed(() => !!props.engagement.audit?.clientAcceptanceFormMediaId);
+// ---- The signed client-acceptance form on file ----
+// What this component has done to the CAF SINCE the engagement it was handed was read: the row returned by
+// an upload, or null once one has been removed. `undefined` means "nothing has happened here" and the
+// prop answers.
+//
+// It exists because the prop cannot answer on its own. The page seeds these tabs from the workspace it
+// loaded and deliberately does NOT re-seed them after an auto-save — that would overwrite whatever is
+// being typed — so `engagement.audit` still reads as it did when the page opened, and a form uploaded
+// moments ago showed no preview at all until the whole page was reloaded.
+const cafOverride = ref(undefined);
+const cafDetail = computed(() =>
+  (cafOverride.value === undefined ? props.engagement.audit : cafOverride.value));
+
+const hasCaf = computed(() => !!cafDetail.value?.clientAcceptanceFormMediaId);
 // The CAF already on file, as a stored-file row. The media id is what its bytes are fetched by; the name
 // is what the row is read as, and a form uploaded before the workspace carried the name still has one.
 const storedCaf = computed(() => ({
-  mediaId: props.engagement.audit?.clientAcceptanceFormMediaId,
-  fileName: props.engagement.audit?.fileName || "Client Acceptance Form.pdf"
+  mediaId: cafDetail.value?.clientAcceptanceFormMediaId,
+  fileName: cafDetail.value?.fileName || "Client Acceptance Form.pdf"
 }));
+
+// Taking it back off. Confirmed and written immediately rather than queued with the rest of the form: it
+// is a compliance document the approvers read, and it is what the send-for-approval gate checks.
+const removingCaf = ref(false);
+const removeCaf = async () => {
+  if (!props.engagement.id || removingCaf.value) return;
+  const ok = await confirm({
+    title: "Remove the signed CAF",
+    message: `Take "${storedCaf.value.fileName}" off this engagement? An ${showAssurance.value ? "assurance" : "audit"} ` +
+      "engagement cannot be sent for approval without one, so you will need to upload a replacement. This " +
+      "does not delete the file itself.",
+    confirmLabel: "Remove",
+    type: "danger"
+  });
+  if (!ok) return;
+  removingCaf.value = true;
+  try {
+    const view = await remsApi.removeCaf(props.engagement.id);
+    cafOverride.value = view?.audit ?? null;
+    notify.success("The signed client-acceptance form was removed.");
+  } catch (err) {
+    notify.error(getApiErrorMessage(err, "That form could not be removed."));
+  } finally {
+    removingCaf.value = false;
+  }
+};
 const hasContractDates = computed(() =>
   [gov.value.contractStartDate, gov.value.contractEndDate, gov.value.purchaseOrderStartDate, gov.value.purchaseOrderEndDate]
     .some((d) => !!d));
 
-// The GCS purchase-order document, the same way the CAF above is held and shown.
-const hasPurchaseOrderFile = computed(() => !!props.engagement.government?.purchaseOrderMediaId);
+// The GCS purchase-order document, the same way the CAF above is held and shown — including the override,
+// and for the same reason. The prop still describes the engagement as it read when the page opened, so
+// without this an order uploaded a moment ago vanished from the card: the auto-save consumed the picked
+// file and nothing had told the row on file that there now was one.
+const govOverride = ref(undefined);
+const govDetail = computed(() =>
+  (govOverride.value === undefined ? props.engagement.government : govOverride.value));
+
+const hasPurchaseOrderFile = computed(() => !!govDetail.value?.purchaseOrderMediaId);
 const storedPurchaseOrder = computed(() => ({
-  mediaId: props.engagement.government?.purchaseOrderMediaId,
-  fileName: props.engagement.government?.purchaseOrderFileName || "Purchase Order"
+  mediaId: govDetail.value?.purchaseOrderMediaId,
+  fileName: govDetail.value?.purchaseOrderFileName || "Purchase Order"
 }));
+
+// Taking it back off, the same way the CAF is: confirmed and written immediately rather than queued with
+// the rest of the form, because it is a document the approvers read. No approval gate requires one, so
+// unlike the CAF this never leaves the engagement unable to be sent — it just stops naming an order that
+// is not the one.
+const removingPurchaseOrder = ref(false);
+const removePurchaseOrder = async () => {
+  if (!props.engagement.id || removingPurchaseOrder.value) return;
+  const ok = await confirm({
+    title: "Remove the purchase order",
+    message: `Take "${storedPurchaseOrder.value.fileName}" off this engagement? The approvers read the ` +
+      "order this request is set up against, so it will show none until you upload another. This does " +
+      "not delete the file itself.",
+    confirmLabel: "Remove",
+    type: "danger"
+  });
+  if (!ok) return;
+  removingPurchaseOrder.value = true;
+  try {
+    const view = await remsApi.removePurchaseOrder(props.engagement.id);
+    govOverride.value = view?.government ?? null;
+    notify.success("The purchase order was removed.");
+  } catch (err) {
+    notify.error(getApiErrorMessage(err, "That purchase order could not be removed."));
+  } finally {
+    removingPurchaseOrder.value = false;
+  }
+};
 
 // Service Line, Department, the engagement team and % Realization are mandatory (they are also the
 // backend's send-for-approval prerequisites), so Save & Next cannot pass with any of them blank.
@@ -719,6 +815,10 @@ const saveSetup = async (engagementId, remsId = null) => {
     const media = await mediaApi.upload(
       cafFile.value, "ClientAcceptance", remsId ? { type: "Rems", id: remsId } : null);
     view = await remsApi.uploadCaf(engagementId, media.id);
+    // What the card shows from now on. The page will not re-seed this form after an auto-save — it must
+    // not, or it would overwrite fields being typed — so without this the form just uploaded stays
+    // invisible on the card that asked for it until the whole page is reloaded.
+    cafOverride.value = view?.audit ?? null;
     syncing = true;
     cafFile.value = null;
     await nextTick();
@@ -728,6 +828,9 @@ const saveSetup = async (engagementId, remsId = null) => {
     const media = await mediaApi.upload(
       poFile.value, "Attachment", remsId ? { type: "Rems", id: remsId } : null);
     view = await remsApi.uploadPurchaseOrder(engagementId, media.id);
+    // Same reason as the CAF above: without this the order just uploaded stays invisible on the card
+    // that asked for it, because the page will not re-seed this form after an auto-save.
+    govOverride.value = view?.government ?? null;
     syncing = true;
     poFile.value = null;
     await nextTick();
@@ -760,6 +863,11 @@ const validateFormats = () => {
 const cafFile = ref(null);
 const poFile = ref(null);
 
+// A purchase order arrives as whatever the client's procurement system produced — a PDF, a scan, or the
+// Word or Excel document it was raised in. Narrower than the general attachment list all the same: this
+// box wants a purchase order, not a zip of everything about one.
+const PURCHASE_ORDER_ACCEPT = ".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx";
+
 // Declared here rather than beside the re-seed watcher above because the file pickers are part of what the
 // page saves, and they are not in scope until now.
 watch([core, gov, audit, tax, cafFile, poFile], () => {
@@ -770,7 +878,7 @@ defineExpose({ saveSetup });
 </script>
 
 <style scoped>
-.rems-inner { border-radius: 10px; }
+/* .rems-inner is the shared record vocabulary — see css/rems.scss. */
 .rems-copied {
   display: grid;
   /* auto-fit rather than a fixed pair: four dates in two columns on a phone leaves each of them about

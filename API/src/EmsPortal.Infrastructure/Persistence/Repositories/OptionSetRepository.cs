@@ -86,6 +86,14 @@ internal sealed class OptionSetRepository : IOptionSetRepository
             .OrderBy(i => i.SortOrder)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<OptionSetItem>> ListItemsByIdsAsync(
+        IReadOnlyCollection<Guid> itemIds, CancellationToken cancellationToken = default)
+        => itemIds.Count == 0
+            ? Array.Empty<OptionSetItem>()
+            : await _dbContext.OptionSetItems
+                .Where(i => itemIds.Contains(i.Id))
+                .ToListAsync(cancellationToken);
+
     public Task<bool> ItemValueExistsAsync(Guid setId, Guid? tenantId, string value, Guid? excludeId, CancellationToken cancellationToken = default)
         => _dbContext.OptionSetItems
             .AnyAsync(i => i.OptionSetId == setId && i.TenantId == tenantId && i.Value == value

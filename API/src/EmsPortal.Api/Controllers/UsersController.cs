@@ -1,7 +1,9 @@
+using EmsPortal.Api.Models.Rems;
 using EmsPortal.Api.Models.Users;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.Auditing;
 using EmsPortal.Application.Abstractions.Email;
+using EmsPortal.Application.Abstractions.OptionSets;
 using EmsPortal.Application.Abstractions.Persistence;
 using EmsPortal.Application.Abstractions.Security;
 using EmsPortal.Domain.Entities;
@@ -38,6 +40,7 @@ public sealed class UsersController : ControllerBase
     private readonly IUserGroupRepository _groups;
     private readonly IUserDepartmentRepository _departments;
     private readonly IRemsSettingsRepository _remsSettings;
+    private readonly IOptionCodeResolver _codes;
     private readonly IOptionSetRepository _optionSets;
     private readonly IPermissionGroupRepository _permissionGroups;
     private readonly IEmailNotificationService _emailNotifications;
@@ -55,6 +58,7 @@ public sealed class UsersController : ControllerBase
         IUserGroupRepository groups,
         IUserDepartmentRepository departments,
         IRemsSettingsRepository remsSettings,
+        IOptionCodeResolver codes,
         IOptionSetRepository optionSets,
         IPermissionGroupRepository permissionGroups,
         IEmailNotificationService emailNotifications,
@@ -71,6 +75,7 @@ public sealed class UsersController : ControllerBase
         _groups = groups;
         _departments = departments;
         _remsSettings = remsSettings;
+        _codes = codes;
         _optionSets = optionSets;
         _permissionGroups = permissionGroups;
         _emailNotifications = emailNotifications;
@@ -921,7 +926,7 @@ public sealed class UsersController : ControllerBase
         RemsSettings settings, string department, Guid? directorUserId, CancellationToken cancellationToken)
     {
         var existing = settings.DepartmentDirectors.FirstOrDefault(
-            d => !d.Deleted && string.Equals(d.Department, department, StringComparison.OrdinalIgnoreCase));
+            d => !d.Deleted && string.Equals(d.Department!.Value, department, StringComparison.OrdinalIgnoreCase));
 
         if (directorUserId is null)
         {
@@ -934,11 +939,19 @@ public sealed class UsersController : ControllerBase
 
         if (existing is null)
         {
+            // The mapping references the department ITEM. A code the tenant's list does not have has
+            // nothing to map to, so the assignment is simply not made.
+            var departmentId = await _codes.RemsIdAsync(RemsOptionSetKeys.Department, department, cancellationToken);
+            if (departmentId is null)
+            {
+                return;
+            }
+
             await _remsSettings.AddDepartmentDirectorAsync(new RemsDepartmentDirector
             {
                 Id = Guid.NewGuid(),
                 RemsSettingsId = settings.Id,
-                Department = department,
+                DepartmentId = departmentId.Value,
                 DirectorUserId = directorUserId.Value,
             }, cancellationToken);
         }

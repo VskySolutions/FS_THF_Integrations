@@ -3,6 +3,7 @@
 // the panel came to be listing roles the form had stopped asking for.
 //
 // The keys are the payload's own (RemsRolesPayload), so what is written here is what is stored.
+import { NAME_SUFFIXES } from "utils/personName";
 
 /// The label each role is asked and read under. Named for what the firm needs from the person rather
 /// than for the office they hold: not every client has a CEO or a CFO, and a two-partner practice asked
@@ -66,9 +67,9 @@ export const LEGACY_ROLE_ALIASES = {
   accountsPayable: "billingContact"
 };
 
-// `prefix` is deliberately NOT counted. A title on its own is not a contact — somebody who opened the
-// suggestions and picked "Mr." out of curiosity has told us nothing, and treating that as an answer would
-// make an otherwise-blank optional contact start failing validation as "partly filled".
+// `prefix` and `suffix` are deliberately NOT counted. A particle on its own is not a contact — somebody
+// who opened the suggestions and picked "Jr." out of curiosity has told us nothing, and treating that as
+// an answer would make an otherwise-blank optional contact start failing validation as "partly filled".
 const hasAny = (role) =>
   !!role && [role.firstName, role.lastName, role.name, role.email, role.phone]
     .some((v) => v != null && String(v).trim() !== "");
@@ -102,13 +103,28 @@ export const roleDisplayName = (role) => {
 export const roleHasAny = hasAny;
 
 /**
- * The contact as they are addressed — the title in front of the joined name. For DISPLAY only: the name
- * on its own (roleDisplayName) is what the record is filed and searched under.
+ * The contact as they are addressed — the joined name with its particles on it. For DISPLAY only: the
+ * name on its own (roleDisplayName) is what the record is filed and searched under, and the stored
+ * Person.DisplayName is composed server-side (RemsRolePayload.NameWithSuffix) and is NOT this — a record
+ * filed under "Jr. Jane Smith" is one nobody finds by surname.
+ *
+ * Both particles lead the name, in the order the form asks for them. RoleContactFields puts the suffix
+ * box FIRST, before First Name and Last Name, so a client checking their answers here reads them in the
+ * order they typed them — which is the whole premise of the review step. Rendering "Jane Smith Jr." meant
+ * the one screen whose job is to echo the form back reordered it.
+ *
+ * Both ends are read because the two are not the same era. The intake form asks each contact for a
+ * generational SUFFIX (Jr., Sr., III); it used to ask for a courtesy title instead, and a submission
+ * saved under that form still carries one — so a contact answered before the change reads "Mr. Jane
+ * Smith" and one answered after reads "Jr. Jane Smith", each as the client actually gave it. No record
+ * carries both, so their order relative to each other never arises in practice.
  */
 export const roleAddressedName = (role) => {
   const name = roleDisplayName(role);
   const prefix = String(role?.prefix ?? "").trim();
-  return [prefix, name].filter(Boolean).join(" ");
+  const suffix = String(role?.suffix ?? "").trim();
+  // A particle with no name behind it is not a name — the caller renders the em dash for that instead.
+  return name ? [suffix, prefix, name].filter(Boolean).join(" ") : "";
 };
 
 /**
@@ -143,16 +159,13 @@ export const answeredRoleKeys = (roles) =>
   ALL_ROLE_KEYS.filter((k) => hasAny(roles?.[k]));
 
 /**
- * The generational suffixes offered beside a client's name. Suggestions, not a closed list: these are
- * what most clients need, not all a client may have, so the field itself stays free text.
+ * The generational suffixes offered beside a client's name.
+ *
+ * The list itself lives in utils/personName now, because two unrelated fields ask for one: the client's
+ * own name on the request, and every contact on the intake form. Re-exported under the name this module's
+ * callers already know it by.
  */
-export const CLIENT_NAME_SUFFIXES = [
-  { value: "Jr.", label: "Jr.", caption: "Junior" },
-  { value: "Sr.", label: "Sr.", caption: "Senior" },
-  { value: "II", label: "II", caption: "The second" },
-  { value: "III", label: "III", caption: "The third" },
-  { value: "IV", label: "IV", caption: "The fourth" }
-];
+export const CLIENT_NAME_SUFFIXES = NAME_SUFFIXES;
 
 /** A client's name as it reads — the name with its suffix on the end. Mirrors REMS.ClientDisplayName. */
 export const clientDisplayName = (name, suffix) =>

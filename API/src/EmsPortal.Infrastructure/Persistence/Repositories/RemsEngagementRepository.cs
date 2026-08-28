@@ -16,6 +16,10 @@ internal sealed class RemsEngagementRepository : IRemsEngagementRepository
 
     public Task<REMSEngagement?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
         => _dbContext.RemsEngagements
+            .Include(e => e.Department)
+            .Include(e => e.SubServiceLine)
+            .Include(e => e.SubIndustry)
+            .Include(e => e.BillingPeriod)
             .Include(e => e.MarketingMethods)
             .Include(e => e.CommissionSplits)
             .FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
@@ -26,13 +30,29 @@ internal sealed class RemsEngagementRepository : IRemsEngagementRepository
     // is why this reads as a list rather than a reference.
     public Task<REMSEngagement?> GetWithContextAsync(Guid id, CancellationToken cancellationToken = default)
         => _dbContext.RemsEngagements
+            .Include(e => e.Department)
+            .Include(e => e.SubServiceLine)
+            .Include(e => e.SubIndustry)
+            .Include(e => e.BillingPeriod)
             .Include(e => e.MarketingMethods)
             .Include(e => e.CommissionSplits)
             .Include(e => e.Rems).ThenInclude(r => r!.Clients).ThenInclude(c => c.Entities).ThenInclude(en => en.Addresses).ThenInclude(a => a.Address)
+            // The client's referral source is an option item now, so the packet reads its code off the
+            // navigation rather than a string column.
+            .Include(e => e.Rems).ThenInclude(r => r!.Clients).ThenInclude(c => c.ReferralSource)
+            // The request's own type and status: RemsSetupAccess reads the status CODE off this graph to
+            // decide whether the setup is this caller's to work, and it is reached through the engagement
+            // rather than loaded separately.
+            .Include(e => e.Rems).ThenInclude(r => r!.Status)
+            .Include(e => e.Rems).ThenInclude(r => r!.Type)
             .FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
 
     public Task<REMSEngagement?> GetByRemsIdAsync(Guid remsId, CancellationToken cancellationToken = default)
         => _dbContext.RemsEngagements
+            .Include(e => e.Department)
+            .Include(e => e.SubServiceLine)
+            .Include(e => e.SubIndustry)
+            .Include(e => e.BillingPeriod)
             .Include(e => e.MarketingMethods)
             .Include(e => e.CommissionSplits)
             .FirstOrDefaultAsync(e => e.REMSId == remsId, cancellationToken);
@@ -54,6 +74,7 @@ internal sealed class RemsEngagementRepository : IRemsEngagementRepository
                 // The uploaded purchase order travels with the detail, for the same reason the CAF does:
                 // the workspace names the document on screen, and a media id is not a name.
                 .Include(d => d.PurchaseOrderMedia)
+                .Include(d => d.PersonnelLevel)
                 .Where(d => engagementIds.Contains(d.REMSEngagementId))
                 .ToListAsync(cancellationToken);
 
@@ -76,7 +97,9 @@ internal sealed class RemsEngagementRepository : IRemsEngagementRepository
         => _dbContext.RemsEngagementAuditDetails.FirstOrDefaultAsync(d => d.REMSEngagementId == engagementId, cancellationToken);
 
     public Task<REMSEngagementGovernmentDetail?> GetGovernmentDetailAsync(Guid engagementId, CancellationToken cancellationToken = default)
-        => _dbContext.RemsEngagementGovernmentDetails.FirstOrDefaultAsync(d => d.REMSEngagementId == engagementId, cancellationToken);
+        => _dbContext.RemsEngagementGovernmentDetails
+            .Include(d => d.PersonnelLevel)
+            .FirstOrDefaultAsync(d => d.REMSEngagementId == engagementId, cancellationToken);
 
     public Task<REMSEngagementTaxDetail?> GetTaxDetailAsync(Guid engagementId, CancellationToken cancellationToken = default)
         => _dbContext.RemsEngagementTaxDetails

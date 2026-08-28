@@ -1,6 +1,7 @@
 using EmsPortal.Api.Models.Rems;
 using EmsPortal.Api.Security;
 using EmsPortal.Api.Validators.Rems;
+using EmsPortal.Application.Abstractions.OptionSets;
 using EmsPortal.Application.Abstractions.Persistence;
 using EmsPortal.Application.Abstractions.UniversalFeatures;
 using EmsPortal.Domain.Entities;
@@ -55,6 +56,7 @@ public sealed class RemsEngagementController : ControllerBase
     private readonly IUserRepository _users;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IActivityEventWriter _activity;
+    private readonly IOptionCodeResolver _codes;
 
     public RemsEngagementController(
         IRemsRepository rems,
@@ -68,7 +70,8 @@ public sealed class RemsEngagementController : ControllerBase
         IOptionSetRepository optionSets,
         IUserRepository users,
         IUnitOfWork unitOfWork,
-        IActivityEventWriter activity)
+        IActivityEventWriter activity,
+        IOptionCodeResolver codes)
     {
         _rems = rems;
         _forms = forms;
@@ -82,6 +85,7 @@ public sealed class RemsEngagementController : ControllerBase
         _users = users;
         _unitOfWork = unitOfWork;
         _activity = activity;
+        _codes = codes;
     }
 
     // -------------------- Part A: submitted-form view + workspace read --------------------
@@ -229,7 +233,7 @@ public sealed class RemsEngagementController : ControllerBase
 
         // Frozen for the same reason every other field on the request is: the approvers are deciding on
         // what is in front of them, and a snapshot that changed under them is a different decision.
-        if (IsFrozenForApproval(rems.Status))
+        if (IsFrozenForApproval(rems.Status!.Value))
         {
             return StatusCode(StatusCodes.Status409Conflict, ApiResponseFactory.Error(
                 CodeEngagementLocked,
@@ -255,7 +259,7 @@ public sealed class RemsEngagementController : ControllerBase
         payload.Email = rems.CustomerEmail;
         payload.Version = 1;
 
-        var validation = new RemsFormPayloadValidator().Validate(payload, form.IndustryGroup);
+        var validation = new RemsFormPayloadValidator().Validate(payload, form.IndustryGroup!.Value);
         if (!validation.IsValid)
         {
             return BadRequest(ApiResponseFactory.ValidationError(validation.Errors));
@@ -293,12 +297,12 @@ public sealed class RemsEngagementController : ControllerBase
         }
 
         return new RemsSubmissionView(
-            submission.Id, rems.Id, rems.REMSNumber, form.IndustryGroup, rems.CustomerEmail,
+            submission.Id, rems.Id, rems.REMSNumber, form.IndustryGroup!.Value, rems.CustomerEmail,
             rems.ClientNameSuffix,
             submission.SubmittedOnUtc, payload,
             editedBy,
             editedBy is null ? null : submission.UpdatedOnUtc,
-            CanEdit: User.HasPermission(Permissions.RemsEngagementsManage) && !IsFrozenForApproval(rems.Status));
+            CanEdit: User.HasPermission(Permissions.RemsEngagementsManage) && !IsFrozenForApproval(rems.Status!.Value));
     }
 
     /// <summary>Once a round is open — and once it has succeeded — nothing about the request may move.</summary>
@@ -353,9 +357,9 @@ public sealed class RemsEngagementController : ControllerBase
             CollectUserIds(engagements).Concat(directorRows.Select(d => d.DirectorUserId)), cancellationToken);
 
         var departmentDirectors = directorRows
-            .OrderBy(d => d.Department)
+            .OrderBy(d => d.Department!.Value)
             .Select(d => new RemsDepartmentDirectorView(
-                d.Department,
+                d.Department!.Value,
                 new RemsUserRef(d.DirectorUserId, names.TryGetValue(d.DirectorUserId, out var n) ? n : string.Empty)))
             .ToList();
 
@@ -400,7 +404,13 @@ public sealed class RemsEngagementController : ControllerBase
 
         if (request.Name is not null) client.Name = request.Name.Trim();
         if (request.MobileNumber is not null) client.MobileNumber = Normalize(request.MobileNumber);
-        if (request.ReferralSource is not null) client.ReferralSource = Normalize(request.ReferralSource);
+        // The wire carries the CODE; the column is a foreign key to the option item it names. An unknown
+        // code resolves to null rather than being stored as-is -- there is nothing to point at.
+        if (request.ReferralSource is not null)
+        {
+            client.ReferralSourceId = await _codes.IdOfAsync(
+                EntityType.Rems, RemsOptionSetKeys.ReferralSource, request.ReferralSource, cancellationToken);
+        }
         if (request.BillingContactName is not null) client.BillingContactName = Normalize(request.BillingContactName);
         if (request.BillingEmail is not null) client.BillingEmail = Normalize(request.BillingEmail);
 
@@ -412,7 +422,8 @@ public sealed class RemsEngagementController : ControllerBase
 
         var refreshed = await _clients.GetByRemsIdAsync(remsId, cancellationToken) ?? client;
         var view = new RemsClientView(
-            refreshed.Id, refreshed.Name, refreshed.Email, refreshed.MobileNumber, refreshed.ReferralSource,
+            refreshed.Id, refreshed.Name, refreshed.Email, refreshed.MobileNumber,
+            refreshed.ReferralSource?.Value,
             refreshed.BillingContactName, refreshed.BillingEmail);
         return Ok(ApiResponseFactory.Success(view, "REMS client updated."));
     }
@@ -550,16 +561,37 @@ public sealed class RemsEngagementController : ControllerBase
             }
         }
 
-        // Compare like with like: the stored department is normalized, the incoming one is not yet.
+        // Each of the three is an option-set item, referenced by id. The wire carries the CODE, so it is
+        // resolved here — and a code the tenant's list does not have resolves to null rather than being
+        // stored, because there is nothing for the foreign key to point at.
+        //
+        // Compare like with like: the comparison is between the code that WAS stored and the one coming in.
+        var incomingDepartment = Normalize(request.Department);
         var departmentChanged = request.Department is not null
-            && !string.Equals(Normalize(request.Department), engagement.Department, StringComparison.Ordinal);
-        if (request.Department is not null) engagement.Department = Normalize(request.Department);
-        // The two sub-classifications. Nothing branches on either — they narrow the line and the industry
-        // group for reporting — so they are stored as given, normalized like every other option-set code.
-        if (request.SubServiceLine is not null) engagement.SubServiceLine = Normalize(request.SubServiceLine);
-        if (request.SubIndustry is not null) engagement.SubIndustry = Normalize(request.SubIndustry);
+            && !string.Equals(incomingDepartment, engagement.Department?.Value, StringComparison.Ordinal);
+        if (request.Department is not null)
+        {
+            engagement.DepartmentId =
+                await _codes.RemsIdAsync(RemsOptionSetKeys.Department, incomingDepartment, cancellationToken);
+        }
 
-        var mappedDirector = await MappedDirectorAsync(engagement.Department, cancellationToken);
+        // The two sub-classifications. Nothing branches on either — they narrow the line and the industry
+        // group for reporting.
+        if (request.SubServiceLine is not null)
+        {
+            engagement.SubServiceLineId = await _codes.RemsIdAsync(
+                RemsOptionSetKeys.SubServiceLine, Normalize(request.SubServiceLine), cancellationToken);
+        }
+        if (request.SubIndustry is not null)
+        {
+            engagement.SubIndustryId = await _codes.RemsIdAsync(
+                RemsOptionSetKeys.SubIndustry, Normalize(request.SubIndustry), cancellationToken);
+        }
+
+        // The department the director is mapped from is the one being SAVED, which on this request may be
+        // the incoming code rather than what the row still holds.
+        var mappedDirector = await MappedDirectorAsync(
+            request.Department is not null ? incomingDepartment : engagement.Department?.Value, cancellationToken);
         if (request.DepartmentDirectorId.HasValue)
         {
             engagement.DepartmentDirectorId = request.DepartmentDirectorId;
@@ -584,7 +616,11 @@ public sealed class RemsEngagementController : ControllerBase
         // The billing schedule: how often, and how it actually works. The frequency is normalized like
         // the other option-set codes on this record; the description is free prose, so it is only trimmed
         // — and an empty string is how it is CLEARED, which an omitted field cannot say.
-        if (request.BillingPeriod is not null) engagement.BillingPeriod = Normalize(request.BillingPeriod);
+        if (request.BillingPeriod is not null)
+        {
+            engagement.BillingPeriodId = await _codes.RemsIdAsync(
+                RemsOptionSetKeys.BillingPeriod, Normalize(request.BillingPeriod), cancellationToken);
+        }
         if (request.BillingProcessDescription is not null)
         {
             engagement.BillingProcessDescription = Normalize(request.BillingProcessDescription);
@@ -648,6 +684,51 @@ public sealed class RemsEngagementController : ControllerBase
         return Ok(ApiResponseFactory.Success(view!, "Client acceptance form linked."));
     }
 
+    /// <summary>
+    /// Take the signed client-acceptance form off the engagement. The LINK goes; the stored media itself is
+    /// left where it is, exactly as detaching a request attachment does — the document may be filed against
+    /// other records, and this endpoint's business is what this engagement carries.
+    /// <para>
+    /// It exists because the form is a compliance artifact the approvers read: a wrong one uploaded to an
+    /// audit engagement could previously only be replaced, never removed, so an engagement that turned out
+    /// not to need one — or one whose form was superseded before a correct copy existed — had no way back
+    /// to "none on file". Sending for approval still requires one on an Audit or Assurance engagement.
+    /// </para>
+    /// </summary>
+    [HttpDelete("engagements/{id:guid}/audit/client-acceptance-form")]
+    [RequireAnyPermission(Permissions.RemsEngagementsManage, Permissions.RemsRequestsUpdate)]
+    [ProducesResponseType<ApiResponse<RemsEngagementView>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> UnlinkClientAcceptanceForm(Guid id, CancellationToken cancellationToken)
+    {
+        var engagement = await _engagements.GetWithContextAsync(id, cancellationToken);
+        if (engagement is null)
+        {
+            return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
+        }
+
+        if (await GuardSetupOwnerAsync(engagement.REMSId, cancellationToken) is { } denied)
+        {
+            return denied;
+        }
+        if (!IsEditable(engagement))
+        {
+            return EngagementLocked();
+        }
+
+        // Idempotent: an engagement with no form on file is already in the state the caller asked for, and
+        // answering 404 to "there is nothing there" would make a double-click read as an error.
+        var detail = await _engagements.GetAuditDetailAsync(id, cancellationToken);
+        if (detail?.ClientAcceptanceFormMediaId is not null)
+        {
+            detail.ClientAcceptanceFormMediaId = null;
+            await LogEngagementUpdatedAsync(engagement, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+
+        var view = await BuildEngagementViewAsync(id, cancellationToken);
+        return Ok(ApiResponseFactory.Success(view!, "Client acceptance form removed."));
+    }
+
     /// <summary>Set the government-audit contract detail: contract number + Florida 1% flag and contract/PO dates (AC-REMS-014.13).</summary>
     [HttpPut("engagements/{id:guid}/government")]
     [RequireAnyPermission(Permissions.RemsEngagementsManage, Permissions.RemsRequestsUpdate)]
@@ -689,7 +770,8 @@ public sealed class RemsEngagementController : ControllerBase
         // audit's contract block and a GCS purchase order live here together.
         detail.PurchaseOrderNumber = Normalize(request.PurchaseOrderNumber);
         detail.PurchaseOrderAmount = request.PurchaseOrderAmount;
-        detail.PersonnelLevel = Normalize(request.PersonnelLevel);
+        detail.PersonnelLevelId = await _codes.RemsIdAsync(
+            RemsOptionSetKeys.PersonnelLevel, Normalize(request.PersonnelLevel), cancellationToken);
         detail.BillRatePerHour = request.BillRatePerHour;
 
         await LogEngagementUpdatedAsync(engagement, cancellationToken);
@@ -784,6 +866,51 @@ public sealed class RemsEngagementController : ControllerBase
 
         var view = await BuildEngagementViewAsync(id, cancellationToken);
         return Ok(ApiResponseFactory.Success(view!, "Purchase order linked."));
+    }
+
+    /// <summary>
+    /// Take the purchase-order document off the GCS engagement. The LINK goes; the stored media itself is
+    /// left where it is, exactly as removing the signed client-acceptance form does.
+    /// <para>
+    /// It exists for the same reason that one does: the order is a document the approvers read, and until
+    /// this endpoint a wrong one could only be REPLACED, never removed — so an engagement whose order was
+    /// withdrawn before a corrected copy existed had no way back to "none on file". Unlike the CAF, no
+    /// approval gate requires one, so removing it never blocks a round.
+    /// </para>
+    /// </summary>
+    [HttpDelete("engagements/{id:guid}/government/purchase-order")]
+    [RequireAnyPermission(Permissions.RemsEngagementsManage, Permissions.RemsRequestsUpdate)]
+    [ProducesResponseType<ApiResponse<RemsEngagementView>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> UnlinkPurchaseOrder(Guid id, CancellationToken cancellationToken)
+    {
+        var engagement = await _engagements.GetWithContextAsync(id, cancellationToken);
+        if (engagement is null)
+        {
+            return NotFound(ApiResponseFactory.NotFound("REMS engagement not found."));
+        }
+
+        if (await GuardSetupOwnerAsync(engagement.REMSId, cancellationToken) is { } denied)
+        {
+            return denied;
+        }
+        if (!IsEditable(engagement))
+        {
+            return EngagementLocked();
+        }
+
+        // Idempotent, exactly as the client-acceptance form's removal is: an engagement carrying no order
+        // is already in the state the caller asked for, and answering 404 to "there is nothing there"
+        // would make a double-click read as an error.
+        var detail = await _engagements.GetGovernmentDetailAsync(id, cancellationToken);
+        if (detail?.PurchaseOrderMediaId is not null)
+        {
+            detail.PurchaseOrderMediaId = null;
+            await LogEngagementUpdatedAsync(engagement, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+
+        var view = await BuildEngagementViewAsync(id, cancellationToken);
+        return Ok(ApiResponseFactory.Success(view!, "Purchase order removed."));
     }
 
     /// <summary>
@@ -1064,7 +1191,7 @@ public sealed class RemsEngagementController : ControllerBase
         var normalized = department.Trim().ToLowerInvariant();
         return settings?.DepartmentDirectors
             .Where(d => !d.Deleted)
-            .FirstOrDefault(d => d.Department.Trim().ToLowerInvariant() == normalized)?.DirectorUserId;
+            .FirstOrDefault(d => d.Department!.Value.Trim().ToLowerInvariant() == normalized)?.DirectorUserId;
     }
 
     private Task LogEngagementUpdatedAsync(REMSEngagement engagement, CancellationToken cancellationToken)

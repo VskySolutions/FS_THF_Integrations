@@ -16,12 +16,21 @@ namespace EmsPortal.Api.Validators.Rems;
 /// <c>primaryContact</c>/<c>financialContact</c>/<c>billingContact</c>; Government →
 /// <c>financeDirector</c>. The physical and mailing addresses are both required, as are each related
 /// entity's name and email address; a required role must carry a first name, a last name and a valid email.
+/// Any further billing contact is optional but, once started, is held to the same shape.
 /// </para>
 /// </summary>
 public sealed class RemsFormPayloadValidator
 {
     public const string Individual = "individual";
     public const string Government = "government";
+
+    /// <summary>
+    /// How many billing contacts a client may name BEYOND the first, which is the <c>billingContact</c>
+    /// role. Not a limit anybody should meet — it is the guard against a stuck key or a hand-written
+    /// request filing four hundred contacts against one entity. Mirrors the browser's
+    /// <c>MAX_ADDITIONAL_BILLING_CONTACTS</c>.
+    /// </summary>
+    public const int MaxAdditionalBillingContacts = 9;
 
     // The business FAMILY: the kinds of business THF onboards are asked for exactly the same things, so
     // what separates them is what the client IS, not what the form asks.
@@ -125,6 +134,26 @@ public sealed class RemsFormPayloadValidator
         else
         {
             failures.Add(new ValidationFailure("industryGroup", $"Unsupported entity type '{industryGroup}'."));
+        }
+
+        // ---- Additional billing contacts ----
+        // None of them is required — naming a second person to invoice is the client's choice — but one
+        // that has been STARTED has to be finished, exactly as an optional role is: an invoice addressed
+        // to a name with no email is an invoice nobody can send. A blank block is dropped by the browser
+        // before it is sent, so anything arriving here is somebody's answer.
+        //
+        // The paths are the payload's own, so the field messages land on the right block — see
+        // parseIntakeFieldErrors, which the form looks its per-field messages up by.
+        if (payload.AdditionalBillingContacts.Count > MaxAdditionalBillingContacts)
+        {
+            failures.Add(new ValidationFailure(
+                "additionalBillingContacts",
+                $"Name at most {MaxAdditionalBillingContacts + 1} billing contacts."));
+        }
+
+        for (var i = 0; i < payload.AdditionalBillingContacts.Count; i++)
+        {
+            OptionalRole(failures, $"additionalBillingContacts[{i}]", payload.AdditionalBillingContacts[i]);
         }
 
         // ---- Additional entities ----

@@ -1,5 +1,6 @@
 using EmsPortal.Application.Abstractions.Persistence;
 using EmsPortal.Domain.Entities;
+using EmsPortal.Domain.Enums;
 
 namespace EmsPortal.Api.Models.Rems;
 
@@ -24,7 +25,20 @@ internal static class RemsWorkspaceMapper
             return ("NotStarted", null);
         }
 
-        var ems = form.FormStatus?.ToString() ?? "NotStarted";
+        // Draft and Saved both mean the same thing to a reader: nothing has gone to the client yet, so
+        // both report as Not started and this column changes only once the form is actually Sent.
+        //
+        // "Saved" is an artefact of how the page WRITES, not a step in the workflow. The request page
+        // saves itself, so the form row is minted the instant a CSE and an entity type are both chosen --
+        // the column flipped to "Saved" while the admin was still filling the tab in. Before the page
+        // auto-saved, building the form was a deliberate step and this stayed on Not started until it
+        // happened. The state being reported is the CLIENT form's, and the client has not been written
+        // to until it is sent.
+        var ems = form.FormStatus switch
+        {
+            null or RemsFormStatus.Draft or RemsFormStatus.Saved => "NotStarted",
+            var status => status.ToString(),
+        };
         var submission = form.HasSubmission || form.FormSubmittedOnUtc is not null
             ? "Submitted"
             : form.FormSentOnUtc is not null ? "AwaitingCustomer" : null;
@@ -64,7 +78,7 @@ internal static class RemsWorkspaceMapper
                 government.PurchaseOrderStartDate, government.PurchaseOrderEndDate,
                 government.PurchaseOrderNumber, government.PurchaseOrderAmount,
                 government.PurchaseOrderMediaId, government.PurchaseOrderMedia?.OriginalFileName,
-                government.PersonnelLevel, government.BillRatePerHour);
+                government.PersonnelLevel?.Value, government.BillRatePerHour);
         var taxView = tax is null
             ? null
             : new RemsTaxDetailView(
@@ -73,16 +87,16 @@ internal static class RemsWorkspaceMapper
 
         return new RemsEngagementView(
             engagement.Id,
-            engagement.Department,
-            engagement.SubServiceLine,
-            engagement.SubIndustry,
+            engagement.Department?.Value,
+            engagement.SubServiceLine?.Value,
+            engagement.SubIndustry?.Value,
             UserRef(engagement.DepartmentDirectorId, names),
             UserRef(engagement.EngagementExecutiveId, names),
             UserRef(engagement.BillingManagerId, names),
             engagement.FirstYearFeeEstimate,
             engagement.EngagementFee,
             engagement.RealizationPercentage,
-            engagement.BillingPeriod,
+            engagement.BillingPeriod?.Value,
             engagement.BillingProcessDescription,
             engagement.Status.ToString(),
             marketing,
@@ -118,7 +132,11 @@ internal static class RemsWorkspaceMapper
         var clientView = client is null
             ? null
             : new RemsClientView(
-                client.Id, client.Name, client.Email, client.MobileNumber, client.ReferralSource,
+                client.Id, client.Name, client.Email, client.MobileNumber,
+                // The view carries the CODE, read off the referenced option item. The wire keeps codes even
+                // though the column is now a foreign key: every screen branches on them, and none of them
+                // has any use for an item id.
+                client.ReferralSource?.Value,
                 client.BillingContactName, client.BillingEmail);
 
         RemsEngagementView? engagementView = null;
@@ -153,7 +171,7 @@ internal static class RemsWorkspaceMapper
             .ToList();
 
         return new RemsEngagementWorkspace(
-            rems.Id, rems.REMSNumber, rems.Status, clientView, entities, engagementView,
+            rems.Id, rems.REMSNumber, rems.Status!.Value, clientView, entities, engagementView,
             industryGroup, additionalEntities, departmentDirectors);
     }
 }

@@ -28,6 +28,10 @@ public static class DependencyInjection
 
         // Option Sets: tenant-configurable input value lists.
         services.AddScoped<Abstractions.OptionSets.IOptionSetService, OptionSets.OptionSetService>();
+        // Turns the option-item ids stored on a row back into the codes the application branches on, and
+        // back again. Scoped, because it resolves against the CALLER's tenant; the cache behind it is the
+        // shared IMemoryCache, so the reads are shared across requests.
+        services.AddScoped<Abstractions.OptionSets.IOptionCodeResolver, OptionSets.OptionCodeResolver>();
 
         // Universal Features (Phase 14): cross-cutting activity writer + notification dispatcher.
         services.AddScoped<Abstractions.UniversalFeatures.IActivityEventWriter, UniversalFeatures.ActivityEventWriter>();

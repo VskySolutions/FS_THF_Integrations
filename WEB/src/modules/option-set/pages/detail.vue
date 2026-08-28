@@ -103,6 +103,7 @@
         :set-id="set.id"
         :item="editingItem"
         :parent-options="parentOptions"
+        :set-is-closed="!!set.isClosed"
         @saved="reloadItems"
       />
     </template>

@@ -646,6 +646,9 @@ export const remsApi = {
   updateEngagement: (id, payload) => api.put(`/api/rems/engagements/${id}`, payload).then(unwrap),
   // Link a previously-uploaded media id as the signed client-acceptance form (Audit and Assurance).
   uploadCaf: (id, mediaId) => api.post(`/api/rems/engagements/${id}/audit/client-acceptance-form`, { mediaId }).then(unwrap),
+  // Take the signed client-acceptance form off the engagement. The link goes; the stored file itself is
+  // left where it is. Idempotent — an engagement carrying none answers 200, not 404.
+  removeCaf: (id) => api.delete(`/api/rems/engagements/${id}/audit/client-acceptance-form`).then(unwrap),
   // payload: { clientFiscalYearEnd?, adminFeesApply?, adminFeesAmount? } — the Assurance half of the attest
   // detail the CAF above shares. Answering adminFeesApply=false clears the amount server-side.
   updateAuditDetail: (id, payload) => api.put(`/api/rems/engagements/${id}/audit`, payload).then(unwrap),
@@ -658,6 +661,10 @@ export const remsApi = {
   // Link a previously-uploaded media id as the GCS engagement's purchase-order document.
   uploadPurchaseOrder: (id, mediaId) =>
     api.post(`/api/rems/engagements/${id}/government/purchase-order`, { mediaId }).then(unwrap),
+  // Take the purchase-order document off the engagement. The link goes; the stored file itself is left
+  // where it is. Idempotent — an engagement carrying none answers 200, not 404.
+  removePurchaseOrder: (id) =>
+    api.delete(`/api/rems/engagements/${id}/government/purchase-order`).then(unwrap),
   // payload: { fiscalYearEnd?, originalDueDate?, firstExtensionDueDate?, taxFormIds:[] }. A due date left
   // null is DERIVED from the fiscal year end rather than cleared — the rule is the default, not the only
   // answer — so the response carries the effective pair either way.

@@ -24,11 +24,15 @@
         <q-list v-else-if="events.length" separator>
           <q-item v-for="ev in events" :key="ev.id">
             <q-item-section avatar>
-              <q-icon :name="emailEventIcon(ev.eventType)" :color="emailEventColor(ev.eventType)" size="24px" />
+              <q-icon
+                :name="emailEventOption(ev.eventType).icon || 'o_mail'"
+                :style="{ color: emailEventOption(ev.eventType).backgroundColor || '#9e9e9e' }"
+                size="24px"
+              />
             </q-item-section>
             <q-item-section>
               <q-item-label>
-                <q-badge :color="emailEventColor(ev.eventType)">{{ emailEventLabel(ev.eventType) }}</q-badge>
+                <app-option-badge :option="emailEventOption(ev.eventType)" />
                 <span class="q-ml-sm text-grey-8">{{ ev.recipientEmail || "—" }}</span>
               </q-item-label>
               <q-item-label caption>
@@ -104,7 +108,7 @@
     <q-card class="preview-card">
       <q-card-section class="row items-center no-wrap">
         <div class="col">
-          <div class="text-subtitle1 text-primary">{{ emailEventLabel(previewing.eventType) }} email</div>
+          <div class="text-subtitle1 text-primary">{{ emailEventOption(previewing.eventType).label }} email</div>
           <div class="text-caption text-grey-7">
             To {{ previewing.recipientEmail || "—" }} · {{ fmt.formatDateTime(previewing.occurredOnUtc) }}
           </div>
@@ -157,7 +161,7 @@ const emit = defineEmits(["update:modelValue", "sent"]);
 
 const notify = useNotify();
 const fmt = useDateFormat();
-const { emailEventLabel, emailEventColor, emailEventIcon } = useRemsMeta();
+const { emailEventOption } = useRemsMeta();
 
 const open = computed({
   get: () => props.modelValue,

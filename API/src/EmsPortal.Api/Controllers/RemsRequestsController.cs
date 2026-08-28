@@ -1,5 +1,6 @@
 using EmsPortal.Api.Models.Rems;
 using EmsPortal.Api.Security;
+using EmsPortal.Application.Abstractions.OptionSets;
 using EmsPortal.Application.Abstractions.Persistence;
 using EmsPortal.Application.Abstractions.UniversalFeatures;
 using EmsPortal.Domain.Entities;
@@ -46,6 +47,7 @@ public sealed class RemsRequestsController : ControllerBase
     private readonly IUnitOfWork _unitOfWork;
     private readonly IActivityEventWriter _activity;
     private readonly INotificationDispatcher _notifications;
+    private readonly IOptionCodeResolver _codes;
     /// <summary>Where the SPA is served from — the front half of the client's public form link.</summary>
     private readonly string _baseUrl;
 
@@ -60,6 +62,7 @@ public sealed class RemsRequestsController : ControllerBase
         IUnitOfWork unitOfWork,
         IActivityEventWriter activity,
         INotificationDispatcher notifications,
+        IOptionCodeResolver codes,
         IOptions<AppOptions> appOptions)
     {
         _rems = rems;
@@ -72,6 +75,7 @@ public sealed class RemsRequestsController : ControllerBase
         _unitOfWork = unitOfWork;
         _activity = activity;
         _notifications = notifications;
+        _codes = codes;
         _baseUrl = appOptions.Value.BaseUrl;
     }
 
@@ -220,8 +224,11 @@ public sealed class RemsRequestsController : ControllerBase
         {
             Id = Guid.NewGuid(),
             Description = request.Description,
-            Type = type,
-            Status = RemsRequestStatuses.Draft,
+            // Both are foreign keys to their option items. A request is always one of the two types and
+            // always starts as a draft, so both resolve or the list has been tampered with.
+            TypeId = await _codes.RequireRemsIdAsync(RemsOptionSetKeys.Type, type, cancellationToken),
+            StatusId = await _codes.RequireRemsIdAsync(
+                RemsOptionSetKeys.Status, RemsRequestStatuses.Draft, cancellationToken),
             RequestedClientName = request.ClientName,
             ClientNameSuffix = Normalize(request.ClientNameSuffix),
             CustomerEmail = Normalize(request.CustomerEmail),
@@ -316,7 +323,7 @@ public sealed class RemsRequestsController : ControllerBase
             && await FindSoleClientByExactNameAsync(request.ClientName, cancellationToken) is { } matchedClientId)
         {
             request.ExistingClientReferenceId = matchedClientId;
-            if ((request.Type ?? rems.Type) == RemsRequestTypes.BrandNewClient)
+            if ((request.Type ?? rems.Type!.Value) == RemsRequestTypes.BrandNewClient)
             {
                 request.Type = RemsRequestTypes.ExistingClient;
             }
@@ -332,7 +339,10 @@ public sealed class RemsRequestsController : ControllerBase
             return emailClash;
         }
         if (request.Description is not null) rems.Description = request.Description;
-        if (request.Type is not null) rems.Type = request.Type;
+        if (request.Type is not null)
+        {
+            rems.TypeId = await _codes.RequireRemsIdAsync(RemsOptionSetKeys.Type, request.Type, cancellationToken);
+        }
         if (request.ClientName is not null) rems.RequestedClientName = request.ClientName;
         // Cleared by sending "" — the suffix is the one client field somebody routinely takes back off,
         // having picked "Jr." for the wrong John Smith, and an omitted field means "leave it alone" here.
@@ -483,7 +493,7 @@ public sealed class RemsRequestsController : ControllerBase
 
         // A draft has not been submitted to anybody yet — it is still its initiator's private working copy,
         // and there is nothing on it for an admin to take over.
-        if (rems.Status == RemsRequestStatuses.Draft)
+        if (rems.Status!.Value == RemsRequestStatuses.Draft)
         {
             return Conflict(ApiResponseFactory.Error(
                 ApiErrorCodes.ValidationFailed, "Cannot pick this request up.",
@@ -596,7 +606,7 @@ public sealed class RemsRequestsController : ControllerBase
 
         // Only from a stage the Admin actually holds. A request out with the client, already with the
         // approvers, or already returned is not theirs to send back.
-        if (rems.Status is not (RemsRequestStatuses.AdminReview or RemsRequestStatuses.AwaitingAdminConfirmation))
+        if (rems.Status!.Value is not (RemsRequestStatuses.AdminReview or RemsRequestStatuses.AwaitingAdminConfirmation))
         {
             return Conflict(ApiResponseFactory.Error(
                 ApiErrorCodes.ValidationFailed, "Cannot send back.",
@@ -625,7 +635,8 @@ public sealed class RemsRequestsController : ControllerBase
             ReturnedToUserId = returnedTo,
         }, cancellationToken);
 
-        rems.Status = RemsRequestStatuses.ReturnedToInitiator;
+        rems.StatusId = await _codes.RequireRemsIdAsync(
+            RemsOptionSetKeys.Status, RemsRequestStatuses.ReturnedToInitiator, cancellationToken);
         _rems.Update(rems);
         await _activity.WriteAsync(new CreateActivityEventDto(
             EntityType.Rems, rems.Id, ActivityEventTypes.RemsSentBack, null, reason), cancellationToken);
@@ -673,7 +684,7 @@ public sealed class RemsRequestsController : ControllerBase
         {
             return NotFound(ApiResponseFactory.NotFound("REMS request not found."));
         }
-        if (rems.Status is not (RemsRequestStatuses.ReturnedToInitiator or RemsRequestStatuses.ChangesRequested))
+        if (rems.Status!.Value is not (RemsRequestStatuses.ReturnedToInitiator or RemsRequestStatuses.ChangesRequested))
         {
             return Conflict(ApiResponseFactory.Error(
                 ApiErrorCodes.ValidationFailed, "Cannot return to admin.",
@@ -693,7 +704,8 @@ public sealed class RemsRequestsController : ControllerBase
             _rems.UpdateSendBack(open);
         }
 
-        rems.Status = RemsRequestStatuses.AwaitingAdminConfirmation;
+        rems.StatusId = await _codes.RequireRemsIdAsync(
+            RemsOptionSetKeys.Status, RemsRequestStatuses.AwaitingAdminConfirmation, cancellationToken);
         _rems.Update(rems);
         await _activity.WriteAsync(new CreateActivityEventDto(EntityType.Rems, rems.Id, ActivityEventTypes.RemsReturnedToAdmin), cancellationToken);
 
@@ -898,7 +910,7 @@ public sealed class RemsRequestsController : ControllerBase
     /// </para>
     /// </summary>
     private static bool CanSee(REMS r, Guid me, bool privileged)
-        => r.Status == RemsRequestStatuses.Draft
+        => r.Status!.Value == RemsRequestStatuses.Draft
             ? privileged || IsMine(r, me)
             : privileged || IsMine(r, me) || r.AdminAssignedToId == me || r.CSEId == me;
 
@@ -1138,7 +1150,7 @@ public sealed class RemsRequestsController : ControllerBase
     /// it stays on the record — somebody outside the firm has been asked for their details by then, and
     /// the request is the only account of that.
     /// </summary>
-    private static bool IsDeletable(REMS r) => r.Status == RemsRequestStatuses.Draft;
+    private static bool IsDeletable(REMS r) => r.Status!.Value == RemsRequestStatuses.Draft;
 
     /// <summary>
     /// Which row actions this caller may perform, combining the record-level rule with the permission.
@@ -1154,7 +1166,7 @@ public sealed class RemsRequestsController : ControllerBase
             // somebody ELSE's request, by an admin who has no standing on it yet. What bounds it is the
             // request being out of draft and unclaimed — the same pair PickUp enforces.
             CanPickUp: User.HasPermission(Permissions.RemsRequestsAssign)
-                && r.Status != RemsRequestStatuses.Draft
+                && r.Status!.Value != RemsRequestStatuses.Draft
                 && r.AdminAssignedToId is null,
             CanDelete: canAct && User.HasPermission(Permissions.RemsRequestsDelete) && IsDeletable(r));
     }
@@ -1167,7 +1179,7 @@ public sealed class RemsRequestsController : ControllerBase
         forms.TryGetValue(r.Id, out var form);
         var (ems, submission) = MapFormState(form);
         return new RemsRequestRow(
-            r.Id, r.REMSNumber, r.ClientDisplayName, r.Type, r.CreatedOnUtc, r.Status,
+            r.Id, r.REMSNumber, r.ClientDisplayName, r.Type!.Value, r.CreatedOnUtc, r.Status!.Value,
             r.CustomerEmail, r.CustomerMobileNumber,
             UserRefOf(r.AdminAssignedToId, names), UserRefOf(r.CSEId, names),
             form?.IndustryGroup, ems, submission,
@@ -1192,7 +1204,7 @@ public sealed class RemsRequestsController : ControllerBase
         return new RemsRequestDetail(
             rems.Id, rems.REMSNumber, rems.Description, rems.ClientDisplayName,
             rems.RequestedClientName, rems.ClientNameSuffix,
-            rems.Type, rems.Status, rems.CustomerEmail, rems.CustomerMobileNumber,
+            rems.Type!.Value, rems.Status!.Value, rems.CustomerEmail, rems.CustomerMobileNumber,
             rems.ExistingClientReferenceId, rems.ClientPersonId,
             UserRefOf(rems.AdminAssignedToId, names), UserRefOf(rems.CSEId, names),
             form?.IndustryGroup, ems, submission, files,

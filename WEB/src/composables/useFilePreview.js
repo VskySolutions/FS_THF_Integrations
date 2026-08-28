@@ -50,8 +50,12 @@ const REVOKE_AFTER_MS = 120000;
  * Fetches a stored file's bytes. Media is the default store, but not the only one — Universal Features
  * keeps its attachments behind /api/uf/attachments/{id}/download — so a caller whose file lives
  * elsewhere passes its own `fetchBlob`.
+ *
+ * Exported because opening a file is not the only reason to want its bytes: the preview row reads them
+ * to draw a thumbnail of a stored image, and then hands the same blob back to `openStoredFile` so a
+ * picture that has already been previewed opens without being downloaded twice.
  */
-const bytesOf = (file, fetchBlob) => {
+export const fetchStoredBytes = (file, fetchBlob = null) => {
   if (fetchBlob) return fetchBlob(file);
   const mediaId = mediaIdOf(file);
   if (!mediaId) return Promise.reject(new Error("This file has no stored copy to open."));
@@ -72,7 +76,7 @@ const bytesOf = (file, fetchBlob) => {
 export async function openStoredFile (file, fetchBlob = null) {
   const tab = window.open("", "_blank");
   try {
-    const blob = await bytesOf(file, fetchBlob);
+    const blob = await fetchStoredBytes(file, fetchBlob);
     // A blob with no type opens as a download prompt rather than in the viewer, and the server's own
     // Content-Type is the better answer for a row that recorded one.
     const typed = file?.mimeType && !blob.type ? blob.slice(0, blob.size, file.mimeType) : blob;
@@ -92,7 +96,7 @@ export async function openStoredFile (file, fetchBlob = null) {
 
 /** Downloads a stored file under its own name rather than opening it. */
 export async function downloadStoredFile (file, fetchBlob = null) {
-  const blob = await bytesOf(file, fetchBlob);
+  const blob = await fetchStoredBytes(file, fetchBlob);
   const url = URL.createObjectURL(blob);
   saveBlob(url, nameOf(file));
   setTimeout(() => URL.revokeObjectURL(url), 1000);

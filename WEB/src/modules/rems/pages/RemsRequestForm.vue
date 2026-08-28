@@ -11,10 +11,10 @@
              the tab strip, because they act on the tabs rather than on the request. -->
         <div class="rf-head">
           <!-- The row helper rather than the bare code, so a request nobody has picked up says so here
-               exactly as it does in EMS Review instead of reading as though an admin is already on it. -->
-          <q-badge v-if="request" :color="requestStatusColor(request)">
-            {{ requestStatusLabel(request) }}
-          </q-badge>
+               exactly as it does in EMS Review instead of reading as though an admin is already on it.
+               The tooltip is the stage's own Description from Administration → Option Sets — the badge is
+               one or two words about who the request is waiting on, and the words alone do not say. -->
+          <app-option-badge v-if="request" :option="requestStatusOption(request)" />
 
           <!-- What the page is doing with what has been typed. It stands in for the Save button it
                replaced, so it is present even while idle: a form with no Save on it has to say why.
@@ -276,16 +276,19 @@
               <!-- ---------- Client Information ---------- -->
               <q-tab-panel name="client">
                 <detail-grid v-if="!isEditing" :rows="clientRows" />
-                <!-- Entity Type and Industry are the page's to save — one belongs to the request's EMS form
-                 record and the other to its engagement, neither to the client row — but this tab's to
-                 lay out, because both describe the client. They are v-modelled down rather than rendered
-                 in a row of their own up here. -->
+                <!-- Entity Type, Industry and the CSE are the page's to save — the entity type and the CSE
+                 belong to the request's EMS form record and the industry to its engagement, none of them
+                 to the client row — but this tab's to lay out, because all three are answers about the
+                 client. They are v-modelled down rather than rendered in a row of their own up here. -->
                 <client-information-fields
                   v-else
                   ref="clientFieldsRef"
                   v-model="clientForm"
                   v-model:industry-group="setupForm.industryGroup"
                   v-model:sub-industry="setupForm.subIndustry"
+                  v-model:cse-user-id="setupForm.cseUserId"
+                  :cse-options="cseOptions"
+                  :cse-hint="cseHint"
                   :readonly="!canEditClient"
                   :client-locked="clientLocked"
                   :compact="showSubmittedPane"
@@ -315,17 +318,13 @@
 
                 <detail-grid v-else-if="!isEditing" :rows="setupRows" />
 
-                <!-- The CSE is the page's to save (it belongs to the request's EMS form record, not to the
-                 engagement) but the setup form's to lay out — it sits with the other two people who run
-                 the engagement, so it is v-modelled down rather than rendered up here in a row of its
-                 own. The entity type goes down read-only: the Government Audit card keys off it. -->
+                <!-- The entity type goes down read-only: the Government Audit card keys off it. The CSE is
+                 not here at all any more — it is asked on the Client Information tab, with the entity
+                 type it is saved alongside. -->
                 <engagement-setup-form
                   v-else
                   ref="setupRef"
-                  v-model:cse-user-id="setupForm.cseUserId"
                   :engagement="setupEngagement"
-                  :cse-options="cseOptions"
-                  :cse-hint="cseHint"
                   :industry-group="setupForm.industryGroup"
                   :dept-options="departmentOptions"
                   :sub-service-line-options="subServiceLineOptions"
@@ -355,11 +354,8 @@
 
               <!-- ---------- Commission ---------- -->
               <q-tab-panel v-if="setupEngagement" name="commission">
-                <!-- On the panel rather than inside the form below it, so it is there whether the tab is being
-                 read or filled in. The number is ambiguous either way: "40%" beside a name says nothing
-                 about what it is 40% OF, and the fee and the realization on the setup tab are both
-                 percentages this could plausibly be read against. -->
-                <div class="rf-hint">The percentage represents percentage of commission.</div>
+                <!-- No hint line here. What a percentage is OF is answered by the "Total allocated" line
+                 inside the form, which is the only place this tab now says anything about the number. -->
                 <detail-grid v-if="!isEditing" :rows="commissionRows" />
                 <engagement-commission
                   v-else
@@ -456,6 +452,7 @@ import { REMS_STATUS, REMS_REWORK_STATUSES } from "modules/rems/remsStatus";
 import { useAuthStore } from "stores/auth";
 
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
+import AppOptionBadge from "components/common/AppOptionBadge.vue";
 import ActingAsBanner from "modules/rems/components/ActingAsBanner.vue";
 import DetailGrid from "modules/rems/components/DetailGrid.vue";
 import ClientInformationFields from "modules/rems/components/ClientInformationFields.vue";
@@ -478,7 +475,7 @@ const notify = useNotify();
 const { confirm } = useConfirm();
 const { has } = usePermissions();
 const auth = useAuthStore();
-const { emsFormActivity, requestStatusLabel, requestStatusColor, approverRoleLabel } = useRemsMeta();
+const { emsFormActivity, requestStatusOption, approverRoleLabel } = useRemsMeta();
 const { typeOptions, load: loadTypes } = useRemsOptionSets();
 const { industryGroupOptions, load: loadIndustryGroups } = useRemsIndustryGroups();
 const {
@@ -542,8 +539,10 @@ const blankClient = () => ({
   existingClientReferenceId: null
 });
 const clientForm = reactive(blankClient());
-// The fields the page owns rather than a tab: each is written by an endpoint of its own, and two of the
-// three are asked on the Client tab while the third is on Setup, so no single tab component can hold them.
+// The fields the page owns rather than a tab. All three are asked on the Client tab, but none of them is
+// the client component's to save: the CSE and the entity type go to the request's EMS form record in one
+// write, and the industry to the engagement in another — so the page holds the values and owns the two
+// writes, and the tab only renders them.
 // `industryGroup` is Entity Type and `subIndustry` is Industry — see the note at the top of useRemsMeta.
 const setupForm = reactive({ cseUserId: null, industryGroup: null, subIndustry: null });
 
@@ -779,13 +778,39 @@ const handBack = async () => {
 // The lighter of the two completeness bars: enough to ask the client for their details. The full one —
 // the engagement team, realization, a marketing method, the signed CAF on an audit — is enforced when the
 // round is actually routed, by the API.
+//
+// The COMMISSION is on this lighter bar all the same, and it is the one thing here that is not about the
+// client at all: the splits divide one commission, every recipient becomes a required approver, and a
+// division that does not add up is one the approvers would be asked to accept later — on a request that
+// has already gone out. Settling it before the client is written to is the whole point.
+//
+// Rounded to 2dp before comparing, as the Commission tab does: three 33.33/33.34 splits sum to
+// 100.00000000000001 in binary floating point and would otherwise never be sendable.
+const round2 = (n) => Math.round(n * 100) / 100;
+const commissionTotal = computed(() => round2(
+  (engagement.value?.commissionSplits || []).reduce((sum, s) => sum + (Number(s.percentage) || 0), 0)));
+const commissionCount = computed(() => (engagement.value?.commissionSplits || []).length);
+const commissionAllocated = computed(() => commissionTotal.value === 100);
+
 const readyToSend = computed(() =>
-  !!clientForm.customerEmail?.trim() && !!setupForm.cseUserId && !!setupForm.industryGroup);
+  !!clientForm.customerEmail?.trim() && !!setupForm.cseUserId && !!setupForm.industryGroup &&
+  commissionAllocated.value);
 const sendBlockedReason = computed(() => {
   if (!clientForm.customerEmail?.trim()) return "The client has no email address to send the form to.";
-  if (!setupForm.cseUserId) return "Choose a CSE first — it is on the Engagement Setup tab.";
+  if (!setupForm.cseUserId) return "Choose a CSE first — it is on the Client Information tab.";
   if (!setupForm.industryGroup) {
     return "Choose an entity type on the Client Information tab — it decides what the client is asked.";
+  }
+  if (!commissionAllocated.value) {
+    // Naming nobody is its own sentence. "Totals 0% — the recipients must add up to 100%" points at
+    // recipients that do not exist, and no recipients is not "no commission on this one" — it is a
+    // commission that has not been settled, which is the thing this bar exists to stop going out.
+    if (!commissionCount.value) {
+      return "No commission recipients yet — the Commission tab must name recipients adding up to 100% " +
+        "before this request can be sent to the client.";
+    }
+    return `Commission totals ${commissionTotal.value}% — the recipients on the Commission tab must add ` +
+      "up to 100% before this request can be sent to the client.";
   }
   return "";
 });
@@ -1029,6 +1054,8 @@ const clientRows = computed(() => [
   { label: "Relationship to THF", value: labelOf(typeOptions.value, clientForm.type) },
   { label: "Entity Type", value: labelOf(industryGroupOptions.value, setupForm.industryGroup) },
   { label: "Industry", value: labelOf(subIndustryOptions.value, setupForm.subIndustry) },
+  // Whose client this is. Read here rather than under the engagement setup, which is where it is asked.
+  { label: "CSE", value: nameOf(cseOptions.value, setupForm.cseUserId) },
   // Read off the request rather than a picker: nobody chooses this, an admin claims it. Blank until one
   // does, and the badge in the header is what says the request is waiting for that.
   { label: "Reviewing Admin", value: request.value?.assignedAdmin?.name || "Waiting for pickup" },
@@ -1052,13 +1079,12 @@ const setupRows = computed(() => {
   const e = engagement.value;
   if (!e) return [];
   // The same sequence the form is filled in, so reading a request and typing one describe it in the
-  // same order. Entity Type and Industry are not here — they are read on the Client tab, where they are
-  // now asked.
+  // same order. Entity Type, Industry and the CSE are not here — all three are read on the Client tab,
+  // where they are now asked.
   return [
     { label: "Service Line", value: labelOf(subServiceLineOptions.value, e.subServiceLine) },
     { label: "Department", value: labelOf(departmentOptions.value, e.department) },
     { label: "Department Director", value: e.departmentDirector?.name },
-    { label: "CSE", value: nameOf(cseOptions.value, setupForm.cseUserId) },
     { label: "Engagement Executive", value: e.engagementExecutive?.name },
     { label: "Billing Manager", value: e.billingManager?.name },
     // Every row from here down is asked of some departments and not others, so the summary asks the same
@@ -1138,11 +1164,12 @@ const loadPickers = async () => {
   billingManagerOptions.value = toOptions(billing);
 };
 
-// Entity Type and Industry as they were picked BEFORE the request existed. Both are asked on the first
-// tab, which a request being composed can fill in, and neither can be written at create time: the entity
-// type is filed with the CSE and the endpoint requires the pair, and the industry needs an engagement id.
-// So they are carried across the reload that follows the create — `seedForms` reads a server that does
-// not have them yet, and would otherwise wipe two answers the user just gave.
+// The CSE, the Entity Type and the Industry as they were picked BEFORE the request existed. All three are
+// asked on the first tab, which a request being composed can fill in, and none of them can be written at
+// create time: the create writes the client row only, the CSE and the entity type are filed together on
+// the EMS form record, and the industry needs an engagement id. So they are carried across the reload that
+// follows the create — `seedForms` reads a server that does not have them yet, and would otherwise wipe
+// three answers the user just gave.
 let pendingSetupPick = null;
 
 const seedForms = (detail, ws) => {
@@ -1154,7 +1181,7 @@ const seedForms = (detail, ws) => {
   clientForm.customerMobileNumber = detail.customerMobileNumber || "";
   clientForm.type = detail.type || "";
   clientForm.existingClientReferenceId = detail.existingClientReferenceId || null;
-  setupForm.cseUserId = detail.cse?.id || null;
+  setupForm.cseUserId = detail.cse?.id || pendingSetupPick?.cseUserId || null;
   setupForm.industryGroup =
     ws?.industryGroup || detail.industryGroup || pendingSetupPick?.industryGroup || null;
   setupForm.subIndustry = ws?.engagement?.subIndustry || pendingSetupPick?.subIndustry || null;
@@ -1258,11 +1285,12 @@ const {
     if (!canEditSetup.value) return "";
     // CSE and Entity Type live on the EMS form record, which is what the client's link is minted from
     // (`industryGroup` on the wire — see the note at the top of useRemsMeta). Both or neither: the
-    // endpoint requires the pair, and the two are asked on different tabs, so the reason says where the
-    // missing one is rather than leaving the user to hunt for it.
+    // endpoint requires the pair, so the reason names whichever half is still blank rather than leaving
+    // the user to work out which one it wanted. Both are on the Client Information tab now, which is why
+    // they read as one answer there rather than as a field on each of two tabs.
     if (!setupForm.cseUserId || !setupForm.industryGroup) {
       return setupForm.industryGroup
-        ? "The CSE and the Entity Type are saved together — choose a CSE on the Engagement Setup tab."
+        ? "The CSE and the Entity Type are saved together — choose a CSE on the Client Information tab."
         : "The CSE and the Entity Type are saved together — choose an Entity Type on the Client Information tab.";
     }
     await remsApi.saveForm(remsId.value, {
@@ -1358,9 +1386,9 @@ const load = async () => {
     resumeSaves();
     // Whatever was picked before the request existed is writable against it now. Marked rather than
     // written here so it goes through the same savers as any other edit — including the entity type's
-    // "choose a CSE too", which is what the user lands on the Setup tab to do.
+    // "choose a CSE too", which is answered on this same first tab.
     if (pendingSetupPick) {
-      if (pendingSetupPick.industryGroup) markDirty("form");
+      if (pendingSetupPick.industryGroup || pendingSetupPick.cseUserId) markDirty("form");
       if (pendingSetupPick.subIndustry) markDirty("industry");
       pendingSetupPick = null;
     }
@@ -1406,9 +1434,14 @@ const createDraft = async () => {
   }
 
   saving.value = true;
-  // The create writes the client row only. The two classifications on this tab belong to records that do
-  // not exist until it returns, so they ride across the reload instead (see `pendingSetupPick`).
-  pendingSetupPick = { industryGroup: setupForm.industryGroup, subIndustry: setupForm.subIndustry };
+  // The create writes the client row only. The CSE and the two classifications on this tab belong to
+  // records that do not exist until it returns, so they ride across the reload instead (see
+  // `pendingSetupPick`).
+  pendingSetupPick = {
+    cseUserId: setupForm.cseUserId,
+    industryGroup: setupForm.industryGroup,
+    subIndustry: setupForm.subIndustry
+  };
   // Held outside the try: once the request exists, this page is about THAT request whatever fails
   // afterwards, or a second attempt would file a second copy of it.
   let created = null;
@@ -1683,12 +1716,6 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", warnOnUnload));
 /* A cursor that says "hover me": the icon carries the whole message and nothing about an icon otherwise
    suggests there is more behind it. */
 .rf-tabs__note { cursor: help; }
-
-.rf-hint {
-  font-size: 12.5px;
-  color: var(--ink-500);
-  margin-bottom: 14px;
-}
 
 /* min-width:0 is what lets this shrink inside the header's action group; without it the box refuses to go
    below the width of everything in it and nothing ever wraps. */

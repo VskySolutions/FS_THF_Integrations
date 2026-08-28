@@ -49,6 +49,14 @@ internal sealed class RemsApprovalRepository : IRemsApprovalRepository
             .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.MarketingMethods)
             .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.Rems)
                 .ThenInclude(r => r!.Clients).ThenInclude(c => c.Entities)
+            // The engagement's own option references, and the request's status -- the packet renders the
+            // codes behind all of them.
+            .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.Department)
+            .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.SubServiceLine)
+            .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.SubIndustry)
+            .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.BillingPeriod)
+            .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.Rems).ThenInclude(r => r!.Status)
+            .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.Rems).ThenInclude(r => r!.Type)
             .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
 
     // The round's sibling tasks come along so the inbox can show how far the round has got (n of m

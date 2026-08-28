@@ -15,7 +15,7 @@ internal sealed class RemsSettingsRepository : IRemsSettingsRepository
 
     public Task<RemsSettings?> GetAsync(CancellationToken cancellationToken = default)
         => _dbContext.RemsSettings
-            .Include(s => s.DepartmentDirectors)
+            .Include(s => s.DepartmentDirectors).ThenInclude(d => d.Department)
             .FirstOrDefaultAsync(cancellationToken);
 
     public async Task AddAsync(RemsSettings settings, CancellationToken cancellationToken = default)

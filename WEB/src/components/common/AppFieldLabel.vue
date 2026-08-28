@@ -40,13 +40,20 @@ const { text, isRequired } = useFieldLabel(toRef(props, "label"), toRef(props, "
   cursor: help;
   vertical-align: text-bottom;
 }
-/* Mandatory marker: bigger than the label text and red, so required fields stand out. */
+/* Mandatory marker: bigger than the label text and red, so required fields stand out.
+
+   line-height:0 is load-bearing, not tidying. An inline child contributes its own leading box to the
+   line, and an 18px box in a 12px/1.2 line grew the label from 14.39px to 18.39px — so a required
+   field's input sat four pixels BELOW the optional field beside it, on every row in the app that mixes
+   the two. "Suffix" next to "First Name *" was the pair where it showed. Zero leading gives the marker
+   no box of its own; the glyph still paints at full size, and baseline alignment puts it exactly where
+   text-bottom did. */
 .app-field-label__star {
   margin-left: 3px;
   color: #e53935;
   font-size: 18px;
   font-weight: 700;
-  line-height: 1;
-  vertical-align: text-bottom;
+  line-height: 0;
+  vertical-align: baseline;
 }
 </style>

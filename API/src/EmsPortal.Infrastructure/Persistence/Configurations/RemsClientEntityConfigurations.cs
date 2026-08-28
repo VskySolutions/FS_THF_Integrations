@@ -17,7 +17,13 @@ internal sealed class RemsClientConfiguration : IEntityTypeConfiguration<REMSCli
         builder.Property(c => c.Name).IsRequired().HasMaxLength(200);
         builder.Property(c => c.Email).IsRequired().HasMaxLength(256);
         builder.Property(c => c.MobileNumber).HasMaxLength(32);
-        builder.Property(c => c.ReferralSource).HasMaxLength(64);
+        // The referral source is an option-set item, referenced by id. Restrict, like every other
+        // option reference: a value a client is recorded against is not one to delete.
+        builder.HasOne(c => c.ReferralSource)
+            .WithMany()
+            .HasForeignKey(c => c.ReferralSourceId)
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.Navigation(c => c.ReferralSource).AutoInclude();
         builder.Property(c => c.ReferralSourceDetail).HasMaxLength(256);
         builder.Property(c => c.BillingContactName).HasMaxLength(200);
         builder.Property(c => c.BillingEmail).HasMaxLength(256);
@@ -97,7 +103,19 @@ internal sealed class RemsEntityContactConfiguration : IEntityTypeConfiguration<
         builder.HasOne(c => c.Entity).WithMany(e => e.Contacts).HasForeignKey(c => c.REMSEntityId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(c => c.Person).WithMany().HasForeignKey(c => c.PersonId).OnDelete(DeleteBehavior.Restrict);
 
-        // One contact per (entity, role).
-        builder.HasIndex(c => new { c.TenantId, c.REMSEntityId, c.ContactRole }).IsUnique().HasFilter("[Deleted] = 0");
+        // One contact per (entity, role) — with ONE exception, which is why the filter names it.
+        //
+        // Billing contacts are deliberately plural: the client intake form asks who should be invoiced and
+        // lets the client name more than one, and being named second does not make somebody a different
+        // kind of contact — they are all the BillingContact role. Under a plain unique index the second one
+        // failed the insert, and it failed at the end of a submit that had already built the client, the
+        // entity, its addresses and every other contact, so the client lost the whole form.
+        //
+        // Every other role IS singular — an entity has one Primary Contact, one Financial Contact — and the
+        // index still says so. Dropping uniqueness altogether would have given that up everywhere to make
+        // room for the one role that does not want it.
+        builder.HasIndex(c => new { c.TenantId, c.REMSEntityId, c.ContactRole })
+            .IsUnique()
+            .HasFilter("[Deleted] = 0 AND [ContactRole] <> 'BillingContact'");
     }
 }

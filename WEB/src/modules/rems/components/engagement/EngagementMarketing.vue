@@ -2,7 +2,7 @@
   <div>
     <div class="text-body2 text-grey-8 q-mb-sm">
       Tag how this engagement was won. At least one marketing method is required before it can be sent for
-      approval (AC-REMS-017).
+      approval.
     </div>
 
     <q-banner v-if="marketingUnavailable" dense class="bg-orange-1 text-orange-9 rounded-borders">

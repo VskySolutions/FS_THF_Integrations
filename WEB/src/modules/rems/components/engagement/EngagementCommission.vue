@@ -1,19 +1,30 @@
 <template>
   <div>
+    <!-- One line, and only what the screen cannot show for itself: the rule, and the consequence of being
+         on this list. The "up to ten" is on the counter beside the picker; the running total is on the
+         status line at the bottom. -->
     <div class="text-body2 text-grey-8 q-mb-sm">
-      Add up to ten commission recipients and set each percentage (AC-REMS-016). Recipients become required
-      approvers when the engagement is routed for approval.
+      The split must total 100% before the request goes to the client. Each recipient approves the
+      engagement.
     </div>
 
     <!-- Add recipient (searchable CSE-group picker; excludes those already added). -->
-    <div v-if="editable" class="row items-end q-col-gutter-md q-mb-md">
+    <div v-if="editable" class="row items-center q-col-gutter-md q-mb-md">
       <app-select
         v-model="pick" :options="availableRecipients" label="Add recipient" class="col-12 col-sm"
         use-input :disable="splits.length >= 10" :hint="recipientHint"
         info="Lists users holding the &quot;CSE&quot; role, assigned on a user's page in Administration → Users. Recipients already added are excluded."
         @update:model-value="addRecipient"
       />
-      <div class="col-auto text-caption text-grey-6 q-pb-sm">{{ splits.length }} / 10</div>
+      <!-- The cap said as a count, not only as a picker that stops responding. At nine of ten the next
+           recipient is the last one, and the counter turns amber on the tenth so the disabled picker
+           beside it has something explaining itself. -->
+      <div class="col-auto q-pb-sm">
+        <div class="rems-commission__count" :class="{ 'rems-commission__count--full': splits.length >= 10 }">
+          <span class="rems-commission__count-n">{{ splits.length }}</span>
+          <span class="rems-commission__count-of">/ 10</span>
+        </div>
+      </div>
     </div>
 
     <div v-if="!splits.length" class="text-grey-6 q-pa-sm">No commission recipients yet.</div>
@@ -40,25 +51,14 @@
       </q-item>
     </q-list>
 
-    <div class="row items-center q-mt-md">
-      <div class="text-caption" :class="totalOver ? 'text-negative' : 'text-grey-7'">
-        Total allocated: {{ totalPercent }}%
-        <template v-if="totalOver"> — {{ overBy }}% over the 100% maximum</template>
-      </div>
+    <!-- ONE piece of feedback about the total, not four. This line was a caption, a banner repeating the
+         caption, and a toast repeating the banner — three ways of saying the same number, on a tab whose
+         whole content is that number. What is left says where the split stands and what is missing, and
+         changes colour rather than growing an alert. -->
+    <div class="rems-commission__total q-mt-md" :class="`rems-commission__total--${totalTone}`">
+      <q-icon :name="totalIcon" size="16px" class="q-mr-xs" />
+      Total allocated: {{ totalPercent }}%<template v-if="totalNote"> — {{ totalNote }}</template>
     </div>
-
-    <!-- The allocation does not add up. Said as a banner rather than only as a caption, because a
-         commission split that is short is the mistake that costs somebody money and it is invisible in a
-         column of percentages that each look reasonable on their own.
-         A WARNING, not a block: an engagement can legitimately sit part-allocated while the split is
-         still being agreed, and this form saves itself as it is typed — refusing to save a total that
-         reads 60% halfway through entering the second of three recipients would make the section
-         unfillable. Over 100% is still refused outright, because that one is never right. -->
-    <q-banner v-if="allocationWarning" dense class="rems-commission__warn q-mt-sm rounded-borders">
-      <template #avatar><q-icon name="o_warning" color="orange-9" /></template>
-      {{ allocationWarning }}
-    </q-banner>
-
   </div>
 </template>
 
@@ -71,7 +71,6 @@
 // that no longer exists, so the button rendered nowhere and the splits could not be saved at all.
 import { ref, computed, watch, nextTick } from "vue";
 import { remsApi } from "services/api";
-import { useNotify } from "composables/useNotify";
 import AppSelect from "components/common/AppSelect.vue";
 import AppTextField from "components/common/AppTextField.vue";
 
@@ -83,7 +82,6 @@ const props = defineProps({
 });
 // The page saves this section for the user, so every change to the splits is announced.
 const emit = defineEmits(["change"]);
-const notify = useNotify();
 
 const buildSplits = (e) => (e.commissionSplits || []).map((s) => ({
   employeeId: s.employee.id,
@@ -133,33 +131,21 @@ const round2 = (n) => Math.round(n * 100) / 100;
 const totalPercent = computed(() =>
   round2(splits.value.reduce((sum, s) => sum + (Number(s.percentage) || 0), 0)));
 const totalOver = computed(() => totalPercent.value > 100);
-const overBy = computed(() => round2(totalPercent.value - 100));
 
-// Whether the allocation adds up, and what to say when it does not. Silent on an engagement with no
-// recipients at all: naming nobody is how "there is no commission on this one" is recorded, and a warning
-// there would fire on every engagement that never had a split.
-const allocationWarning = computed(() => {
-  if (!splits.value.length) return "";
-  if (totalOver.value) {
-    return `Commission totals ${totalPercent.value}% — that is ${overBy.value}% over. ` +
-      "The splits divide one commission, so they cannot add up to more than the whole of it.";
-  }
-  if (totalPercent.value < 100) {
-    return `Commission totals ${totalPercent.value}% — ${round2(100 - totalPercent.value)}% is unallocated. ` +
-      "Check the split before this goes for approval.";
-  }
+// The whole of the feedback: how far off the split is, and which way. The number is already on screen, so
+// the note says only what the number does not — how much is missing, or how much too much.
+const totalNote = computed(() => {
+  if (totalOver.value) return `${round2(totalPercent.value - 100)}% over`;
+  if (totalPercent.value < 100) return `${round2(100 - totalPercent.value)}% unallocated`;
   return "";
 });
-
-// Warn the moment the running total crosses 100, on the transition only — watching the flag rather than
-// the total keeps this to one toast instead of one per keystroke. Save is blocked separately, since a
-// toast is easy to miss. Only the OVER case gets a toast: an allocation still short of 100% is a
-// half-finished split far more often than a mistake, and the banner is there to say so.
-watch(totalOver, (over) => {
-  if (over) {
-    notify.warning(`Commission totals ${totalPercent.value}% — the total across all recipients cannot exceed 100%.`);
-  }
+const totalTone = computed(() => {
+  if (totalOver.value) return "bad";
+  return totalPercent.value === 100 ? "ok" : "warn";
 });
+const totalIcon = computed(() => ({
+  ok: "o_check_circle", warn: "o_pending", bad: "o_error"
+}[totalTone.value]));
 
 // Called by the page's Save. Sent whenever the engagement has splits or had them a moment ago — an empty
 // list is how a recipient is removed, so "nothing to send" is only true when there was nothing before.
@@ -179,7 +165,8 @@ const saveCommission = async (engagementId) => {
   // enforces the same ceiling — this is the readable version of that rejection.
   if (totalOver.value) {
     throw new Error(
-      `Commission totals ${totalPercent.value}% — that is ${overBy.value}% over. Reduce the splits to 100% or less.`);
+      `Commission totals ${totalPercent.value}% — ${round2(totalPercent.value - 100)}% over. ` +
+      "Reduce the splits to 100% or less.");
   }
 
   return remsApi.updateCommission(
@@ -192,10 +179,60 @@ defineExpose({ saveCommission });
 </script>
 
 <style scoped>
-/* Amber, not red: the allocation not adding up is something to look at before the engagement is routed,
-   not something that has failed. */
-.rems-commission__warn {
+/* The recipient count, beside the picker. Bordered and set in the ink colour because it is the only thing
+   on the row that says there is a ceiling at all — as grey caption text it read as decoration, and the
+   picker greying out at ten arrived as a bug report instead of as the rule being met. */
+.rems-commission__count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  line-height: 1.2;
+  background: #fff;
+}
+.rems-commission__count-n {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink-900);
+}
+.rems-commission__count-of {
+  font-size: 12px;
+  color: var(--ink-500);
+}
+/* Full. The picker beside it is disabled from here on, and this is what explains it. */
+.rems-commission__count--full {
+  border-color: #ffb300;
+  background: #fff8e1;
+}
+.rems-commission__count--full .rems-commission__count-n,
+.rems-commission__count--full .rems-commission__count-of {
+  color: #8a5a00;
+}
+
+/* The single line of feedback about the split. Colour carries the state — green once it adds up, amber
+   while it is short, red when it is over — which is what lets this one line replace the caption, the
+   banner and the toast that all used to say the same number. Amber and not red for short: a split can
+   legitimately sit part-allocated while it is still being agreed. */
+.rems-commission__total {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+}
+.rems-commission__total--ok {
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+.rems-commission__total--warn {
   background: #fff8e1;
   color: #8a5a00;
+}
+.rems-commission__total--bad {
+  background: #ffebee;
+  color: #b71c1c;
 }
 </style>

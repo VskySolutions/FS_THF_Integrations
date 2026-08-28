@@ -18,8 +18,11 @@
     </app-filter-drawer>
 
     <div class="text-body2 text-grey-8 q-mb-md">
-      The requests routed to you to review — one row each, showing where each one's approval stands. You only
-      ever see your own tasks; a decision is final once made.
+      The requests routed to you to review — one row each.
+      <strong>Approval Status</strong> is where the whole request stands, and reads Approved only once
+      every approver has signed.
+      <strong>Your Decision</strong> is your own signature on it.
+      You only ever see your own tasks; a decision is final once made.
     </div>
 
     <app-data-table
@@ -47,18 +50,22 @@
         </q-td>
       </template>
 
-      <template #body-cell-role="cell">
+      <!-- Where the REQUEST's approval stands — not where the reader's own signature does. It reads
+           "Approved" only once every approver has signed; a round that is part-signed says PARTIALLY
+           APPROVED and the tooltip gives the tally. Before this, the only status on the row was the
+           reader's own task, which flipped to Approved the moment they signed and left them reading their
+           own signature as the request's outcome. -->
+      <template #body-cell-roundStatus="cell">
         <q-td :props="cell">
-          <div class="row items-center no-wrap">
-            <q-icon :name="approverRoleIcon(cell.row.role)" color="primary" size="18px" class="q-mr-xs" />
-            {{ approverRoleLabel(cell.row.role) }}
-          </div>
+          <app-option-badge :option="roundMeta(cell.row)" />
         </q-td>
       </template>
 
+      <!-- The reader's OWN decision, named as theirs. Every row on this list is their task, so the badge
+           was never ambiguous about whose it was — only about what it was a decision on. -->
       <template #body-cell-status="cell">
         <q-td :props="cell">
-          <q-badge :color="approvalStatusColor(cell.row.status)">{{ approvalStatusLabel(cell.row.status) }}</q-badge>
+          <app-option-badge :option="approvalStatusOption(cell.row.status)" />
         </q-td>
       </template>
 
@@ -129,11 +136,10 @@ import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
 import { useDateFormat } from "composables/useDateFormat";
 import { useAuditColumns } from "composables/useAuditColumns";
-import {
-  useRemsMeta, REMS_APPROVER_ROLE_OPTIONS, REMS_APPROVAL_STATUS_OPTIONS
-} from "modules/rems/useRemsMeta";
+import { useRemsMeta } from "modules/rems/useRemsMeta";
 
 import AppListHeader from "components/common/AppListHeader.vue";
+import AppOptionBadge from "components/common/AppOptionBadge.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppDataTable from "components/common/AppDataTable.vue";
@@ -143,18 +149,42 @@ const router = useRouter();
 const notify = useNotify();
 const fmt = useDateFormat();
 const auditColumns = useAuditColumns();
-const { approverRoleLabel, approverRoleIcon, approvalStatusLabel, approvalStatusColor } = useRemsMeta();
+const { approvalStatusOption, approvalStatusFilterOptions, roundStatusOption } = useRemsMeta();
+
+// Where the whole ROUND stands, from the counts every row carries — the REMS.ApprovalRoundStatus value,
+// which is "Partially Approved" while some but not all approvers have signed. Declared above `columns`,
+// which calls it to build the sortable label.
+const roundMeta = (row) =>
+  roundStatusOption(row?.roundStatus, row?.approvedCount || 0, row?.approverCount || 0);
 
 // The identity/date columns are covered by the quick search or cannot be narrowed server-side, so they
-// opt out of the filter drawer; role and decision state are the two worth filtering on.
+// opt out of the filter drawer; the reader's own decision is the one worth filtering on.
 const columns = [
   { name: "remsNumber", label: "Request ID", field: "remsNumber", align: "left", sortable: true, default: true, filterable: false },
   { name: "client", label: "Client", field: "clientName", align: "left", sortable: true, default: true, filterable: false },
   // On by default: an approver deciding on a round needs to know who to ask about it, and the CSE is
   // that person. Without the column, finding out meant opening the request.
   { name: "cse", label: "CSE", field: (r) => r.cse?.name || "—", align: "left", sortable: true, default: true, filterable: false },
-  { name: "role", label: "Your Role", field: "role", align: "left", sortable: true, default: true, filterOptions: REMS_APPROVER_ROLE_OPTIONS },
-  { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true, filterOptions: REMS_APPROVAL_STATUS_OPTIONS },
+  // The REQUEST's approval, shown by default — it is the answer to "where does this stand?", which the
+  // reader's own decision below is not. Sorted and searched on the label the badge shows, partial state
+  // included, so ordering by this column groups the rounds that are at the same point.
+  {
+    name: "roundStatus",
+    label: "Approval Status",
+    field: (r) => roundMeta(r).label,
+    align: "left",
+    sortable: true,
+    default: true,
+    filterable: false
+  },
+  // Whose signature, said in the heading. It is a filter as well as a badge, and it narrows on the
+  // caller's own TASK server-side — which is exactly what "Your Decision" means.
+  //
+  // The "Your Role" column that used to sit in front of it is gone entirely. Every row on this list is
+  // the reader's own task, so the role only ever said which seat put them on a round they were already
+  // looking at — machinery, not something anybody reads or acts on. The endpoint still accepts a `role`
+  // filter; nothing on this screen sends one.
+  { name: "status", label: "Your Decision", field: "status", align: "left", sortable: true, default: true, filterOptions: approvalStatusFilterOptions.value },
   // Sorts on how much of the round is still outstanding, so the ones closest to done rise together.
   {
     name: "approvals",
@@ -169,7 +199,6 @@ const columns = [
   // Off by default, but offered in the Columns menu so nothing the row returns is unreachable. The Entity
   // column went with the field behind it: an approval is about a request and its one engagement, the row
   // stopped carrying an entity name to put here, and the column had been rendering "—" on every row.
-  { name: "roundStatus", label: "Approval Status", field: (r) => approvalStatusLabel(r.roundStatus), align: "left", default: false, filterable: false },
   { name: "decidedOnUtc", label: "Decided", field: (r) => (r.decidedOnUtc ? fmt.formatDateTime(r.decidedOnUtc) : "—"), align: "left", sortable: true, default: false, filterable: false },
   ...auditColumns(),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
@@ -184,7 +213,6 @@ const { rows, loading, totalRecords, search, filterOpen, pagination, load, onReq
       page,
       limit,
       search: search.value || undefined,
-      role: filters.role || undefined,
       status: filters.status || undefined
     }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),
   onError: (err) => notify.error(getApiErrorMessage(err))

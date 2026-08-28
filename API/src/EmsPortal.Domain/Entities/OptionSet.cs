@@ -42,6 +42,19 @@ public class OptionSet : AuditableEntity
     /// <summary>True for a seeded platform-standard list; such lists are read-only in the app.</summary>
     public bool IsSystem { get; set; }
 
+    /// <summary>
+    /// True when the application branches on this list's VALUES, so the set of codes is fixed and no new
+    /// value may be added to it — an approval status the server never writes is a status nothing can
+    /// reach, and a picker offering it is a dead end.
+    /// <para>
+    /// Distinct from <see cref="IsSystem"/>, which is about who owns the row. A closed list is still the
+    /// tenant's own copy and is still managed in the app: its labels, descriptions, colours, icons and
+    /// order are all theirs. Referral Source and Marketing Method are seeded too and are NOT closed —
+    /// nothing branches on those, so a firm adding one of its own is exactly right.
+    /// </para>
+    /// </summary>
+    public bool IsClosed { get; set; }
+
     /// <summary>When false, the whole list is hidden from pickers without being deleted.</summary>
     public bool IsActive { get; set; } = true;
 

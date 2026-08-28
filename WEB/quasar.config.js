@@ -33,7 +33,9 @@ export default defineConfig((ctx) => {
       "typography.scss",
       "app.scss",
       "page.scss",
-      "custom.scss"
+      "custom.scss",
+      // The REMS record vocabulary (label / value / subhead), defined once instead of once per screen.
+      "rems.scss"
     ],
 
     extras: [

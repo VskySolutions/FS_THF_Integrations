@@ -97,11 +97,11 @@ internal static class RemsSetupAccess
             return true;
         }
 
-        if (RemsRequestStatuses.IsWithInitiator(rems.Status))
+        if (RemsRequestStatuses.IsWithInitiator(rems.Status!.Value))
         {
             return IsInitiator(rems, me)
                 || rems.CSEId == me
-                || (IsRemsAdmin(user) && (rems.Status == RemsRequestStatuses.Draft || RemsRequestStatuses.IsRework(rems.Status)));
+                || (IsRemsAdmin(user) && (rems.Status!.Value == RemsRequestStatuses.Draft || RemsRequestStatuses.IsRework(rems.Status!.Value)));
         }
 
         return rems.AdminAssignedToId is { } admin && admin == me;
@@ -109,7 +109,7 @@ internal static class RemsSetupAccess
 
     /// <summary>The refusal that goes with a failed <see cref="CanWork"/>, worded for the stage it failed at.</summary>
     public static string WorkDeniedReason(REMS rems)
-        => RemsRequestStatuses.IsWithInitiator(rems.Status)
+        => RemsRequestStatuses.IsWithInitiator(rems.Status!.Value)
             ? "This request is with the person who raised it; only they (or the CSE named on it), or a REMS Admin, can work its engagement setup."
             : rems.AdminAssignedToId is null
                 ? "This request is waiting for pickup. Pick it up from EMS Review to work its engagement setup."

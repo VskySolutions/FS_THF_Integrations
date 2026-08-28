@@ -160,6 +160,13 @@ public sealed record RemsApprovalEngagementView(
     decimal? EngagementFee,
     decimal? RealizationPercentage,
     bool FinancialsRestricted,
+    /// <summary>
+    /// How often the client is billed (option-set <c>REMS.BillingPeriod</c> code), and how that billing
+    /// actually runs. Asked of CAS engagements and no others — a recurring arrangement is part of what the
+    /// approvers are being asked to accept, and the packet did not carry either answer.
+    /// </summary>
+    string? BillingPeriod,
+    string? BillingProcessDescription,
     RemsApprovalAuditDetailView? Audit,
     RemsGovernmentDetailView? Government,
     RemsApprovalTaxDetailView? Tax,

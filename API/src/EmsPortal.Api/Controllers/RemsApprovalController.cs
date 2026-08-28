@@ -1,6 +1,7 @@
 using System.Text.Json;
 using EmsPortal.Api.Models.Rems;
 using EmsPortal.Api.Security;
+using EmsPortal.Application.Abstractions.OptionSets;
 using EmsPortal.Application.Abstractions.Persistence;
 using EmsPortal.Application.Abstractions.UniversalFeatures;
 using EmsPortal.Domain.Entities;
@@ -42,6 +43,7 @@ public sealed class RemsApprovalController : ControllerBase
 {
     private const string CodeSetupIncomplete = "REMS_SETUP_INCOMPLETE";
     private const string CodeMarketingRequired = "REMS_MARKETING_REQUIRED";
+    private const string CodeCommissionNotFullyAllocated = "REMS_COMMISSION_NOT_FULLY_ALLOCATED";
     private const string CodeCafRequired = "REMS_CAF_REQUIRED";
     private const string CodeGovDetailRequired = "REMS_GOV_DETAIL_REQUIRED";
     private const string CodeNoApprovers = "REMS_NO_APPROVERS";
@@ -65,6 +67,7 @@ public sealed class RemsApprovalController : ControllerBase
     private readonly IUnitOfWork _unitOfWork;
     private readonly IActivityEventWriter _activity;
     private readonly INotificationDispatcher _notifications;
+    private readonly IOptionCodeResolver _codes;
 
     public RemsApprovalController(
         IRemsRepository rems,
@@ -76,7 +79,8 @@ public sealed class RemsApprovalController : ControllerBase
         IUserRepository users,
         IUnitOfWork unitOfWork,
         IActivityEventWriter activity,
-        INotificationDispatcher notifications)
+        INotificationDispatcher notifications,
+        IOptionCodeResolver codes)
     {
         _rems = rems;
         _engagements = engagements;
@@ -88,6 +92,7 @@ public sealed class RemsApprovalController : ControllerBase
         _unitOfWork = unitOfWork;
         _activity = activity;
         _notifications = notifications;
+        _codes = codes;
     }
 
     // -------------------- Suggested approvers (live) --------------------
@@ -200,8 +205,9 @@ public sealed class RemsApprovalController : ControllerBase
     // -------------------- Send / resubmit --------------------
 
     /// <summary>
-    /// Route the engagement for approval (AC-REMS-018/019). Pre-requisites: at least one marketing tag; an
-    /// audit engagement has its signed CAF; a government audit has a contract number and the Florida 1% flag.
+    /// Route the engagement for approval (AC-REMS-018/019). Pre-requisites: at least one marketing tag; a
+    /// commission split that adds up to 100% where the engagement names any recipients; an audit engagement
+    /// has its signed CAF; a government audit has a contract number and the Florida 1% flag.
     /// Transactionally creates the approval round, a per-approver task with its role checklist, locks the
     /// approver list, sets the engagement to PendingApproval, notifies every approver, and logs the send.
     /// </summary>
@@ -650,7 +656,7 @@ public sealed class RemsApprovalController : ControllerBase
 
             engagement.Status = RemsEngagementStatus.Approved;
             _engagements.Update(engagement);
-            SyncRequestStatus(rems, engagement);
+            await SyncRequestStatusAsync(rems, engagement, cancellationToken);
 
             var involved = new HashSet<Guid>(round.Tasks.Select(t => t.ApproverId)) { round.SentByUserId };
             if (rems.CSEId is { } cse)
@@ -765,7 +771,7 @@ public sealed class RemsApprovalController : ControllerBase
 
         engagement.Status = RemsEngagementStatus.Rejected;
         _engagements.Update(engagement);
-        SyncRequestStatus(rems, engagement);
+        await SyncRequestStatusAsync(rems, engagement, cancellationToken);
 
         // Every decline's own reason, so the notice explains the round rather than only its last vote.
         var reasons = round.Tasks
@@ -832,8 +838,9 @@ public sealed class RemsApprovalController : ControllerBase
     /// The REMS row is loaded tracked (via the task/engagement context include), so mutating its status is
     /// picked up by change tracking and committed with the rest of the operation.
     /// </summary>
-    private static void SyncRequestStatus(REMS rems, REMSEngagement current)
-        => rems.Status = current.Status switch
+    private async Task SyncRequestStatusAsync(REMS rems, REMSEngagement current, CancellationToken cancellationToken)
+    {
+        var code = current.Status switch
         {
             RemsEngagementStatus.Approved => RemsRequestStatuses.Approved,
             RemsEngagementStatus.Rejected => RemsRequestStatuses.ChangesRequested,
@@ -842,6 +849,11 @@ public sealed class RemsApprovalController : ControllerBase
             // is where such a request belongs: the client's answers are in and somebody has to look at it.
             _ => RemsRequestStatuses.AdminReview,
         };
+
+        // The status column is a foreign key now, so the transition names a CODE and this resolves it to
+        // the item the tenant's own REMS.Status list holds for it.
+        rems.StatusId = await _codes.RequireRemsIdAsync(RemsOptionSetKeys.Status, code, cancellationToken);
+    }
 
     // -------------------- Approver-list generation --------------------
 
@@ -1026,17 +1038,20 @@ public sealed class RemsApprovalController : ControllerBase
         return new RemsApproverList(engagement.Id, engagement.Status.ToString(), suggestions, selected);
     }
 
-    /// <summary>Validates the pre-approval requirements (marketing tag; audit CAF; government-audit contract + Florida flag).</summary>
+    /// <summary>
+    /// Validates the pre-approval requirements: the core setup; a marketing tag; a commission split that
+    /// adds up to 100% where there is one at all; the audit CAF; the government-audit contract + Florida flag.
+    /// </summary>
     private async Task<IActionResult?> ValidateApprovalPrerequisitesAsync(REMSEngagement engagement, CancellationToken cancellationToken)
     {
         // The engagement's core placement + team + realization are mandatory. The workspace enforces this
         // on its Setup step too; this is the backstop for anything reaching the API another way.
         var missing = new List<string>();
-        if (string.IsNullOrWhiteSpace(engagement.Department)) missing.Add("Department");
+        if (string.IsNullOrWhiteSpace(engagement.Department?.Value)) missing.Add("Department");
         // The service the firm is actually engaged to do. Held on SubServiceLine — the column kept its old
         // name when the original ServiceLine was retired, and THAT one is still not asked for anywhere, so
         // it is still not required here.
-        if (string.IsNullOrWhiteSpace(engagement.SubServiceLine)) missing.Add("Service Line");
+        if (string.IsNullOrWhiteSpace(engagement.SubServiceLine?.Value)) missing.Add("Service Line");
         if (engagement.EngagementExecutiveId is null) missing.Add("Engagement Executive");
         if (engagement.BillingManagerId is null) missing.Add("Billing Manager");
         if (engagement.RealizationPercentage is null) missing.Add("% Realization");
@@ -1050,15 +1065,37 @@ public sealed class RemsApprovalController : ControllerBase
             return ConflictResult(CodeMarketingRequired, "At least one marketing tag is required before sending for approval.");
         }
 
+        // The commission has to be settled before it is signed off. The splits divide ONE commission, so a
+        // set of them that comes to 90% is a tenth of it allocated to nobody — and every recipient becomes
+        // a required approver, which means the round would be routed on a division the approvers are being
+        // asked to accept and which does not add up.
+        //
+        // The same rule the client-send gate applies, so by the time a round is routed it has already been
+        // met — an empty list included. This stays as the backstop for an engagement that got here another
+        // way, and for a split edited after the client was written to.
+        //
+        // Rounded to 2dp before comparing, exactly as the workspace does: three 33.33/33.34 splits sum to
+        // 100.00000000000001 in binary floating point and would otherwise never be sendable.
+        var allocated = Math.Round(
+            engagement.CommissionSplits.Where(s => !s.Deleted).Sum(s => s.CommissionPercentage),
+            2, MidpointRounding.AwayFromZero);
+        if (allocated != 100m)
+        {
+            return ConflictResult(
+                CodeCommissionNotFullyAllocated,
+                $"Commission totals {allocated:0.##}% — the recipients must add up to 100% before this " +
+                "engagement can be sent for approval.");
+        }
+
         // Audit AND Assurance: the client-acceptance form is the same compliance artifact under both, and a
         // card that shows it without anything enforcing it is a card people learn to scroll past.
-        if (RemsEngagementCodes.RequiresClientAcceptanceForm(engagement.Department))
+        if (RemsEngagementCodes.RequiresClientAcceptanceForm(engagement.Department?.Value))
         {
             var audit = await _engagements.GetAuditDetailAsync(engagement.Id, cancellationToken);
             if (audit?.ClientAcceptanceFormMediaId is null)
             {
                 return ConflictResult(CodeCafRequired,
-                    $"A signed client-acceptance form is required for {(RemsEngagementCodes.IsAssurance(engagement.Department) ? "an assurance" : "an audit")} engagement.");
+                    $"A signed client-acceptance form is required for {(RemsEngagementCodes.IsAssurance(engagement.Department?.Value) ? "an assurance" : "an audit")} engagement.");
             }
         }
 
@@ -1066,7 +1103,7 @@ public sealed class RemsApprovalController : ControllerBase
         // its own. Same source the workspace and the approval packet show it from.
         var entityType = (await _rems.GetFormStatesAsync(new[] { engagement.REMSId }, cancellationToken))
             .FirstOrDefault()?.IndustryGroup;
-        if (RemsEngagementCodes.IsGovernmentAudit(engagement.Department, entityType))
+        if (RemsEngagementCodes.IsGovernmentAudit(engagement.Department?.Value, entityType))
         {
             var government = await _engagements.GetGovernmentDetailAsync(engagement.Id, cancellationToken);
             if (government is null || string.IsNullOrWhiteSpace(government.ContractNumber) || government.FloridaOnePercentStateFeeApplies is null)
@@ -1133,7 +1170,7 @@ public sealed class RemsApprovalController : ControllerBase
 
         engagement.Status = RemsEngagementStatus.PendingApproval;
         _engagements.Update(engagement);
-        SyncRequestStatus(rems, engagement);
+        await SyncRequestStatusAsync(rems, engagement, cancellationToken);
 
         // Notify every approver (once per user, even if they hold multiple role tasks).
         foreach (var userId in approvers.Select(a => a.UserId).Distinct())
@@ -1198,7 +1235,7 @@ public sealed class RemsApprovalController : ControllerBase
         var (emsFormState, clientSubmissionState) = RemsWorkspaceMapper.FormState(formState);
         var requestView = new RemsApprovalRequestView(
             rems.Id, rems.REMSNumber, rems.Description, rems.ClientDisplayName,
-            rems.Type, rems.Status, rems.CustomerEmail, rems.CustomerMobileNumber,
+            rems.Type!.Value, rems.Status!.Value, rems.CustomerEmail, rems.CustomerMobileNumber,
             formState?.IndustryGroup, emsFormState, clientSubmissionState,
             RemsWorkspaceMapper.UserRef(rems.AdminAssignedToId, names),
             RemsWorkspaceMapper.UserRef(rems.CSEId, names),
@@ -1301,7 +1338,8 @@ public sealed class RemsApprovalController : ControllerBase
         string EntityName(REMSEntity e) => e.IsMainEntity ? rems.WithClientSuffix(e.Name) : e.Name;
 
         var clientView = new RemsApprovalClientView(
-            client.Id, rems.WithClientSuffix(client.Name), client.Email, client.MobileNumber, client.ReferralSource,
+            client.Id, rems.WithClientSuffix(client.Name), client.Email, client.MobileNumber,
+            client.ReferralSource?.Value,
             client.BillingContactName, client.BillingEmail,
             client.Entities
                 .Where(e => !e.Deleted)
@@ -1323,9 +1361,9 @@ public sealed class RemsApprovalController : ControllerBase
         return new RemsApprovalEngagementView(
             engagement.Id,
             engagement.Status.ToString(),
-            engagement.Department,
-            engagement.SubServiceLine,
-            engagement.SubIndustry,
+            engagement.Department?.Value,
+            engagement.SubServiceLine?.Value,
+            engagement.SubIndustry?.Value,
             clientView,
             entityView,
             RemsWorkspaceMapper.UserRef(engagement.DepartmentDirectorId, names),
@@ -1335,6 +1373,10 @@ public sealed class RemsApprovalController : ControllerBase
             maySeeFinancials ? engagement.EngagementFee : null,
             maySeeFinancials ? engagement.RealizationPercentage : null,
             FinancialsRestricted: !maySeeFinancials,
+            // Not withheld from any role: how often a client is invoiced and how the billing runs are terms
+            // of the arrangement, not the fee.
+            engagement.BillingPeriod?.Value,
+            engagement.BillingProcessDescription,
             auditView,
             government is null
                 ? null
@@ -1346,7 +1388,7 @@ public sealed class RemsApprovalController : ControllerBase
                     // The PO's value is money, so it is withheld from a role that may not see the fee.
                     maySeeFinancials ? government.PurchaseOrderAmount : null,
                     government.PurchaseOrderMediaId, government.PurchaseOrderMedia?.OriginalFileName,
-                    government.PersonnelLevel,
+                    government.PersonnelLevel?.Value,
                     maySeeFinancials ? government.BillRatePerHour : null),
             taxView,
             marketing,

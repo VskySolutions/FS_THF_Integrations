@@ -27,11 +27,22 @@ public class REMS : AuditableEntity
     /// </summary>
     public string? Description { get; set; }
 
-    /// <summary>Request type (option-set <c>REMS.Type</c> code).</summary>
-    public string Type { get; set; } = string.Empty;
+    /// <summary>
+    /// How this referral relates to THF: a foreign key to the <c>REMS.Type</c> option-set item. Required —
+    /// a request is always one or the other, and the client lookup marks it by the code this resolves to.
+    /// </summary>
+    public Guid TypeId { get; set; }
 
-    /// <summary>Request status (option-set <c>REMS.Status</c> code).</summary>
-    public string Status { get; set; } = string.Empty;
+    /// <summary>
+    /// The stage the request is at: a foreign key to the <c>REMS.Status</c> option-set item. Required.
+    ///
+    /// <para>
+    /// The whole workflow keys off the CODE this resolves to (RemsRequestStatuses), which is why the
+    /// values on that list cannot be added to, deleted or re-coded. Read it through the
+    /// <see cref="Status"/> navigation.
+    /// </para>
+    /// </summary>
+    public Guid StatusId { get; set; }
 
     /// <summary>Admin/staff member the request is assigned to (User).</summary>
     public Guid? AdminAssignedToId { get; set; }
@@ -131,6 +142,8 @@ public class REMS : AuditableEntity
     public Guid? OnBehalfOfUserId { get; set; }
 
     // ---- Navigations ----
+    public OptionSetItem? Type { get; set; }
+    public OptionSetItem? Status { get; set; }
     public Person? ClientPerson { get; set; }
     public ICollection<REMSFiles> Files { get; set; } = new List<REMSFiles>();
     public ICollection<REMSForm> Forms { get; set; } = new List<REMSForm>();

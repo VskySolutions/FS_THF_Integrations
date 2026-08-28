@@ -181,10 +181,12 @@
       Choose how this referral relates to THF's records.
     </div>
 
-    <!-- What kind of entity the client is, and the trade they are in. Neither is a contact detail, but
-         both describe THIS CLIENT — asking them over on the setup tab described the same client in two
-         places, and the entity type in particular decides what the client's own intake form asks, which
-         is a decision taken while filling this tab in.
+    <!-- What kind of entity the client is, the trade they are in, and who at THF owns the relationship.
+         None of the three is a contact detail, but all three are answers about THIS CLIENT, and two of
+         them are what the client's own intake form is minted from — the entity type decides what they are
+         asked, and the CSE is filed with it on the same record and by the same write. Asking them over on
+         the setup tab described one client in two places, and made an initiator open a second tab before
+         the form could be sent at all.
          They obey the SETUP's edit right rather than this tab's: in the two rework states the setup is
          back with the initiator while the client's details above are not theirs to change. -->
     <div class="row q-col-gutter-md q-mt-md">
@@ -206,13 +208,39 @@
         :hint="industryHint" :info="industryInfo"
         @update:model-value="onIndustryPicked"
       />
+      <!-- The Client Service Executive. Scoped to the "CSE" role, so an empty picker means nobody holds
+           it and the hint names what to assign. It sits beside the entity type because the two are
+           written together — the endpoint behind the client's intake form requires the pair. -->
+      <app-select
+        :model-value="cseUserId" :options="cseOptions" label="CSE" required
+        class="col-12 col-sm-6 col-md-4" :readonly="setupReadonly" :clearable="false" :hint="cseHint"
+        info="Users holding the &quot;CSE&quot; role, assigned on a user's page in Administration → Users. The CSE owns the client relationship and becomes an approver on this request's engagement."
+        @update:model-value="$emit('update:cseUserId', $event)"
+      />
     </div>
 
+    <!-- Business documents, not "any file at all": this box took an executable as happily as a letter,
+         because it named no accepted types at all. It named no per-file size either, so a 40 MB scan was
+         accepted here and refused by the server after it had been uploaded. -->
+    <app-multi-file-upload
+      v-if="!readonly"
+      v-model="attachments" :label="files.length ? 'Add attachments' : 'Attachments'" class="q-mt-md"
+      :max-files="MAX_ATTACHMENT_FILES" :accept="ATTACHMENT_ACCEPT" :max-size-mb="MAX_UPLOAD_MB"
+      :hint="attachmentHint"
+      :error-message="attachmentError"
+    />
+
     <!-- Already-attached files, so a request being edited says what it is already carrying rather than
-         showing an empty picker over documents nobody can see from here. Same row as the picker below
-         puts under a freshly chosen file — the icon for its type, its size, and a click that opens it —
-         so a document looks the same before and after it is saved. The ✕ is offered only while the form
-         is editable: the wrong document attached to a request is one every approver then reads. -->
+         showing an empty picker over documents nobody can see from here. Same row the picker above puts
+         under a freshly chosen file — the icon for its type, its size, and a click that opens it — so a
+         document looks the same before and after it is saved. The ✕ is offered only while the form is
+         editable: the wrong document attached to a request is one every approver then reads.
+
+         BELOW the picker, not above it, and that is the whole point: a file waiting to be saved is
+         previewed by the picker, which renders its rows underneath the dropzone. With this list on top,
+         the same document sat under the dropzone while it was staged and jumped over it the instant the
+         auto-save landed — one file appearing to move on its own, for no reason the reader can see. Every
+         upload on the platform puts what it is holding underneath itself, staged or saved. -->
     <div v-if="files.length" class="rf-files q-mt-md">
       <app-field-label label="Attached" />
       <div class="column q-gutter-xs">
@@ -223,20 +251,12 @@
         />
       </div>
     </div>
-
-    <app-multi-file-upload
-      v-if="!readonly"
-      v-model="attachments" :label="files.length ? 'Add attachments' : 'Attachments'" class="q-mt-md"
-      :max-files="15"
-      hint="Up to 15 files, 100 MB in total. These stay internal to the request — the client never sees them."
-      :error-message="attachmentError"
-    />
   </div>
 </template>
 
 <script setup>
-// Section 1 of the REMS form: who the engagement is for, how to reach them, what kind of entity they are
-// and what trade they are in.
+// Section 1 of the REMS form: who the engagement is for, how to reach them, what kind of entity they are,
+// what trade they are in, and which CSE owns them.
 //
 // Client identification is unchanged from the old intake drawer — search and pick, or type a name nobody
 // matched and file them as new. No field is treated as a unique key: the same client comes back for a
@@ -250,6 +270,9 @@ import {
 } from "modules/rems/useRemsMeta";
 import { CLIENT_NAME_SUFFIXES } from "modules/rems/remsContactRoles";
 import { dialFromIso, DEFAULT_COUNTRY_ISO } from "composables/useCountries";
+import {
+  ATTACHMENT_ACCEPT, ATTACHMENT_HINT, MAX_ATTACHMENT_FILES, MAX_ATTACHMENT_TOTAL_MB, MAX_UPLOAD_MB
+} from "composables/useFileDrop";
 
 import AppTextField from "components/common/AppTextField.vue";
 import AppSelect from "components/common/AppSelect.vue";
@@ -291,7 +314,16 @@ const props = defineProps({
   industryLocked: { type: Boolean, default: false },
   // Labelled "Industry"; still named for the data behind it. See the note at the top of useRemsMeta.
   subIndustry: { type: String, default: null },
-  subIndustryOptions: { type: Array, default: () => [] }
+  subIndustryOptions: { type: Array, default: () => [] },
+
+  // ---- The CSE, which is not part of `model` either ----
+  // It belongs to the request's EMS form record — what the client's invite is minted from — and is saved
+  // by the same endpoint as the entity type above, which requires the pair. Asked here rather than on the
+  // setup tab because it is the answer to "whose client is this?", and because the intake form cannot be
+  // sent without it: an initiator should not have to open a second tab to send the first one's form.
+  cseUserId: { type: String, default: null },
+  cseOptions: { type: Array, default: () => [] },
+  cseHint: { type: String, default: "" }
 });
 // `change` covers the ATTACHMENT picker only. Every other field on this section writes straight through
 // to the object the page owns (see `model` below), so the page watches that and sees those itself; files
@@ -300,7 +332,8 @@ const props = defineProps({
 // `remove-file` is handed up rather than called here: detaching writes to the server against the request
 // id, and it is the page that knows the request exists and owns the `files` list this reads.
 const emit = defineEmits([
-  "update:modelValue", "change", "update:industryGroup", "update:subIndustry", "remove-file"
+  "update:modelValue", "change", "update:industryGroup", "update:subIndustry", "update:cseUserId",
+  "remove-file"
 ]);
 
 const notify = useNotify();
@@ -325,13 +358,17 @@ const DEFAULT_DIAL_CODE = dialFromIso(DEFAULT_COUNTRY_ISO);
 const mobileCountry = ref(DEFAULT_DIAL_CODE);
 const attachments = ref([]);
 
-// 100 MB is a cap on the SET, not on each file — 15 × 100 MB would be a gigabyte and a half per request.
-// AppMultiFileUpload caps per-file size, so the total is checked here.
-const MAX_TOTAL_BYTES = 100 * 1024 * 1024;
+// The cap on the SET, not on each file — the picker enforces MAX_UPLOAD_MB per file. Checked here because
+// AppMultiFileUpload only knows about one file at a time. The numbers are the shared ones so that this
+// field and the Universal Features panel cannot promise different things (see useFileDrop).
+const MAX_TOTAL_BYTES = MAX_ATTACHMENT_TOTAL_MB * 1024 * 1024;
+
+// The shared sentence plus the one thing that is true here and nowhere else.
+const attachmentHint = `${ATTACHMENT_HINT} These stay internal to the request — the client never sees them.`;
 const attachmentError = computed(() => {
   const total = attachments.value.reduce((sum, f) => sum + (f?.size || 0), 0);
   if (total <= MAX_TOTAL_BYTES) return "";
-  return `These files total ${(total / 1024 / 1024).toFixed(1)} MB — the limit is 100 MB across all of them.`;
+  return `These files total ${(total / 1024 / 1024).toFixed(1)} MB — the limit is ${MAX_ATTACHMENT_TOTAL_MB} MB across all of them.`;
 });
 
 // The file currently being detached, so its row greys out rather than the whole list doing so.

@@ -12,7 +12,8 @@
           <q-btn outline no-caps color="primary" icon="o_upload" :label="buttonLabel" :disable="disable" @click="pick" />
           <q-btn v-if="modelValue" flat no-caps color="negative" icon="o_delete" label="Remove" :disable="disable" @click="remove" />
         </div>
-        <div v-if="hint" class="app-image-upload__hint">{{ hint }}</div>
+        <div v-if="hintText" class="app-image-upload__hint">{{ hintText }}</div>
+        <div v-if="error" class="app-image-upload__error">{{ error }}</div>
       </div>
     </div>
 
@@ -41,10 +42,11 @@
 // avatar/preview is driven by v-model (the current image URL). Picking an image opens the crop dialog;
 // applying it emits `crop` with the cropped PNG File — the parent uploads it and sets the new URL via
 // v-model, then calls the exposed closeCrop(). Used for avatars/photos (square by default).
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import { Cropper } from "vue-advanced-cropper";
 import "vue-advanced-cropper/dist/style.css";
 import AppFieldLabel from "components/common/AppFieldLabel.vue";
+import { formatFileSize, isImageFile, validateFiles, MAX_UPLOAD_MB } from "composables/useFileDrop";
 
 const props = defineProps({
   // The current image URL shown in the preview avatar.
@@ -54,6 +56,10 @@ const props = defineProps({
   aspectRatio: { type: Number, default: 1 },
   size: { type: String, default: "96px" },
   accept: { type: String, default: "image/*" },
+  // The server refuses anything larger, so the picker has to as well — see MAX_UPLOAD_MB. This box used
+  // to promise nothing and check nothing: a photograph straight off a phone was accepted here, cropped,
+  // uploaded, and only then refused, which is the one place a size rule is no use.
+  maxSizeMb: { type: Number, default: MAX_UPLOAD_MB },
   buttonLabel: { type: String, default: "Upload" },
   placeholderIcon: { type: String, default: "o_person" },
   hint: { type: String, default: "" },
@@ -69,6 +75,16 @@ const inputRef = ref(null);
 const cropperRef = ref(null);
 const cropOpen = ref(false);
 const cropSrc = ref(null);
+// Why the last pick was refused, shown under the buttons. Same shape as the two file-upload components'
+// own error line.
+const error = ref("");
+
+// Every other upload on the platform states its limit on the control itself. One that does not is one
+// where the only way to learn the rule is to break it.
+const hintText = computed(() =>
+  props.hint || (props.maxSizeMb ? `Any image, up to ${props.maxSizeMb} MB` : ""));
+
+const maxBytes = computed(() => (props.maxSizeMb ? props.maxSizeMb * 1024 * 1024 : null));
 
 const pick = () => { if (!props.disable) inputRef.value?.click(); };
 
@@ -76,6 +92,18 @@ const onSelected = (e) => {
   const file = e.target.files?.[0];
   e.target.value = ""; // allow re-selecting the same file
   if (!file) return;
+  // `accept="image/*"` is a filter on the picker, not a rule: every file dialog offers a way past it, and
+  // a document chosen through that way used to open the cropper on a broken image and export a blank
+  // square. Refused here instead, and said out loud — the alternative is a silently empty avatar.
+  if (!isImageFile(file)) {
+    error.value = `"${file.name}" is not an image.`;
+    return;
+  }
+  // The same size check, and the same wording, the two file-upload components apply — this one just has
+  // no `accept` list to enforce alongside it, because the type was settled a line above.
+  const { error: tooBig } = validateFiles([file], { maxSizeMb: props.maxSizeMb });
+  if (tooBig) { error.value = tooBig; return; }
+  error.value = "";
   const reader = new FileReader();
   reader.onload = () => { cropSrc.value = reader.result; cropOpen.value = true; };
   reader.readAsDataURL(file);
@@ -86,6 +114,16 @@ const applyCrop = () => {
   if (!result?.canvas) { cropOpen.value = false; return; }
   result.canvas.toBlob((blob) => {
     if (!blob) { cropOpen.value = false; return; }
+    // The CROPPED png is what gets uploaded, and it is not the file that was picked: a large photograph
+    // re-encodes to a png bigger than the jpeg it came from, so a pick that passed the check above can
+    // still hand the server more than it takes. Checked here too, where the bytes are finally known.
+    if (maxBytes.value && blob.size > maxBytes.value) {
+      error.value = `The cropped image comes to ${formatFileSize(blob.size)}, over the ` +
+        `${props.maxSizeMb} MB limit. Crop a smaller area, or start from a smaller picture.`;
+      cropOpen.value = false;
+      return;
+    }
+    error.value = "";
     emit("crop", new File([blob], props.fileName, { type: "image/png" }));
   }, "image/png");
 };
@@ -101,5 +139,7 @@ defineExpose({ closeCrop: () => { cropOpen.value = false; } });
 
 <style scoped>
 .app-image-upload__hint { font-size: 12px; color: #8a94a3; }
+/* Same red the file-upload components use for a rejected pick. */
+.app-image-upload__error { font-size: 12px; color: #e53935; }
 .app-image-upload__cropper { max-height: 60vh; }
 </style>

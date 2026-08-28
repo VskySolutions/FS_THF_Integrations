@@ -1,16 +1,22 @@
 import { ref, computed } from "vue";
 import { useAuthStore } from "stores/auth";
 import { optionSetApi, EntityType } from "services/api";
-import {
-  useRemsOptionCatalog, ensureRemsOptionsLoaded, REMS_OPTION_SEED
-} from "modules/rems/useRemsOptionCatalog";
+import { useRemsOptionCatalog, ensureRemsOptionsLoaded } from "modules/rems/useRemsOptionCatalog";
 import { REMS_STATUS } from "modules/rems/remsStatus";
 
-// Type / Status / Entity Type / Department / Service Line are TENANT-CONFIGURABLE option
-// sets, so their labels come from useRemsOptionCatalog — a tenant that renames a status in Administration
-// → Option Sets sees that everywhere, not just in the picker they edited it from. The arrays below are
-// the catalogue's seed, re-exported for the few callers that need the closed set itself (the marking
-// rules, and the sort order a filter dropdown is built in).
+// EVERY REMS VALUE IS AN OPTION SET. There is no label, colour, icon or description for any of them in
+// this file — all four come from the tenant's own list, resolved once by useRemsOptionCatalog and
+// maintained in Administration → Option Sets. Rename a status there and every badge, filter and tooltip
+// follows; recolour it and so do the badges.
+//
+// That includes the lists that mirror a C# enum — form status, approver role, approval decision, approval
+// status, engagement status, email event. They are seeded CLOSED: the API refuses to add, delete or
+// re-code a value on them, because the server writes those codes and reads them back, and a status
+// nothing sets is a status nothing can reach. Everything else about them is the firm's.
+//
+// What this file holds instead is the RULES: which industries an entity type offers, when a request reads
+// as waiting for pickup, when a round is part-signed, what a department is asked. Those are behaviour,
+// not wording.
 //
 // THREE OF THE ENGAGEMENT CLASSIFICATIONS READ ONE WAY ON SCREEN AND ANOTHER IN CODE. Their data —
 // columns, option-set keys, API fields — keeps the older name deliberately, because each tenant's own copy
@@ -22,13 +28,6 @@ import { REMS_STATUS } from "modules/rems/remsStatus";
 //
 // The helpers below keep the DATA name, so what each one reads is never in doubt; only the strings a user
 // sees carry the display wording.
-//
-// Everything further down that looks similar — form state, approver role, approval status, engagement
-// status, email events — mirrors a C# ENUM the backend branches on. Those have no option set and must not
-// gain one; their maps stay here as code.
-export const REMS_TYPE_OPTIONS = REMS_OPTION_SEED.type;
-export const REMS_STATUS_OPTIONS = REMS_OPTION_SEED.status;
-
 // The two type codes the intake form picks on the partner's behalf: picking a client out of the lookup
 // means THF already has them, typing a name nobody matched means they are new. Named rather than inlined
 // because they are CODES — the tenant may relabel either one, and the auto-selection has to keep working.
@@ -55,8 +54,6 @@ export const REMS_SEAT_ROLES = Object.freeze({
 // code since the subsidiary answer folded into it; kept as a list because that is what the marking rule
 // reads, and because the answer has already been split and merged twice.
 export const REMS_EXISTING_CLIENT_TYPES = [REMS_TYPE_EXISTING_CLIENT];
-
-export const REMS_INDUSTRY_GROUP_OPTIONS = REMS_OPTION_SEED.industryGroup;
 
 // The industry groups that ask the BUSINESS questions — EIN, and the Primary / Financial / Billing /
 // Other contacts. The three business groups THF onboards are asked exactly the same things, so the
@@ -141,114 +138,52 @@ export const remsIndustryFitsEntityType = (entityType, industry) => {
   return !allowed || allowed.includes(industry) || !CLAIMED_INDUSTRY_CODES.has(industry);
 };
 
-// EMS form-state codes (RemsFormStatus), for filtering a list by form state. The codes are the server's
-// enum names and never change; only the wording below is ours — see the note on the labels.
-export const REMS_FORM_STATE_OPTIONS = [
-  { label: "Draft", value: "Draft" },
-  { label: "Saved", value: "Saved" },
-  { label: "Sent", value: "Sent" },
-  { label: "Received", value: "Submitted" },
-  { label: "Cancelled", value: "Cancelled" }
-];
+// ---------------------------------------------------------------------------------------------------
+// THERE ARE NO LABEL, COLOUR OR DESCRIPTION MAPS IN THIS FILE.
+//
+// Every word, colour and icon a REMS value is rendered with comes from its OPTION SET — the tenant's own
+// copy, maintained in Administration → Option Sets. That now includes the seven lists that mirror a C#
+// enum (form status, approver role, approval decision, approval status, engagement status, email event,
+// client submission): their CODES are the workflow's and the API refuses to add, delete or re-code one,
+// but what they are CALLED, what they explain, what colour they are and which icon goes beside them are
+// the firm's, exactly like every other list.
+//
+// So the helpers below all resolve through the catalogue. `optionOf` is the one that matters: it hands
+// back the whole option, which is what AppOptionBadge renders.
+// ---------------------------------------------------------------------------------------------------
 
-// Whether the client has returned their form — EMS Review's "Form" column. Sent as a string and parsed to
-// a bool server-side, because a column filter's value is always a string.
-export const REMS_FORM_SUBMITTED_OPTIONS = [
-  { label: "Received", value: "true" },
-  { label: "Not received", value: "false" }
-];
+// A code that resolves to nothing. Renders the code itself rather than a blank badge — an unrecognised
+// value is worth seeing, and grey with no tooltip says "this is not one of the values on the list".
+const unknownOption = (value) => ({
+  value,
+  label: value || "—",
+  description: "",
+  backgroundColor: "",
+  textColor: "",
+  icon: ""
+});
 
-// Approval-task filters (RemsApproverRole / RemsApprovalTaskStatus names, matched server-side).
-export const REMS_APPROVER_ROLE_OPTIONS = [
-  { label: "Shareholder", value: "Shareholder" },
-  { label: "Department Director", value: "DepartmentDirector" },
-  { label: "CSE", value: "CSE" },
-  { label: "Commission Recipient", value: "CommissionRecipient" },
-  { label: "Approver", value: "Approver" }
-];
+/** The full option for a code — label, description, colours and icon — from a resolved list. */
+const optionFrom = (options, value) =>
+  (value ? options.find((o) => o.value === value) : null) || unknownOption(value);
 
-export const REMS_APPROVAL_STATUS_OPTIONS = [
-  { label: "Pending", value: "Pending" },
-  { label: "Approved", value: "Approved" },
-  { label: "Rejected", value: "Rejected" }
-];
-
-// One entry per live stage — a missing one falls back to grey, which reads as "draft" on a request that is
-// anything but. Awaiting Customer borrows the EMS "Sent" teal (it is the same moment seen from the
-// request); the approval stages borrow ENGAGEMENT_STATUS_META's colours, so a request badge and the
-// engagement badge underneath it never disagree about what pending/approved looks like; and the two the
-// initiator-first rebuild added take the send-back orange and a lighter shade of the admin purple, so a
-// badge says both whose desk a request is on and which visit it is.
-const STATUS_COLORS = {
-  draft: "grey-6",
-  awaiting_customer: "teal-7",
-  customer_submitted: "deep-purple-6",
-  returned_to_initiator: "orange-9",
-  awaiting_admin_confirmation: "deep-purple-4",
-  pending_approval: "orange-8",
-  changes_requested: "negative",
-  approved: "positive"
-};
-// The client's form, seen from the FIRM's side: a form that has come back reads "Received", not
-// "Submitted". Submitting is the client's act and it is over; what a member of staff reading a REMS
-// surface wants to know is whether the answers are in hand. The code stays `Submitted` — it is the
-// server's RemsFormStatus enum name — so only the wording moved.
-const EMS_STATE_LABELS = {
-  NotStarted: "Not started", Draft: "Draft", Saved: "Saved", Sent: "Sent", Submitted: "Received", Cancelled: "Cancelled"
-};
-// Colour the EMS form-state chips consistently with the request-status palette.
-const EMS_STATE_COLORS = {
-  NotStarted: "grey-5", Draft: "grey-6", Saved: "primary", Sent: "teal-7", Submitted: "positive", Cancelled: "negative"
-};
-const SUBMISSION_STATE_LABELS = { Submitted: "Received", AwaitingCustomer: "Awaiting customer" };
-
-// Approval-task metadata (WO-117 Part B). Approver roles mirror the backend RemsApproverRole enum; the
-// task/round status strings mirror RemsApprovalTaskStatus / RemsApprovalRoundStatus.
-const APPROVER_ROLE_LABELS = {
-  // A holder of the Shareholder role: on every engagement's list by standing, and not removable.
-  Shareholder: "Shareholder",
-  CSE: "CSE",
-  DepartmentDirector: "Department Director",
-  CommissionRecipient: "Commission Recipient",
-  // A hand-picked approver with no other standing on the engagement (RemsApproverRole.Approver).
-  Approver: "Approver"
-};
-const APPROVER_ROLE_ICONS = {
-  Shareholder: "o_workspace_premium",
-  CSE: "o_support_agent",
-  DepartmentDirector: "o_account_tree",
-  CommissionRecipient: "o_payments"
-};
-// Superseded is a real decision state, not a missing one: the round closed on somebody else's decline
-// while this approver still had it open. Without it here the badge fell through to the raw enum name in
-// grey, which is the one row on a failed round most in need of saying what happened.
-const APPROVAL_STATUS_LABELS = {
-  Pending: "Pending", Approved: "Approved", Rejected: "Rejected", Superseded: "No longer required"
-};
-const APPROVAL_STATUS_COLORS = {
-  Pending: "orange-8", Approved: "positive", Rejected: "negative", Superseded: "grey-6"
-};
-
-// Engagement lifecycle status (REMSEngagement.Status) — label + badge colour in one lookup, shared by
-// every surface that shows it (workspace tab strip, entity panel, approval panel).
-const ENGAGEMENT_STATUS_META = {
-  Draft: { label: "Draft", color: "grey-6" },
-  PendingApproval: { label: "Pending Approval", color: "orange-8" },
-  Rejected: { label: "Rejected", color: "negative" },
-  Approved: { label: "Approved", color: "positive" }
-};
-
-// Provider email-delivery events (RemsFormEmailEventType). These are the ONLY events rendered — the UI
-// never synthesises delivery/open state; it shows exactly what the server's email log returns.
-const EMAIL_EVENT_LABELS = { Sent: "Sent", Reminder: "Reminder sent", Delivered: "Delivered", Opened: "Opened", Failed: "Failed" };
-const EMAIL_EVENT_COLORS = { Sent: "teal-7", Reminder: "amber-8", Delivered: "positive", Opened: "primary", Failed: "negative" };
-const EMAIL_EVENT_ICONS = { Sent: "o_send", Reminder: "o_notifications_active", Delivered: "o_mark_email_read", Opened: "o_drafts", Failed: "o_error" };
-
-const labelFrom = (options, value) => options.find((o) => o.value === value)?.label || value || "—";
+const labelFrom = (options, value) => optionFrom(options, value).label;
 
 // The option item's own Description, or "" when it has none — the caller's cue to render no tooltip.
 // Unlike labelFrom there is no falling back to the raw value: a code is not an explanation.
-const hintFrom = (options, value) => (value ? (options.find((o) => o.value === value)?.description || "") : "");
+const hintFrom = (options, value) => (value ? optionFrom(options, value).description : "");
+
+// The REMS.Status value that is NOT a stored status. `customer_submitted` covers both "an admin has this"
+// and "nobody has picked it up yet", and the two read very differently to somebody waiting on the
+// request — so the badge says which. The application decides WHEN (see awaitingPickUp below); the word,
+// the colour and the explanation are on the option like every other value's.
+export const REMS_STATUS_WAITING_FOR_PICKUP = "waiting_for_pickup";
+
+// The one value on REMS.ApprovalRoundStatus the enum does not have. A round is Pending from the moment it
+// is sent until the last signature, which cannot tell "nobody has looked at this" from "everybody but you
+// has signed" — and reading the second as the first is what made an approver's own signature look like
+// the request's outcome.
+export const REMS_ROUND_PARTIALLY_APPROVED = "partially_approved";
 
 // Once a request has left its initiator it is with "the admins", which on its own says nothing about the
 // one thing anyone wants to know at that stage: has somebody actually taken it? Nobody is named at intake
@@ -270,6 +205,10 @@ export function useRemsMeta () {
   const typeLabel = (v) => labelFrom(options.type, v);
   const statusLabel = (v) => labelFrom(options.status, v);
   const referralSourceLabel = (v) => labelFrom(options.referralSource, v);
+  // The stage's own Description, from Administration → Option Sets — what every status badge in REMS now
+  // carries as a tooltip. A status is a word about who the request is waiting on and what may be done to
+  // it, and the word alone does not say either.
+  const statusHint = (v) => hintFrom(options.status, v);
 
   // Tooltips come from the option ITEM's Description, maintained in Administration → Option Sets, so a
   // tenant who rewords a value rewords its explanation in the same place. "" when they have written
@@ -283,29 +222,53 @@ export function useRemsMeta () {
   // GCS staffing level. Resolved here because the approver's packet carries the CODE — that screen's
   // option labels are resolved server-side only for the sets keyed by item id (marketing, tax forms).
   const personnelLevelLabel = (v) => labelFrom(options.personnelLevel, v);
+  // How often a CAS engagement is billed, resolved for the same reason.
+  const billingPeriodLabel = (v) => labelFrom(options.billingPeriod, v);
 
-  // Colours stay in code: they key off the CODE, which is closed and validated server-side, so a rename
-  // never strands a badge on grey. Only the wording is the tenant's to change.
-  const statusColor = (v) => STATUS_COLORS[v] || "grey-6";
-  const emsStateLabel = (v) => EMS_STATE_LABELS[v] || v || "—";
-  const emsStateColor = (v) => EMS_STATE_COLORS[v] || "grey-6";
-  const submissionStateLabel = (v) => (v ? (SUBMISSION_STATE_LABELS[v] || v) : "—");
-  const emailEventLabel = (v) => EMAIL_EVENT_LABELS[v] || v || "—";
-  const emailEventColor = (v) => EMAIL_EVENT_COLORS[v] || "grey-6";
-  const emailEventIcon = (v) => EMAIL_EVENT_ICONS[v] || "o_mail";
-  const approverRoleLabel = (v) => APPROVER_ROLE_LABELS[v] || v || "—";
-  const approverRoleIcon = (v) => APPROVER_ROLE_ICONS[v] || "o_person";
-  const approvalStatusLabel = (v) => APPROVAL_STATUS_LABELS[v] || v || "—";
-  const approvalStatusColor = (v) => APPROVAL_STATUS_COLORS[v] || "grey-6";
-  const engagementStatusMeta = (v) => ENGAGEMENT_STATUS_META[v] || { label: v || "—", color: "grey-6" };
+  // ---- The badges ----
+  // Each returns the whole OPTION — label, description, colours, icon — which is what AppOptionBadge
+  // renders. Nothing below decides how a value looks; it only decides WHICH value applies.
+  const formStatusOption = (v) => optionFrom(options.formStatus, v);
+  const submissionStateOption = (v) => optionFrom(options.clientSubmissionState, v);
+  const approverRoleOption = (v) => optionFrom(options.approverRole, v);
+  const approvalStatusOption = (v) => optionFrom(options.approvalStatus, v);
+  const engagementStatusOption = (v) => optionFrom(options.engagementStatus, v);
+  const emailEventOption = (v) => optionFrom(options.emailEvent, v);
+
+  // The label-only forms, for a table column's `field` (which sorts and searches on a string) and for the
+  // few places a value is read as plain text rather than as a badge.
+  const emsStateLabel = (v) => labelFrom(options.formStatus, v);
+  const submissionStateLabel = (v) => (v ? labelFrom(options.clientSubmissionState, v) : "—");
+  const approverRoleLabel = (v) => labelFrom(options.approverRole, v);
+  const approvalStatusLabel = (v) => labelFrom(options.approvalStatus, v);
+
+  /**
+   * Where a whole approval ROUND stands, refined by how many of its approvers have signed.
+   *
+   * The counts only ever change the PENDING case: a round that has closed is closed whatever the tally,
+   * and "3 of 4" on a declined round would read as progress towards an approval that is never coming.
+   * A part-signed one resolves to the list's own `partially_approved` value, so the wording and the
+   * colour are the firm's; the tally is prepended to their description because it is data, not wording.
+   */
+  const roundStatusOption = (status, approved = 0, total = 0) => {
+    const partial = status === "Pending" && total > 0 && approved > 0;
+    const option = optionFrom(options.approvalRoundStatus, partial ? REMS_ROUND_PARTIALLY_APPROVED : status);
+    if (!total) return option;
+    const tally = `${approved} of ${total} approvers have signed.`;
+    return { ...option, description: [tally, option.description].filter(Boolean).join(" ") };
+  };
 
   // Status badge for a request ROW (or detail) rather than a bare code: the status, except that a request
   // sitting with the admins says whether one has actually taken it. Every surface showing a request — EMS
-  // Review, the Partner Dashboard, the request detail — uses these, so all three say the same thing about
+  // Review, the Partner Dashboard, the request detail — uses this, so all three say the same thing about
   // the same request. `row` needs `status` and `assignedAdmin`; a list whose rows name the status
   // differently (EMS Review calls it `requestStatus`) passes a shape rather than its raw row.
-  const requestStatusLabel = (row) => (awaitingPickUp(row) ? "Waiting For Pickup" : statusLabel(row?.status));
-  const requestStatusColor = (row) => (awaitingPickUp(row) ? "amber-8" : statusColor(row?.status));
+  //
+  // "Waiting for pickup" is a value on REMS.Status like any other — see REMS_STATUS_WAITING_FOR_PICKUP.
+  // The only thing decided here is WHEN it applies.
+  const requestStatusOption = (row) =>
+    optionFrom(options.status, awaitingPickUp(row) ? REMS_STATUS_WAITING_FOR_PICKUP : row?.status);
+  const requestStatusLabel = (row) => requestStatusOption(row).label;
 
   // The EMS engagement/detail action becomes available only once the customer has submitted their
   // form (AC-REMS-002.5 / 005.6); until then it stays disabled.
@@ -341,10 +304,22 @@ export function useRemsMeta () {
   const departmentOptions = computed(() => options.department);
   const subServiceLineOptions = computed(() => options.subServiceLine);
   const subIndustryOptions = computed(() => options.subIndustry);
-  const statusFilterOptions = computed(() => options.status.map((option) =>
-    (option.value === REMS_STATUS.ADMIN_REVIEW
-      ? { ...option, label: `${option.label}/Waiting For Pickup` }
-      : option)));
+  //
+  // "Waiting For Pickup" is dropped from the FILTER: it is a value on the list, but not one any request
+  // is stored under, so filtering by it would match nothing. Admin Review carries both states instead,
+  // named after the value rather than after a hardcoded string — a firm that renames either one sees
+  // their own words here.
+  const statusFilterOptions = computed(() => {
+    const pickup = options.status.find((o) => o.value === REMS_STATUS_WAITING_FOR_PICKUP);
+    return options.status
+      .filter((o) => o.value !== REMS_STATUS_WAITING_FOR_PICKUP)
+      .map((option) => (option.value === REMS_STATUS.ADMIN_REVIEW && pickup
+        ? { ...option, label: `${option.label}/${pickup.label}` }
+        : option));
+  });
+
+  // The approval-decision filter on the Approvals inbox, from the same list its badges are rendered from.
+  const approvalStatusFilterOptions = computed(() => options.approvalStatus);
 
   return {
     typeLabel,
@@ -352,14 +327,12 @@ export function useRemsMeta () {
     referralSourceLabel,
     referralSourceHint,
     statusLabel,
+    statusHint,
     departmentLabel,
     subServiceLineLabel,
     subIndustryLabel,
     personnelLevelLabel,
-    statusColor,
-    emsStateLabel,
-    emsStateColor,
-    submissionStateLabel,
+    billingPeriodLabel,
     industryGroupLabel,
     typeOptions,
     referralSourceOptions,
@@ -369,16 +342,22 @@ export function useRemsMeta () {
     subServiceLineOptions,
     subIndustryOptions,
     statusFilterOptions,
-    emailEventLabel,
-    emailEventColor,
-    emailEventIcon,
-    approverRoleLabel,
-    approverRoleIcon,
-    approvalStatusLabel,
-    approvalStatusColor,
-    engagementStatusMeta,
+    approvalStatusFilterOptions,
+    // The badges: each hands back the whole option, for AppOptionBadge.
+    requestStatusOption,
+    formStatusOption,
+    submissionStateOption,
+    approverRoleOption,
+    approvalStatusOption,
+    roundStatusOption,
+    engagementStatusOption,
+    emailEventOption,
+    // …and the label-only forms, for a column's sort key or a line of plain text.
     requestStatusLabel,
-    requestStatusColor,
+    emsStateLabel,
+    submissionStateLabel,
+    approverRoleLabel,
+    approvalStatusLabel,
     engagementOwnerDenial,
     emsDetailAvailable,
     emsFormActivity
@@ -408,8 +387,6 @@ export const REMS_DEPARTMENT_CODES = Object.freeze({
 // entity type rather than anything on the engagement, because it is required and frozen once the
 // client's intake form goes out.
 export const REMS_ENTITY_TYPE_GOVERNMENT = "government";
-
-export const REMS_DEPARTMENT_OPTIONS = REMS_OPTION_SEED.department;
 
 // The REMS.Marketing groups (from each item's MetadataJson `group` tag), in display order.
 const MARKETING_GROUPS = [

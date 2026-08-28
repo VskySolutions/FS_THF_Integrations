@@ -43,6 +43,7 @@ public sealed record CreateOptionItemInput(
     bool IsDefault,
     string? BackgroundColor,
     string? TextColor,
+    string? Icon,
     string? MetadataJson);
 
 public sealed record UpdateOptionItemInput(
@@ -54,6 +55,7 @@ public sealed record UpdateOptionItemInput(
     bool IsActive,
     string? BackgroundColor,
     string? TextColor,
+    string? Icon,
     string? MetadataJson);
 
 /// <summary>Stable error codes raised by <see cref="IOptionSetService"/> for the API to map to HTTP.</summary>
@@ -64,6 +66,12 @@ public static class OptionSetErrorCodes
     public const string ReadOnlyStandardSet = "OPTION_SET_READ_ONLY";
     public const string NoActiveTenant = "OPTION_SET_NO_TENANT";
     public const string InvalidReorder = "OPTION_SET_INVALID_REORDER";
+
+    /// <summary>The list is one the application branches on: no value may be added to or removed from it.</summary>
+    public const string ClosedSet = "OPTION_SET_CLOSED";
+
+    /// <summary>The value itself is one the application writes and reads back — see OptionSetItem.IsSystem.</summary>
+    public const string SystemItem = "OPTION_SET_SYSTEM_ITEM";
 }
 
 /// <summary>Business-rule violation while managing option sets; carries a stable <see cref="Code"/>.</summary>

@@ -2,11 +2,11 @@
   <div>
     <div class="row items-center q-mb-md">
       <div class="text-body2 text-grey-8 col">
-        Who this engagement routes to (AC-REMS-018): the firm's shareholders, the Department Director and
-        CSE from the setup, and every commission recipient — all automatically, and none of them removable
-        — plus anyone you add below. Sending for approval locks the list.
+        Who this engagement routes to: the firm's shareholders, the Department Director and the CSE from
+        the setup, and every commission recipient — all automatically, and none of them removable — plus
+        anyone you add below. Sending for approval locks the list.
       </div>
-      <q-badge :color="statusMeta.color" class="q-pa-sm text-body2">{{ statusMeta.label }}</q-badge>
+      <app-option-badge :option="statusMeta" class="q-pa-sm text-body2" />
     </div>
 
     <!-- Post-send / decided states. -->
@@ -47,11 +47,11 @@
       <q-list v-if="approvers.length" bordered separator class="rounded-borders">
         <q-item v-for="(a, i) in approvers" :key="i">
           <q-item-section avatar>
-            <q-icon :name="roleIcon(a.role)" color="primary" />
+            <q-icon :name="roleOption(a.role).icon || 'o_person'" color="primary" />
           </q-item-section>
           <q-item-section>
             <q-item-label class="text-weight-medium">{{ a.user.name || "Unassigned" }}</q-item-label>
-            <q-item-label caption>{{ roleLabel(a.role) }}</q-item-label>
+            <q-item-label caption>{{ roleOption(a.role).label }}</q-item-label>
           </q-item-section>
         </q-item>
       </q-list>
@@ -61,19 +61,36 @@
         commission recipients. You can also add approvers above.
       </div>
 
+      <!-- Why the round cannot go out yet, where the button that would send it is. Said here rather than
+           left to the API's rejection: the commission is on another tab, and a Send that fails with a
+           message about a percentage is a message about a screen the reader is not looking at.
+           Only the commission gets the banner — an empty approver list already has the paragraph above
+           explaining itself, and saying it twice on one card is saying it once too often. -->
+      <q-banner
+        v-if="commissionProblem && (canShowSend || canShowResubmit)" dense
+        class="rems-approval__warn q-mt-md rounded-borders"
+      >
+        <template #avatar><q-icon name="o_warning" color="orange-9" /></template>
+        {{ commissionProblem }}
+      </q-banner>
+
       <div v-if="canShowSend" class="row justify-end q-mt-md">
         <q-btn
           unelevated no-caps color="primary" icon="o_send" label="Send for Approval"
-          :loading="sending" :disable="approvers.length === 0" @click="send"
-        />
+          :loading="sending" :disable="!canRoute" @click="send"
+        >
+          <q-tooltip v-if="blockedReason">{{ blockedReason }}</q-tooltip>
+        </q-btn>
       </div>
 
       <!-- Staff resubmission (AC-REMS-020.3): after a rejection, re-route the (regenerated) approver list. -->
       <div v-if="canShowResubmit" class="row justify-end q-mt-md">
         <q-btn
           unelevated no-caps color="primary" icon="o_restart_alt" label="Resubmit for Approval"
-          :loading="resubmitting" :disable="approvers.length === 0" @click="resubmit"
-        />
+          :loading="resubmitting" :disable="!canRoute" @click="resubmit"
+        >
+          <q-tooltip v-if="blockedReason">{{ blockedReason }}</q-tooltip>
+        </q-btn>
       </div>
     </template>
   </div>
@@ -90,6 +107,7 @@ import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useRemsMeta } from "modules/rems/useRemsMeta";
 import AppSelect from "components/common/AppSelect.vue";
+import AppOptionBadge from "components/common/AppOptionBadge.vue";
 
 const props = defineProps({
   engagement: { type: Object, required: true },
@@ -102,28 +120,15 @@ const emit = defineEmits(["status-changed"]);
 
 const notify = useNotify();
 const { confirm } = useConfirm();
-const { engagementStatusMeta } = useRemsMeta();
+const { engagementStatusOption, approverRoleOption } = useRemsMeta();
 
-// In the order the list renders them (the server sorts; these only have to name and picture each role).
-const ROLE_LABELS = {
-  Shareholder: "Shareholder",
-  DepartmentDirector: "Department Director",
-  CSE: "CSE",
-  CommissionRecipient: "Commission Recipient",
-  Approver: "Approver"
-};
-const ROLE_ICONS = {
-  Shareholder: "o_workspace_premium",
-  DepartmentDirector: "o_account_tree",
-  CSE: "o_support_agent",
-  CommissionRecipient: "o_payments",
-  Approver: "o_how_to_reg"
-};
-const roleLabel = (r) => ROLE_LABELS[r] || r;
-const roleIcon = (r) => ROLE_ICONS[r] || "o_person";
+// What each approver IS to this engagement, from the REMS.ApproverRole list — the name and the icon are
+// the tenant's, maintained in Administration → Option Sets. This component held a private copy of both
+// until now, which is how a firm that renames Shareholder could end up seeing two words for one role.
+const roleOption = (r) => approverRoleOption(r);
 
 const status = computed(() => props.engagement.status);
-const statusMeta = computed(() => engagementStatusMeta(status.value));
+const statusMeta = computed(() => engagementStatusOption(status.value));
 // The rejection reason is shown to staff/CSE when the engagement carries it (AC-REMS-020.2).
 const rejectionReason = computed(() => props.engagement.rejectionReason);
 
@@ -135,6 +140,33 @@ const canShowResubmit = computed(() => status.value === "Rejected" && props.canS
 const approvers = ref([]);
 const loading = ref(false);
 const errorMsg = ref("");
+
+// ---- Whether the round can actually go out ----
+// The commission splits divide ONE commission, so a set of them that comes to 90% leaves a tenth of it
+// allocated to nobody — and every recipient is a required approver, so the round would be routed asking
+// the approvers to accept a division that does not add up. Naming NOBODY stays allowed: an empty list is
+// met by the time a round is routed. The API enforces the same rule (Send / Resubmit);
+// this is the readable version of that rejection, said before the button rather than after it.
+//
+// Rounded to 2dp before comparing, as the Commission tab does: three 33.33/33.34 splits sum to
+// 100.00000000000001 in binary floating point and would otherwise never be sendable.
+const round2 = (n) => Math.round(n * 100) / 100;
+const commissionTotal = computed(() => round2(
+  (props.engagement.commissionSplits || []).reduce((sum, s) => sum + (Number(s.percentage) || 0), 0)));
+const commissionProblem = computed(() => {
+  if (commissionTotal.value === 100) return "";
+  return `Commission totals ${commissionTotal.value}% — the recipients on the Commission tab must add up ` +
+    "to 100% before this engagement can be sent for approval.";
+});
+
+const blockedReason = computed(() => {
+  if (!approvers.value.length) {
+    return "There is nobody to route this to yet — name a CSE, pick a department with a director, or add " +
+      "approvers above.";
+  }
+  return commissionProblem.value;
+});
+const canRoute = computed(() => !blockedReason.value);
 
 // ---- Add approvers ----
 // Editable while the engagement is unsent; once routed, the API locks the list too.
@@ -249,3 +281,12 @@ const resubmit = async () => {
   }
 };
 </script>
+
+<style scoped>
+/* Amber, not red: a round that cannot go out yet is something to finish, not something that has failed.
+   The same shade the Commission tab's allocation warning uses, because it is usually the same fact. */
+.rems-approval__warn {
+  background: #fff8e1;
+  color: #8a5a00;
+}
+</style>

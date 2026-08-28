@@ -31,6 +31,13 @@ public interface IOptionSetRepository
     /// <summary>All non-deleted items of a set (any scope).</summary>
     Task<IReadOnlyList<OptionSetItem>> ListItemsAsync(Guid setId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Items by ID, across every list and scope — what the option-code resolver reads to turn the ids
+    /// stored on a row back into the codes the application branches on. Unscoped by tenant deliberately: an
+    /// item id is unique platform-wide, and a row already holding one is holding it whoever reads the row.
+    /// </summary>
+    Task<IReadOnlyList<OptionSetItem>> ListItemsByIdsAsync(IReadOnlyCollection<Guid> itemIds, CancellationToken cancellationToken = default);
+
     /// <summary>True when another non-deleted item in the same set+scope already uses this value.</summary>
     Task<bool> ItemValueExistsAsync(Guid setId, Guid? tenantId, string value, Guid? excludeId, CancellationToken cancellationToken = default);
 

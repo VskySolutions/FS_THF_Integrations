@@ -1,0 +1,52 @@
+// REMS record typography — the label / value / section-heading trio the read-only surfaces are built from.
+//
+// Defined ONCE, here, because it was defined three times: the approval task detail, the submitted-form
+// panel and the public form's review step each carried their own copy, and the copies had drifted. Same
+// class name, different rendering — the field label was grey on two screens and teal on the third, values
+// were 14px on two and 14.5px on the shared DetailGrid, and multi-line text wrapped on some screens and
+// ran together on others.
+//
+// The metrics below are DetailGrid's, which is the component the request page renders its own record with.
+// Matching it is what makes a request read the same whether staff open it, an approver reviews it, or the
+// client checks it before submitting.
+//
+// Global rather than scoped on purpose: a scoped copy per file is what drifted in the first place. The
+// per-screen additions (the rich-text spacing, the awaiting-decision row tint) stay in their own files —
+// this is the shared vocabulary, not everything a screen says with it.
+
+// The name of a field, above the answer. Quiet — it is the answer that is being read, and a column of
+// uppercase labels in the action colour competes with it.
+.rems-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-500);
+  margin-bottom: 3px;
+}
+
+// The answer itself. `pre-wrap` because several of these carry text somebody typed with line breaks in it
+// — a billing schedule, a rejection reason — and collapsing those runs the paragraphs together.
+.rems-value {
+  font-size: 14.5px;
+  color: var(--ink-900);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+// A heading over a GROUP of fields, as against the name of one. The action colour and the extra space
+// above are what separate the two tiers; same metrics as the intake form's own section headings.
+.rems-subhead {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--q-primary);
+  margin: 4px 0 8px;
+}
+
+// A card nested inside a card — the conditional detail blocks on the engagement setup and the approval
+// packet. One step tighter than the --radius the outer card uses, so the nesting reads.
+.rems-inner {
+  border-radius: 10px;
+}

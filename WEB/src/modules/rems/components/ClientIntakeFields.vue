@@ -5,7 +5,7 @@
       <q-card-section class="cif-card__head">Contact</q-card-section>
       <q-separator />
       <q-card-section>
-        <div class="row q-col-gutter-sm">
+        <div class="row q-col-gutter-md">
           <!-- An individual is a person, so the name is asked as two boxes and stays two: the record we
                file them under has a given name and a family name, and one box left us guessing where to
                cut it. A business or a government body has ONE name — its legal name — which does not
@@ -179,7 +179,7 @@
             </q-tooltip>
           </q-icon>
         </div>
-        <div v-if="isIndividual" class="row q-col-gutter-sm">
+        <div v-if="isIndividual" class="row q-col-gutter-md">
           <app-text-field v-model="payload.billingContactName" label="Name" class="col-12 col-sm-6" />
           <app-text-field
             v-model="payload.billingEmail" label="Email" type="email" class="col-12 col-sm-6"
@@ -189,9 +189,45 @@
         <role-contact-fields
           v-else-if="billingRoleDef"
           v-model="payload.roles[billingRoleDef.key]"
-          :label="billingRoleDef.label" :required="billingRoleDef.required"
+          :label="billingContactLabel" :required="billingRoleDef.required"
           :prefix="`roles.${billingRoleDef.key}`" :errors="errors"
         />
+
+        <!-- And anybody else the invoice should go to. One billing contact is what the form used to allow,
+             and a client whose accounts payable is three people had to pick one of them and email us about
+             the others. Each extra one is the same block as the first and becomes the same kind of contact
+             on the record; none of them is required, but a block that has been started has to be
+             finished. -->
+        <div class="column q-gutter-md q-mt-md">
+          <div
+            v-for="(contact, i) in extraBillingContacts" :key="contact.key"
+            class="row no-wrap items-start q-gutter-sm"
+          >
+            <role-contact-fields
+              v-model="payload.additionalBillingContacts[i]"
+              class="col"
+              :label="`Billing Contact ${i + 2}`"
+              :prefix="`additionalBillingContacts[${i}]`" :errors="errors"
+            />
+            <q-btn
+              flat round dense color="negative" icon="o_delete" class="cif-extra__remove"
+              :aria-label="`Remove billing contact ${i + 2}`" @click="removeBillingContact(i)"
+            >
+              <q-tooltip>Remove this billing contact</q-tooltip>
+            </q-btn>
+          </div>
+        </div>
+
+        <div class="q-mt-md">
+          <q-btn
+            outline no-caps color="primary" icon="o_add" label="Add another billing contact"
+            :disable="!canAddBillingContact" @click="addBillingContact"
+          >
+            <q-tooltip v-if="!canAddBillingContact">
+              You can name up to {{ MAX_ADDITIONAL_BILLING_CONTACTS + 1 }} billing contacts.
+            </q-tooltip>
+          </q-btn>
+        </div>
       </q-card-section>
     </q-card>
 
@@ -200,7 +236,7 @@
       <q-card-section class="cif-card__head">Contract Details</q-card-section>
       <q-separator />
       <q-card-section>
-        <div class="row q-col-gutter-sm">
+        <div class="row q-col-gutter-md">
           <app-date-field v-model="payload.contractStartDate" label="Contract Start Date" class="col-12 col-sm-6" />
           <app-date-field v-model="payload.contractEndDate" label="Contract End Date" class="col-12 col-sm-6" />
           <app-text-field v-model="payload.originalTerm" label="Original Term" class="col-12 col-sm-6" />
@@ -261,7 +297,7 @@
               </q-btn>
             </q-card-section>
             <q-card-section>
-              <div class="row q-col-gutter-sm">
+              <div class="row q-col-gutter-md">
                 <app-text-field
                   v-model="entity.fullName" label="Client/Entity Name" required class="col-12 col-sm-4"
                   :error="!!entityErr(i, 'fullName')" :error-message="entityErr(i, 'fullName')"
@@ -309,7 +345,8 @@ import { addressErrors } from "modules/rems/remsAddress";
 import { isBusinessIndustryGroup } from "modules/rems/useRemsMeta";
 import { BILLING_ROLE_KEY } from "modules/rems/remsContactRoles";
 import {
-  addressHasContent, copyIntakeAddress, intakeRoleDefs, newRelatedEntity, relatedEntityHasData
+  addressHasContent, copyIntakeAddress, intakeRoleDefs, newBillingContact, newRelatedEntity,
+  relatedEntityHasData, MAX_ADDITIONAL_BILLING_CONTACTS
 } from "modules/rems/useRemsIntakeForm";
 
 import { nameRules } from "utils/personName";
@@ -350,8 +387,8 @@ const ADDRESS_HINTS = {
 };
 
 // Said once, on the heading, for whichever shape of the question this client is asked.
-const BILLING_CONTACT_HINT = "Who our invoices should be addressed to. Leave it blank and we will " +
-  "address them to the client themselves.";
+const BILLING_CONTACT_HINT = "Who our invoices should be addressed to. Name as many people as they " +
+  "should go to. Leave it blank and we will address them to the client themselves.";
 
 const isIndividual = computed(() => props.industryGroup === "individual");
 const isBusiness = computed(() => isBusinessIndustryGroup(props.industryGroup));
@@ -371,6 +408,31 @@ const billingRoleDef = computed(() =>
   (isIndividual.value ? null : allRoleDefs.value.find((d) => d.key === BILLING_ROLE_KEY) || null));
 const contactRoleDefs = computed(() =>
   allRoleDefs.value.filter((d) => d.key !== BILLING_ROLE_KEY || !billingRoleDef.value));
+
+// Everyone the invoice should go to BEYOND the first. Read defensively: a payload seeded from a draft
+// saved before this list existed simply has none, and a missing key must render an empty section rather
+// than throw on the way in.
+const extraBillingContacts = computed(() => payload.value.additionalBillingContacts || []);
+
+// The first billing contact is numbered only once there is a second — "Billing Contact 1" over a lone
+// block is a number answering a question nobody asked.
+const billingContactLabel = computed(() => (extraBillingContacts.value.length
+  ? `${billingRoleDef.value?.label || "Billing Contact"} 1`
+  : billingRoleDef.value?.label || "Billing Contact"));
+
+const canAddBillingContact = computed(() =>
+  extraBillingContacts.value.length < MAX_ADDITIONAL_BILLING_CONTACTS);
+
+function addBillingContact () {
+  if (!payload.value.additionalBillingContacts) payload.value.additionalBillingContacts = [];
+  if (canAddBillingContact.value) payload.value.additionalBillingContacts.push(newBillingContact());
+}
+
+// No confirmation. Unlike the Other Entities toggle — which throws away every row at once — this takes
+// one block off, and the block below it is still on screen to make the mistake obvious.
+function removeBillingContact (i) {
+  payload.value.additionalBillingContacts.splice(i, 1);
+}
 
 const entityErr = (i, field) => props.errors[`relatedEntities[${i}].${field}`] || "";
 
@@ -457,5 +519,11 @@ function onToggleRelated (val) {
 .cif-entity {
   border-radius: 10px;
   background: #fbfcfe;
+}
+/* The ✕ that takes an extra billing contact off, beside its block rather than under it — the block
+   already carries its own Required / Optional badge in the corner, and a button on top of that would sit
+   on the badge. Nudged down so it lines up with the block's heading rather than with its border. */
+.cif-extra__remove {
+  margin-top: 8px;
 }
 </style>

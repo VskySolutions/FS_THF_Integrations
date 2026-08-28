@@ -2,12 +2,14 @@
   <q-page padding>
     <app-detail-header :items="breadcrumbs" :back-to="{ name: 'rems_approvals' }">
       <template #actions>
-        <q-badge v-if="task" :color="engagementStatus.color">
-          {{ engagementStatus.label }}
-        </q-badge>
-        <!-- <q-badge v-if="task" :color="approvalStatusColor(task.status)" class="q-pa-sm text-body2">
-          {{ approvalStatusLabel(task.status) }}
-        </q-badge> -->
+        <!-- The ENGAGEMENT's status, which is the request's answer rather than the reader's: it turns
+             Approved only when the round does. The tooltip says so, since "Pending Approval" beside a
+             task the reader has already signed is exactly the pair that reads as a contradiction. -->
+        <app-option-badge v-if="task" :option="engagementStatus" />
+        <!-- The reader's OWN decision is deliberately not a second badge up here. It belongs to them, not
+             to the request, and beside the engagement's status it read as a competing answer to the same
+             question — "Approved" next to "Pending Approval" on one header. It is on the banner below and
+             on their row in the Approvers list, both of which say whose decision it is. -->
       </template>
     </app-detail-header>
 
@@ -20,9 +22,23 @@
 
     <template v-else-if="task">
       <!-- Decision-state banner. -->
-      <q-banner v-if="task.status === 'Approved'" dense class="bg-green-1 text-green-9 rounded-borders q-mb-md">
-        <template #avatar><q-icon name="o_verified" color="green-9" /></template>
-        You approved this task{{ task.decidedOnUtc ? ` on ${fmt.formatDateTime(task.decidedOnUtc)}` : "" }}.
+      <!-- Signing is the reader's own act, and it is NOT the request being approved. A round of four is
+           approved when all four have signed, so the banner says what is still outstanding rather than
+           leaving a green box to imply the whole thing is done. -->
+      <q-banner
+        v-if="task.status === 'Approved'" dense
+        :class="`${roundOutstanding ? 'bg-teal-1 text-teal-9' : 'bg-green-1 text-green-9'} rounded-borders q-mb-md`"
+      >
+        <template #avatar>
+          <q-icon :name="roundOutstanding ? 'o_hourglass_top' : 'o_verified'" :color="roundOutstanding ? 'teal-9' : 'green-9'" />
+        </template>
+        <div>
+          You approved this task{{ task.decidedOnUtc ? ` on ${fmt.formatDateTime(task.decidedOnUtc)}` : "" }}.
+        </div>
+        <div v-if="roundOutstanding" class="q-mt-xs">
+          The request is not approved yet — {{ roundApprovedCount }} of {{ roundDecisions.length }} approvers
+          have signed, and it becomes Approved only once all of them have.
+        </div>
       </q-banner>
       <q-banner v-else-if="task.status === 'Rejected'" class="bg-red-1 text-red-9 rounded-borders q-mb-md">
         <template #avatar><q-icon name="o_cancel" color="red-9" /></template>
@@ -65,73 +81,12 @@
             <q-separator />
 
             <q-tab-panels v-model="tab" keep-alive animated>
-              <!-- ---------- Request ---------- -->
-              <q-tab-panel name="request">
-                <div class="row q-col-gutter-md">
-                  <div v-for="item in requestRows" :key="item.label" class="col-12 col-sm-6">
-                    <div class="rems-label">{{ item.label }}</div>
-                    <div v-if="item.type === 'status'">
-                      <q-badge :color="requestStatusColor(request)">{{ requestStatusLabel(request) }}</q-badge>
-                    </div>
-                    <div v-else class="rems-value">
-                      {{ item.value }}
-                      <!-- One value, not a column of them, so the icon can advertise the tooltip here. -->
-                      <template v-if="item.hint">
-                        <q-icon name="o_info" size="14px" class="rems-value__info" />
-                        <q-tooltip anchor="top middle" self="bottom middle" max-width="320px" :delay="300">
-                          {{ item.hint }}
-                        </q-tooltip>
-                      </template>
-                    </div>
-                  </div>
-                </div>
-
-                <q-separator class="q-my-md" />
-                <!-- The entity's addresses and contacts, as the client gave them on the intake
-                     form. They read with the request that asked for them, rather than with
-                     Engagement Setup, which is the firm's own work on top of that answer. -->
-                <q-expansion-item icon="o_home_work" label="Addresses & contacts" dense-toggle class="rems-details">
-                  <div class="q-pa-sm">
-                    <div class="row q-col-gutter-md">
-                      <div class="col-12 col-sm-6">
-                        <div class="rems-label">Physical</div>
-                        <div class="rems-value">{{ addressOf("Physical") }}</div>
-                      </div>
-                      <div class="col-12 col-sm-6">
-                        <div class="rems-label">Mailing</div>
-                        <div class="rems-value">{{ addressOf("Mailing") }}</div>
-                      </div>
-                    </div>
-                    <div class="rems-label q-mt-sm">Contacts</div>
-                    <div v-if="entityContacts.length" class="column q-gutter-xs">
-                      <div v-for="c in entityContacts" :key="c.id" class="rems-value">
-                        <span class="text-weight-medium">{{ roleText(c.role) }}:</span> {{ c.name || "—" }}
-                        <span class="text-grey-6">({{ c.email || "no email" }} · {{ c.phone || "no phone" }})</span>
-                      </div>
-                    </div>
-                    <div v-else class="rems-value text-grey-6">No contacts.</div>
-                  </div>
-                </q-expansion-item>
-
-                <template v-if="request.description">
-                  <q-separator class="q-my-md" />
-                  <div class="rems-label">Description</div>
-                  <!-- eslint-disable-next-line vue/no-v-html -->
-                  <div class="rems-value rems-value--rich" v-html="renderRichText(request.description)" />
-                </template>
-
-                <q-separator class="q-my-md" />
-                <div class="rems-label q-mb-xs">Attachments</div>
-                <!-- The same preview row the request form shows, minus the ✕: an approver reads the
-                     packet, they do not edit it. Clicking opens the document in a new tab. -->
-                <div v-if="request.files && request.files.length" class="column q-gutter-xs">
-                  <app-stored-file-item v-for="f in request.files" :key="f.id" :file="f" />
-                </div>
-                <div v-else class="rems-value text-grey-6">No attachments.</div>
-              </q-tab-panel>
-
-              <!-- ---------- Client ---------- -->
-              <q-tab-panel name="client">
+              <!-- ---------- Client Form ---------- -->
+              <!-- What the CLIENT answered on their intake form: who they are, how to reach them, where
+                   they are, who to speak to, and the other businesses they named. The addresses and
+                   contacts are here rather than on the tab beside it because they are the client's own
+                   answers too — they were asked on this form and nowhere else. -->
+              <q-tab-panel name="clientForm">
                 <div class="row q-col-gutter-md">
                   <div v-for="item in clientRows" :key="item.label" class="col-12 col-sm-6">
                     <div class="rems-label">{{ item.label }}</div>
@@ -140,7 +95,29 @@
                 </div>
 
                 <q-separator class="q-my-md" />
-                <div class="rems-label q-mb-xs">Entities</div>
+                <div class="row q-col-gutter-md">
+                  <div class="col-12 col-sm-6">
+                    <div class="rems-label">Physical Address</div>
+                    <div class="rems-value">{{ addressOf("Physical") }}</div>
+                  </div>
+                  <div class="col-12 col-sm-6">
+                    <div class="rems-label">Mailing Address</div>
+                    <div class="rems-value">{{ addressOf("Mailing") }}</div>
+                  </div>
+                </div>
+
+                <q-separator class="q-my-md" />
+                <div class="rems-subhead">Contacts</div>
+                <div v-if="entityContacts.length" class="column q-gutter-xs">
+                  <div v-for="c in entityContacts" :key="c.id" class="rems-value">
+                    <span class="text-weight-medium">{{ roleText(c.role) }}:</span> {{ c.name || "—" }}
+                    <span class="text-grey-6">({{ c.email || "no email" }} · {{ c.phone || "no phone" }})</span>
+                  </div>
+                </div>
+                <div v-else class="rems-value text-grey-6">No contacts.</div>
+
+                <q-separator class="q-my-md" />
+                <div class="rems-subhead">Entities</div>
                 <q-list v-if="client.entities && client.entities.length" dense>
                   <q-item v-for="e in client.entities" :key="e.id" class="q-px-none">
                     <q-item-section avatar>
@@ -158,6 +135,47 @@
                   </q-item>
                 </q-list>
                 <div v-else class="rems-value text-grey-6">No entities.</div>
+              </q-tab-panel>
+
+              <!-- ---------- Client Information ---------- -->
+              <!-- The request the FIRM raised about this client — who it is for, how it is classified, who
+                   is on it, and what was attached to it. The same tab the staff request page calls Client
+                   Information, so the two read as one screen seen from two sides. -->
+              <q-tab-panel name="request">
+                <div class="row q-col-gutter-md">
+                  <div v-for="item in requestRows" :key="item.label" class="col-12 col-sm-6">
+                    <div class="rems-label">{{ item.label }}</div>
+                    <div v-if="item.type === 'status'">
+                      <app-option-badge :option="requestStatusOption(request)" />
+                    </div>
+                    <div v-else class="rems-value">
+                      {{ item.value }}
+                      <!-- One value, not a column of them, so the icon can advertise the tooltip here. -->
+                      <template v-if="item.hint">
+                        <q-icon name="o_info" size="14px" class="rems-value__info" />
+                        <q-tooltip anchor="top middle" self="bottom middle" max-width="320px" :delay="300">
+                          {{ item.hint }}
+                        </q-tooltip>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+
+                <template v-if="request.description">
+                  <q-separator class="q-my-md" />
+                  <div class="rems-label">Description</div>
+                  <!-- eslint-disable-next-line vue/no-v-html -->
+                  <div class="rems-value rems-value--rich" v-html="renderRichText(request.description)" />
+                </template>
+
+                <q-separator class="q-my-md" />
+                <div class="rems-subhead">Attachments</div>
+                <!-- The same preview row the request form shows, minus the ✕: an approver reads the
+                     packet, they do not edit it. Clicking opens the document in a new tab. -->
+                <div v-if="request.files && request.files.length" class="column q-gutter-xs">
+                  <app-stored-file-item v-for="f in request.files" :key="f.id" :file="f" />
+                </div>
+                <div v-else class="rems-value text-grey-6">No attachments.</div>
               </q-tab-panel>
 
               <!-- ---------- Setup ---------- -->
@@ -179,9 +197,17 @@
                   </div>
                 </div>
 
+                <!-- Every card below appears on exactly the rule the setup FORM asked its questions on —
+                     the engagement's department, and for the contract block the client's entity type
+                     beside it — rather than on whether a detail row happens to exist. The two differ in
+                     both directions: an audit engagement whose CAF was never uploaded has no audit row and
+                     was showing the approver nothing at all about a document their sign-off depends on,
+                     and an engagement moved off Tax keeps the tax row it was written with and went on
+                     showing a due-date schedule that no longer applies to it. -->
+
                 <!-- Audit and Assurance: the signed client-acceptance form, and for Assurance the client's
                      fiscal year end and the administrative fees underneath it. -->
-                <q-card v-if="engagement.audit" flat bordered class="rems-inner q-mt-md">
+                <q-card v-if="showAttest" flat bordered class="rems-inner q-mt-md">
                   <q-card-section class="q-py-sm text-subtitle2 text-primary">
                     <q-icon name="o_fact_check" size="18px" class="q-mr-xs" />{{ attestCardTitle }}
                   </q-card-section>
@@ -208,9 +234,10 @@
                   </q-card-section>
                 </q-card>
 
-                <!-- Government audit: the contract block. Not shown for a GCS engagement, whose own card is
-                     below — the two share a stored row but answer different questions. -->
-                <q-card v-if="engagement.government && !showGcs" flat bordered class="rems-inner q-mt-md">
+                <!-- Government audit: the contract block. An Audit department on a Government entity, which
+                     is the same pair the setup form keys it off. Not shown for a GCS engagement, whose own
+                     card is below — the two share a stored row but answer different questions. -->
+                <q-card v-if="showGovernment" flat bordered class="rems-inner q-mt-md">
                   <q-card-section class="q-py-sm text-subtitle2 text-primary">
                     <q-icon name="o_gavel" size="18px" class="q-mr-xs" />Government Audit — Contract
                   </q-card-section>
@@ -242,14 +269,14 @@
                     </div>
                     <!-- The purchase order itself, openable, the same way the signed CAF is. -->
                     <div v-if="purchaseOrderFile" class="q-mt-md">
-                      <div class="rems-label q-mb-xs">Purchase Order</div>
+                      <div class="rems-subhead">Purchase Order</div>
                       <app-stored-file-item :file="purchaseOrderFile" />
                     </div>
                   </q-card-section>
                 </q-card>
 
                 <!-- Tax: fiscal year end, the due-date schedule, and the form checklist. -->
-                <q-card v-if="engagement.tax" flat bordered class="rems-inner q-mt-md">
+                <q-card v-if="showTax" flat bordered class="rems-inner q-mt-md">
                   <q-card-section class="q-py-sm text-subtitle2 text-primary">
                     <q-icon name="o_receipt_long" size="18px" class="q-mr-xs" />Tax — Fiscal Year &amp; Forms
                   </q-card-section>
@@ -261,25 +288,51 @@
                     <div class="row q-col-gutter-md">
                       <div class="col-12 col-sm-4">
                         <div class="rems-label">Fiscal Year End</div>
-                        <div class="rems-value">{{ dateOnly(engagement.tax.fiscalYearEnd) }}</div>
+                        <div class="rems-value">{{ dateOnly(engagement.tax?.fiscalYearEnd) }}</div>
                       </div>
                       <div class="col-12 col-sm-4">
                         <div class="rems-label">Original Due Date</div>
-                        <div class="rems-value">{{ dateOnly(engagement.tax.dueDates?.originalDueDate) }}</div>
+                        <div class="rems-value">{{ dateOnly(engagement.tax?.dueDates?.originalDueDate) }}</div>
                       </div>
                       <div class="col-12 col-sm-4">
                         <div class="rems-label">First Extension Due Date</div>
-                        <div class="rems-value">{{ dateOnly(engagement.tax.dueDates?.extendedDueDate) }}</div>
+                        <div class="rems-value">{{ dateOnly(engagement.tax?.dueDates?.extendedDueDate) }}</div>
                       </div>
                     </div>
-                    <div class="rems-label q-mt-md q-mb-xs">Tax Forms</div>
-                    <div v-if="engagement.tax.taxForms && engagement.tax.taxForms.length" class="row q-gutter-xs">
+                    <div class="rems-subhead q-mt-md">Tax Forms</div>
+                    <div v-if="taxForms.length" class="row q-gutter-xs">
                       <q-chip
-                        v-for="f in engagement.tax.taxForms" :key="f.id" dense square outline color="primary"
+                        v-for="f in taxForms" :key="f.id" dense square outline color="primary"
                         :label="f.label"
                       />
                     </div>
                     <div v-else class="rems-value text-grey-6">No tax forms selected.</div>
+                  </q-card-section>
+                </q-card>
+
+                <!-- CAS: how the client is billed. Client Accounting Services is the recurring arrangement
+                     — how often the client is invoiced and how that billing actually runs are part of what
+                     is being approved, and until now the approver's packet did not carry either of them. -->
+                <q-card v-if="showBilling" flat bordered class="rems-inner q-mt-md">
+                  <q-card-section class="q-py-sm text-subtitle2 text-primary">
+                    <q-icon name="o_receipt" size="18px" class="q-mr-xs" />CAS — Billing
+                  </q-card-section>
+                  <q-separator />
+                  <q-card-section>
+                    <div class="row q-col-gutter-md">
+                      <div class="col-12 col-sm-4">
+                        <div class="rems-label">Billing Frequency</div>
+                        <div class="rems-value">{{ text(billingPeriodLabel(engagement.billingPeriod)) }}</div>
+                      </div>
+                      <div class="col-12 col-sm-8">
+                        <div class="rems-label">Description of Billing Process</div>
+                        <!-- As staff typed it. The box it was written in grows with the text, so a
+                             three-line schedule is three lines here rather than one run-on sentence. -->
+                        <div class="rems-value" style="white-space: pre-wrap;">
+                          {{ text(engagement.billingProcessDescription) }}
+                        </div>
+                      </div>
+                    </div>
                   </q-card-section>
                 </q-card>
               </q-tab-panel>
@@ -320,7 +373,17 @@
 
               <!-- ---------- Approval ---------- -->
               <q-tab-panel name="approval">
+                <!-- Where the ROUND stands, as a badge rather than a word in a column of values: it is the
+                     one thing on this tab everybody came to read, and "Partially Approved" is the answer
+                     the old label could not give — a round of four with two signatures on it was Pending,
+                     which reads as nobody having looked at it. -->
                 <div class="row q-col-gutter-md q-mb-md">
+                  <div class="col-12 col-sm-6">
+                    <div class="rems-label">Approval Status</div>
+                    <div>
+                      <app-option-badge :option="roundMeta" />
+                    </div>
+                  </div>
                   <div v-for="item in roundRows" :key="item.label" class="col-12 col-sm-6">
                     <div class="rems-label">{{ item.label }}</div>
                     <div class="rems-value">{{ item.value }}</div>
@@ -342,15 +405,18 @@
                      answered by every row still waiting, not by one of them. Those are the rows marked
                      here; the reader's own is marked hardest, because it is the only one they can act
                      on. -->
-                <div class="rems-label q-mb-xs">Approvers</div>
+                <div class="rems-subhead">Approvers</div>
                 <q-list bordered separator class="rounded-borders">
                   <q-item
                     v-for="d in round.decisions" :key="d.taskId"
                     :class="{ 'ar--awaiting': awaitingDecision(d), 'ar--you': d.isYou }"
                   >
                     <q-item-section avatar>
+                      <!-- The icon on the ROLE's own option — the tenant's, like its name. Amber while
+                           the round is still waiting on this approver, so the list can be scanned down
+                           its left edge for the rows that have not answered. -->
                       <q-icon
-                        :name="approverRoleIcon(d.role)"
+                        :name="approverRoleOption(d.role).icon || 'o_person'"
                         :color="awaitingDecision(d) ? 'amber-9' : 'primary'"
                       />
                     </q-item-section>
@@ -372,7 +438,7 @@
                       </q-item-label>
                     </q-item-section>
                     <q-item-section side>
-                      <q-badge :color="approvalStatusColor(d.status)">{{ approvalStatusLabel(d.status) }}</q-badge>
+                      <app-option-badge :option="approvalStatusOption(d.status)" />
                     </q-item-section>
                   </q-item>
                 </q-list>
@@ -450,8 +516,12 @@
           <q-card v-if="request.remsId" flat bordered class="rems-card">
             <q-card-section class="text-subtitle1 text-weight-medium">Conversation</q-card-section>
             <q-separator />
+            <!-- Taller than the panel's own default: this is a page column rather than a dialog, and a
+                 thread worth reading beside the task deserves the room. -->
             <q-card-section>
-              <entity-conversation-panel :entity-type="EntityType.Rems" :entity-id="request.remsId" />
+              <entity-conversation-panel
+                :entity-type="EntityType.Rems" :entity-id="request.remsId" height="520px"
+              />
             </q-card-section>
           </q-card>
         </div>
@@ -501,11 +571,15 @@ import { remsApi, EntityType, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useDateFormat, formatDateOnly } from "composables/useDateFormat";
-import { useRemsMeta, isAssuranceDepartment, isGcsDepartment } from "modules/rems/useRemsMeta";
+import {
+  useRemsMeta, isAssuranceDepartment, isGcsDepartment, isCasDepartment, isTaxDepartment,
+  isGovernmentAudit, requiresClientAcceptanceForm
+} from "modules/rems/useRemsMeta";
 import { addressText } from "modules/rems/remsAddress";
 import { renderRichText } from "utils/richText";
 
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
+import AppOptionBadge from "components/common/AppOptionBadge.vue";
 import AppStoredFileItem from "components/common/AppStoredFileItem.vue";
 import AppTextField from "components/common/AppTextField.vue";
 // Explicit import: boot/components.js registers only the Zw* inputs globally, so without this the tag
@@ -517,11 +591,15 @@ const route = useRoute();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const fmt = useDateFormat();
+// Everything a value is rendered with — its wording, its colour, its icon, the sentence on its tooltip —
+// comes off the option itself. The *Option helpers hand back the whole thing for AppOptionBadge; the
+// *Label ones are for the rows that read as plain text rather than as a badge.
 const {
-  typeLabel, typeHint, requestStatusLabel, requestStatusColor,
-  industryGroupLabel, emsStateLabel, submissionStateLabel, departmentLabel,
-  subServiceLineLabel, subIndustryLabel, personnelLevelLabel,
-  approverRoleLabel, approverRoleIcon, approvalStatusLabel, approvalStatusColor, engagementStatusMeta
+  typeLabel, typeHint, requestStatusOption,
+  industryGroupLabel, formStatusOption, submissionStateOption,
+  departmentLabel, subServiceLineLabel, subIndustryLabel, personnelLevelLabel, billingPeriodLabel,
+  approverRoleLabel, approverRoleOption, approvalStatusOption,
+  engagementStatusOption, roundStatusOption
 } = useRemsMeta();
 
 const taskId = route.params.taskId;
@@ -533,14 +611,17 @@ const busy = ref(false);
 const approving = ref(false);
 const savingItemId = ref(null);
 
-// Same order as the staff workspace, with the request that started it in front.
+// The packet in the order it was assembled: what the client sent, what the firm recorded about them, the
+// engagement built on top of it, how it was won, who is paid for it, and the round being decided. The last
+// four are named exactly as the staff request page names them, so an approver and the admin who filled it
+// in are looking at the same six words.
 const TABS = [
-  { name: "request", icon: "o_assignment", label: "Request" },
-  { name: "client", icon: "o_business", label: "Client" },
+  { name: "clientForm", icon: "o_description", label: "Client Form" },
+  { name: "request", icon: "o_assignment", label: "Client Information" },
   { name: "setup", icon: "o_engineering", label: "Engagement Setup" },
   { name: "marketing", icon: "o_campaign", label: "Marketing" },
   { name: "commission", icon: "o_payments", label: "Commission" },
-  { name: "approval", icon: "o_approval", label: "Approval" }
+  { name: "approval", icon: "o_approval", label: "Approvals" }
 ];
 // Opens on Approval, not on the packet: the approver came here to decide, and that tab carries the
 // round, where the other approvers stand and their own decision. The tabs before it are the material
@@ -551,12 +632,25 @@ const request = computed(() => task.value?.request || {});
 const engagement = computed(() => task.value?.engagement || {});
 const client = computed(() => engagement.value.client || {});
 const round = computed(() => task.value?.round || {});
-const engagementStatus = computed(() => engagementStatusMeta(engagement.value.status));
+const engagementStatus = computed(() => engagementStatusOption(engagement.value.status));
 
 // Whose signature the round is still waiting on. Only meaningful while the round is open: once it closes,
 // a task left undecided is Superseded rather than Pending, and a closed round is waiting on nobody — so
 // nothing on a finished round should read as somebody's turn.
 const awaitingDecision = (d) => round.value.status === "Pending" && d?.status === "Pending";
+
+// ---- Where the whole round stands ----
+// Counted off the decisions the packet carries rather than taken from the round's own status alone: the
+// round is Pending from the moment it is sent until the last approver signs, so the status by itself
+// cannot tell "nobody has looked at this" from "everybody but you has signed". roundStatusOption turns the
+// pair into the badge — Partially Approved, with the tally on its tooltip.
+const roundDecisions = computed(() => round.value.decisions || []);
+const roundApprovedCount = computed(() => roundDecisions.value.filter((d) => d.status === "Approved").length);
+const roundMeta = computed(() =>
+  roundStatusOption(round.value.status, roundApprovedCount.value, roundDecisions.value.length));
+// The reader has signed but the request has not been approved — what keeps a green "all done" banner off
+// a round that is still waiting on somebody else.
+const roundOutstanding = computed(() => round.value.status === "Pending");
 const entityContacts = computed(() => engagement.value.entity?.contacts || []);
 const commissionSplits = computed(() => engagement.value.commissionSplits || []);
 const commissionTotal = computed(() =>
@@ -593,8 +687,18 @@ const requestRows = computed(() => {
     { label: "Customer Email", value: text(r.customerEmail) },
     { label: "Customer Phone Number", value: text(r.customerMobileNumber) },
     { label: "Entity Type", value: r.industryGroup ? industryGroupLabel(r.industryGroup) : "—" },
-    { label: "EMS Form State", value: emsStateLabel(r.emsFormState) },
-    { label: "Client Submission", value: submissionStateLabel(r.clientSubmissionState) },
+    // Read off the option, so the wording and the explanation are the tenant's own — the same two rows
+    // the request lists render as badges.
+    {
+      label: "EMS Form State",
+      value: formStatusOption(r.emsFormState).label,
+      hint: formStatusOption(r.emsFormState).description
+    },
+    {
+      label: "Client Submission",
+      value: r.clientSubmissionState ? submissionStateOption(r.clientSubmissionState).label : "—",
+      hint: r.clientSubmissionState ? submissionStateOption(r.clientSubmissionState).description : ""
+    },
     { label: "Assigned Admin", value: text(r.assignedAdmin?.name) },
     { label: "CSE", value: text(r.cse?.name) },
     { label: "Requested By", value: `${r.requestedBy || "—"} · ${fmt.formatDateTime(r.createdOnUtc)}` }
@@ -646,10 +750,23 @@ const setupRows = computed(() => {
   return rows;
 });
 
-// Which questions this engagement was put, read off its department the same way the setup form decides
-// what to ask. An approver has to read the packet the staff actually filled in.
-const showAssurance = computed(() => isAssuranceDepartment(engagement.value.department));
-const showGcs = computed(() => isGcsDepartment(engagement.value.department));
+// Which questions this engagement was PUT, read off its department — and, for the contract block, the
+// client's entity type beside it — exactly as the setup form decides what to ask. An approver reads the
+// packet staff actually filled in, so the cards on this tab have to be the cards that were on that one.
+//
+// Keyed off the department rather than off "is there a detail row?", which is what these used to ask and
+// which is wrong in both directions: an audit engagement whose CAF was never uploaded has no audit row at
+// all, and an engagement moved from Tax to CAS keeps the tax row it was written with.
+const department = computed(() => engagement.value.department);
+const showAssurance = computed(() => isAssuranceDepartment(department.value));
+const showGcs = computed(() => isGcsDepartment(department.value));
+const showAttest = computed(() => requiresClientAcceptanceForm(department.value));
+const showTax = computed(() => isTaxDepartment(department.value));
+const showBilling = computed(() => isCasDepartment(department.value));
+// The entity type is the REQUEST's, not the engagement's — same source the setup form reads it from.
+const showGovernment = computed(() => isGovernmentAudit(department.value, request.value.industryGroup));
+
+const taxForms = computed(() => engagement.value.tax?.taxForms || []);
 
 const attestCardTitle = computed(() =>
   (showAssurance.value ? "Assurance — Client Acceptance Form & Fees" : "Audit — Client Acceptance Form"));
@@ -703,10 +820,11 @@ const governmentRows = computed(() => {
   ];
 });
 
+// The Approval Status row is rendered as a badge in the template above rather than listed here, because
+// it is the one value on this tab that is not a fact about the past.
 const roundRows = computed(() => {
   const r = round.value;
   return [
-    { label: "Approval Status", value: approvalStatusLabel(r.status) },
     { label: "Sent", value: `${r.sentBy?.name || "—"} · ${fmt.formatDateTime(r.sentOnUtc)}` },
     { label: "Completed", value: r.completedOnUtc ? fmt.formatDateTime(r.completedOnUtc) : "—" }
   ];
@@ -833,18 +951,10 @@ onMounted(load);
 </script>
 
 <style scoped>
+/* .rems-label / .rems-value / .rems-inner are the shared record vocabulary — see css/rems.scss. This
+   screen used to carry its own copy of all three, which is how its field labels ended up teal while the
+   same class rendered grey on the submitted-form panel beside it. */
 .rems-card { border-radius: 12px; }
-.rems-inner { border-radius: 10px; }
-.rems-details { border: 1px solid #e0e6ed; border-radius: 10px; }
-.rems-label {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: var(--q-primary);
-  margin-bottom: 2px;
-}
-.rems-value { font-size: 14px; color: #2c3540; word-break: break-word; }
 /* The approvers the round is still waiting on. A tint plus a left edge rather than a badge alone: the
    list is scanned down its left side, and the point is to find the waiting rows without reading each. */
 .ar--awaiting {

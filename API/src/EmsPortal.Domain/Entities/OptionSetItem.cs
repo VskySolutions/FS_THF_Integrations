@@ -52,6 +52,27 @@ public class OptionSetItem : AuditableEntity
     /// <summary>Optional text colour (hex, e.g. "#0d47a1") shown for this value in the UI.</summary>
     public string? TextColor { get; set; }
 
+    /// <summary>
+    /// Optional Material icon name (e.g. <c>o_workspace_premium</c>) shown beside this value in the UI.
+    /// A display property like the two colours above it — a list whose values are roles or events reads
+    /// far faster with one, and hard-coding the icon per value in the front end is the thing this column
+    /// exists to stop.
+    /// </summary>
+    public string? Icon { get; set; }
+
+    /// <summary>
+    /// True for a value the application itself depends on — one the server writes and branches on, such
+    /// as an approval status. Seeded, and thereafter LOCKED in the ways that would break the workflow:
+    /// it cannot be deleted, deactivated, or given a different <see cref="Value"/>.
+    /// <para>
+    /// Everything a tenant would actually want to change stays open: the <see cref="Label"/>, the
+    /// <see cref="Description"/> behind its tooltip, the colours, the icon and the sort order. That is
+    /// the whole point of the flag — these lists are managed in the app like every other, and only the
+    /// codes underneath them are not up for negotiation.
+    /// </para>
+    /// </summary>
+    public bool IsSystem { get; set; }
+
     /// <summary>Optional extra metadata as a JSON object, e.g. <c>{"days":30}</c>.</summary>
     public string? MetadataJson { get; set; }
 

@@ -87,8 +87,26 @@ public sealed class OptionSetsController : ControllerBase
     }
 
     /// <summary>Effective active values for a key — the tenant's own list when present, else the standard one.</summary>
+    /// <remarks>
+    /// Any authenticated caller, NOT optionSets.read — unlike every other endpoint on this controller.
+    /// This one returns display vocabulary and nothing else: the ACTIVE values of one list in the caller's
+    /// own tenant, with the label, description, colours and icon a screen paints them with. It reveals no
+    /// inactive value, no other tenant's copy, and nothing about who may edit the list.
+    /// <para>
+    /// Open because the screens that READ these words are not the screens that MANAGE them. The REMS seat
+    /// roles — CSE, Engagement Executive, Billing Manager, Shareholder — grant no permissions at all by
+    /// design, yet a Shareholder opens an approval task and must see "Pending Approval" rather than a
+    /// blank badge. Gating this behind optionSets.read is what forced a hardcoded copy of every list into
+    /// the front end to stand in on a 403 — and that copy then drifted from the lists tenants actually
+    /// edit, which is the very thing option sets exist to prevent.
+    /// </para>
+    /// <para>
+    /// The same words already reach ANONYMOUS callers on the public intake form, which resolves its lists
+    /// server-side. So this is not newly exposed, only consistently reachable.
+    /// </para>
+    /// </remarks>
     [HttpGet("resolve")]
-    [RequirePermission(Permissions.OptionSetsRead)]
+    [Authorize]
     [ProducesResponseType<ApiResponse<IEnumerable<OptionSetItemResponse>>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Resolve(
         [FromQuery] int entityType,
@@ -174,7 +192,9 @@ public sealed class OptionSetsController : ControllerBase
     [ProducesResponseType<ApiResponse<OptionSetItemResponse>>(StatusCodes.Status201Created)]
     public async Task<IActionResult> CreateItem(Guid id, [FromBody] CreateOptionItemRequest body, CancellationToken cancellationToken)
     {
-        var input = new CreateOptionItemInput(id, body.Value, body.Label, body.Description, body.ParentItemId, body.IsDefault, body.BackgroundColor, body.TextColor, body.MetadataJson);
+        var input = new CreateOptionItemInput(
+            id, body.Value, body.Label, body.Description, body.ParentItemId, body.IsDefault,
+            body.BackgroundColor, body.TextColor, body.Icon, body.MetadataJson);
         try
         {
             var item = await _service.CreateItemAsync(input, cancellationToken);
@@ -192,7 +212,9 @@ public sealed class OptionSetsController : ControllerBase
     [RequirePermission(Permissions.OptionSetsManage)]
     public async Task<IActionResult> UpdateItem(Guid id, Guid itemId, [FromBody] UpdateOptionItemRequest body, CancellationToken cancellationToken)
     {
-        var input = new UpdateOptionItemInput(body.Value, body.Label, body.Description, body.ParentItemId, body.IsDefault, body.IsActive, body.BackgroundColor, body.TextColor, body.MetadataJson);
+        var input = new UpdateOptionItemInput(
+            body.Value, body.Label, body.Description, body.ParentItemId, body.IsDefault, body.IsActive,
+            body.BackgroundColor, body.TextColor, body.Icon, body.MetadataJson);
         try
         {
             var item = await _service.UpdateItemAsync(id, itemId, input, cancellationToken);
@@ -262,17 +284,18 @@ public sealed class OptionSetsController : ControllerBase
 
     private static OptionSetSummaryResponse ToSummary(OptionSet s, int itemCount, Func<Guid?, string?> nameOf) => new(
         s.Id, s.TenantId, (int)s.EntityType, s.Key, s.Name, s.ParentSetId,
-        s.ItemSortMode.ToString(), s.IsSystem, s.IsActive, IsEditable(s), itemCount,
+        s.ItemSortMode.ToString(), s.IsSystem, s.IsClosed, s.IsActive, IsEditable(s), itemCount,
         nameOf(s.CreatedById), s.CreatedOnUtc, nameOf(s.UpdatedById), s.UpdatedOnUtc);
 
     private static OptionSetDetailResponse ToDetail(OptionSet s) => new(
         s.Id, s.TenantId, (int)s.EntityType, s.Key, s.Name, s.ParentSetId,
-        s.ItemSortMode.ToString(), s.IsSystem, s.IsActive, IsEditable(s),
+        s.ItemSortMode.ToString(), s.IsSystem, s.IsClosed, s.IsActive, IsEditable(s),
         OrderItems(s).Select(ToItem).ToList());
 
     private static OptionSetItemResponse ToItem(OptionSetItem i) => new(
         i.Id, i.OptionSetId, i.ParentItemId, i.Value, i.Label, i.Description, i.SortOrder,
-        i.IsDefault, i.IsActive, i.TenantId is null, i.BackgroundColor, i.TextColor, i.MetadataJson);
+        i.IsDefault, i.IsActive, i.TenantId is null, i.BackgroundColor, i.TextColor, i.Icon, i.IsSystem,
+        i.MetadataJson);
 
     private IActionResult MapError(OptionSetException ex) => ex.Code switch
     {
@@ -280,6 +303,10 @@ public sealed class OptionSetsController : ControllerBase
             => Conflict(ApiResponseFactory.Error(ApiErrorCodes.DuplicateIdentifier, ex.Message, ex.Code)),
         OptionSetErrorCodes.ReadOnlyStandardSet or OptionSetErrorCodes.NoActiveTenant
             => StatusCode(StatusCodes.Status403Forbidden, ApiResponseFactory.Forbidden(ex.Message)),
+        // A closed list and a system value are not the caller doing anything wrong — they are asking for
+        // something the application does not allow of itself, which is a 409 rather than a bad request.
+        OptionSetErrorCodes.ClosedSet or OptionSetErrorCodes.SystemItem
+            => Conflict(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, ex.Message, ex.Code)),
         _ => BadRequest(ApiResponseFactory.Error(ApiErrorCodes.ValidationFailed, ex.Message, ex.Code)),
     };
 }

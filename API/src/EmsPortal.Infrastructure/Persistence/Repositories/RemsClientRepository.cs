@@ -52,6 +52,9 @@ internal sealed class RemsClientRepository : IRemsClientRepository
     // addresses, so the Addresses include below already brings it back.
     private IQueryable<REMSClient> LoadGraph()
         => _dbContext.RemsClients
+            // The referral source is an option-set item now, so it travels with the client: every caller
+            // reads its CODE off the navigation rather than a string column.
+            .Include(c => c.ReferralSource)
             .Include(c => c.Entities).ThenInclude(e => e.Addresses).ThenInclude(a => a.Address)
             .Include(c => c.Entities).ThenInclude(e => e.Contacts).ThenInclude(ct => ct.Person);
 }

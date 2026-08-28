@@ -203,6 +203,7 @@ public static class BootstrapSeeder
                 Name = def.Name,
                 ItemSortMode = def.ItemSortMode,
                 IsSystem = true,
+                IsClosed = def.IsClosed,
                 IsActive = true,
                 Items = def.Items.Select(i => new OptionSetItem
                 {
@@ -214,6 +215,10 @@ public static class BootstrapSeeder
                     SortOrder = i.SortOrder,
                     IsActive = true,
                     MetadataJson = i.MetadataJson,
+                    BackgroundColor = i.BackgroundColor,
+                    TextColor = i.TextColor,
+                    Icon = i.Icon,
+                    IsSystem = def.SeedsSystemValues,
                 }).ToList(),
             };
 

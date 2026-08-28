@@ -155,7 +155,6 @@ import { debounce } from "quasar";
 import { remsPublicApi, getApiErrorMessage, getApiErrorCode, ApiErrorCodes } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
-import { REMS_OPTION_SEED } from "modules/rems/useRemsOptionCatalog";
 import {
   blankIntakePayload, buildIntakePayload, intakeClientName, intakeIssues, parseIntakeFieldErrors,
   seedIntakePayload
@@ -169,10 +168,12 @@ const notify = useNotify();
 const { confirm } = useConfirm();
 const inviteCode = route.params.inviteCode;
 
-// The referral-source list. Seeded from the shared catalogue so the picker is never empty on first
-// paint, then replaced by whatever the server sends with the form — the tenant's own wording and
-// descriptions. Each option carries `description`, which is the tooltip / caption for that value.
-const referralSources = ref([...REMS_OPTION_SEED.referralSource]);
+// The referral-source list, as the SERVER sends it with the form — the tenant's own wording, in their
+// own order, with the descriptions that become each option's caption. Empty until the form loads, which
+// is the same moment the picker it fills appears: this page renders a spinner until then.
+//
+// Anonymous, so it cannot resolve option sets for itself; RemsPublicFormController resolves them for it.
+const referralSources = ref([]);
 
 // ---- Screen state ----
 const loading = ref(true);

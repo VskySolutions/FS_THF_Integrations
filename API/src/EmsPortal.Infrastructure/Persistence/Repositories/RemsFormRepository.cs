@@ -17,6 +17,8 @@ internal sealed class RemsFormRepository : IRemsFormRepository
 
     public Task<REMSForm?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
         => _dbContext.RemsForms
+            // The entity type is an option-set item; its CODE decides what the client's form asks.
+            .Include(f => f.IndustryGroup)
             .Include(f => f.Drafts)
             .Include(f => f.Submissions)
             .Include(f => f.EmailEvents)
@@ -26,11 +28,15 @@ internal sealed class RemsFormRepository : IRemsFormRepository
         // At most one active form per request (filtered unique index on (TenantId, REMSId)); tenant + soft-delete
         // scoped by the ambient query filter. Email events are loaded so callers can read sent/locked state.
         => _dbContext.RemsForms
+            // The entity type is an option-set item; its CODE decides what the client's form asks.
+            .Include(f => f.IndustryGroup)
             .Include(f => f.EmailEvents)
             .FirstOrDefaultAsync(f => f.REMSId == remsId, cancellationToken);
 
     public Task<REMSForm?> GetWithSubmissionsByRemsIdAsync(Guid remsId, CancellationToken cancellationToken = default)
         => _dbContext.RemsForms
+            // The entity type is an option-set item; its CODE decides what the client's form asks.
+            .Include(f => f.IndustryGroup)
             .Include(f => f.Submissions)
             .FirstOrDefaultAsync(f => f.REMSId == remsId, cancellationToken);
 
@@ -52,7 +58,7 @@ internal sealed class RemsFormRepository : IRemsFormRepository
         var rows =
             from r in _dbContext.Rems
             join f in _dbContext.RemsForms on r.Id equals f.REMSId
-            where r.Status != draft
+            where r.Status!.Value != draft
             select new { Rems = r, Form = f };
 
         // The list's two quick filters. "All" is every row an admin's queue holds, waiting-for-pickup ones
@@ -83,7 +89,7 @@ internal sealed class RemsFormRepository : IRemsFormRepository
         if (!string.IsNullOrWhiteSpace(query.RequestStatus))
         {
             var s = query.RequestStatus.Trim();
-            rows = rows.Where(x => x.Rems.Status == s);
+            rows = rows.Where(x => x.Rems.Status!.Value == s);
         }
 
         // Counted AFTER the filters so the pager reflects the filtered set, not the whole list.
@@ -105,7 +111,7 @@ internal sealed class RemsFormRepository : IRemsFormRepository
                 x.Rems.ClientNameSuffix == null || x.Rems.ClientNameSuffix == ""
                     ? x.Rems.RequestedClientName
                     : x.Rems.RequestedClientName + " " + x.Rems.ClientNameSuffix,
-                x.Rems.Status,
+                x.Rems.Status!.Value,
                 x.Form.Status == RemsFormStatus.Submitted || x.Form.SubmittedOnUtc != null,
                 x.Form.SubmittedOnUtc,
                 x.Rems.AdminAssignedToId,
@@ -130,7 +136,9 @@ internal sealed class RemsFormRepository : IRemsFormRepository
         // state and upsert/submit. Tracked so the submit transaction can update the form + request.
         => _dbContext.RemsForms
             .IgnoreQueryFilters()
-            .Include(f => f.Rems)
+            .Include(f => f.IndustryGroup)
+            .Include(f => f.Rems).ThenInclude(r => r!.Status)
+            .Include(f => f.Rems).ThenInclude(r => r!.Type)
             .Include(f => f.Drafts)
             .FirstOrDefaultAsync(f => !f.Deleted && f.InviteCode == inviteCode, cancellationToken);
 
@@ -227,7 +235,7 @@ internal sealed class RemsFormRepository : IRemsFormRepository
         if (!string.IsNullOrWhiteSpace(query.RequestStatus))
         {
             var s = query.RequestStatus.Trim();
-            forms = forms.Where(f => f.Rems!.Status == s);
+            forms = forms.Where(f => f.Rems!.Status!.Value == s);
         }
 
         // Counted AFTER the filters so the pager reflects the filtered set, not the whole inbox.
@@ -252,8 +260,8 @@ internal sealed class RemsFormRepository : IRemsFormRepository
                 ClientName = f.Rems!.ClientNameSuffix == null || f.Rems!.ClientNameSuffix == ""
                     ? f.Rems!.RequestedClientName
                     : f.Rems!.RequestedClientName + " " + f.Rems!.ClientNameSuffix,
-                EngagementType = f.Rems!.Type,
-                RequestStatus = f.Rems!.Status,
+                EngagementType = f.Rems!.Type!.Value,
+                RequestStatus = f.Rems!.Status!.Value,
                 f.Status,
                 f.UpdatedOnUtc,
                 f.CreatedByUserId,

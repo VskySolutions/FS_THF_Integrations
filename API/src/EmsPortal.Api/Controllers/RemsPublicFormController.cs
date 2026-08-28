@@ -2,6 +2,7 @@ using System.Globalization;
 using EmsPortal.Api.Models.Rems;
 using EmsPortal.Api.Validators.Rems;
 using EmsPortal.Application.Abstractions.Email;
+using EmsPortal.Application.Abstractions.OptionSets;
 using EmsPortal.Application.Abstractions.Persistence;
 using EmsPortal.Application.Abstractions.Tenancy;
 using EmsPortal.Application.Abstractions.UniversalFeatures;
@@ -60,6 +61,7 @@ public sealed class RemsPublicFormController : ControllerBase
     private readonly IRemsEmailNotifier _emailNotifier;
     private readonly string _baseUrl;
     private readonly IOptionSetRepository _optionSets;
+    private readonly IOptionCodeResolver _codes;
     private readonly ILogger<RemsPublicFormController> _logger;
 
     public RemsPublicFormController(
@@ -77,6 +79,7 @@ public sealed class RemsPublicFormController : ControllerBase
         IRemsEmailNotifier emailNotifier,
         IOptions<AppOptions> appOptions,
         IOptionSetRepository optionSets,
+        IOptionCodeResolver codes,
         ILogger<RemsPublicFormController> logger)
     {
         _forms = forms;
@@ -93,6 +96,7 @@ public sealed class RemsPublicFormController : ControllerBase
         _emailNotifier = emailNotifier;
         _baseUrl = appOptions.Value.BaseUrl;
         _optionSets = optionSets;
+        _codes = codes;
         _logger = logger;
     }
 
@@ -129,10 +133,10 @@ public sealed class RemsPublicFormController : ControllerBase
             RemsFormStatus.Sent => Ok(ApiResponseFactory.Success(
                 new RemsPublicFormResponse(
                     RemsPublicFormStates.Editable,
-                    IndustryGroup: form.IndustryGroup,
+                    IndustryGroup: form.IndustryGroup!.Value,
                     Prefill: BuildPrefill(rems),
                     DraftPayload: RemsFormPayloadJson.TryDeserialize(CurrentDraft(form)?.DraftPayload),
-                    ReferralSources: await ResolvePublicOptionsAsync(rems.TenantId, "REMS.ReferralSource", cancellationToken)),
+                    ReferralSources: await ResolvePublicOptionsAsync(rems.TenantId, RemsOptionSetKeys.ReferralSource, cancellationToken)),
                 "REMS form resolved.")),
 
             // Draft / Saved: built but not yet sent — the link is not active until the Admin sends it.
@@ -244,13 +248,13 @@ public sealed class RemsPublicFormController : ControllerBase
         }
 
         var effective = ResolvePayload(payload, form);
-        var validation = PayloadValidator.Validate(effective, form.IndustryGroup);
+        var validation = PayloadValidator.Validate(effective, form.IndustryGroup!.Value);
         if (!validation.IsValid)
         {
             return BadRequest(ApiResponseFactory.ValidationError(validation.Errors));
         }
 
-        var model = BuildReviewModel(form.Rems!, effective!, form.IndustryGroup);
+        var model = BuildReviewModel(form.Rems!, effective!, form.IndustryGroup!.Value);
         return Ok(ApiResponseFactory.Success(model, "REMS form review ready."));
     }
 
@@ -294,7 +298,7 @@ public sealed class RemsPublicFormController : ControllerBase
         var effective = ResolvePayload(payload, form);
 
         // Re-validate everything server-side (AC-REMS-024.8) before any write.
-        var validation = PayloadValidator.Validate(effective, form.IndustryGroup);
+        var validation = PayloadValidator.Validate(effective, form.IndustryGroup!.Value);
         if (!validation.IsValid)
         {
             return BadRequest(ApiResponseFactory.ValidationError(validation.Errors));
@@ -343,7 +347,12 @@ public sealed class RemsPublicFormController : ControllerBase
         // The request's one engagement, created when the initiator first saved it. Only the Government
         // contract dates need it — they come from the client's answers but belong to the engagement.
         var engagement = await _engagements.GetByRemsIdAsync(form.REMSId, cancellationToken);
-        var graph = BuildSubmitGraph(form, payload, now, engagement?.Id);
+        // The referral source is a foreign key to an option item, so the CODE the client picked is
+        // resolved before the graph is staged. The tenant was pinned when the form was loaded, so this
+        // resolves against that tenant's own list even though the caller is anonymous.
+        var referralSourceId = await _codes.IdOfAsync(
+            EntityType.Rems, RemsOptionSetKeys.ReferralSource, payload.ReferralSource, cancellationToken);
+        var graph = BuildSubmitGraph(form, payload, now, engagement?.Id, referralSourceId);
 
         await _unitOfWork.ExecuteInTransactionAsync(async ct =>
         {
@@ -391,7 +400,8 @@ public sealed class RemsPublicFormController : ControllerBase
             form.InviteLockedOnUtc ??= now;
             // The client's answers are in, so the request passes to the Admin the initiator named. The
             // engagement setup was filled before any of this, so what happens next is review, not setup.
-            form.Rems!.Status = RemsRequestStatuses.AdminReview;
+            form.Rems!.StatusId = await _codes.RequireRemsIdAsync(
+                RemsOptionSetKeys.Status, RemsRequestStatuses.AdminReview, ct);
 
             // 8. Commit.
             await _unitOfWork.SaveChangesAsync(ct);
@@ -403,11 +413,12 @@ public sealed class RemsPublicFormController : ControllerBase
     /// government detail) with explicit TenantId on every REMS/Person row and pre-generated ids. Pure (no
     /// I/O) so it can run outside the transaction.
     /// </summary>
-    private SubmitGraph BuildSubmitGraph(REMSForm form, RemsFormPayloadV1 payload, DateTime now, Guid? engagementId)
+    private SubmitGraph BuildSubmitGraph(
+        REMSForm form, RemsFormPayloadV1 payload, DateTime now, Guid? engagementId, Guid? referralSourceId)
     {
         var tenantId = form.TenantId;
-        var isBusiness = RemsFormPayloadValidator.IsBusinessGroup(form.IndustryGroup);
-        var isGovernment = string.Equals(form.IndustryGroup, RemsFormPayloadValidator.Government, StringComparison.Ordinal);
+        var isBusiness = RemsFormPayloadValidator.IsBusinessGroup(form.IndustryGroup!.Value);
+        var isGovernment = string.Equals(form.IndustryGroup!.Value, RemsFormPayloadValidator.Government, StringComparison.Ordinal);
 
         var submissionId = Guid.NewGuid();
         var clientId = Guid.NewGuid();
@@ -437,7 +448,7 @@ public sealed class RemsPublicFormController : ControllerBase
             Name = Clean(payload.EffectiveClientName) ?? string.Empty,
             Email = form.Rems!.CustomerEmail ?? string.Empty, // LOCKED to the request's customer email.
             MobileNumber = Clean(payload.MobileNumber),
-            ReferralSource = Clean(payload.ReferralSource),
+            ReferralSourceId = referralSourceId,
             ReferralSourceDetail = Clean(payload.ReferralSourceDetail),
             BillingContactName = Clean(payload.BillingContactName),
             BillingEmail = Clean(payload.BillingEmail),
@@ -459,7 +470,9 @@ public sealed class RemsPublicFormController : ControllerBase
         StageEntityAddresses(
             graph, tenantId, mainEntityId,
             payload.PhysicalAddress, payload.MailingAddress, payload.BillingAddress);
-        StageRoleContacts(graph, tenantId, form.REMSId, form.IndustryGroup, mainEntityId, payload.Roles);
+        StageRoleContacts(
+            graph, tenantId, form.REMSId, form.IndustryGroup!.Value, mainEntityId, payload.Roles,
+            payload.AdditionalBillingContacts);
 
         // Guarded on the engagement existing: a request written before the setup moved to the front could
         // reach here without one, and a contract detail with nothing to hang off would fail the insert.
@@ -530,7 +543,8 @@ public sealed class RemsPublicFormController : ControllerBase
     }
 
     private static void StageRoleContacts(
-        SubmitGraph graph, Guid tenantId, Guid sourceRemsId, string industryGroup, Guid entityId, RemsRolesPayload? roles)
+        SubmitGraph graph, Guid tenantId, Guid sourceRemsId, string industryGroup, Guid entityId,
+        RemsRolesPayload? roles, IReadOnlyList<RemsRolePayload>? additionalBillingContacts = null)
     {
         if (roles is null)
         {
@@ -539,9 +553,22 @@ public sealed class RemsPublicFormController : ControllerBase
 
         foreach (var (role, roleName, isRequired) in EnumerateRoles(industryGroup, roles.Normalized()))
         {
+            Stage(role, roleName, isRequired);
+        }
+
+        // Everyone else the client asked us to invoice. The same role as the first billing contact — being
+        // named second does not make somebody a different kind of contact — and never marked required:
+        // whatever an entity type requires, it requires ONE of them.
+        foreach (var extra in additionalBillingContacts ?? Array.Empty<RemsRolePayload>())
+        {
+            Stage(extra, nameof(RemsContactRole.BillingContact), isRequired: false);
+        }
+
+        void Stage(RemsRolePayload? role, string roleName, bool isRequired)
+        {
             if (role is not { HasAny: true })
             {
-                continue;
+                return;
             }
 
             var person = BuildContactPerson(tenantId, sourceRemsId, role);
@@ -584,12 +611,16 @@ public sealed class RemsPublicFormController : ControllerBase
             TenantId = tenantId,
             SourceEntityType = EntityType.Rems,
             SourceEntityId = sourceRemsId,
-            // How the client asked us to address this contact. Stored beside the name, not folded into it
-            // — DisplayName below is what the person is filed and searched under.
+            // How the client asked us to address this contact. Stored beside the name, not folded into
+            // FirstName / LastName — those two columns are what the person is filed and searched under.
+            //
+            // The generational suffix has no column of its own, so it rides on DisplayName, which is the
+            // "as it reads" field and is what every REMS surface shows a contact by. It is recoverable in
+            // full from the submission, which is the immutable record of what the client typed.
             Prefix = Clean(role.Prefix),
             FirstName = first,
             LastName = last,
-            DisplayName = Clean(role.DisplayName) ?? first,
+            DisplayName = Clean(role.NameWithSuffix) ?? first,
             PrimaryEmail = Clean(role.Email),
             MobileNumber = Clean(role.Phone),
             IsActive = true,
@@ -720,15 +751,27 @@ public sealed class RemsPublicFormController : ControllerBase
         var address = new RemsReviewAddressGroup(
             NonEmpty(payload.PhysicalAddress), NonEmpty(payload.MailingAddress), NonEmpty(payload.BillingAddress));
 
+        RemsReviewContactRow Row(RemsRolePayload role, string roleName, bool isRequired)
+            => new(
+                roleName, isRequired, Clean(role.Prefix), Clean(role.Suffix),
+                Clean(role.EffectiveFirstName), Clean(role.EffectiveLastName), Clean(role.DisplayName),
+                Clean(role.Email), Clean(role.Phone));
+
         var additionalContacts = EnumerateRoles(industryGroup, payload.EffectiveRoles)
             .Where(t => t.Role is { HasAny: true })
-            .Select(t => new RemsReviewContactRow(
-                t.RoleName, t.IsRequired, Clean(t.Role!.Prefix),
-                Clean(t.Role.EffectiveFirstName), Clean(t.Role.EffectiveLastName), Clean(t.Role.DisplayName),
-                Clean(t.Role.Email), Clean(t.Role.Phone)))
+            .Select(t => Row(t.Role!, t.RoleName, t.IsRequired))
             .ToList();
 
-        var billing = new RemsReviewBilling(Clean(payload.BillingContactName), Clean(payload.BillingEmail), NonEmpty(payload.BillingAddress));
+        // Everyone named to invoice beyond the first. Never required — whatever an entity type requires,
+        // it requires one billing contact, and that one is among the rows above.
+        var extraBilling = payload.AdditionalBillingContacts
+            .Where(r => r is { HasAny: true })
+            .Select(r => Row(r, nameof(RemsContactRole.BillingContact), isRequired: false))
+            .ToList();
+
+        var billing = new RemsReviewBilling(
+            Clean(payload.BillingContactName), Clean(payload.BillingEmail), NonEmpty(payload.BillingAddress),
+            extraBilling);
 
         return new RemsReviewModel(contact, contract, others, address, additionalContacts, billing);
     }

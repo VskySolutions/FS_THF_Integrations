@@ -67,6 +67,16 @@ export function useDateFormat () {
     return `${p.month}/${p.day}/${p.year}`;
   };
 
+  // The clock time alone, for somewhere the DATE is already established — a conversation groups its
+  // messages under a day heading, and repeating "08/28/2026" on every line of a thread read in one
+  // sitting is the date said forty times to no purpose.
+  const formatTime = (value, placeholder = "—") => {
+    const d = toUtcDate(value);
+    if (!d) return placeholder;
+    const p = partsFor(d, { hour: "2-digit", minute: "2-digit", hour12: true });
+    return `${p.hour}:${p.minute} ${p.dayPeriod}`;
+  };
+
   // How far the tenant's clock runs ahead of UTC at a given instant (DST-aware, since the offset is
   // read at that instant rather than assumed constant).
   const tzOffsetMs = (utcMs) => {
@@ -99,5 +109,5 @@ export function useDateFormat () {
     return new Date(wall - tzOffsetMs(wall)).toISOString();
   };
 
-  return { formatDateTime, formatDate, tenantTimeZone, zonedDayBoundaryUtc };
+  return { formatDateTime, formatDate, formatTime, tenantTimeZone, zonedDayBoundaryUtc };
 }

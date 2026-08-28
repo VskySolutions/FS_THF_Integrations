@@ -20,8 +20,18 @@ internal sealed class RemsConfiguration : IEntityTypeConfiguration<REMS>
         // The old nvarchar(500) measured the markup rather than the words in it, which a forwarded email
         // exceeded almost immediately.
         builder.Property(r => r.Description).HasColumnType("nvarchar(max)");
-        builder.Property(r => r.Type).IsRequired().HasMaxLength(64);
-        builder.Property(r => r.Status).IsRequired().HasMaxLength(64);
+        // Type and Status are option-set items, referenced by id. Restrict on both: a value a request is
+        // recorded against is not one to delete, and the application branches on the code behind it.
+        builder.HasOne(r => r.Type).WithMany().HasForeignKey(r => r.TypeId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(r => r.Status).WithMany().HasForeignKey(r => r.StatusId).OnDelete(DeleteBehavior.Restrict);
+
+        // ALWAYS loaded. The code behind each of these is read by everything that touches a request -- the
+        // list rows, the workflow guards, the status badge -- and a query that forgot to Include one does
+        // not fail at the query: it fails much later, as a NullReferenceException while the response is
+        // being serialised. AutoInclude makes forgetting impossible. Both are single rows on a tiny table
+        // joined by primary key; a caller that genuinely wants neither can say IgnoreAutoIncludes().
+        builder.Navigation(r => r.Type).AutoInclude();
+        builder.Navigation(r => r.Status).AutoInclude();
         builder.Property(r => r.RequestedClientName).IsRequired().HasMaxLength(200);
         // Room for a written-out suffix ("Junior") as well as the abbreviations offered, and no more:
         // this is a name particle, not a second name field.
@@ -37,7 +47,7 @@ internal sealed class RemsConfiguration : IEntityTypeConfiguration<REMS>
         builder.HasOne<User>().WithMany().HasForeignKey(r => r.OnBehalfOfUserId).OnDelete(DeleteBehavior.Restrict);
 
         // "Everything raised for me", including what a delegate prepared — the principal's own list.
-        builder.HasIndex(r => new { r.TenantId, r.OnBehalfOfUserId, r.Status });
+        builder.HasIndex(r => new { r.TenantId, r.OnBehalfOfUserId, r.StatusId });
 
         // The client's Person master record. A real FK, unlike the loose ExistingClientReferenceId beside
         // it: a person may be shared by many requests and may later become a User, so the link has to hold.
@@ -53,8 +63,8 @@ internal sealed class RemsConfiguration : IEntityTypeConfiguration<REMS>
         builder.HasIndex(r => new { r.TenantId, r.REMSNumber }).IsUnique().HasFilter("[Deleted] = 0");
 
         // Admin work pool and partner (creator) views.
-        builder.HasIndex(r => new { r.TenantId, r.Status, r.AdminAssignedToId, r.CreatedOnUtc });
-        builder.HasIndex(r => new { r.TenantId, r.CreatedById, r.Status });
+        builder.HasIndex(r => new { r.TenantId, r.StatusId, r.AdminAssignedToId, r.CreatedOnUtc });
+        builder.HasIndex(r => new { r.TenantId, r.CreatedById, r.StatusId });
     }
 }
 

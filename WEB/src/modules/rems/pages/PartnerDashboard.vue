@@ -77,14 +77,19 @@
         </q-td>
       </template>
 
+      <!-- The stage, and what that stage means — the tooltip is the status option's own Description,
+           maintained in Administration → Option Sets, so a tenant who rewords a status rewords its
+           explanation in the same place. -->
       <template #body-cell-status="cell">
         <q-td :props="cell">
-          <q-badge :color="requestStatusColor(cell.row)">{{ requestStatusLabel(cell.row) }}</q-badge>
+          <app-option-badge :option="requestStatusOption(cell.row)" />
         </q-td>
       </template>
 
       <template #body-cell-emsFormState="cell">
-        <q-td :props="cell">{{ emsStateLabel(cell.row.emsFormState) }}</q-td>
+        <q-td :props="cell">
+          <app-option-badge :option="formStatusOption(cell.row.emsFormState)" />
+        </q-td>
       </template>
 
       <template #body-cell-actions="cell">
@@ -158,6 +163,7 @@ import { useRemsMeta } from "modules/rems/useRemsMeta";
 import { REMS_STATUS } from "modules/rems/remsStatus";
 
 import AppListHeader from "components/common/AppListHeader.vue";
+import AppOptionBadge from "components/common/AppOptionBadge.vue";
 import ActingAsBanner from "modules/rems/components/ActingAsBanner.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
@@ -175,9 +181,11 @@ const notify = useNotify();
 const { has } = usePermissions();
 const fmt = useDateFormat();
 const auditColumns = useAuditColumns();
+// The *Option helpers hand back the whole value — label, description, colour, icon — which is what
+// AppOptionBadge renders. submissionStateLabel is the label-only form, for a column that shows the value
+// as plain text rather than as a badge.
 const {
-  typeLabel, typeHint, requestStatusLabel, requestStatusColor,
-  emsStateLabel, submissionStateLabel, emsFormActivity,
+  typeLabel, typeHint, requestStatusOption, formStatusOption, submissionStateLabel, emsFormActivity,
   statusFilterOptions, typeOptions
 } = useRemsMeta();
 

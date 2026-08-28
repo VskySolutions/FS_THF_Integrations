@@ -15,12 +15,18 @@ internal sealed class RemsRepository : IRemsRepository
 
     public Task<REMS?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
         => _dbContext.Rems
+            // Type and Status are option-set items now, so they travel with the request: every caller reads
+            // the CODE off the navigation, and the workflow branches on it.
+            .Include(r => r.Type)
+            .Include(r => r.Status)
             .Include(r => r.Files.Where(f => !f.Deleted))
                 .ThenInclude(f => f.Media)
             .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
 
     public async Task<IReadOnlyList<REMS>> ListAsync(CancellationToken cancellationToken = default)
         => await _dbContext.Rems
+            .Include(r => r.Type)
+            .Include(r => r.Status)
             .OrderByDescending(r => r.UpdatedOnUtc)
             .ThenByDescending(r => r.CreatedOnUtc)
             .ToListAsync(cancellationToken);
@@ -34,7 +40,12 @@ internal sealed class RemsRepository : IRemsRepository
         // Most-recently-touched first, so a request that anything has moved on — a form sent, an
         // engagement edited, an approval decided — surfaces at the top rather than staying wherever its
         // creation date put it. CreatedOnUtc breaks ties for rows written in the same tick.
+        // Type and Status are option-set ITEMS, and the row this list builds reads the code off each of
+        // them. Included here rather than on the filtered query above, because that one is also counted
+        // and grouped — an Include on a query that ends in an aggregate is work EF does nothing with.
         var items = await query
+            .Include(r => r.Type)
+            .Include(r => r.Status)
             .OrderByDescending(r => r.UpdatedOnUtc)
             .ThenByDescending(r => r.CreatedOnUtc)
             .Skip((options.Page - 1) * options.Limit)
@@ -57,7 +68,7 @@ internal sealed class RemsRepository : IRemsRepository
         const string draft = RemsRequestStatuses.Draft;
 
         var query = ApplyFieldFilters(ApplyVisibility(options), options)
-            .Where(r => r.Status != draft);
+            .Where(r => r.Status!.Value != draft);
 
         // GroupBy over a constant collapses the three counts into a single aggregate query.
         var counts = await query
@@ -98,9 +109,9 @@ internal sealed class RemsRepository : IRemsRepository
             // request GetById would open that no list would ever offer. The (TenantId, OnBehalfOfUserId,
             // Status) index exists for exactly this predicate.
             : _dbContext.Rems.Where(r =>
-                (r.Status == draft
+                (r.Status!.Value == draft
                     && (r.CreatedById == me || r.OnBehalfOfUserId == me || r.AdminAssignedToId == me)) ||
-                (r.Status != draft
+                (r.Status!.Value != draft
                     && (r.CreatedById == me || r.OnBehalfOfUserId == me
                         || r.AdminAssignedToId == me || r.CSEId == me)));
     }
@@ -132,7 +143,7 @@ internal sealed class RemsRepository : IRemsRepository
             return query;
         }
 
-        query = query.Where(r => r.Status != draft);
+        query = query.Where(r => r.Status!.Value != draft);
         return options.PoolFilter switch
         {
             RemsPoolFilter.Unassigned => query.Where(r => r.AdminAssignedToId == null),
@@ -164,12 +175,12 @@ internal sealed class RemsRepository : IRemsRepository
         if (!string.IsNullOrWhiteSpace(options.Status))
         {
             var t = options.Status.Trim();
-            query = query.Where(r => r.Status == t);
+            query = query.Where(r => r.Status!.Value == t);
         }
         if (!string.IsNullOrWhiteSpace(options.Type))
         {
             var t = options.Type.Trim();
-            query = query.Where(r => r.Type == t);
+            query = query.Where(r => r.Type!.Value == t);
         }
         if (options.AssignedAdminUserId is { } adminId)
         {
@@ -200,7 +211,7 @@ internal sealed class RemsRepository : IRemsRepository
             .Where(f => remsIds.Contains(f.REMSId))
             .Select(f => new RemsFormStateInfo(
                 f.REMSId,
-                f.IndustryGroup,
+                f.IndustryGroup!.Value,
                 f.Status,
                 f.SentOnUtc,
                 f.SubmittedOnUtc,

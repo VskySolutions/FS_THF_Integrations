@@ -1044,6 +1044,9 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsClosed")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsSystem")
                         .HasColumnType("bit");
 
@@ -1111,10 +1114,17 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
 
+                    b.Property<string>("Icon")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsDefault")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsSystem")
                         .HasColumnType("bit");
 
                     b.Property<string>("Label")
@@ -1614,18 +1624,14 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                    b.Property<Guid>("StatusId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                    b.Property<Guid>("TypeId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid?>("UpdatedById")
                         .HasColumnType("uniqueidentifier");
@@ -1643,7 +1649,11 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("OnBehalfOfUserId");
 
+                    b.HasIndex("StatusId");
+
                     b.HasIndex("TenantId");
+
+                    b.HasIndex("TypeId");
 
                     b.HasIndex("TenantId", "ClientPersonId");
 
@@ -1651,11 +1661,11 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasFilter("[Deleted] = 0");
 
-                    b.HasIndex("TenantId", "CreatedById", "Status");
+                    b.HasIndex("TenantId", "CreatedById", "StatusId");
 
-                    b.HasIndex("TenantId", "OnBehalfOfUserId", "Status");
+                    b.HasIndex("TenantId", "OnBehalfOfUserId", "StatusId");
 
-                    b.HasIndex("TenantId", "Status", "AdminAssignedToId", "CreatedOnUtc");
+                    b.HasIndex("TenantId", "StatusId", "AdminAssignedToId", "CreatedOnUtc");
 
                     b.ToTable("REMS", (string)null);
                 });
@@ -1958,13 +1968,12 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("REMSId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("ReferralSource")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
                     b.Property<string>("ReferralSourceDetail")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid?>("ReferralSourceId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("SourceFormSubmissionId")
                         .HasColumnType("uniqueidentifier");
@@ -1981,6 +1990,8 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("REMSId");
+
+                    b.HasIndex("ReferralSourceId");
 
                     b.HasIndex("SourceFormSubmissionId");
 
@@ -2067,9 +2078,8 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("BillingManagerId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("BillingPeriod")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                    b.Property<Guid?>("BillingPeriodId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("BillingProcessDescription")
                         .HasMaxLength(1000)
@@ -2087,11 +2097,10 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("DeletedOnUtc")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("Department")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
                     b.Property<Guid?>("DepartmentDirectorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("DepartmentId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid?>("EngagementExecutiveId")
@@ -2117,13 +2126,11 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
-                    b.Property<string>("SubIndustry")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                    b.Property<Guid?>("SubIndustryId")
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("SubServiceLine")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                    b.Property<Guid?>("SubServiceLineId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
@@ -2138,11 +2145,19 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("BillingManagerId");
 
+                    b.HasIndex("BillingPeriodId");
+
                     b.HasIndex("DepartmentDirectorId");
+
+                    b.HasIndex("DepartmentId");
 
                     b.HasIndex("EngagementExecutiveId");
 
                     b.HasIndex("REMSId");
+
+                    b.HasIndex("SubIndustryId");
+
+                    b.HasIndex("SubServiceLineId");
 
                     b.HasIndex("TenantId");
 
@@ -2361,9 +2376,8 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
-                    b.Property<string>("PersonnelLevel")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                    b.Property<Guid?>("PersonnelLevelId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<decimal?>("PurchaseOrderAmount")
                         .HasPrecision(18, 2)
@@ -2399,6 +2413,8 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasColumnType("datetime2");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("PersonnelLevelId");
 
                     b.HasIndex("PurchaseOrderMediaId");
 
@@ -2728,7 +2744,7 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TenantId", "REMSEntityId", "ContactRole")
                         .IsUnique()
-                        .HasFilter("[Deleted] = 0");
+                        .HasFilter("[Deleted] = 0 AND [ContactRole] <> 'BillingContact'");
 
                     b.ToTable("REMSEntityContact", (string)null);
                 });
@@ -2802,10 +2818,8 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("DeletedOnUtc")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("IndustryGroup")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                    b.Property<Guid>("IndustryGroupId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("InviteCode")
                         .IsRequired()
@@ -2841,6 +2855,8 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("IndustryGroupId");
 
                     b.HasIndex("REMSId");
 
@@ -3211,10 +3227,8 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("DeletedOnUtc")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("Department")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                    b.Property<Guid>("DepartmentId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("DirectorUserId")
                         .HasColumnType("uniqueidentifier");
@@ -3233,13 +3247,15 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DepartmentId");
+
                     b.HasIndex("DirectorUserId");
 
                     b.HasIndex("RemsSettingsId");
 
                     b.HasIndex("TenantId");
 
-                    b.HasIndex("TenantId", "Department")
+                    b.HasIndex("TenantId", "DepartmentId")
                         .IsUnique()
                         .HasFilter("[Deleted] = 0");
 
@@ -4046,7 +4062,7 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("DataProtectionKeys");
+                    b.ToTable("DataProtectionKeys", (string)null);
                 });
 
             modelBuilder.Entity("EmsPortal.Domain.Entities.AuditTrailEntry", b =>
@@ -4202,13 +4218,29 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasForeignKey("OnBehalfOfUserId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("EmsPortal.Domain.Entities.OptionSetItem", "Status")
+                        .WithMany()
+                        .HasForeignKey("StatusId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("EmsPortal.Domain.Entities.Tenant", null)
                         .WithMany()
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("EmsPortal.Domain.Entities.OptionSetItem", "Type")
+                        .WithMany()
+                        .HasForeignKey("TypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.Navigation("ClientPerson");
+
+                    b.Navigation("Status");
+
+                    b.Navigation("Type");
                 });
 
             modelBuilder.Entity("EmsPortal.Domain.Entities.REMSAdditionalEntity", b =>
@@ -4299,6 +4331,11 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("EmsPortal.Domain.Entities.OptionSetItem", "ReferralSource")
+                        .WithMany()
+                        .HasForeignKey("ReferralSourceId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("EmsPortal.Domain.Entities.REMSFormSubmission", "SourceFormSubmission")
                         .WithMany()
                         .HasForeignKey("SourceFormSubmissionId")
@@ -4310,6 +4347,8 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("ReferralSource");
 
                     b.Navigation("Rems");
 
@@ -4348,9 +4387,19 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasForeignKey("BillingManagerId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("EmsPortal.Domain.Entities.OptionSetItem", "BillingPeriod")
+                        .WithMany()
+                        .HasForeignKey("BillingPeriodId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("EmsPortal.Domain.Entities.User", null)
                         .WithMany()
                         .HasForeignKey("DepartmentDirectorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("EmsPortal.Domain.Entities.OptionSetItem", "Department")
+                        .WithMany()
+                        .HasForeignKey("DepartmentId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("EmsPortal.Domain.Entities.User", null)
@@ -4364,13 +4413,31 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("EmsPortal.Domain.Entities.OptionSetItem", "SubIndustry")
+                        .WithMany()
+                        .HasForeignKey("SubIndustryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("EmsPortal.Domain.Entities.OptionSetItem", "SubServiceLine")
+                        .WithMany()
+                        .HasForeignKey("SubServiceLineId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("EmsPortal.Domain.Entities.Tenant", null)
                         .WithMany()
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.Navigation("BillingPeriod");
+
+                    b.Navigation("Department");
+
                     b.Navigation("Rems");
+
+                    b.Navigation("SubIndustry");
+
+                    b.Navigation("SubServiceLine");
                 });
 
             modelBuilder.Entity("EmsPortal.Domain.Entities.REMSEngagementApprover", b =>
@@ -4447,6 +4514,11 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("EmsPortal.Domain.Entities.REMSEngagementGovernmentDetail", b =>
                 {
+                    b.HasOne("EmsPortal.Domain.Entities.OptionSetItem", "PersonnelLevel")
+                        .WithMany()
+                        .HasForeignKey("PersonnelLevelId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("EmsPortal.Domain.Entities.Media", "PurchaseOrderMedia")
                         .WithMany()
                         .HasForeignKey("PurchaseOrderMediaId")
@@ -4465,6 +4537,8 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Engagement");
+
+                    b.Navigation("PersonnelLevel");
 
                     b.Navigation("PurchaseOrderMedia");
                 });
@@ -4636,6 +4710,12 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("EmsPortal.Domain.Entities.OptionSetItem", "IndustryGroup")
+                        .WithMany()
+                        .HasForeignKey("IndustryGroupId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("EmsPortal.Domain.Entities.REMS", "Rems")
                         .WithMany("Forms")
                         .HasForeignKey("REMSId")
@@ -4647,6 +4727,8 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("IndustryGroup");
 
                     b.Navigation("Rems");
                 });
@@ -4721,6 +4803,12 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("EmsPortal.Domain.Entities.RemsDepartmentDirector", b =>
                 {
+                    b.HasOne("EmsPortal.Domain.Entities.OptionSetItem", "Department")
+                        .WithMany()
+                        .HasForeignKey("DepartmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("EmsPortal.Domain.Entities.User", null)
                         .WithMany()
                         .HasForeignKey("DirectorUserId")
@@ -4738,6 +4826,8 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("Department");
 
                     b.Navigation("Settings");
                 });

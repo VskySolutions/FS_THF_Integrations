@@ -28,6 +28,7 @@ internal sealed class OptionSetConfiguration : IEntityTypeConfiguration<OptionSe
             .IsRequired();
 
         builder.Property(s => s.IsSystem).IsRequired();
+        builder.Property(s => s.IsClosed).IsRequired();
         builder.Property(s => s.IsActive).IsRequired();
 
         // One list per (scope, entity, key); null tenant = the platform-standard list.
@@ -74,6 +75,10 @@ internal sealed class OptionSetItemConfiguration : IEntityTypeConfiguration<Opti
 
         builder.Property(i => i.BackgroundColor).HasMaxLength(32);
         builder.Property(i => i.TextColor).HasMaxLength(32);
+
+        // A Material icon name, e.g. "o_workspace_premium".
+        builder.Property(i => i.Icon).HasMaxLength(64);
+        builder.Property(i => i.IsSystem).IsRequired();
 
         // Value is unique within a list for a given scope (null tenant = standard value).
         builder.HasIndex(i => new { i.OptionSetId, i.TenantId, i.Value })

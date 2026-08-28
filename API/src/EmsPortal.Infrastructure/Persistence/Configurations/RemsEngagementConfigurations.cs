@@ -23,10 +23,20 @@ internal sealed class RemsEngagementConfiguration : IEntityTypeConfiguration<REM
         });
         builder.HasKey(e => e.Id);
 
-        builder.Property(e => e.Department).HasMaxLength(64);
-        builder.Property(e => e.SubServiceLine).HasMaxLength(64);
-        builder.Property(e => e.SubIndustry).HasMaxLength(64);
-        builder.Property(e => e.BillingPeriod).HasMaxLength(64);
+        // The engagement's four option-set references. Restrict on each: the department in particular is
+        // what the conditional half of the setup keys off, so a department with engagements on it is not a
+        // value anybody may delete.
+        builder.HasOne(e => e.Department).WithMany().HasForeignKey(e => e.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(e => e.SubServiceLine).WithMany().HasForeignKey(e => e.SubServiceLineId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(e => e.SubIndustry).WithMany().HasForeignKey(e => e.SubIndustryId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(e => e.BillingPeriod).WithMany().HasForeignKey(e => e.BillingPeriodId).OnDelete(DeleteBehavior.Restrict);
+
+        // Always loaded -- see the note on the request's Type/Status. The department in particular decides
+        // what the rest of the setup asks, so every read of an engagement wants it.
+        builder.Navigation(e => e.Department).AutoInclude();
+        builder.Navigation(e => e.SubServiceLine).AutoInclude();
+        builder.Navigation(e => e.SubIndustry).AutoInclude();
+        builder.Navigation(e => e.BillingPeriod).AutoInclude();
         // A description of how the client is billed, not a treatise: long enough for the two or three
         // sentences a schedule takes, short enough that nobody pastes an engagement letter into it.
         builder.Property(e => e.BillingProcessDescription).HasMaxLength(1000);
@@ -95,7 +105,8 @@ internal sealed class RemsEngagementGovernmentDetailConfiguration : IEntityTypeC
         builder.Property(d => d.RenewalTerms).HasMaxLength(500);
         builder.Property(d => d.ContractNumber).HasMaxLength(64);
         builder.Property(d => d.PurchaseOrderNumber).HasMaxLength(64);
-        builder.Property(d => d.PersonnelLevel).HasMaxLength(64);
+        builder.HasOne(d => d.PersonnelLevel).WithMany().HasForeignKey(d => d.PersonnelLevelId).OnDelete(DeleteBehavior.Restrict);
+        builder.Navigation(d => d.PersonnelLevel).AutoInclude();
         builder.Property(d => d.PurchaseOrderAmount).HasPrecision(18, 2);
         builder.Property(d => d.BillRatePerHour).HasPrecision(18, 2);
 

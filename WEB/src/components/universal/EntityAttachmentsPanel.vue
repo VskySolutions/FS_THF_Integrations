@@ -1,12 +1,17 @@
 <template>
   <div class="column q-gutter-sm">
+    <!-- The accepted types, the size and the count are the shared ones (see useFileDrop): this panel and
+         the REMS request's attachments are the same question asked in two places, and a private copy of
+         the rules in each is a copy that drifts. The hint names all three, because a limit the box does
+         not state is one the user meets by hitting it. -->
     <app-multi-file-upload
       v-model="picked"
       label="Upload files"
-      hint="Max 10 MB each"
-      :max-size-mb="10"
+      :hint="ATTACHMENT_HINT"
+      :max-files="MAX_ATTACHMENT_FILES"
+      :max-size-mb="MAX_UPLOAD_MB"
       :loading="uploading"
-      accept=".pdf,.png,.jpg,.jpeg,.gif,.bmp,.webp,.svg,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf,.md,.json,.xml,.zip"
+      :accept="ATTACHMENT_ACCEPT"
     />
     <div v-if="picked.length" class="row justify-end">
       <q-btn
@@ -43,6 +48,9 @@ import { ufAttachmentsApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
+import {
+  ATTACHMENT_ACCEPT, ATTACHMENT_HINT, MAX_ATTACHMENT_FILES, MAX_UPLOAD_MB
+} from "composables/useFileDrop";
 import AppMultiFileUpload from "components/common/AppMultiFileUpload.vue";
 import AppStoredFileItem from "components/common/AppStoredFileItem.vue";
 

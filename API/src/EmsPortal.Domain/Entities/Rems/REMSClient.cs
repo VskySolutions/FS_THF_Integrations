@@ -27,8 +27,16 @@ public class REMSClient : AuditableEntity
     /// <summary>Client mobile number.</summary>
     public string? MobileNumber { get; set; }
 
-    /// <summary>How the client was referred (option-set code).</summary>
-    public string? ReferralSource { get; set; }
+    /// <summary>
+    /// How the client was referred: a foreign key to the <c>REMS.ReferralSource</c> option-set item.
+    ///
+    /// <para>
+    /// The ID rather than the code, so the database is what stops a referral source being deleted out from
+    /// under the clients recorded against it. Nothing branches on this value -- it is classification -- but it
+    /// follows the same rule as every other option-set reference on the platform.
+    /// </para>
+    /// </summary>
+    public Guid? ReferralSourceId { get; set; }
 
     /// <summary>The client's own follow-up detail for that referral source (who referred them, which event).</summary>
     public string? ReferralSourceDetail { get; set; }
@@ -45,6 +53,7 @@ public class REMSClient : AuditableEntity
     // on the client, because they describe a person rather than a place.
 
     // ---- Navigations ----
+    public OptionSetItem? ReferralSource { get; set; }
     public REMS? Rems { get; set; }
     public REMSFormSubmission? SourceFormSubmission { get; set; }
     public ICollection<REMSEntity> Entities { get; set; } = new List<REMSEntity>();

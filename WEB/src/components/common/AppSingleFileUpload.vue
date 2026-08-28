@@ -73,7 +73,13 @@ const error = ref("");
 
 const open = () => { if (!props.disable) inputRef.value?.click(); };
 
-const accept = (fileList) => {
+// The picked or dropped files, checked against `accept` / `max-size-mb`.
+//
+// Deliberately NOT named `accept`. A const declared in `<script setup>` shadows the prop of the same name
+// when the template is compiled, so the input's `:accept` bound THIS FUNCTION rather than the extension
+// list — which meant the browser's file picker offered every file on the machine whatever the caller had
+// asked for, and the only thing enforcing ".pdf" was the check below, after the file had been chosen.
+const acceptFiles = (fileList) => {
   error.value = "";
   const { accepted, error: err } = validateFiles(fileList, { accept: props.accept, maxSizeMb: props.maxSizeMb });
   if (err) { error.value = err; emit("rejected", err); }
@@ -81,14 +87,14 @@ const accept = (fileList) => {
 };
 
 const onChange = (e) => {
-  accept(e.target.files);
+  acceptFiles(e.target.files);
   e.target.value = ""; // allow re-selecting the same file
 };
 
 const onDrop = (e) => {
   onDragLeave();
   if (props.disable) return;
-  accept(e.dataTransfer?.files);
+  acceptFiles(e.dataTransfer?.files);
 };
 
 const clear = () => {

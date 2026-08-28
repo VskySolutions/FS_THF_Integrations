@@ -5,7 +5,7 @@ namespace EmsPortal.Domain.Entities;
 /// <summary>
 /// The customer-facing onboarding form for a <see cref="REMS"/> request (WO-110). One active form per
 /// request. <see cref="InviteCode"/> backs the public link and is immutable once the form is sent.
-/// <see cref="IndustryGroup"/> stores the option-set <c>REMS.IndustryGroup</c> code.
+/// <see cref="IndustryGroupId"/> references the <c>REMS.IndustryGroup</c> option-set item.
 /// </summary>
 public class REMSForm : AuditableEntity
 {
@@ -18,8 +18,12 @@ public class REMSForm : AuditableEntity
     /// <summary>Owning REMS request.</summary>
     public Guid REMSId { get; set; }
 
-    /// <summary>Industry group driving the form's required fields (option-set <c>REMS.IndustryGroup</c> code).</summary>
-    public string IndustryGroup { get; set; } = string.Empty;
+    /// <summary>
+    /// What kind of entity the client is — shown as "Entity Type" — as a foreign key to the
+    /// <c>REMS.IndustryGroup</c> option-set item. Required, and frozen once the form is sent: the CODE it
+    /// resolves to decides which questions the client is asked (RemsFormPayloadValidator).
+    /// </summary>
+    public Guid IndustryGroupId { get; set; }
 
     /// <summary>Public invite code, unique per tenant; immutable after send.</summary>
     public string InviteCode { get; set; } = string.Empty;
@@ -41,6 +45,7 @@ public class REMSForm : AuditableEntity
 
     // ---- Navigations ----
     public REMS? Rems { get; set; }
+    public OptionSetItem? IndustryGroup { get; set; }
     public ICollection<REMSFormDraft> Drafts { get; set; } = new List<REMSFormDraft>();
     public ICollection<REMSFormSubmission> Submissions { get; set; } = new List<REMSFormSubmission>();
     public ICollection<REMSFormEmailEvent> EmailEvents { get; set; } = new List<REMSFormEmailEvent>();

@@ -27,7 +27,15 @@ public enum RemsContactRole
     /// <summary>Who the firm speaks to about the client's finances. Was <c>CFO</c>.</summary>
     FinancialContact,
 
-    /// <summary>Who the firm bills. Was <c>AccountsPayable</c>.</summary>
+    /// <summary>
+    /// Who the firm bills. Was <c>AccountsPayable</c>.
+    /// <para>
+    /// The only role an entity may hold MORE THAN ONE of: the intake form asks who should be invoiced and
+    /// lets the client name several people, and being named second does not make somebody a different kind
+    /// of contact. The unique index on (TenantId, REMSEntityId, ContactRole) excludes this role by name for
+    /// exactly that reason — every other role below is one per entity.
+    /// </para>
+    /// </summary>
     BillingContact,
 
     /// <summary>Anyone else the client wants the firm to have — optional, and asked once.</summary>

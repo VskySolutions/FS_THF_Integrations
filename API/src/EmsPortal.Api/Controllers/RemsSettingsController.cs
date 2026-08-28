@@ -1,5 +1,6 @@
 using EmsPortal.Api.Models.Rems;
 using EmsPortal.Api.Security;
+using EmsPortal.Application.Abstractions.OptionSets;
 using EmsPortal.Application.Abstractions.Persistence;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Shared.Contracts;
@@ -26,12 +27,18 @@ public sealed class RemsSettingsController : ControllerBase
     private readonly IRemsSettingsRepository _settings;
     private readonly IUserRepository _users;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IOptionCodeResolver _codes;
 
-    public RemsSettingsController(IRemsSettingsRepository settings, IUserRepository users, IUnitOfWork unitOfWork)
+    public RemsSettingsController(
+        IRemsSettingsRepository settings,
+        IUserRepository users,
+        IUnitOfWork unitOfWork,
+        IOptionCodeResolver codes)
     {
         _settings = settings;
         _users = users;
         _unitOfWork = unitOfWork;
+        _codes = codes;
     }
 
     /// <summary>The tenant's REMS settings: the managing shareholder and the department-director map (WO-114).</summary>
@@ -97,10 +104,15 @@ public sealed class RemsSettingsController : ControllerBase
         var existing = settings.DepartmentDirectors.Where(d => !d.Deleted).ToList();
         var desiredByDept = desired.ToDictionary(d => Normalize(d.Department), d => d.DirectorUserId);
 
+        // The mapping keys off the department ITEM now, so each wanted code is resolved once up front. A
+        // code the tenant's list does not have is dropped rather than stored: there is nothing to map.
+        var idsByCode = await _codes.IdsByCodeAsync(
+            EmsPortal.Domain.Enums.EntityType.Rems, RemsOptionSetKeys.Department, cancellationToken);
+
         // Remove mappings that are no longer wanted.
         foreach (var row in existing)
         {
-            if (!desiredByDept.ContainsKey(Normalize(row.Department)))
+            if (!desiredByDept.ContainsKey(Normalize(row.Department!.Value)))
             {
                 _settings.RemoveDepartmentDirector(row);
             }
@@ -109,14 +121,19 @@ public sealed class RemsSettingsController : ControllerBase
         // Upsert wanted mappings.
         foreach (var (department, directorId) in desiredByDept)
         {
-            var row = existing.FirstOrDefault(d => Normalize(d.Department) == department);
+            var row = existing.FirstOrDefault(d => Normalize(d.Department!.Value) == department);
             if (row is null)
             {
+                if (!idsByCode.TryGetValue(department, out var departmentId))
+                {
+                    continue;
+                }
+
                 await _settings.AddDepartmentDirectorAsync(new RemsDepartmentDirector
                 {
                     Id = Guid.NewGuid(),
                     RemsSettingsId = settings.Id,
-                    Department = department,
+                    DepartmentId = departmentId,
                     DirectorUserId = directorId,
                 }, cancellationToken);
             }
@@ -141,9 +158,9 @@ public sealed class RemsSettingsController : ControllerBase
 
         var directors = settings.DepartmentDirectors
             .Where(d => !d.Deleted)
-            .OrderBy(d => d.Department)
+            .OrderBy(d => d.Department!.Value)
             .Select(d => new RemsDepartmentDirectorView(
-                d.Department,
+                d.Department!.Value,
                 new RemsUserRef(d.DirectorUserId, names.TryGetValue(d.DirectorUserId, out var dn) ? dn : string.Empty)))
             .ToList();
 

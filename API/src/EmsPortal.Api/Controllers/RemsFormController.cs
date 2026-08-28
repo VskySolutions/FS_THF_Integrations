@@ -3,6 +3,7 @@ using System.Text.Json;
 using EmsPortal.Api.Models.Rems;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.Email;
+using EmsPortal.Application.Abstractions.OptionSets;
 using EmsPortal.Application.Abstractions.Persistence;
 using EmsPortal.Application.Abstractions.UniversalFeatures;
 using EmsPortal.Domain.Entities;
@@ -41,38 +42,45 @@ public sealed class RemsFormController : ControllerBase
     private const string CodeFormNotSendable = "REMS_FORM_NOT_SENDABLE";
     private const string CodeFormAlreadySent = "REMS_FORM_ALREADY_SENT";
     private const string CodeClientEmailMissing = "REMS_CLIENT_EMAIL_MISSING";
+    private const string CodeCommissionNotFullyAllocated = "REMS_COMMISSION_NOT_FULLY_ALLOCATED";
     private const string CodeIndustryGroupLocked = "REMS_INDUSTRY_GROUP_LOCKED";
     private const string CodeFormAlreadySubmitted = "REMS_FORM_ALREADY_SUBMITTED";
 
     private readonly IRemsRepository _rems;
     private readonly IRemsFormRepository _forms;
+    private readonly IRemsEngagementRepository _engagements;
     private readonly IUserRepository _users;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IActivityEventWriter _activity;
     private readonly INotificationDispatcher _notifications;
     private readonly IRemsEmailNotifier _emailNotifier;
     private readonly IEmailTemplateService _templates;
+    private readonly IOptionCodeResolver _codes;
     private readonly string _baseUrl;
 
     public RemsFormController(
         IRemsRepository rems,
         IRemsFormRepository forms,
+        IRemsEngagementRepository engagements,
         IUserRepository users,
         IUnitOfWork unitOfWork,
         IActivityEventWriter activity,
         INotificationDispatcher notifications,
         IRemsEmailNotifier emailNotifier,
         IEmailTemplateService templates,
+        IOptionCodeResolver codes,
         IOptions<AppOptions> appOptions)
     {
         _rems = rems;
         _forms = forms;
+        _engagements = engagements;
         _users = users;
         _unitOfWork = unitOfWork;
         _activity = activity;
         _notifications = notifications;
         _emailNotifier = emailNotifier;
         _templates = templates;
+        _codes = codes;
         _baseUrl = appOptions.Value.BaseUrl;
     }
 
@@ -140,7 +148,14 @@ public sealed class RemsFormController : ControllerBase
 
         var form = await _forms.GetByRemsIdAsync(remsId, cancellationToken);
         var alreadySent = form?.SentOnUtc is not null;
-        var industryChanged = form is null || !string.Equals(form.IndustryGroup, request.IndustryGroup, StringComparison.Ordinal);
+        var industryChanged = form is null
+            || !string.Equals(form.IndustryGroup?.Value, request.IndustryGroup, StringComparison.Ordinal);
+
+        // The entity type is a foreign key to its option item, so the CODE the caller sent is resolved once
+        // here and used for both the create and the change below. Required, and locked once the form is
+        // sent -- so an unknown code is a bad request rather than a null reference.
+        var industryGroupId = await _codes.RequireRemsIdAsync(
+            RemsOptionSetKeys.IndustryGroup, request.IndustryGroup, cancellationToken);
 
         // Once sent, the industry group / invite code are locked (AC-REMS-007.5).
         if (alreadySent && industryChanged)
@@ -163,7 +178,7 @@ public sealed class RemsFormController : ControllerBase
             {
                 Id = Guid.NewGuid(),
                 REMSId = remsId,
-                IndustryGroup = request.IndustryGroup,
+                IndustryGroupId = industryGroupId,
                 InviteCode = await GenerateUniqueInviteCodeAsync(tenantId, cancellationToken),
                 Status = RemsFormStatus.Saved,
                 CreatedByUserId = me,
@@ -175,7 +190,7 @@ public sealed class RemsFormController : ControllerBase
             // Changing the industry group before send regenerates the invite code/link (AC-REMS-007.5).
             if (industryChanged)
             {
-                form.IndustryGroup = request.IndustryGroup;
+                form.IndustryGroupId = industryGroupId;
                 form.InviteCode = await GenerateUniqueInviteCodeAsync(tenantId, cancellationToken);
             }
             if (form.Status == RemsFormStatus.Draft)
@@ -278,7 +293,7 @@ public sealed class RemsFormController : ControllerBase
             return FormConflict(CodeFormAlreadySent, "The form has already been sent.");
         }
         // Must be saved with a CSE + industry group (AC-REMS-007.10).
-        if (rems.CSEId is null || string.IsNullOrWhiteSpace(form.IndustryGroup) || form.Status != RemsFormStatus.Saved)
+        if (rems.CSEId is null || form.IndustryGroupId == Guid.Empty || form.Status != RemsFormStatus.Saved)
         {
             return FormConflict(CodeFormNotSendable,
                 "The form must be saved with a CSE and an entity type before it can be sent.");
@@ -289,6 +304,30 @@ public sealed class RemsFormController : ControllerBase
         {
             return FormConflict(CodeClientEmailMissing,
                 "The client has no email address on file; add one before sending.");
+        }
+
+        // The commission has to be settled before the client is written to. The splits divide ONE
+        // commission, so anything other than 100% is a share allocated to nobody — and every recipient
+        // becomes a required approver on the round that follows, so a division that does not add up is one
+        // the approvers would be asked to accept later, on a request already out with the client.
+        //
+        // Rounded to 2dp before comparing, as the Commission tab does: three 33.33/33.34 splits sum to
+        // 100.00000000000001 in binary floating point and would otherwise never be sendable.
+        var engagement = await _engagements.GetByRemsIdAsync(remsId, cancellationToken);
+        var splits = engagement?.CommissionSplits.Where(s => !s.Deleted).ToList() ?? [];
+        var allocated = Math.Round(splits.Sum(s => s.CommissionPercentage), 2, MidpointRounding.AwayFromZero);
+        if (allocated != 100m)
+        {
+            // Naming nobody is its own sentence. An empty split is NOT "no commission on this one" — it is
+            // a commission that has not been settled yet, and the message says so rather than pointing the
+            // reader at recipients that do not exist.
+            return FormConflict(
+                CodeCommissionNotFullyAllocated,
+                splits.Count == 0
+                    ? "No commission recipients yet — the Commission tab must name recipients adding up "
+                      + "to 100% before this request can be sent to the client."
+                    : $"Commission totals {allocated:0.##}% — the recipients on the Commission tab must add up "
+                      + "to 100% before this request can be sent to the client.");
         }
 
         var now = DateTime.UtcNow;
@@ -307,9 +346,10 @@ public sealed class RemsFormController : ControllerBase
         // Sending the intake link is what takes a request out of draft — there is no pool in between any
         // more, so this is the initiator's own hand-off to the client. Guarded on Draft so a request that
         // has already moved further along is never walked backwards by a re-send.
-        if (rems.Status == RemsRequestStatuses.Draft)
+        if (rems.Status!.Value == RemsRequestStatuses.Draft)
         {
-            rems.Status = RemsRequestStatuses.AwaitingCustomer;
+            rems.StatusId = await _codes.RequireRemsIdAsync(
+                RemsOptionSetKeys.Status, RemsRequestStatuses.AwaitingCustomer, cancellationToken);
             _rems.Update(rems);
         }
 
@@ -649,6 +689,25 @@ public sealed class RemsFormController : ControllerBase
                 ApiResponseFactory.Forbidden(RemsSetupAccess.WorkDeniedReason(rems)));
     }
 
+    /// <summary>
+    /// The build screen for a request and its form.
+    /// <para>
+    /// The two option codes are resolved from the FOREIGN KEYS, not read off the <c>Status</c> /
+    /// <c>IndustryGroup</c> navigations, and that is load-bearing rather than a matter of taste. This helper
+    /// is called after the write in every action that has one, and <see cref="Send"/> moves the request from
+    /// Draft to Awaiting Customer on its way here. Changing <c>rems.StatusId</c> makes EF's fixup null
+    /// <c>rems.Status</c> — the navigation no longer matches the key, and the new option item is never
+    /// tracked because <see cref="IOptionCodeResolver"/> answers from a cache and returns bare guids — so
+    /// the caller arrived here holding a request whose status navigation had been detached under it.
+    /// <c>rems.Status!.Value</c> then threw a NullReferenceException on a send that had already gone out:
+    /// the row was written, the email was queued, and the client got their link, but the caller saw a 500.
+    /// The <c>!</c> was no protection at all, being a note to the compiler rather than a check.
+    /// </para>
+    /// <para>
+    /// Reading the ids costs nothing extra — the resolver is a cached id → code lookup — and it is the same
+    /// answer, from the value the row actually holds rather than from whatever EF happens to have loaded.
+    /// </para>
+    /// </summary>
     private async Task<RemsFormBuildScreen> BuildScreenAsync(REMS rems, REMSForm? form, CancellationToken cancellationToken)
     {
         var names = await _users.GetFullNamesAsync(
@@ -658,11 +717,16 @@ public sealed class RemsFormController : ControllerBase
             ? new RemsUserRef(cseId, names.TryGetValue(cseId, out var name) ? name : string.Empty)
             : null;
 
+        // One lookup for both codes rather than one each.
+        var codes = await _codes.CodesOfAsync(
+            new Guid?[] { rems.StatusId, form?.IndustryGroupId }, cancellationToken);
+        string CodeOf(Guid? id) => id is { } key && codes.TryGetValue(key, out var code) ? code : string.Empty;
+
         var formInfo = form is null
             ? null
             : new RemsFormInfo(
                 form.Id,
-                form.IndustryGroup,
+                CodeOf(form.IndustryGroupId),
                 form.InviteCode,
                 BuildFormLink(form.InviteCode),
                 form.Status.ToString(),
@@ -672,7 +736,7 @@ public sealed class RemsFormController : ControllerBase
                 form.SentOnUtc is not null);
 
         return new RemsFormBuildScreen(
-            rems.Id, rems.REMSNumber, rems.ClientDisplayName, rems.Status,
+            rems.Id, rems.REMSNumber, rems.ClientDisplayName, CodeOf(rems.StatusId),
             rems.CustomerEmail, rems.CustomerMobileNumber, cseRef, formInfo);
     }
 

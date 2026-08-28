@@ -62,14 +62,12 @@
         </q-td>
       </template>
 
-      <!-- Whether the client's answers are in (AC-REMS-013.1 / 023.5). Worded from the firm's side —
-           "Received" is what the admin reading this list wants to know, and the client's own act of
-           submitting is already named by the Received On date beside it. -->
+      <!-- Whether the client's answers are in. The row carries a BOOLEAN, but the two states it stands for
+           are the REMS.ClientSubmissionState values — so the badge is rendered from those, and a firm that
+           rewords or recolours either one sees it here too. -->
       <template #body-cell-submitted="cell">
         <q-td :props="cell">
-          <q-badge :color="cell.row.submitted ? 'positive' : 'grey-6'">
-            {{ cell.row.submitted ? "Received" : "Not received" }}
-          </q-badge>
+          <app-option-badge :option="submittedOption(cell.row.submitted)" />
         </q-td>
       </template>
 
@@ -78,9 +76,10 @@
            to distinguish "on somebody's desk" from "on nobody's". -->
       <template #body-cell-requestStatus="cell">
         <q-td :props="cell">
-          <q-badge :color="requestStatusColor(statusRow(cell.row))">
-            {{ requestStatusLabel(statusRow(cell.row)) }}
-          </q-badge>
+          <!-- What the stage means, a hover away: the tooltip is the status option's own Description
+               (Administration → Option Sets), and "Waiting for pickup" — which is this application's
+               refinement rather than a stored status — explains itself. -->
+          <app-option-badge :option="requestStatusOption(statusRow(cell.row))" />
         </q-td>
       </template>
 
@@ -189,9 +188,10 @@ import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
 import { useDateFormat } from "composables/useDateFormat";
 import { useAuditColumns } from "composables/useAuditColumns";
-import { useRemsMeta, REMS_FORM_SUBMITTED_OPTIONS } from "modules/rems/useRemsMeta";
+import { useRemsMeta } from "modules/rems/useRemsMeta";
 
 import AppListHeader from "components/common/AppListHeader.vue";
+import AppOptionBadge from "components/common/AppOptionBadge.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppDataTable from "components/common/AppDataTable.vue";
@@ -204,7 +204,19 @@ const { confirm } = useConfirm();
 const fmt = useDateFormat();
 const auditColumns = useAuditColumns();
 const { has } = usePermissions();
-const { requestStatusLabel, requestStatusColor, statusFilterOptions, engagementOwnerDenial } = useRemsMeta();
+const {
+  requestStatusOption, submissionStateOption, statusFilterOptions, engagementOwnerDenial
+} = useRemsMeta();
+
+// The "Form" column is a boolean on the row, but the two states it stands for are values on
+// REMS.ClientSubmissionState — so both the badge and the filter read their words from there rather than
+// carrying a pair of hardcoded strings. The filter VALUES stay "true" / "false": that is the server's
+// contract for this column, and a column filter's value is always a string.
+const submittedOption = (submitted) => submissionStateOption(submitted ? "Submitted" : "AwaitingCustomer");
+const submittedFilterOptions = computed(() => [
+  { label: submittedOption(true).label, value: "true" },
+  { label: submittedOption(false).label, value: "false" }
+]);
 
 const canReadEmailLog = computed(() => has(Permissions.RemsEmailLogRead));
 
@@ -227,7 +239,7 @@ const editBlocked = (row) => engagementOwnerDenial(row);
 const columns = computed(() => [
   { name: "remsNumber", label: "Request ID", field: "remsNumber", align: "left", sortable: true, default: true, filterable: false },
   { name: "clientName", label: "Client", field: "clientName", align: "left", sortable: true, default: true, filterable: false },
-  { name: "submitted", label: "Form", field: "submitted", align: "left", sortable: true, default: true, filterOptions: REMS_FORM_SUBMITTED_OPTIONS },
+  { name: "submitted", label: "Form", field: "submitted", align: "left", sortable: true, default: true, filterOptions: submittedFilterOptions.value },
   // On by default now. It is where a row says "Waiting for pickup", which is the one thing an admin
   // opening this list is looking for.
   { name: "requestStatus", label: "Request Status", field: "requestStatus", align: "left", default: true, filterOptions: statusFilterOptions.value },

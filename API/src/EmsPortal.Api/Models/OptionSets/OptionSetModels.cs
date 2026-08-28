@@ -30,6 +30,8 @@ public sealed class CreateOptionItemRequest
     public bool IsDefault { get; set; }
     public string? BackgroundColor { get; set; }
     public string? TextColor { get; set; }
+    /// <summary>Material icon name shown beside the value, e.g. "o_support_agent".</summary>
+    public string? Icon { get; set; }
     public string? MetadataJson { get; set; }
 }
 
@@ -43,6 +45,7 @@ public sealed class UpdateOptionItemRequest
     public bool IsActive { get; set; } = true;
     public string? BackgroundColor { get; set; }
     public string? TextColor { get; set; }
+    public string? Icon { get; set; }
     public string? MetadataJson { get; set; }
 }
 
@@ -62,6 +65,8 @@ public sealed record OptionSetSummaryResponse(
     Guid? ParentSetId,
     string ItemSortMode,
     bool IsSystem,
+    /// <summary>The application branches on this list, so no value may be added to or removed from it.</summary>
+    bool IsClosed,
     bool IsActive,
     bool IsEditable,
     int ItemCount,
@@ -84,6 +89,9 @@ public sealed record OptionSetItemResponse(
     bool IsStandard,
     string? BackgroundColor,
     string? TextColor,
+    string? Icon,
+    /// <summary>True for a value the application writes: it cannot be deleted, hidden or re-coded.</summary>
+    bool IsSystem,
     string? MetadataJson);
 
 public sealed record OptionSetDetailResponse(
@@ -95,6 +103,7 @@ public sealed record OptionSetDetailResponse(
     Guid? ParentSetId,
     string ItemSortMode,
     bool IsSystem,
+    bool IsClosed,
     bool IsActive,
     bool IsEditable,
     IReadOnlyList<OptionSetItemResponse> Items);

@@ -44,8 +44,80 @@
         </q-card-section>
       </q-card>
 
+      <!-- The tenant's own user accounts. Managing a tenant IS largely managing who is in it, and until
+           now the only way to see that was to switch the whole application into the tenant and go to the
+           Users page. The list is asked for by tenant id, so it stays this tenant's however the toolbar's
+           "View as" is set. -->
+      <app-data-table
+        v-if="canReadUsers"
+        page-key="tenant-users"
+        row-key="userId"
+        :title="`Users in ${tenant.name}`"
+        class="q-mb-md"
+        :rows="userRows"
+        :columns="userColumns"
+        :loading="loadingUsers"
+        :total-records="totalUsers"
+        :pagination="userPagination"
+        @request="onUsersRequest"
+        @refresh="loadUsers"
+      >
+        <template #actions>
+          <q-input
+            v-model="userSearch" dense outlined debounce="300" placeholder="Search name or email"
+            style="min-width: 220px;"
+          >
+            <template #prepend><q-icon name="o_search" /></template>
+          </q-input>
+          <q-btn
+            v-if="canWriteUsers" unelevated no-caps color="primary" icon="o_person_add" label="Add User"
+            @click="createUserOpen = true"
+          />
+        </template>
+
+        <template #body-cell-isActive="cell">
+          <q-td :props="cell">
+            <q-badge :color="cell.value ? 'positive' : 'grey'">{{ cell.value ? "Active" : "Inactive" }}</q-badge>
+          </q-td>
+        </template>
+
+        <template #body-cell-actions="cell">
+          <q-td :props="cell" class="text-right">
+            <q-btn
+              flat round dense color="primary" icon="o_visibility"
+              :to="{ name: 'user_detail', params: { id: cell.row.userId } }"
+            >
+              <q-tooltip>View / Manage</q-tooltip>
+            </q-btn>
+            <q-btn v-if="canWriteUsers || canResetPassword" flat round dense icon="o_more_vert">
+              <q-menu auto-close>
+                <q-list style="min-width: 170px;">
+                  <q-item v-if="canWriteUsers && !cell.row.isActive" clickable @click="setUserStatus(cell.row, true)">
+                    <q-item-section avatar><q-icon name="o_check_circle" /></q-item-section>
+                    <q-item-section>Activate</q-item-section>
+                  </q-item>
+                  <q-item v-if="canWriteUsers && cell.row.isActive" clickable @click="setUserStatus(cell.row, false)">
+                    <q-item-section avatar><q-icon name="o_block" /></q-item-section>
+                    <q-item-section>Deactivate</q-item-section>
+                  </q-item>
+                  <q-item v-if="canResetPassword" clickable @click="resetUserPassword(cell.row)">
+                    <q-item-section avatar><q-icon name="o_lock_reset" /></q-item-section>
+                    <q-item-section>Reset Password</q-item-section>
+                  </q-item>
+                </q-list>
+              </q-menu>
+            </q-btn>
+          </q-td>
+        </template>
+      </app-data-table>
+
+      <!-- The account is created IN this tenant, so the drawer is told which one and never asks. -->
+      <user-create-drawer v-model="createUserOpen" :tenant-id="tenantId" @created="loadUsers" />
+
+      <temp-password-dialog v-model="tempPwOpen" :password="tempPassword" />
+
       <!-- Danger zone -->
-      <q-card v-if="tenant.status !== 'Archived'" flat bordered class="tenant-card danger-zone">
+      <q-card v-if="tenant.status !== 'Archived'" flat bordered class="tenant-card danger-zone q-mb-md">
         <q-card-section class="text-subtitle1 text-weight-medium text-negative">Danger zone</q-card-section>
         <q-separator />
         <q-banner v-if="archiveError" dense class="bg-red-1 text-negative q-ma-md">
@@ -58,23 +130,41 @@
           <q-btn outline no-caps color="negative" icon="o_archive" label="Archive tenant" @click="archive" />
         </q-card-actions>
       </q-card>
+
+      <app-record-audit :audit="tenant.audit" />
     </div>
   </q-page>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, watch, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { tenantApi, getApiErrorMessage } from "services/api";
+import { debounce } from "quasar";
+import { tenantApi, userApi, getApiErrorMessage } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
+import { usePermissions, Permissions } from "composables/usePermissions";
+import { useListTable } from "composables/useListTable";
+import { useTenantScope } from "composables/useTenantScope";
+import { useAuditColumns } from "composables/useAuditColumns";
+import { useAuthStore } from "stores/auth";
+import { useTenantStore } from "stores/tenant";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import AppTextField from "components/common/AppTextField.vue";
+import AppDataTable from "components/common/AppDataTable.vue";
+import AppRecordAudit from "components/common/AppRecordAudit.vue";
+import UserCreateDrawer from "components/user/UserCreateDrawer.vue";
+import TempPasswordDialog from "components/temp_password_dialog.vue";
 
 const route = useRoute();
 const router = useRouter();
 const notify = useNotify();
 const { confirm } = useConfirm();
+const { has } = usePermissions();
+const auditColumns = useAuditColumns();
+// Renaming or retiring the tenant changes what the toolbar's "View as" menu should say about it, and
+// that menu is drawn from a list cached for the whole session.
+const { refreshTenants } = useTenantScope();
 
 const tenantId = route.params.id;
 const tenant = ref(null);
@@ -82,6 +172,14 @@ const loading = ref(false);
 const name = ref("");
 const savingName = ref(false);
 const archiveError = ref("");
+
+// Whether the tenant being edited is one the signed-in user actually belongs to. Their own membership
+// list — which is what the tenant SWITCHER and the header are named from — is cached at sign-in, so a
+// rename of a tenant they are in is stale everywhere until the profile is read again.
+const authStore = useAuthStore();
+const tenantStore = useTenantStore();
+const isOwnTenant = computed(() => tenantStore.assignments.some((t) => t.tenantId === tenantId));
+const reloadAssignments = () => authStore.loadProfile().catch(() => { /* non-fatal: the name catches up on the next sign-in */ });
 
 const statusColor = computed(() =>
   ({ Active: "positive", Inactive: "grey", Archived: "blue-grey" }[tenant.value?.status] || "grey"));
@@ -104,6 +202,10 @@ const saveName = async () => {
     await tenantApi.update(tenantId, { name: name.value });
     notify.success("Tenant updated.");
     load();
+    // The new name has to reach the toolbar, and — when this is a tenant the user is actually assigned
+    // to — the tenant switcher beside it, which reads the assignments cached at sign-in.
+    refreshTenants();
+    if (isOwnTenant.value) reloadAssignments();
   } catch (err) {
     notify.error(getApiErrorMessage(err));
   } finally {
@@ -140,9 +242,87 @@ const archive = async () => {
   try {
     await tenantApi.archive(tenantId);
     notify.success("Tenant archived.");
+    // An archived tenant is no longer somewhere to look, so it must leave the "View as" menu with it.
+    refreshTenants();
     router.push({ name: "tenants" });
   } catch (err) {
     archiveError.value = getApiErrorMessage(err);
+  }
+};
+
+// ---------------------------------------------------------------------------------------------------
+// The tenant's user accounts
+// ---------------------------------------------------------------------------------------------------
+// Asked for by tenant id rather than by switching the application into the tenant: this page is ABOUT
+// one tenant, and the accounts in it are part of what there is to manage. `reloadOnTenantSwitch` is off
+// for the same reason — the toolbar's tenant scope decides what the rest of the app is looking at, and
+// this list is not one of the things it decides.
+const canReadUsers = computed(() => has(Permissions.UsersRead));
+const canWriteUsers = computed(() => has(Permissions.UsersWrite));
+const canResetPassword = computed(() => has(Permissions.UsersResetPassword));
+
+const createUserOpen = ref(false);
+const tempPwOpen = ref(false);
+const tempPassword = ref("");
+
+// No Tenant column and no Department column: every row here is this tenant's, and a department is read
+// through the caller's ACTIVE tenant, which this one need not be — the server sends none, so asking for
+// the column would only promise a cell that is always empty.
+const userColumns = [
+  { name: "fullName", label: "Name", field: "fullName", align: "left", sortable: true, default: true },
+  { name: "email", label: "Email", field: "email", align: "left", sortable: true, default: true },
+  { name: "phoneNumber", label: "Phone", field: "phoneNumber", align: "left", sortable: true },
+  { name: "roles", label: "Role", field: (r) => (r.roles || []).join(", "), align: "left", sortable: false, default: true },
+  { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true, default: true },
+  ...auditColumns(),
+  { name: "actions", label: "Actions", field: "actions", align: "right" }
+];
+
+const {
+  rows: userRows, loading: loadingUsers, totalRecords: totalUsers, search: userSearch,
+  pagination: userPagination, load: loadUsers, onRequest: onUsersRequest
+} = useListTable({
+  pageKey: "tenant-users",
+  fetcher: ({ page, limit, sortBy, descending }) =>
+    userApi.list({ page, limit, sortBy, descending, tenantId, search: userSearch.value || undefined })
+      .then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),
+  onError: (err) => notify.error(getApiErrorMessage(err)),
+  reloadOnTenantSwitch: false
+});
+
+const reloadUsers = debounce(() => { userPagination.value.page = 1; loadUsers(); }, 300);
+watch(userSearch, reloadUsers);
+
+const setUserStatus = async (row, isActive) => {
+  const ok = await confirm({
+    title: isActive ? "Activate user" : "Deactivate user",
+    message: `${isActive ? "Activate" : "Deactivate"} ${row.fullName}?`,
+    type: isActive ? "primary" : "danger"
+  });
+  if (!ok) return;
+  try {
+    await userApi.setStatus(row.userId, isActive);
+    notify.success("Status updated.");
+    loadUsers();
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
+  }
+};
+
+const resetUserPassword = async (row) => {
+  const ok = await confirm({
+    title: "Reset password",
+    message: `Generate a new temporary password for ${row.fullName}? Their current sessions will end.`,
+    confirmLabel: "Reset",
+    type: "danger"
+  });
+  if (!ok) return;
+  try {
+    const result = await userApi.resetPassword(row.userId);
+    tempPassword.value = result?.temporaryPassword || "";
+    tempPwOpen.value = true;
+  } catch (err) {
+    notify.error(getApiErrorMessage(err));
   }
 };
 

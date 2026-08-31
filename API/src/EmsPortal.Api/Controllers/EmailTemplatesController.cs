@@ -1,6 +1,7 @@
 using EmsPortal.Api.Models.EmailTemplates;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.Email;
+using EmsPortal.Application.Common;
 using EmsPortal.Application.Abstractions.Persistence;
 using EmsPortal.Domain.Enums;
 using EmsPortal.Shared.Contracts;
@@ -66,10 +67,27 @@ public sealed class EmailTemplatesController : ControllerBase
             .ToList();
     }
 
+    /// <summary>
+    /// What the Email Templates list may be ordered by. A template nobody has overridden carries no audit
+    /// row at all, so its dates are null — they sort together at one end rather than pretending to a time.
+    /// </summary>
+    private static readonly SortMap<EmailTemplateDescriptor> ListSorts =
+        new SortMap<EmailTemplateDescriptor>("updatedOnUtc")
+            .Add("displayName", t => t.DisplayName)
+            .Add("subject", t => t.Subject, t => t.DisplayName)
+            .Add("status", t => t.IsOverridden, t => t.DisplayName)
+            .Add("createdOnUtc", t => t.CreatedOnUtc, t => t.DisplayName)
+            .Add("updatedOnUtc", t => t.UpdatedOnUtc, t => t.DisplayName);
+
     [HttpGet]
     [RequirePermission(Permissions.UsersRead)]
     [ProducesResponseType<ApiResponse<IEnumerable<EmailTemplateDescriptor>>>(StatusCodes.Status200OK)]
-    public async Task<IActionResult> List([FromQuery] Guid? tenantId, [FromQuery] bool global, CancellationToken cancellationToken)
+    public async Task<IActionResult> List(
+        [FromQuery] Guid? tenantId,
+        [FromQuery] bool global,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool descending = true,
+        CancellationToken cancellationToken = default)
     {
         var (scope, error) = ResolveScope(tenantId, global);
         if (error is not null)
@@ -78,8 +96,9 @@ public sealed class EmailTemplatesController : ControllerBase
         }
 
         var templates = await _templates.ListAsync(scope, cancellationToken);
+        var named = await WithAuditNamesAsync(templates, cancellationToken);
         return Ok(ApiResponseFactory.Success(
-            await WithAuditNamesAsync(templates, cancellationToken), "Email templates retrieved."));
+            ListSorts.Apply(named, sortBy, descending), "Email templates retrieved."));
     }
 
     [HttpGet("{key}")]

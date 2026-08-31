@@ -1,7 +1,7 @@
 import { reactive } from "vue";
 import { blankAddress, toAddress, fromAddress, addressComplete } from "modules/rems/remsAddress";
 import {
-  ALL_ROLE_KEYS, GROUP_ROLES, groupKey, normalizeRoles, roleDefsFor
+  ALL_ROLE_KEYS, BILLING_ROLE_KEY, GROUP_ROLES, groupKey, normalizeRoles, roleDefsFor
 } from "modules/rems/remsContactRoles";
 // Only the group predicate, which is a plain frozen list. useRemsMeta reaches for the auth store inside
 // its composable, never at import time — this form renders on an anonymous page and must not wake one.
@@ -29,9 +29,9 @@ const dateOrNull = (v) => (filled(v) ? v : null);
 // Adds a validator's complaint to the issue list, and nothing at all when it had none.
 const pushIf = (out, issue) => { if (issue) out.push(issue); };
 
-// `prefix` is still in the shape although the form no longer asks for one: a submission saved when the
-// contact block asked for a courtesy title carries one, and a draft re-opened must not lose it. `suffix`
-// is what the block asks for now.
+// `prefix` is still in the shape although no box in the app asks for one any more: a submission saved
+// when the contact block asked for a courtesy title carries one, and a draft re-opened must not lose it.
+// `suffix` is the one particle every name field asks for now.
 const blankRole = () => ({ prefix: "", suffix: "", firstName: "", lastName: "", email: "", phone: "" });
 const blankRoles = () => Object.fromEntries(ALL_ROLE_KEYS.map((k) => [k, blankRole()]));
 
@@ -44,8 +44,11 @@ export const blankIntakePayload = () => reactive({
   // The client's name, in one field and in two. An individual fills the two and `clientName` is built
   // from them on the way out; a business or government body fills `clientName` and leaves the two blank.
   clientName: "",
-  // The title an individual asked to be addressed by. Held apart from the name, and deliberately not
-  // folded into it: the name is what THF files and searches the client under.
+  // The generational particle on an individual's name — Jr., Sr., III. Held apart from the name, and
+  // deliberately not folded into it: the name is what THF files and searches the client under.
+  clientSuffix: "",
+  // Retired from the form, which asked for a courtesy title here before it asked for the suffix. Kept in
+  // the shape for the reason blankRole gives: a submission saved under the old box carries one.
   clientPrefix: "",
   clientFirstName: "",
   clientLastName: "",
@@ -149,6 +152,27 @@ export const newBillingContact = (stored = null) => {
 };
 
 /**
+ * Fold a payload written when an individual's billing contact was two plain boxes into the contact block
+ * that asks for it now, and leave the two boxes empty so the next save writes the answer in one place.
+ *
+ * The same courtesy normalizeRoles does for the renamed business roles: the answer is the client's, and a
+ * form that no longer shows the field it was typed into must not be a form that appears to have lost it.
+ * The single name is cut at the first space — the split the server already falls back to for a pre-split
+ * contact (RemsNameSplit) — so the two boxes open filled rather than asking for a name already given.
+ */
+function adoptLegacyBillingContact (payload, stored) {
+  const role = payload.roles[BILLING_ROLE_KEY];
+  if (roleAny(role) || (!filled(stored.billingContactName) && !filled(stored.billingEmail))) return;
+
+  const [first, ...rest] = s(stored.billingContactName).trim().split(" ");
+  role.firstName = first || "";
+  role.lastName = rest.join(" ").trim();
+  role.email = s(stored.billingEmail);
+  payload.billingContactName = "";
+  payload.billingEmail = "";
+}
+
+/**
  * Read a stored payload into the editable one, in place.
  *
  * `prefill` is the public form's locked intake data (the name staff typed and the address the invite was
@@ -159,6 +183,7 @@ export function seedIntakePayload (payload, stored, prefill = null) {
   const d = stored || {};
 
   payload.clientName = d.clientName ?? prefill?.clientName ?? "";
+  payload.clientSuffix = d.clientSuffix ?? "";
   payload.clientPrefix = d.clientPrefix ?? "";
   // The two parts come from the stored answer where they were given, and from the prefill's own split of
   // the name staff typed at intake where they were not. `?? ""` rather than a fallback chain into
@@ -191,6 +216,7 @@ export function seedIntakePayload (payload, stored, prefill = null) {
   // they belong in the boxes those roles are called by now.
   const storedRoles = normalizeRoles(d.roles);
   ALL_ROLE_KEYS.forEach((k) => fillRole(payload.roles[k], storedRoles[k]));
+  adoptLegacyBillingContact(payload, d);
   payload.additionalBillingContacts = (d.additionalBillingContacts || []).map((r) => newBillingContact(r));
 
   payload.relatedEntities = (d.relatedEntities || []).map(makeEntity);
@@ -241,6 +267,7 @@ export function buildIntakePayload (payload, industryGroup) {
   return {
     version: 1,
     clientName: intakeClientName(payload),
+    clientSuffix: s(payload.clientSuffix),
     clientPrefix: s(payload.clientPrefix),
     clientFirstName: s(payload.clientFirstName),
     clientLastName: s(payload.clientLastName),

@@ -437,6 +437,12 @@ public sealed class RemsPublicFormController : ControllerBase
         // The billing ADDRESS is no longer staged here — it is one of the main entity's three addresses now
         // (see StageEntityAddresses). Only the billing contact's name and email stay on the client.
         // Email is LOCKED to the request — the payload email is never read on submit.
+        //
+        // …and those two are now only ever filled from a payload that predates the billing CONTACT block —
+        // every entity type names one, and it is staged among the entity's contacts with a name, an email
+        // and a phone. Writing the contact here as well would put the same person on the approval screen
+        // twice, once in the Contacts list and once as a pair of client fields beside it. The columns stay
+        // for the older submissions that carry that answer, and for staff editing them by hand afterwards.
         graph.Client = new REMSClient
         {
             Id = clientId,
@@ -611,13 +617,15 @@ public sealed class RemsPublicFormController : ControllerBase
             TenantId = tenantId,
             SourceEntityType = EntityType.Rems,
             SourceEntityId = sourceRemsId,
-            // How the client asked us to address this contact. Stored beside the name, not folded into
-            // FirstName / LastName — those two columns are what the person is filed and searched under.
+            // The generational particle the client gave for this contact. Stored beside the name, not
+            // folded into FirstName / LastName — those two columns are what the person is filed and
+            // searched under — and joined back on in DisplayName, which is the "as it reads" field and is
+            // what every REMS surface shows a contact by.
             //
-            // The generational suffix has no column of its own, so it rides on DisplayName, which is the
-            // "as it reads" field and is what every REMS surface shows a contact by. It is recoverable in
-            // full from the submission, which is the immutable record of what the client typed.
-            Prefix = Clean(role.Prefix),
+            // A courtesy title on a submission saved while the form asked for one is NOT carried here:
+            // Person holds one particle, and it is the suffix. It stays recoverable in full from the
+            // submission, which is the immutable record of what the client typed.
+            Suffix = Clean(role.Suffix),
             FirstName = first,
             LastName = last,
             DisplayName = Clean(role.NameWithSuffix) ?? first,
@@ -731,7 +739,7 @@ public sealed class RemsPublicFormController : ControllerBase
     private RemsReviewModel BuildReviewModel(REMS rems, RemsFormPayloadV1 payload, string industryGroup)
     {
         var contact = new RemsReviewContact(
-            Clean(payload.EffectiveClientName), Clean(payload.ClientPrefix),
+            Clean(payload.EffectiveClientName), Clean(payload.ClientSuffix),
             Clean(payload.ClientFirstName), Clean(payload.ClientLastName),
             rems.CustomerEmail ?? string.Empty, Clean(payload.MobileNumber), Clean(payload.ReferralSource));
 
@@ -837,6 +845,9 @@ public sealed class RemsPublicFormController : ControllerBase
         {
             yield return (roles.Self, nameof(RemsContactRole.Self), true);
             yield return (roles.Spouse, nameof(RemsContactRole.Spouse), false);
+            // Optional, but staged like anybody else's: an individual who names somebody to invoice has
+            // named a contact, and it becomes the same kind of record the second and third ones do.
+            yield return (roles.BillingContact, nameof(RemsContactRole.BillingContact), false);
         }
         else if (RemsFormPayloadValidator.IsBusinessGroup(industryGroup))
         {

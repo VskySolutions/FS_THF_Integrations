@@ -1,4 +1,5 @@
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -43,11 +44,22 @@ internal sealed class RemsRepository : IRemsRepository
         // Type and Status are option-set ITEMS, and the row this list builds reads the code off each of
         // them. Included here rather than on the filtered query above, because that one is also counted
         // and grouped — an Include on a query that ends in an aggregate is work EF does nothing with.
-        var items = await query
+        // Assigned Admin, CSE and EMS State are absent from the map: all three are resolved or derived by
+        // the controller after this query, so none of them is a column to order on.
+        var withOptions = query
             .Include(r => r.Type)
-            .Include(r => r.Status)
-            .OrderByDescending(r => r.UpdatedOnUtc)
-            .ThenByDescending(r => r.CreatedOnUtc)
+            .Include(r => r.Status);
+        var sorts = SortMap.For(withOptions, "updatedOnUtc")
+            .Add("remsNumber", r => r.REMSNumber)
+            .Add("type", r => r.Type!.Value, r => r.UpdatedOnUtc)
+            .Add("clientName", r => r.RequestedClientName, r => r.REMSNumber)
+            .Add("status", r => r.Status!.Value, r => r.UpdatedOnUtc)
+            .Add("customerEmail", r => r.CustomerEmail, r => r.REMSNumber)
+            .Add("customerMobileNumber", r => r.CustomerMobileNumber, r => r.REMSNumber)
+            .Add("createdOnUtc", r => r.CreatedOnUtc)
+            .Add("updatedOnUtc", r => r.UpdatedOnUtc, r => r.CreatedOnUtc);
+
+        var items = await sorts.Apply(withOptions, options.Sort.SortBy, options.Sort.Descending)
             .Skip((options.Page - 1) * options.Limit)
             .Take(options.Limit)
             .ToListAsync(cancellationToken);

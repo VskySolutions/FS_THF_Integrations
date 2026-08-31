@@ -137,6 +137,10 @@ export const useAuthStore = defineStore("auth", {
       this.sessionExpiresAt = null;
       LocalStorage.clear();
       useTenantStore().clear();
+      // Signing out is a router navigation, not a page load, so anything a module cached at import time
+      // survives it and is inherited by whoever signs in next. LocalStorage.clear() above deals with the
+      // stored half; this is how the in-memory half hears about it (useTenantScope listens).
+      window.dispatchEvent(new Event("session-cleared"));
     }
   }
 });

@@ -2,6 +2,7 @@ using EmsPortal.Api.Models.SmtpAccounts;
 using EmsPortal.Api.Security;
 using EmsPortal.Api.Validators.SmtpAccounts;
 using EmsPortal.Application.Abstractions.Email;
+using EmsPortal.Application.Common;
 using EmsPortal.Application.Abstractions.Persistence;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Domain.Enums;
@@ -50,7 +51,12 @@ public sealed class SmtpAccountController : ControllerBase
     [HttpGet]
     [RequirePermission(Permissions.UsersRead)]
     [ProducesResponseType<ApiResponse<IEnumerable<SmtpAccountSummaryResponse>>>(StatusCodes.Status200OK)]
-    public async Task<IActionResult> List([FromQuery] Guid? tenantId, [FromQuery] string? status, CancellationToken cancellationToken)
+    public async Task<IActionResult> List(
+        [FromQuery] Guid? tenantId,
+        [FromQuery] string? status,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool descending = true,
+        CancellationToken cancellationToken = default)
     {
         var (resolvedTenant, error) = await ResolveTargetTenantAsync(tenantId, cancellationToken);
         if (error is not null)
@@ -67,8 +73,26 @@ public sealed class SmtpAccountController : ControllerBase
 
         var accounts = await _accounts.ListByTenantAsync(resolvedTenant, isActive, cancellationToken);
         var summaries = await ToSummariesAsync(accounts, cancellationToken);
-        return Ok(ApiResponseFactory.Success(summaries, "SMTP accounts retrieved."));
+
+        // Only when a column was actually named. Left alone, this list arrives in the order the repository
+        // chose — the ACTIVE account pinned above everything, because exactly one account sends the
+        // tenant's mail and burying it under whichever inactive one was edited last is a functional
+        // regression. A reader who clicks a header has asked for something else, and gets it.
+        var ordered = ListSorts.Knows(sortBy) ? ListSorts.Apply(summaries, sortBy, descending) : summaries;
+        return Ok(ApiResponseFactory.Success(ordered, "SMTP accounts retrieved."));
     }
+
+    /// <summary>What the Email Accounts list may be ordered by, once a reader asks for an order at all.</summary>
+    private static readonly SortMap<SmtpAccountSummaryResponse> ListSorts =
+        new SortMap<SmtpAccountSummaryResponse>("updatedOnUtc")
+            .Add("accountName", a => a.AccountName)
+            .Add("host", a => a.Host, a => a.AccountName)
+            .Add("port", a => a.Port, a => a.AccountName)
+            .Add("fromEmail", a => a.FromEmail, a => a.AccountName)
+            .Add("encryptionType", a => a.EncryptionType, a => a.AccountName)
+            .Add("status", a => a.IsActive, a => a.AccountName)
+            .Add("createdOnUtc", a => a.CreatedOnUtc)
+            .Add("updatedOnUtc", a => a.UpdatedOnUtc);
 
     // ---- Detail ----
 

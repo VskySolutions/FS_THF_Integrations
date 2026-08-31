@@ -2,8 +2,8 @@
 // the person detail page, and the quick-add dialog on the user form.
 export const blankPersonForm = () => ({
   tenantId: null,
-  // The title they are addressed by — asked beside the first name, stored apart from it.
-  prefix: "",
+  // The generational particle on their name — asked beside the name, stored apart from it.
+  suffix: "",
   firstName: "",
   middleName: "",
   lastName: "",

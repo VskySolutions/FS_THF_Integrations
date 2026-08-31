@@ -1,6 +1,7 @@
 using EmsPortal.Api.Models.UniversalFeatures;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Domain.Enums;
 using EmsPortal.Shared.Contracts;
@@ -42,6 +43,8 @@ public sealed class NotificationsController : ControllerBase
         [FromQuery] DateTime? createdTo = null,
         [FromQuery] int page = 1,
         [FromQuery] int limit = 20,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool descending = true,
         CancellationToken cancellationToken = default)
     {
         if (User.GetUserId() is not { } userId)
@@ -53,7 +56,8 @@ public sealed class NotificationsController : ControllerBase
         limit = Math.Clamp(limit, 1, 100);
 
         var (items, total) = await _notifications.ListAsync(
-            userId, isRead, type, search, createdFrom, createdTo, page, limit, cancellationToken);
+            userId, isRead, type, search, createdFrom, createdTo,
+            new SortRequest(sortBy, descending), page, limit, cancellationToken);
         return Ok(ApiResponseFactory.Paginated(items.Select(ToResponse), "Notifications retrieved.", page, limit, total));
     }
 

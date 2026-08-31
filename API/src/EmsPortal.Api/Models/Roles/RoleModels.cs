@@ -34,8 +34,7 @@ public sealed record RoleResponse(
     string? TenantName,
     bool CanManage,
     IReadOnlyList<string> Permissions,
-    DateTime CreatedOnUtc,
-    DateTime UpdatedOnUtc);
+    RecordAudit Audit);
 
 /// <summary>
 /// A role as the list shows it. <paramref name="TenantName"/> names the owning tenant (null for a

@@ -1,4 +1,5 @@
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -80,10 +81,26 @@ internal sealed class UserRepository : IUserRepository
             });
     }
 
+    // What the Users list may be ordered by. Deliberately short: a column the caller can see is not
+    // necessarily a column the database holds. Roles, groups and the department are assembled AFTER the
+    // query (they are per-tenant collections, not columns), and Created By / Updated By are ids resolved
+    // to names afterwards — none of them can be an ORDER BY, so none of them is offered as one here or
+    // marked sortable on the page.
+    //
+    // The name sorts on the two columns a person is FILED under, in that order, rather than on
+    // DisplayName — which is what the Name cell shows and is free text.
+    private static readonly SortMap<User> Sorts = new SortMap<User>("updatedOnUtc")
+        .Add("fullName", u => u.Person!.FirstName, u => u.Person!.LastName)
+        .Add("email", u => u.Email)
+        .Add("phoneNumber", u => u.Person!.MobileNumber)
+        .Add("isActive", u => u.IsActive, u => u.UpdatedOnUtc)
+        .Add("createdOnUtc", u => u.CreatedOnUtc)
+        .Add("updatedOnUtc", u => u.UpdatedOnUtc);
+
     public async Task<(IReadOnlyList<User> Items, int Total)> ListAsync(
         Guid? tenantId, string? search, bool? isActive,
         string? name, string? email, string? phone, string? role, string? group,
-        int page, int limit, CancellationToken cancellationToken = default)
+        SortRequest sort, int page, int limit, CancellationToken cancellationToken = default)
     {
         // Ignore query filters (the Person tenant filter would otherwise blank the name / drop the row
         // for users whose person tenant differs or is unset) and re-apply the soft-delete predicates.
@@ -140,8 +157,7 @@ internal sealed class UserRepository : IUserRepository
         }
 
         var total = await query.CountAsync(cancellationToken);
-        var items = await query
-            .OrderByDescending(u => u.UpdatedOnUtc)
+        var items = await Sorts.Apply(query, sort.SortBy, sort.Descending)
             .Skip((page - 1) * limit)
             .Take(limit)
             .ToListAsync(cancellationToken);

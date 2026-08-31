@@ -186,11 +186,15 @@ public sealed record RemsRequestDetail(
     string EmsFormState,
     string? ClientSubmissionState,
     IReadOnlyList<RemsFileRef> Files,
-    string? CreatedBy,
-    DateTime CreatedOnUtc,
-    string? UpdatedBy,
-    DateTime UpdatedOnUtc,
+    RecordAudit Audit,
     RemsRowActions Actions,
+    /// <summary>
+    /// Whether the send-back dialog may offer the CSE as the person to hand the rework to. True only when
+    /// a CSE is named AND the initiator has a REMS delegate in force — the rework is the initiator's own
+    /// work, and delegating is how they hand it out. Sent so the dialog offers exactly what the endpoint
+    /// will accept, rather than offering a choice that comes back a 400.
+    /// </summary>
+    bool CanSendBackToCse,
     /// <summary>
     /// The client's own intake link, for copying — non-null only while it is theirs to follow: the form
     /// has been sent and they have not answered yet. Withheld before that because the public endpoint

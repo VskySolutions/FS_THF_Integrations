@@ -1,3 +1,4 @@
+using EmsPortal.Api.Models;
 using EmsPortal.Api.Models.Rems;
 using EmsPortal.Api.Models.Users;
 using EmsPortal.Api.Security;
@@ -6,6 +7,7 @@ using EmsPortal.Application.Abstractions.Email;
 using EmsPortal.Application.Abstractions.OptionSets;
 using EmsPortal.Application.Abstractions.Persistence;
 using EmsPortal.Application.Abstractions.Security;
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Domain.Enums;
 using EmsPortal.Shared.Contracts;
@@ -266,6 +268,9 @@ public sealed class UsersController : ControllerBase
         [FromQuery] string? phone = null,
         [FromQuery] string? role = null,
         [FromQuery] string? group = null,
+        [FromQuery] Guid? tenantId = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool descending = true,
         CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
@@ -275,8 +280,19 @@ public sealed class UsersController : ControllerBase
         // once made the page a mix of accounts the caller cannot act on in their current context, and
         // duplicated what switching tenant (or the Super-Admin tenant scope) already does. The middleware
         // rewrites this claim when a Super Admin is scoped elsewhere, so it follows that selection.
-        Guid? tenantFilter = User.GetActiveTenantId();
-        var (items, total) = await _users.ListAsync(tenantFilter, search, isActive, name, email, phone, role, group, page, limit, cancellationToken);
+        //
+        // `tenantId` is the single exception, and it does not lift that rule so much as point it: it names
+        // ONE other tenant, for the tenant-management screen, whose whole job is to show a tenant and the
+        // accounts in it. Restricted to callers who administer tenants at all (tenants.write, i.e. a Super
+        // Admin) — for anyone else it is IGNORED rather than refused, so an ordinary admin who guesses the
+        // parameter simply gets their own tenant back instead of learning that it means something.
+        var activeTenantId = User.GetActiveTenantId();
+        var tenantFilter = tenantId is { } requestedTenantId && User.HasPermission(Permissions.TenantsWrite)
+            ? requestedTenantId
+            : activeTenantId;
+        var (items, total) = await _users.ListAsync(
+            tenantFilter, search, isActive, name, email, phone, role, group,
+            new SortRequest(sortBy, descending), page, limit, cancellationToken);
 
         var names = await ResolveActorNamesAsync(items.SelectMany(u => new[] { u.CreatedById, u.UpdatedById }), cancellationToken);
 
@@ -302,11 +318,14 @@ public sealed class UsersController : ControllerBase
             .ToList();
 
         // Department placement for this page of users, resolved to labels. Both the placements and the
-        // option set are tenant-scoped, so a Super Admin who has not switched into a tenant sees none —
-        // the same guard MapAsync applies to the detail response.
+        // option set are scoped to the caller's ACTIVE tenant by the ambient query filter — not to
+        // `tenantFilter` — so they are read only when the two are the same tenant. A Super Admin who has
+        // not switched into a tenant sees none (the same guard MapAsync applies to the detail response),
+        // and neither does one listing some OTHER tenant's users from the tenant-management screen: an
+        // empty column is the truth there, where borrowing this tenant's departments would be a fiction.
         var placements = new Dictionary<Guid, UserDepartment>();
         var departmentLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (User.GetActiveTenantId() is not null)
+        if (activeTenantId is not null && tenantFilter == activeTenantId)
         {
             placements = (await _departments.ListForUsersAsync(items.Select(u => u.Id), cancellationToken))
                 .ToDictionary(d => d.UserId);
@@ -386,11 +405,11 @@ public sealed class UsersController : ControllerBase
         var person = user.Person;
         if (person is not null)
         {
-            if (request.Prefix is not null)
+            if (request.Suffix is not null)
             {
-                // "" is how a title is taken back off — it is the one name field somebody routinely
+                // "" is how a suffix is taken back off — it is the one name field somebody routinely
                 // clears, and an omitted field cannot say that.
-                person.Prefix = request.Prefix;
+                person.Suffix = request.Suffix;
             }
             if (request.FirstName is not null)
             {
@@ -1112,22 +1131,23 @@ public sealed class UsersController : ControllerBase
     /// </summary>
     private async Task<UserDetail> MapAsync(User user, CancellationToken cancellationToken)
     {
+        var audit = await RecordAudit.ForAsync(_users, user, cancellationToken);
         if (User.GetActiveTenantId() is null)
         {
-            return Map(user, null);
+            return Map(user, null, audit);
         }
 
-        return Map(user, await _departments.GetForUserAsync(user.Id, cancellationToken));
+        return Map(user, await _departments.GetForUserAsync(user.Id, cancellationToken), audit);
     }
 
-    private static UserDetail Map(User user, UserDepartment? department)
+    private static UserDetail Map(User user, UserDepartment? department, RecordAudit audit)
     {
         var p = user.Person;
         return new UserDetail(
             user.Id,
             user.PersonId,
             user.Email,
-            p?.Prefix,
+            p?.Suffix,
             p?.FirstName ?? string.Empty,
             p?.LastName ?? string.Empty,
             p?.FullName ?? user.DisplayName,
@@ -1146,7 +1166,8 @@ public sealed class UsersController : ControllerBase
             GroupsFor(user, null),
             department?.Department,
             department?.IsHead ?? false,
-            p?.ProfileMedia?.PublicUrl);
+            p?.ProfileMedia?.PublicUrl,
+            audit);
     }
 
     /// <summary>The user's group memberships as DTOs, optionally restricted to a specific tenant.</summary>

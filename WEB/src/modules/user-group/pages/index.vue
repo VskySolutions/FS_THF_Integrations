@@ -94,6 +94,7 @@
           :pagination="{ rowsPerPage: 10 }"
           default-sort-by="fullName"
           :default-descending="false"
+          client-sort
           @refresh="loadMembers"
         >
           <!-- Add members sits beside the columns + refresh buttons in the table's top bar. -->
@@ -208,10 +209,7 @@ const columns = [
   // Descriptions are rich text; the cell shows the text without its markup (see utils/richText).
   { name: "description", label: "Description", field: (r) => stripHtml(r.description), align: "left" },
   { name: "memberCount", label: "Members", field: "memberCount", align: "left", sortable: true, default: true, filterable: false },
-  { name: "createdBy", label: "Created By", field: "createdBy", align: "left", sortable: true },
-  { name: "createdOnUtc", label: "Created", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true, default: true, filterable: false },
-  // Created By and Created On are already columns here, so the shared set contributes the updated pair.
-  ...auditColumns({ only: ["updatedBy", "updatedOnUtc"] }),
+  ...auditColumns(),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 
@@ -220,12 +218,15 @@ const memberColumns = [
   { name: "email", label: "Email", field: "email", align: "left", sortable: true, default: true },
   { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true },
   { name: "addedBy", label: "Added By", field: "addedBy", align: "left", sortable: true, default: true },
-  { name: "addedOnUtc", label: "Added On", field: (r) => fmt.formatDateTime(r.addedOnUtc), align: "left", sortable: true, default: true },
+  { name: "addedOnUtc", label: "Added On", field: (r) => fmt.formatDateTime(r.addedOnUtc), sort: (r) => r.addedOnUtc || "", align: "left", sortable: true, default: true },
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 
 const { rows, loading, search, pagination, load, onRequest } = useListTable({
-  fetcher: () => userGroupApi.list(search.value || undefined).then((r) => ({ data: r || [], total: (r || []).length })),
+  pageKey: "user-groups",
+  fetcher: ({ sortBy, descending }) =>
+    userGroupApi.list({ search: search.value || undefined, sortBy, descending })
+      .then((r) => ({ data: r || [], total: (r || []).length })),
   onError: (err) => notify.error(getApiErrorMessage(err))
 });
 const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);

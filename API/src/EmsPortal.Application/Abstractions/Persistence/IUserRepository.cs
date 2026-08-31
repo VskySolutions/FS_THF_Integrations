@@ -1,3 +1,4 @@
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Entities;
 
 namespace EmsPortal.Application.Abstractions.Persistence;
@@ -22,11 +23,15 @@ public interface IUserRepository
     /// optional <paramref name="search"/> (email/name), <paramref name="isActive"/>, and per-column
     /// <paramref name="name"/>/<paramref name="email"/>/<paramref name="phone"/>/<paramref name="role"/>
     /// (role name) filters are applied server-side so pagination/totals reflect the filtered set.
+    /// <para>
+    /// <paramref name="sort"/> orders the whole filtered set before it is paged — which is the only place
+    /// it CAN be ordered, since page 1 is only page 1 once the order is decided.
+    /// </para>
     /// </summary>
     Task<(IReadOnlyList<User> Items, int Total)> ListAsync(
         Guid? tenantId, string? search, bool? isActive,
         string? name, string? email, string? phone, string? role, string? group,
-        int page, int limit, CancellationToken cancellationToken = default);
+        SortRequest sort, int page, int limit, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Active users assigned to <paramref name="tenantId"/> holding ANY of <paramref name="roleNames"/>

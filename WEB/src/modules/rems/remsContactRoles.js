@@ -46,7 +46,12 @@ export const ALL_ROLE_KEYS = [
 /// What each industry group is asked, in display order. The three business groups share one set, so they
 /// all look up under "business" (see groupKey below).
 export const GROUP_ROLES = {
-  individual: ["self", "spouse"],
+  // An individual is asked for a billing contact too, and asked for it as a CONTACT. It stays optional —
+  // most people are invoiced in their own name — but somebody they do name is a contact like any other,
+  // and is collected and stored exactly as the second and third billing contacts beside it already were.
+  // Two plain boxes here meant the first block on the form asked for less than the block the "Add another"
+  // button produced, and put that one answer somewhere no other contact lives.
+  individual: ["self", "spouse", "billingContact"],
   business: ["primaryContact", "financialContact", "billingContact", "otherContact"],
   government: ["financeDirector", "billingContact", "otherContact"]
 };

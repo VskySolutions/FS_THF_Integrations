@@ -150,7 +150,10 @@ const columns = [
 ];
 
 const { rows, loading, pagination, load, onRequest } = useListTable({
-  fetcher: () => emailTemplateApi.list(scopeParams.value).then((r) => ({ data: r?.data, total: r?.data?.length })),
+  pageKey: "email-templates",
+  fetcher: ({ sortBy, descending }) =>
+    emailTemplateApi.list({ ...scopeParams.value, sortBy, descending })
+      .then((r) => ({ data: r?.data, total: r?.data?.length })),
   onError: (err) => notify.error(getApiErrorMessage(err))
 });
 

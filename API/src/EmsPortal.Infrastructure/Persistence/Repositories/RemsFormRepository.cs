@@ -1,4 +1,5 @@
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Domain.Enums;
 using Microsoft.Data.SqlClient;
@@ -94,12 +95,21 @@ internal sealed class RemsFormRepository : IRemsFormRepository
 
         // Counted AFTER the filters so the pager reflects the filtered set, not the whole list.
         var total = await rows.CountAsync(cancellationToken);
-        // The REQUEST's last touch leads, matching the audit columns this row carries and the other REMS
-        // lists; submission date and number stay as tie-breakers.
-        var items = await rows
-            .OrderByDescending(x => x.Rems.UpdatedOnUtc)
-            .ThenByDescending(x => x.Form.SubmittedOnUtc)
-            .ThenBy(x => x.Rems.REMSNumber)
+        // Ordered here, over the joined rows, because EF cannot order a projected record — and over the
+        // WHOLE filtered set, because that is what decides which rows page 1 holds. The default is the
+        // REQUEST's last touch, matching the audit columns this row carries and the other REMS lists.
+        // The Assigned Admin and CSE columns are absent: both are ids this list resolves to names
+        // afterwards, so neither is a column to order on.
+        var sorts = SortMap.For(rows, "updatedOnUtc")
+            .Add("remsNumber", x => x.Rems.REMSNumber)
+            .Add("clientName", x => x.Rems.RequestedClientName, x => x.Rems.REMSNumber)
+            .Add("submitted", x => x.Form.Status == RemsFormStatus.Submitted || x.Form.SubmittedOnUtc != null, x => x.Rems.UpdatedOnUtc)
+            .Add("requestStatus", x => x.Rems.Status!.Value, x => x.Rems.UpdatedOnUtc)
+            .Add("submittedOnUtc", x => x.Form.SubmittedOnUtc, x => x.Rems.REMSNumber)
+            .Add("createdOnUtc", x => x.Rems.CreatedOnUtc)
+            .Add("updatedOnUtc", x => x.Rems.UpdatedOnUtc, x => x.Rems.REMSNumber);
+
+        var items = await sorts.Apply(rows, query.Sort.SortBy, query.Sort.Descending)
             .Skip((query.Page - 1) * query.Limit)
             .Take(query.Limit)
             .Select(x => new RemsClientFormItem(

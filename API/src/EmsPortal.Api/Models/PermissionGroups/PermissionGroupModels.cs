@@ -84,8 +84,9 @@ public sealed record PermissionGroupDetailResponse(
     IReadOnlyList<RoleUsingGroupResponse> RolesUsing,
     IReadOnlyList<PermissionGroupAuditEntryResponse> AuditTrail,
     bool CanDelete,
-    DateTime CreatedOnUtc,
-    DateTime UpdatedOnUtc,
+    // Not the AuditTrail above: that is every action ever taken on the group, this is the record itself —
+    // who made it and who last touched it, the block every detail page ends with.
+    RecordAudit Audit,
     // Capacity limits (WO-119): null limit = unlimited; CurrentUsage = distinct active members; IsFull = at/over limit.
     int? CapacityLimit,
     int CurrentUsage,

@@ -96,6 +96,8 @@
           </q-item>
         </q-list>
       </q-card>
+
+      <app-record-audit :audit="detail.audit" />
     </template>
 
     <permission-group-form-drawer v-model="formOpen" :group-id="groupId" @saved="onSaved" />
@@ -111,6 +113,7 @@ import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
 import { humanizeKey, groupKeysByCategory } from "composables/usePermissionCategories";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
+import AppRecordAudit from "components/common/AppRecordAudit.vue";
 import PermissionGroupFormDrawer from "modules/permission-group/components/PermissionGroupFormDrawer.vue";
 
 const route = useRoute();

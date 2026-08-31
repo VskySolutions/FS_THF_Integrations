@@ -10,7 +10,11 @@
 
       <q-card-section class="col scroll">
         <q-form ref="formRef" greedy>
-          <person-form-fields v-model="form" :tenant-options="tenantOptions" :loading-tenants="loadingTenants" />
+          <person-form-fields
+            v-model="form"
+            :tenant-options="showTenantPicker ? tenantOptions : []"
+            :loading-tenants="loadingTenants"
+          />
         </q-form>
       </q-card-section>
 
@@ -35,7 +39,11 @@ import { useTenantOptions } from "composables/useTenantOptions";
 import PersonFormFields from "components/person/PersonFormFields.vue";
 
 const props = defineProps({
-  modelValue: { type: Boolean, default: false }
+  modelValue: { type: Boolean, default: false },
+  // The tenant the person belongs to, when the caller already knows it — the tenant-management screen,
+  // which is looking at one tenant and adding somebody to it. Given, the tenant question is settled and
+  // its dropdown is not asked, even of a Super Admin who would otherwise choose.
+  tenantId: { type: String, default: null }
 });
 const emit = defineEmits(["update:modelValue", "created"]);
 
@@ -50,11 +58,16 @@ const open = computed({
   set: (v) => emit("update:modelValue", v)
 });
 
+// A fixed tenant settles the question the dropdown exists to ask, so the dropdown is not offered.
+const showTenantPicker = computed(() => canChooseTenant.value && !props.tenantId);
+
 // Reset to a clean form each time the dialog opens, applying the tenant-selection rule.
 watch(open, async (isOpen) => {
   if (!isOpen) return;
   Object.assign(form, blankPersonForm());
-  if (canChooseTenant.value) {
+  if (props.tenantId) {
+    form.tenantId = props.tenantId;
+  } else if (canChooseTenant.value) {
     await loadTenants();
   } else {
     form.tenantId = activeTenantId.value;

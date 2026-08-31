@@ -11,10 +11,10 @@
                cut it. A business or a government body has ONE name — its legal name — which does not
                divide, so it keeps the single box. -->
           <template v-if="isIndividual">
-            <!-- How they would like to be addressed, in front of the name. Optional, and its own box
-                 rather than something typed into the first name: the name is what we file them under,
-                 and a title is not part of it. -->
-            <app-name-prefix-field v-model="payload.clientPrefix" class="col-4 col-sm-2" />
+            <!-- The generational particle on their name — Jr., Sr., III. Optional, and its own box rather
+                 than something typed into the last name: the name is what we file them under, and "Smith
+                 Jr." in that box is a client nobody finds by searching for their name. -->
+            <app-name-suffix-field v-model="payload.clientSuffix" class="col-4 col-sm-2" />
             <app-text-field
               v-model="payload.clientFirstName" label="First Name" required class="col-8 col-sm-4"
               :rules="nameRules('First Name')"
@@ -165,10 +165,10 @@
           v-model="payload.billingAddress" :errors="addressErrors(errors, 'billingAddress')"
         />
 
-        <!-- Who the invoice is addressed to, directly under where it is sent. Every entity type is asked
-             this here: an individual in two plain boxes (it is usually them, so it is optional and asked
-             lightly), everyone else as the full Billing Contact — a first name, a last name, an email and
-             a phone. -->
+        <!-- Who the invoice is addressed to, directly under where it is sent. Asked of every entity type,
+             and asked the same way: a first name, a last name, an email and a phone — the same block as
+             the second and third billing contacts below it, because they are the same kind of answer.
+             Required where the entity type requires it, optional for an individual (it is usually them). -->
         <q-separator class="cif-rule" />
 
         <div class="cif-subhead">
@@ -179,15 +179,8 @@
             </q-tooltip>
           </q-icon>
         </div>
-        <div v-if="isIndividual" class="row q-col-gutter-md">
-          <app-text-field v-model="payload.billingContactName" label="Name" class="col-12 col-sm-6" />
-          <app-text-field
-            v-model="payload.billingEmail" label="Email" type="email" class="col-12 col-sm-6"
-            :error="!!errors.billingEmail" :error-message="errors.billingEmail"
-          />
-        </div>
         <role-contact-fields
-          v-else-if="billingRoleDef"
+          v-if="billingRoleDef"
           v-model="payload.roles[billingRoleDef.key]"
           :label="billingContactLabel" :required="billingRoleDef.required"
           :prefix="`roles.${billingRoleDef.key}`" :errors="errors"
@@ -351,7 +344,7 @@ import {
 
 import { nameRules } from "utils/personName";
 import AppTextField from "components/common/AppTextField.vue";
-import AppNamePrefixField from "components/common/AppNamePrefixField.vue";
+import AppNameSuffixField from "components/common/AppNameSuffixField.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
 import AppDateField from "components/common/AppDateField.vue";
@@ -386,7 +379,7 @@ const ADDRESS_HINTS = {
   billing: "Where invoices should be sent, if that is not the mailing address. Leave it blank and we will bill the mailing address."
 };
 
-// Said once, on the heading, for whichever shape of the question this client is asked.
+// Said once, on the heading above the blocks it covers — the first contact and every extra one.
 const BILLING_CONTACT_HINT = "Who our invoices should be addressed to. Name as many people as they " +
   "should go to. Leave it blank and we will address them to the client themselves.";
 
@@ -402,10 +395,11 @@ const referralDetailPlaceholder = computed(() => {
 });
 
 // Every role this entity type is asked, split between the two places they are asked: the billing contact
-// sits with the billing address, the rest in the Contacts card.
+// sits with the billing address, the rest in the Contacts card. Every entity type now has one, so this is
+// a plain lookup rather than a lookup with an exception in it.
 const allRoleDefs = computed(() => intakeRoleDefs(props.industryGroup));
 const billingRoleDef = computed(() =>
-  (isIndividual.value ? null : allRoleDefs.value.find((d) => d.key === BILLING_ROLE_KEY) || null));
+  allRoleDefs.value.find((d) => d.key === BILLING_ROLE_KEY) || null);
 const contactRoleDefs = computed(() =>
   allRoleDefs.value.filter((d) => d.key !== BILLING_ROLE_KEY || !billingRoleDef.value));
 

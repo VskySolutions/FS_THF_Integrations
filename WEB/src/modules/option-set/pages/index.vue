@@ -34,7 +34,10 @@
       :rows="rows"
       :columns="columns"
       :loading="loading"
+      :total-records="totalRecords"
+      :pagination="pagination"
       default-sort-by="updatedOnUtc"
+      @request="onRequest"
       @refresh="load"
     >
       <template #body-cell-name="cell">
@@ -101,13 +104,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref } from "vue";
 import { optionSetApi, getApiErrorMessage, OptionItemSortMode, EntityType } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useDeletedRecords } from "composables/useDeletedRecords";
 import { useConfirm } from "composables/useConfirm";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import { useAuditColumns } from "composables/useAuditColumns";
+import { useListTable } from "composables/useListTable";
 import { useEntityMeta } from "composables/uf/useEntityMeta";
 import { useEntityTypeOptions } from "composables/useOptionSet";
 import AppListHeader from "components/common/AppListHeader.vue";
@@ -129,8 +133,15 @@ const canManage = has(Permissions.OptionSetsManage);
 const entityFilterOptions = [{ label: "All entities", value: null }, ...entityTypeOptions];
 const entityFilter = ref(null);
 
-const rows = ref([]);
-const loading = ref(false);
+// Ordering is the server's, like every other list — a header click re-asks for the whole set in the
+// order it was asked for, rather than rearranging the rows already on screen.
+const { rows, loading, totalRecords, pagination, load, onRequest } = useListTable({
+  pageKey: "option_sets",
+  fetcher: ({ sortBy, descending }) =>
+    optionSetApi.list({ entityType: entityFilter.value ?? undefined, sortBy, descending })
+      .then((r) => ({ data: r || [], total: (r || []).length })),
+  onError: (err) => notify.error(getApiErrorMessage(err))
+});
 
 const columns = [
   { name: "name", label: "Name", field: "name", align: "left", sortable: true, default: true },
@@ -148,17 +159,6 @@ const sortModeLabel = (mode) => ({
   [OptionItemSortMode.AlphabeticalDesc]: "Alphabetical (Z → A)",
   [OptionItemSortMode.Custom]: "Custom"
 }[mode] || mode);
-
-const load = async () => {
-  loading.value = true;
-  try {
-    rows.value = (await optionSetApi.list({ entityType: entityFilter.value ?? undefined })) || [];
-  } catch (err) {
-    notify.error(getApiErrorMessage(err));
-  } finally {
-    loading.value = false;
-  }
-};
 
 const formOpen = ref(false);
 const editing = ref(null);
@@ -183,6 +183,4 @@ const remove = async (row) => {
     notify.error(getApiErrorMessage(err));
   }
 };
-
-onMounted(load);
 </script>

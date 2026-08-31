@@ -118,7 +118,7 @@ const groups = computed(() => {
   // visible where it was made; every other entity type has the one name it gave.
   const contact = isIndividual.value
     ? [
-      { label: "Prefix", value: val(p.clientPrefix) },
+      { label: "Suffix", value: val(p.clientSuffix) },
       { label: "First Name", value: val(p.clientFirstName) },
       { label: "Last Name", value: val(p.clientLastName) }
     ]
@@ -130,6 +130,10 @@ const groups = computed(() => {
     { label: "Referral Details", value: val(p.referralSourceDetail) }
   );
   if (isIndividual.value) {
+    // The courtesy title the name box used to ask for, before it asked for a generational suffix. Shown
+    // only when a draft started under the old box still carries one, for the same reason the three
+    // spouse rows below are.
+    if (p.clientPrefix) contact.push({ label: "Prefix", value: p.clientPrefix });
     // The spouse is asked for once, in the Contacts card, and is reviewed there under "Spouse". These
     // three are retired, and appear only when a draft started before the change still carries one —
     // this step reviews what will actually be submitted, and is silent about what will not.
@@ -161,10 +165,11 @@ const groups = computed(() => {
   // asked. The extras follow it in the order they were typed.
   const extraBilling = (p.additionalBillingContacts || []).filter(roleHasAny);
   const billingLabel = (i) => (extraBilling.length ? `Billing Contact ${i}` : "Billing Contact");
-  // An individual is asked the lighter two-box version; anyone else who left the contact blank is still
-  // shown, because blank IS the answer being reviewed. `phone: null` rather than "" records that the
-  // question was never PUT, which is what stops the line reporting "no phone" about a box nobody saw.
-  const billingPeople = isIndividual.value || !roleHasAny(billingRole)
+  // Read from the contact block every entity type is asked, falling back to the retired two-box answer on
+  // a payload that predates it. A contact left blank is still shown, because blank IS the answer being
+  // reviewed; `phone: null` rather than "" records that the question was never PUT on that older form,
+  // which is what stops the line reporting "no phone" about a box nobody saw.
+  const billingPeople = !roleHasAny(billingRole)
     ? [{ role: billingLabel(1), name: p.billingContactName, email: p.billingEmail, phone: null }]
     : [{
       role: billingLabel(1),
@@ -230,11 +235,12 @@ const groups = computed(() => {
     });
   result.push({ title: "Other Entities", icon: "o_apartment", kind: "entities", rows: entities });
 
-  // Billing is reviewed up in Addresses & Billing, where the form asks it. The one exception: a
-  // NON-individual form that ALSO carries the two-box answer, saved before every entity type named a
-  // Billing Contact. That is not a second copy of the contact above — it is a different answer the client
-  // gave, and this step reports what is in hand.
-  if (!isIndividual.value && (p.billingContactName || p.billingEmail)) {
+  // Billing is reviewed up in Addresses & Billing, where the form asks it. The one exception: a payload
+  // that carries BOTH the contact block and the retired two-box answer. That is not a second copy of the
+  // contact above — it is a different answer the client gave on an earlier form — and this step reports
+  // what is in hand. Where the block is empty the two boxes ARE the contact above, so there is nothing
+  // here to add.
+  if ((p.billingContactName || p.billingEmail) && roleHasAny(billingRole)) {
     result.push({
       title: "Billing (as previously given)",
       icon: "o_receipt_long",

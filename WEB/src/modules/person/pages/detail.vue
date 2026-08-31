@@ -37,9 +37,9 @@
               v-if="canChooseTenant" v-model="form.tenantId" :options="tenantOptions" label="Tenant"
               class="col-12" :loading="loadingTenants" :disable="!canWrite"
             />
-            <!-- The title, to the left of the name it belongs in front of. Held apart from the name
-                 because a person is filed under a given name and a family name, and "Dr." is neither. -->
-            <app-name-prefix-field v-model="form.prefix" class="col-6 col-sm-2" :disable="!canWrite" />
+            <!-- The generational particle on the name. Held apart from the name because a person is filed
+                 under a given name and a family name, and "Jr." is neither. -->
+            <app-name-suffix-field v-model="form.suffix" class="col-6 col-sm-2" :disable="!canWrite" />
             <app-text-field v-model="form.firstName" label="First Name" class="col-6 col-sm-4" :disable="!canWrite" :rules="nameRules('First name', { required: true })" />
             <app-text-field v-model="form.middleName" label="Middle Name" class="col-12 col-sm-6" :disable="!canWrite" :rules="nameRules('Middle name')" />
             <app-text-field v-model="form.lastName" label="Last Name" class="col-12 col-sm-6" :disable="!canWrite" :rules="nameRules('Last name', { required: true })" />
@@ -71,10 +71,12 @@
           </q-card-section>
         </q-card>
 
-        <div v-if="canWrite" class="row justify-end q-mb-lg">
+        <div v-if="canWrite" class="row justify-end q-mb-md">
           <q-btn unelevated no-caps color="primary" label="Save" :loading="saving" @click="save" />
         </div>
       </q-form>
+
+      <app-record-audit :audit="audit" />
     </div>
   </q-page>
 </template>
@@ -88,9 +90,10 @@ import { useNotify } from "composables/useNotify";
 import { useTenantOptions } from "composables/useTenantOptions";
 import { nameRules } from "utils/personName";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
+import AppRecordAudit from "components/common/AppRecordAudit.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import AppTextField from "components/common/AppTextField.vue";
-import AppNamePrefixField from "components/common/AppNamePrefixField.vue";
+import AppNameSuffixField from "components/common/AppNameSuffixField.vue";
 import AppDateField from "components/common/AppDateField.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
 
@@ -108,13 +111,15 @@ const saving = ref(false);
 const formRef = ref(null);
 const isUser = ref(false);
 const personCode = ref("");
+// Who made this record and who last touched it, for the block at the foot of the page.
+const audit = ref(null);
 
 const genderOptions = ["Male", "Female", "Other", "Prefer not to say"].map((g) => ({ label: g, value: g }));
 const emailRules = [(v) => !v || /.+@.+\..+/.test(v) || "Enter a valid email"];
 
 const form = reactive({
   tenantId: null,
-  prefix: "",
+  suffix: "",
   firstName: "",
   middleName: "",
   lastName: "",
@@ -140,8 +145,9 @@ const load = async () => {
     const p = detail.profile;
     isUser.value = detail.isUser;
     personCode.value = p.personCode || "";
+    audit.value = p.audit || null;
     form.tenantId = p.tenantId || null;
-    form.prefix = p.prefix || "";
+    form.suffix = p.suffix || "";
     form.firstName = p.firstName || "";
     form.middleName = p.middleName || "";
     form.lastName = p.lastName || "";

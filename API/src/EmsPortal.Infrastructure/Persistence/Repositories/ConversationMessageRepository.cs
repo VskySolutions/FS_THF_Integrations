@@ -1,4 +1,5 @@
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -49,7 +50,8 @@ internal sealed class ConversationMessageRepository : IConversationMessageReposi
     public void RemoveMention(ConversationMessageMention mention) => _dbContext.ConversationMessageMentions.Remove(mention);
 
     public async Task<(IReadOnlyList<(ConversationMessageMention Mention, ConversationMessage Message)> Items, int Total)> ListMentionsForUserAsync(
-        Guid userId, EntityType? entityType, bool? isRead, int page, int limit, CancellationToken cancellationToken = default)
+        Guid userId, EntityType? entityType, bool? isRead, SortRequest sort, int page, int limit,
+        CancellationToken cancellationToken = default)
     {
         var query =
             from mention in _dbContext.ConversationMessageMentions
@@ -66,7 +68,14 @@ internal sealed class ConversationMessageRepository : IConversationMessageReposi
             query = query.Where(x => x.mention.IsRead == read);
         }
 
-        var ordered = query.OrderByDescending(x => x.message.CreatedOnUtc);
+        // A mention is an event: Date is both its default order and the only date it has.
+        var sorts = SortMap.For(query, "createdOnUtc")
+            .Add("entity", x => x.message.EntityType, x => x.message.CreatedOnUtc)
+            .Add("preview", x => x.message.Body, x => x.message.CreatedOnUtc)
+            .Add("status", x => x.mention.IsRead, x => x.message.CreatedOnUtc)
+            .Add("createdOnUtc", x => x.message.CreatedOnUtc);
+
+        var ordered = sorts.Apply(query, sort.SortBy, sort.Descending);
         var total = await ordered.CountAsync(cancellationToken);
         var rows = await ordered.Skip((page - 1) * limit).Take(limit).ToListAsync(cancellationToken);
         return (rows.Select(x => (x.mention, x.message)).ToList(), total);

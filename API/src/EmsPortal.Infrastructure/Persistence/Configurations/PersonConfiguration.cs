@@ -16,9 +16,9 @@ internal sealed class PersonConfiguration : IEntityTypeConfiguration<Person>
         builder.HasIndex(p => p.PersonCode).IsUnique().HasFilter("[Deleted] = 0");
 
         // Personal information
-        // Room for a written-out title ("Professor") as well as the abbreviations offered, and no more —
-        // the same 16 the client name's suffix gets, for the same reason.
-        builder.Property(p => p.Prefix).HasMaxLength(16);
+        // Room for a written-out particle ("the Third") as well as the abbreviations offered, and no
+        // more — the same 16 the REMS client name's suffix gets, for the same reason.
+        builder.Property(p => p.Suffix).HasMaxLength(16);
         builder.Property(p => p.FirstName).HasMaxLength(100);
         builder.Property(p => p.MiddleName).HasMaxLength(100);
         builder.Property(p => p.LastName).HasMaxLength(100);

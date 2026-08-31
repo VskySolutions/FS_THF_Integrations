@@ -1,7 +1,9 @@
+using EmsPortal.Api.Models;
 using EmsPortal.Api.Models.OptionSets;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.OptionSets;
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Common;
 using EmsPortal.Application.Abstractions.Tenancy;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Domain.Enums;
@@ -45,10 +47,26 @@ public sealed class OptionSetsController : ControllerBase
 
     private Guid? ScopeTenantId => _tenantContext.IsResolved ? _tenantContext.TenantId : null;
 
+    /// <summary>What the Option Lists list may be ordered by. "Type" is the system/tenant origin flag.</summary>
+    private static readonly SortMap<OptionSetSummaryResponse> ListSorts =
+        new SortMap<OptionSetSummaryResponse>("updatedOnUtc")
+            .Add("name", s => s.Name)
+            .Add("entityType", s => s.EntityType, s => s.Name)
+            .Add("itemCount", s => s.ItemCount, s => s.Name)
+            .Add("itemSortMode", s => s.ItemSortMode, s => s.Name)
+            .Add("origin", s => s.IsSystem, s => s.Name)
+            .Add("isActive", s => s.IsActive, s => s.Name)
+            .Add("createdOnUtc", s => s.CreatedOnUtc)
+            .Add("updatedOnUtc", s => s.UpdatedOnUtc);
+
     [HttpGet]
     [RequirePermission(Permissions.OptionSetsRead)]
     [ProducesResponseType<ApiResponse<IEnumerable<OptionSetSummaryResponse>>>(StatusCodes.Status200OK)]
-    public async Task<IActionResult> List([FromQuery] int? entityType, CancellationToken cancellationToken)
+    public async Task<IActionResult> List(
+        [FromQuery] int? entityType,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool descending = true,
+        CancellationToken cancellationToken = default)
     {
         var filter = entityType is { } et ? (EntityType)et : (EntityType?)null;
         var sets = await _sets.ListSetsForScopeAsync(ScopeTenantId, filter, cancellationToken);
@@ -69,8 +87,9 @@ public sealed class OptionSetsController : ControllerBase
             cancellationToken);
         string? NameOf(Guid? id) => id is { } uid && names.TryGetValue(uid, out var n) ? n : null;
 
-        var summaries = visible
-            .Select(s => ToSummary(s, counts.TryGetValue(s.Id, out var c) ? c : 0, NameOf))
+        // Ordered after projecting: Values is a count assembled here, and Type reads off a flag.
+        var summaries = ListSorts
+            .Apply(visible.Select(s => ToSummary(s, counts.TryGetValue(s.Id, out var c) ? c : 0, NameOf)), sortBy, descending)
             .ToList();
         return Ok(ApiResponseFactory.Success<IEnumerable<OptionSetSummaryResponse>>(summaries, "Option lists retrieved."));
     }
@@ -83,7 +102,7 @@ public sealed class OptionSetsController : ControllerBase
         var set = await _sets.GetSetWithItemsAsync(id, ScopeTenantId, cancellationToken);
         return set is null
             ? NotFound(ApiResponseFactory.NotFound("Option list not found."))
-            : Ok(ApiResponseFactory.Success(ToDetail(set), "Option list retrieved."));
+            : Ok(ApiResponseFactory.Success(await ToDetailAsync(set, cancellationToken), "Option list retrieved."));
     }
 
     /// <summary>Effective active values for a key — the tenant's own list when present, else the standard one.</summary>
@@ -144,7 +163,7 @@ public sealed class OptionSetsController : ControllerBase
         try
         {
             var set = await _service.CreateSetAsync(input, cancellationToken);
-            return CreatedAtAction(nameof(Get), new { id = set.Id }, ApiResponseFactory.Success(ToDetail(set), "Option list created."));
+            return CreatedAtAction(nameof(Get), new { id = set.Id }, ApiResponseFactory.Success(await ToDetailAsync(set, cancellationToken), "Option list created."));
         }
         catch (OptionSetException ex)
         {
@@ -162,7 +181,7 @@ public sealed class OptionSetsController : ControllerBase
             var set = await _service.UpdateSetAsync(id, input, cancellationToken);
             return set is null
                 ? NotFound(ApiResponseFactory.NotFound("Option list not found."))
-                : Ok(ApiResponseFactory.Success(ToDetail(set), "Option list updated."));
+                : Ok(ApiResponseFactory.Success(await ToDetailAsync(set, cancellationToken), "Option list updated."));
         }
         catch (OptionSetException ex)
         {
@@ -287,10 +306,12 @@ public sealed class OptionSetsController : ControllerBase
         s.ItemSortMode.ToString(), s.IsSystem, s.IsClosed, s.IsActive, IsEditable(s), itemCount,
         nameOf(s.CreatedById), s.CreatedOnUtc, nameOf(s.UpdatedById), s.UpdatedOnUtc);
 
-    private static OptionSetDetailResponse ToDetail(OptionSet s) => new(
+    /// <summary>The list plus its provenance block, which the detail page ends with.</summary>
+    private async Task<OptionSetDetailResponse> ToDetailAsync(OptionSet s, CancellationToken cancellationToken) => new(
         s.Id, s.TenantId, (int)s.EntityType, s.Key, s.Name, s.ParentSetId,
         s.ItemSortMode.ToString(), s.IsSystem, s.IsClosed, s.IsActive, IsEditable(s),
-        OrderItems(s).Select(ToItem).ToList());
+        OrderItems(s).Select(ToItem).ToList(),
+        await RecordAudit.ForAsync(_users, s, cancellationToken));
 
     private static OptionSetItemResponse ToItem(OptionSetItem i) => new(
         i.Id, i.OptionSetId, i.ParentItemId, i.Value, i.Label, i.Description, i.SortOrder,

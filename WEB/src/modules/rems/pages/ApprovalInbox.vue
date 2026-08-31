@@ -164,16 +164,17 @@ const columns = [
   { name: "client", label: "Client", field: "clientName", align: "left", sortable: true, default: true, filterable: false },
   // On by default: an approver deciding on a round needs to know who to ask about it, and the CSE is
   // that person. Without the column, finding out meant opening the request.
-  { name: "cse", label: "CSE", field: (r) => r.cse?.name || "—", align: "left", sortable: true, default: true, filterable: false },
+  // Not sortable: the CSE is a user id the controller turns into a name after the page is read.
+  { name: "cse", label: "CSE", field: (r) => r.cse?.name || "—", align: "left", default: true, filterable: false },
   // The REQUEST's approval, shown by default — it is the answer to "where does this stand?", which the
   // reader's own decision below is not. Sorted and searched on the label the badge shows, partial state
   // included, so ordering by this column groups the rounds that are at the same point.
+  // Not sortable: the label is worked out here from the round's tallies, not read from a column.
   {
     name: "roundStatus",
     label: "Approval Status",
     field: (r) => roundMeta(r).label,
     align: "left",
-    sortable: true,
     default: true,
     filterable: false
   },
@@ -185,13 +186,12 @@ const columns = [
   // looking at — machinery, not something anybody reads or acts on. The endpoint still accepts a `role`
   // filter; nothing on this screen sends one.
   { name: "status", label: "Your Decision", field: "status", align: "left", sortable: true, default: true, filterOptions: approvalStatusFilterOptions.value },
-  // Sorts on how much of the round is still outstanding, so the ones closest to done rise together.
+  // Not sortable: how much of the round is outstanding is counted from the tasks loaded with each row.
   {
     name: "approvals",
     label: "Approvals",
     field: (r) => (r.approverCount || 0) - (r.approvedCount || 0),
     align: "left",
-    sortable: true,
     default: true,
     filterable: false
   },
@@ -208,10 +208,13 @@ const columns = [
 // searching it in the browser stops scaling, and makes the pager count the loaded page rather than the
 // matching set.
 const { rows, loading, totalRecords, search, filterOpen, pagination, load, onRequest } = useListTable({
-  fetcher: ({ page, limit }) =>
+  pageKey: "rems-approvals",
+  fetcher: ({ page, limit, sortBy, descending }) =>
     remsApi.myApprovalTasks({
       page,
       limit,
+      sortBy,
+      descending,
       search: search.value || undefined,
       status: filters.status || undefined
     }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),

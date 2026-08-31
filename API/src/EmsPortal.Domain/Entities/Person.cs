@@ -28,17 +28,23 @@ public class Person : AuditableEntity
     // ---- Personal information ----
 
     /// <summary>
-    /// The title a person is addressed by — Mr., Mrs., Ms., Dr., Prof. — held beside the given name
-    /// rather than typed into it. It is not part of the name a person is FILED under (nobody is looked up
-    /// under "Dr."), so it stays out of <see cref="FullName"/>; it is how they are addressed, which a
-    /// letter, an invoice and a greeting all need and none of them can recover from a name.
+    /// The generational particle on a person's name — Jr., Sr., II, III, IV — held beside the family name
+    /// rather than typed into it. It is not part of the name a person is FILED under, so it stays out of
+    /// <see cref="FullName"/>: "Smith Jr." in a surname column is somebody nobody finds by searching for
+    /// their name, and "John Smith Jr." matches no record when "John Smith" matches the man. It is joined
+    /// back on wherever the name is READ.
     /// <para>
-    /// Free text, capped at 16 characters, with the common titles offered as suggestions — the same
-    /// bargain the client name's generational suffix strikes: the list is what most people need, not all
-    /// any person may have, and a title nobody thought to seed is not a reason to address somebody wrongly.
+    /// Free text, capped at 16 characters, with the common suffixes offered as suggestions — the same
+    /// bargain the REMS client name's suffix strikes: the list is what most people need, not all any
+    /// person may have, and one nobody thought to seed is not a reason to file somebody under the wrong
+    /// name.
+    /// </para>
+    /// <para>
+    /// This column was <c>Prefix</c> — a courtesy title (Mr., Dr.) — until the platform settled on one
+    /// particle per name. A title is not a suffix, so the titles already recorded were not carried across.
     /// </para>
     /// </summary>
-    public string? Prefix { get; set; }
+    public string? Suffix { get; set; }
 
     public string FirstName { get; set; } = string.Empty;
     public string? MiddleName { get; set; }

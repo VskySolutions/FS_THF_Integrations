@@ -1,4 +1,5 @@
 using EmsPortal.Domain.Enums;
+using EmsPortal.Application.Common;
 
 namespace EmsPortal.Application.Abstractions.Persistence;
 
@@ -22,7 +23,8 @@ public interface IDeletedRecordsRepository
 
     /// <summary>Paginated soft-deleted records of an entity type, scoped to <paramref name="tenantId"/> when given (else the ambient tenant).</summary>
     Task<(IReadOnlyList<DeletedRecordRow> Items, int Total)> ListDeletedAsync(
-        EntityType entityType, Guid? tenantId, int page, int limit, CancellationToken cancellationToken = default);
+        EntityType entityType, Guid? tenantId, SortRequest sort, int page, int limit,
+        CancellationToken cancellationToken = default);
 
     /// <summary>The identity string of a soft-deleted record (for confirmation-token validation), or null when not found.</summary>
     Task<string?> GetDeletedIdentityAsync(EntityType entityType, Guid entityId, Guid? tenantId, CancellationToken cancellationToken = default);

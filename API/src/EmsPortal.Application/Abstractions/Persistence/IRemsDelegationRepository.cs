@@ -21,6 +21,18 @@ public interface IRemsDelegationRepository
         Guid delegateUserId, DateOnly on, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Whether the principal has ANY delegation in force on <paramref name="on"/> — "has this person
+    /// arranged cover for their REMS work?" — answered without loading the grants to find out.
+    /// <para>
+    /// Deliberately not keyed on WHO the delegate is. What it establishes is that the principal has
+    /// handed their REMS work out at all, which is what lets a request in rework sit with somebody other
+    /// than them.
+    /// </para>
+    /// </summary>
+    Task<bool> HasActiveDelegateAsync(
+        Guid principalUserId, DateOnly on, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// One pair's grant, or null. Used to authorise an acting-as request: the caller claims to be acting
     /// for someone, and this is what decides whether they may.
     /// </summary>

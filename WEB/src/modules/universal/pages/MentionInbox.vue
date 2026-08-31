@@ -86,10 +86,15 @@ const columns = [
 ];
 
 const { rows, loading, totalRecords, pagination, load, onRequest } = useListTable({
-  fetcher: ({ page, limit }) =>
+  pageKey: "uf_mentions",
+  // A mention is an event, ordered by when it happened.
+  defaultSortBy: "createdOnUtc",
+  fetcher: ({ page, limit, sortBy, descending }) =>
     ufNotificationApi.mentions({
       page,
       limit,
+      sortBy,
+      descending,
       entityType: entityFilter.value ?? undefined,
       isRead: readFilter.value === null ? undefined : readFilter.value
     }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),

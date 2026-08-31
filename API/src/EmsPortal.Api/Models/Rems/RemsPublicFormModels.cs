@@ -31,10 +31,21 @@ public sealed class RemsFormPayloadV1
     public string? ClientName { get; set; }
 
     /// <summary>
-    /// The title an individual client is addressed by — Mr., Mrs., Ms., Dr. Held beside the given name
-    /// rather than typed into it, and deliberately NOT folded into
+    /// The generational particle on an individual client's name — Jr., Sr., II, III, IV. Held beside the
+    /// family name rather than typed into it, and deliberately NOT folded into
     /// <see cref="EffectiveClientName"/>: the name is what the client is filed and searched under, and
-    /// nobody is looked up under "Dr.". Null for a business or government client, which has no title.
+    /// "John Smith Jr." matches no record when "John Smith" matches the man. Null for a business or
+    /// government client, whose name is a company's and carries no such particle.
+    /// </summary>
+    public string? ClientSuffix { get; set; }
+
+    /// <summary>
+    /// The courtesy title an individual client was once asked for — Mr., Mrs., Ms., Dr.
+    /// <para>
+    /// RETIRED from the form, which asks for the generational <see cref="ClientSuffix"/> instead. Still
+    /// read and still round-tripped, because a submission saved while the box asked for a title carries
+    /// one, and a submission is the immutable record of what the client sent.
+    /// </para>
     /// </summary>
     public string? ClientPrefix { get; set; }
 
@@ -178,12 +189,12 @@ public sealed class RemsRolePayload
     /// <summary>
     /// The title this contact is addressed by — Mr., Mrs., Ms., Dr. Kept out of <see cref="DisplayName"/>
     /// for the same reason it is kept out of the client's: the joined name is what the contact's
-    /// <c>Person</c> is filed under, and a title is not part of it. It travels to
-    /// <c>Person.Prefix</c> when the contact is materialised.
+    /// <c>Person</c> is filed under, and a title is not part of it.
     /// <para>
-    /// RETIRED from the form — a contact is asked for its generational <see cref="Suffix"/> instead. Still
-    /// read and still round-tripped, because a submission saved while the box asked for a title carries
-    /// one, and a submission is the immutable record of what the client sent.
+    /// RETIRED from the form — a contact is asked for its generational <see cref="Suffix"/> instead, and
+    /// that is the one particle a <c>Person</c> now has a column for. Still read and still round-tripped,
+    /// because a submission saved while the box asked for a title carries one, and a submission is the
+    /// immutable record of what the client sent.
     /// </para>
     /// </summary>
     public string? Prefix { get; set; }
@@ -221,13 +232,17 @@ public sealed class RemsRolePayload
 
     /// <summary>
     /// The joined name with its generational particle on the end — "Jane Smith Jr.". What a materialised
-    /// contact's <c>Person.DisplayName</c> is set from, since a Person has no suffix column of its own and
-    /// DisplayName is its "as it reads" field.
+    /// contact's <c>Person.DisplayName</c> is set from: DisplayName is the "as it reads" field, and it is
+    /// what every REMS surface shows a contact by. The particle also travels separately into
+    /// <c>Person.Suffix</c>, which is where it is EDITED; this is only how it reads.
     /// <para>
-    /// The PREFIX is deliberately not in here: it has a column of its own on Person, and folding it in as
-    /// well would store the title twice and read it back as "Mr. Mr. Jane Smith" anywhere the two are
-    /// joined. The two name columns stay clean either way, so the person is still filed and found under
-    /// the name alone.
+    /// The retired PREFIX is deliberately not in here. A Person holds one particle and it is the suffix,
+    /// so a courtesy title on an older submission stays in that submission — which is the record of what
+    /// the client actually typed — rather than being folded into a name it was never part of.
+    /// </para>
+    /// <para>
+    /// The two name columns stay clean either way, so the person is still filed and found under the name
+    /// alone.
     /// </para>
     /// </summary>
     [JsonIgnore]
@@ -453,7 +468,7 @@ public sealed record RemsReviewModel(
 /// </summary>
 public sealed record RemsReviewContact(
     string? ClientName,
-    string? ClientPrefix,
+    string? ClientSuffix,
     string? ClientFirstName,
     string? ClientLastName,
     string Email,

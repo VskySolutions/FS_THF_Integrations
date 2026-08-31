@@ -1,4 +1,5 @@
 using EmsPortal.Domain.Entities;
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Enums;
 
 namespace EmsPortal.Application.Abstractions.Persistence;
@@ -20,7 +21,7 @@ public interface INotificationRepository
     Task<(IReadOnlyList<Notification> Items, int Total)> ListAsync(
         Guid userId, bool? isRead, NotificationType? type, string? search,
         DateTime? createdFromUtc, DateTime? createdToUtc,
-        int page, int limit, CancellationToken cancellationToken = default);
+        SortRequest sort, int page, int limit, CancellationToken cancellationToken = default);
 
     Task<int> CountUnreadAsync(Guid userId, CancellationToken cancellationToken = default);
 

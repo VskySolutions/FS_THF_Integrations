@@ -389,15 +389,17 @@
       </div>
 
       <!-- No action bar: every button lives in one of the two corners at the top — the workflow moves in
-           the header, stepping through the form on the tab strip — so the page ends on the last field of
-           whichever tab is open, with nothing below it to scroll to. -->
+           the header, stepping through the form on the tab strip — so the tab ends on its last field with
+           no controls below it, and the only thing under the strip is the record's own provenance. -->
+      <app-record-audit :audit="request?.audit" class="q-mt-md" />
     </template>
 
     <!-- All five act on a saved request, so none of them exist while one is being composed. -->
     <template v-if="remsId">
       <send-back-dialog
         v-model="sendBackOpen" :rems-number="request?.remsNumber"
-        :initiator-name="request?.createdBy || ''" :cse-name="request?.cse?.name || ''"
+        :initiator-name="request?.audit?.createdBy || ''" :cse-name="request?.cse?.name || ''"
+        :cse-eligible="!!request?.canSendBackToCse"
         @confirm="sendBack"
       />
       <send-ems-dialog v-model="sendOpen" :rems-id="remsId" :subtitle="subtitle" @sent="load" />
@@ -453,6 +455,7 @@ import { useAuthStore } from "stores/auth";
 
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import AppOptionBadge from "components/common/AppOptionBadge.vue";
+import AppRecordAudit from "components/common/AppRecordAudit.vue";
 import ActingAsBanner from "modules/rems/components/ActingAsBanner.vue";
 import DetailGrid from "modules/rems/components/DetailGrid.vue";
 import ClientInformationFields from "modules/rems/components/ClientInformationFields.vue";
@@ -1513,7 +1516,7 @@ const sendBack = async (payload) => {
     await remsApi.sendBack(remsId.value, payload);
     const to = payload.returnTo === "cse"
       ? (request.value?.cse?.name || "the CSE")
-      : (request.value?.createdBy || "the initiator");
+      : (request.value?.audit?.createdBy || "the initiator");
     notify.success(`Sent back to ${to}.`);
     await load();
   } catch (err) {

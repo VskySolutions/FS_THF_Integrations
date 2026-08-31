@@ -102,11 +102,11 @@
             </q-card-section>
             <q-separator />
             <q-card-section class="row q-col-gutter-md">
-              <!-- The title, to the left of the name. The same box every other screen asks it in, so the
-                   suggestions and the cap match; saved on the way past with the rest of the basics,
+              <!-- The generational particle on the name. The same box every other screen asks it in, so
+                   the suggestions and the cap match; saved on the way past with the rest of the basics,
                    because it lives on the same Person record the two name fields do. -->
-              <app-name-prefix-field
-                v-model="prefix" class="col-4 col-sm-2" :readonly="!canEdit" @blur="autoSaveBasics"
+              <app-name-suffix-field
+                v-model="suffix" class="col-4 col-sm-2" :readonly="!canEdit" @blur="autoSaveBasics"
               />
               <app-text-field
                 v-model="firstName" label="First Name" class="col-8 col-sm-4"
@@ -256,6 +256,8 @@
           />
         </div>
       </div>
+
+      <app-record-audit :audit="user.audit" />
     </div>
 
     <!-- Manage groups dialog -->
@@ -336,10 +338,11 @@ import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
 import { nameRules } from "utils/personName";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
+import AppRecordAudit from "components/common/AppRecordAudit.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import AppTextField from "components/common/AppTextField.vue";
-import AppNamePrefixField from "components/common/AppNamePrefixField.vue";
+import AppNameSuffixField from "components/common/AppNameSuffixField.vue";
 import AppInfoTip from "components/common/AppInfoTip.vue";
 import AppAutoSaveState from "components/common/AppAutoSaveState.vue";
 import TempPasswordDialog from "components/temp_password_dialog.vue";
@@ -367,10 +370,10 @@ const canReadPersons = computed(() => has(Permissions.PersonsRead));
 const userId = route.params.id;
 const user = ref(null);
 const loading = ref(false);
-// The title the person is addressed by. This page edits the same Person record the People screens do, so
-// it is offered here too — through AppNamePrefixField, like everywhere else, now that this card's fields
-// carry their labels above them rather than inside the box.
-const prefix = ref("");
+// The generational particle on the person's name. This page edits the same Person record the People
+// screens do, so it is offered here too — through AppNameSuffixField, like everywhere else, now that this
+// card's fields carry their labels above them rather than inside the box.
+const suffix = ref("");
 const firstName = ref("");
 const lastName = ref("");
 const email = ref("");
@@ -463,7 +466,7 @@ const load = async ({ syncFields = true } = {}) => {
   try {
     user.value = await userApi.get(userId);
     if (!syncFields) return;
-    prefix.value = user.value.prefix || "";
+    suffix.value = user.value.suffix || "";
     firstName.value = user.value.firstName || "";
     lastName.value = user.value.lastName || "";
     phoneNumber.value = user.value.phoneNumber || "";
@@ -561,7 +564,7 @@ const runAutoSave = async (target, fn) => {
 const autoSaveBasics = async () => {
   const u = user.value;
   if (!canEdit.value || !u) return;
-  if (prefix.value === (u.prefix || "") &&
+  if (suffix.value === (u.suffix || "") &&
     firstName.value === (u.firstName || "") &&
     lastName.value === (u.lastName || "") &&
     phoneNumber.value === (u.phoneNumber || "")) {
@@ -570,9 +573,9 @@ const autoSaveBasics = async () => {
 
   await runAutoSave(basicSave, async () => {
     await userApi.update(userId, {
-      // "" rather than null: the endpoint reads an omitted field as "leave it alone", so a title taken
+      // "" rather than null: the endpoint reads an omitted field as "leave it alone", so a suffix taken
       // back off would otherwise stay on the record.
-      prefix: prefix.value || "",
+      suffix: suffix.value || "",
       firstName: firstName.value,
       lastName: lastName.value,
       phoneNumber: phoneNumber.value,
@@ -616,7 +619,7 @@ const commitEmail = async () => {
 
   const saved = await runAutoSave(basicSave, async () => {
     await userApi.update(userId, {
-      prefix: prefix.value || "",
+      suffix: suffix.value || "",
       firstName: firstName.value,
       lastName: lastName.value,
       phoneNumber: phoneNumber.value,

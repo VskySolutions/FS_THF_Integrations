@@ -154,7 +154,10 @@ const columns = [
 ];
 
 const { rows, loading, search, pagination, load, onRequest } = useListTable({
-  fetcher: () => roleApi.list({ search: search.value || undefined }).then((r) => ({ data: r || [], total: (r || []).length })),
+  pageKey: "roles",
+  fetcher: ({ sortBy, descending }) =>
+    roleApi.list({ search: search.value || undefined, sortBy, descending })
+      .then((r) => ({ data: r || [], total: (r || []).length })),
   onError: (err) => notify.error(getApiErrorMessage(err))
 });
 

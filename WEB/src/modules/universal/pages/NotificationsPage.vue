@@ -158,10 +158,15 @@ const invalidRange = computed(() =>
   !!extras.createdFrom && !!extras.createdTo && extras.createdFrom > extras.createdTo);
 
 const { rows, loading, totalRecords, search, filterOpen, pagination, load, onRequest } = useListTable({
-  fetcher: ({ page, limit }) =>
+  pageKey: "uf_notifications",
+  // A notification is an event: Received is its default order, and it has no "updated" anything.
+  defaultSortBy: "createdOnUtc",
+  fetcher: ({ page, limit, sortBy, descending }) =>
     ufNotificationApi.list({
       page,
       limit,
+      sortBy,
+      descending,
       search: search.value || undefined,
       type: filters.type ?? undefined,
       isRead: filters.status == null ? undefined : filters.status === "true",

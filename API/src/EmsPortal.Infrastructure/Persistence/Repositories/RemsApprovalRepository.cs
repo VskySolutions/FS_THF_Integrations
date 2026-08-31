@@ -1,4 +1,5 @@
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -114,13 +115,22 @@ internal sealed class RemsApprovalRepository : IRemsApprovalRepository
         // Counted AFTER the filters so the pager reflects the filtered set — and, since the collapse above
         // is part of the same query, it counts REQUESTS rather than every round of every one of them.
         var total = await tasks.CountAsync(cancellationToken);
-        var items = await tasks
+        // The default is the task's own last touch — a checklist tick or a decision floats it up — with
+        // the round's send date as the tie-break for tasks created together and never since touched.
+        // Approval Status and CSE are absent: both are assembled by the controller after this query.
+        var withGraph = tasks
             .Include(t => t.Round).ThenInclude(r => r!.Tasks)
-            .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.Rems)
-            // The task's own last touch leads — a checklist tick or a decision floats it up — with the
-            // round's send date as the tie-break for tasks created together and never since touched.
-            .OrderByDescending(t => t.UpdatedOnUtc)
-            .ThenByDescending(t => t.Round!.SentOnUtc)
+            .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.Rems);
+        var sorts = SortMap.For(withGraph, "updatedOnUtc")
+            .Add("remsNumber", t => t.Round!.Engagement!.Rems!.REMSNumber)
+            .Add("client", t => t.Round!.Engagement!.Rems!.RequestedClientName, t => t.UpdatedOnUtc)
+            .Add("status", t => t.Status, t => t.UpdatedOnUtc)
+            .Add("sentOnUtc", t => t.Round!.SentOnUtc, t => t.UpdatedOnUtc)
+            .Add("decidedOnUtc", t => t.DecidedOnUtc, t => t.UpdatedOnUtc)
+            .Add("createdOnUtc", t => t.CreatedOnUtc)
+            .Add("updatedOnUtc", t => t.UpdatedOnUtc, t => t.Round!.SentOnUtc);
+
+        var items = await sorts.Apply(withGraph, query.Sort.SortBy, query.Sort.Descending)
             .Skip((query.Page - 1) * query.Limit)
             .Take(query.Limit)
             .ToListAsync(cancellationToken);

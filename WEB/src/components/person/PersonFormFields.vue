@@ -13,10 +13,10 @@
 
     <div class="section-subhead">Name</div>
     <div class="row q-col-gutter-md q-mb-md">
-      <!-- The title, to the left of the name it belongs in front of. It is not part of the name the
-           person is filed under, which is why it is its own box rather than something typed into the
-           one beside it. -->
-      <app-name-prefix-field v-model="form.prefix" class="col-4 col-sm-2" :disable="disable" />
+      <!-- The generational particle on their name — Jr., Sr., III. It is not part of the name the person
+           is filed under, which is why it is its own box rather than something typed into the surname:
+           "Smith Jr." in that box is somebody nobody finds by searching for their name. -->
+      <app-name-suffix-field v-model="form.suffix" class="col-4 col-sm-2" :disable="disable" />
       <!-- Held to what a name is — letters, and the hyphen / apostrophe / period that appear inside real
            ones. See utils/personName, which the server's PersonNames mirrors. -->
       <app-text-field
@@ -64,7 +64,7 @@
 import { nameRules } from "utils/personName";
 import AppSelect from "components/common/AppSelect.vue";
 import AppTextField from "components/common/AppTextField.vue";
-import AppNamePrefixField from "components/common/AppNamePrefixField.vue";
+import AppNameSuffixField from "components/common/AppNameSuffixField.vue";
 import AppDateField from "components/common/AppDateField.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
 

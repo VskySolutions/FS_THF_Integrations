@@ -1,4 +1,5 @@
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,8 +16,21 @@ internal sealed class PermissionGroupRepository : IPermissionGroupRepository
 
     // ---- Groups ----
 
+    // What the Permission Groups list may be ordered by. Roles Using and Members are counted in separate
+    // batched queries after this one, so neither is a column here; nor is Category, which is derived from
+    // the permission keys a group holds.
+    private static readonly SortMap<PermissionGroup> Sorts = new SortMap<PermissionGroup>("updatedOnUtc")
+        .Add("name", g => g.Name)
+        .Add("description", g => g.Description, g => g.Name)
+        .Add("permissionCount", g => g.Permissions.Count, g => g.Name)
+        .Add("status", g => g.IsActive, g => g.Name)
+        .Add("tenantName", g => g.Tenant!.Name, g => g.Name)
+        .Add("createdOnUtc", g => g.CreatedOnUtc)
+        .Add("updatedOnUtc", g => g.UpdatedOnUtc, g => g.Name);
+
     public async Task<(IReadOnlyList<PermissionGroup> Items, int Total)> ListAsync(
-        Guid? tenantId, string? search, bool? isActive, bool? usedByRoles, string? category, int page, int limit, CancellationToken cancellationToken = default)
+        Guid? tenantId, string? search, bool? isActive, bool? usedByRoles, string? category,
+        SortRequest sort, int page, int limit, CancellationToken cancellationToken = default)
     {
         var query = (tenantId is { } tid
             ? _dbContext.PermissionGroups.IgnoreQueryFilters().Where(g => g.TenantId == tid && !g.Deleted)
@@ -46,9 +60,7 @@ internal sealed class PermissionGroupRepository : IPermissionGroupRepository
         }
 
         var total = await query.CountAsync(cancellationToken);
-        var items = await query
-            .OrderByDescending(g => g.UpdatedOnUtc)
-            .ThenBy(g => g.Name)
+        var items = await Sorts.Apply(query, sort.SortBy, sort.Descending)
             .Skip((page - 1) * limit)
             .Take(limit)
             .ToListAsync(cancellationToken);

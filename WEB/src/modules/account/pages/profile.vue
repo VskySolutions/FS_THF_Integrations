@@ -8,11 +8,16 @@
       ]"
       :back-to="{ name: 'account' }"
     >
+      <!-- Commented out along with the fields it counts. The percentage is computed server-side from first
+           and last name, display name, preferred name, gender, personal email, phone and nationality
+           (ProfileController.ComputeCompletion); six of those eight came off this page, so it became a
+           number the reader is shown and cannot move. Restore it when they come back.
       <template #actions>
         <q-chip v-if="profile" dense color="teal-1" text-color="primary" class="text-weight-medium">
           {{ profile.profileCompletionPercentage }}% complete
         </q-chip>
       </template>
+      -->
     </app-detail-header>
 
     <div v-if="loading" class="row flex-center q-pa-xl"><q-spinner color="primary" size="40px" /></div>
@@ -40,52 +45,11 @@
         <q-separator />
         <q-card-section class="row q-col-gutter-md">
           <div class="col-12 section-subhead">Name</div>
-          <!-- The title, in front of the name it belongs in front of. Stored apart from the name, which
-               is what everything files and searches you under. -->
-          <app-name-prefix-field v-model="form.prefix" class="col-4 col-sm-2" />
+          <!-- The generational particle on your name. Stored apart from the name, which is what
+               everything files and searches you under. -->
+          <app-name-suffix-field v-model="form.suffix" class="col-4 col-sm-2" />
           <app-text-field v-model="form.firstName" label="First Name" class="col-8 col-sm-4" :rules="nameRules('First name')" />
-          <app-text-field v-model="form.middleName" label="Middle Name" class="col-12 col-sm-6" :rules="nameRules('Middle name')" />
           <app-text-field v-model="form.lastName" label="Last Name" class="col-12 col-sm-6" :rules="nameRules('Last name')" />
-          <app-text-field v-model="form.preferredName" label="Preferred Name" class="col-12 col-sm-6" :rules="nameRules('Preferred name')" />
-          <app-text-field v-model="form.displayName" label="Display Name" class="col-12 col-sm-6" />
-
-          <div class="col-12 section-subhead">Demographics</div>
-          <app-select v-model="form.gender" :options="genderOptions" label="Gender" class="col-12 col-sm-6" />
-          <app-date-field v-model="form.dateOfBirth" label="Date of Birth" class="col-12 col-sm-6" />
-          <app-select v-model="form.maritalStatus" :options="maritalOptions" label="Marital Status" class="col-12 col-sm-6" />
-          <app-select
-            v-model="form.nationality" :options="countryNameOptions" label="Nationality"
-            use-input class="col-12 col-sm-6"
-          />
-        </q-card-section>
-      </q-card>
-
-      <!-- Contact details -->
-      <q-card flat bordered class="profile-card q-mb-md">
-        <q-card-section class="text-subtitle1 text-weight-medium">Contact details</q-card-section>
-        <q-separator />
-        <q-card-section class="row q-col-gutter-md">
-          <div class="col-12 section-subhead">Email</div>
-          <app-text-field v-model="form.primaryEmail" type="email" label="Personal Email" class="col-12 col-sm-6" />
-          <app-text-field v-model="form.secondaryEmail" type="email" label="Alternate Email" class="col-12 col-sm-6" />
-
-          <div class="col-12 section-subhead">Phone</div>
-          <app-phone-input
-            v-model="form.mobileNumber" v-model:country="form.phoneCountryCode"
-            label="Phone Number" country-label="Phone Country" :dense="true" class="col-12"
-          />
-          <app-text-field v-model="form.alternateMobileNumber" label="Alternate Phone Number" class="col-12 col-sm-6" />
-        </q-card-section>
-      </q-card>
-
-      <!-- Emergency contact -->
-      <q-card flat bordered class="profile-card q-mb-md">
-        <q-card-section class="text-subtitle1 text-weight-medium">Emergency contact</q-card-section>
-        <q-separator />
-        <q-card-section class="row q-col-gutter-md">
-          <app-text-field v-model="form.emergencyContactName" label="Contact Name" class="col-12 col-sm-4" />
-          <app-text-field v-model="form.emergencyContactRelationship" label="Relationship" class="col-12 col-sm-4" />
-          <app-text-field v-model="form.emergencyContactNumber" label="Contact Number" class="col-12 col-sm-4" />
         </q-card-section>
       </q-card>
 
@@ -94,9 +58,10 @@
         <q-card-section class="text-subtitle1 text-weight-medium">Address</q-card-section>
         <q-separator />
         <q-card-section>
-          <!-- `extended` keeps the landmark / building / floor / unit details this record has always
-               captured; the address itself stays optional on a profile. -->
-          <app-address-fields ref="addressRef" v-model="address" extended />
+          <!-- Not `extended`: the landmark / building / floor / unit boxes are off this page. Whatever the
+               record already holds in them is loaded, kept and written back untouched — see the note on
+               the form state below. -->
+          <app-address-fields ref="addressRef" v-model="address" />
         </q-card-section>
       </q-card>
 
@@ -179,12 +144,12 @@
          for everyone else there is nothing to delegate. -->
     <rems-delegates-panel v-if="canUseRems" class="q-mt-md" />
 
+    <app-record-audit :audit="profile?.audit" class="q-mt-md" />
   </q-page>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted } from "vue";
-import { orderedCountries, countryNameOption } from "composables/useCountries";
 import { authApi, profileApi, mediaApi, getApiErrorMessage } from "services/api";
 import { humanizeKey } from "composables/usePermissionCategories";
 import { useAuthStore } from "stores/auth";
@@ -192,12 +157,10 @@ import { useNotify } from "composables/useNotify";
 import { usePermissions, Permissions } from "composables/usePermissions";
 import { nameRules } from "utils/personName";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
-import AppSelect from "components/common/AppSelect.vue";
+import AppRecordAudit from "components/common/AppRecordAudit.vue";
 import RemsDelegatesPanel from "modules/rems/components/RemsDelegatesPanel.vue";
 import AppTextField from "components/common/AppTextField.vue";
-import AppNamePrefixField from "components/common/AppNamePrefixField.vue";
-import AppDateField from "components/common/AppDateField.vue";
-import AppPhoneInput from "components/common/AppPhoneInput.vue";
+import AppNameSuffixField from "components/common/AppNameSuffixField.vue";
 import AppAddressFields from "components/common/AppAddressFields.vue";
 import AppImageUpload from "components/common/AppImageUpload.vue";
 import ChangePasswordForm from "components/account/ChangePasswordForm.vue";
@@ -211,21 +174,20 @@ const canUseRems = computed(() => has(Permissions.RemsRequestsCreate));
 
 const assignments = computed(() => authStore.user?.tenants || []);
 
-const genderOptions = ["Male", "Female", "Other", "Prefer not to say"].map((g) => ({ label: g, value: g }));
-const maritalOptions = ["Single", "Married", "Divorced", "Widowed", "Separated"].map((m) => ({ label: m, value: m }));
-
-// ---- Country options for the Nationality field (address country/state/city now live in
-// AppAddressFields, which owns its own cascade). ----
-const countryNameOptions = orderedCountries.map(countryNameOption);
-
 const addressRef = ref(null);
 
 // ---- Form state ----
+//
+// The form carries MORE than the page shows. Middle / preferred / display name, the demographics, the
+// contact and emergency-contact details and the address's landmark-building-floor-unit boxes were taken
+// off this page, but they are still loaded here and still sent back on save — untouched, exactly as they
+// arrived. Dropping them from the payload instead would make hiding a field on one screen the way its
+// stored value gets erased, and these are the same Person columns the People and User screens edit.
 const loading = ref(true);
 const saving = ref(false);
 const profile = ref(null);
 const form = reactive({
-  prefix: "",
+  suffix: "",
   firstName: "",
   middleName: "",
   lastName: "",
@@ -265,7 +227,7 @@ const load = async () => {
   try {
     const p = await profileApi.getMine();
     profile.value = p;
-    form.prefix = p.prefix || "";
+    form.suffix = p.suffix || "";
     form.firstName = p.firstName || "";
     form.middleName = p.middleName || "";
     form.lastName = p.lastName || "";
@@ -360,7 +322,7 @@ const save = async () => {
   const stateName = address.stateName;
 
   const payload = {
-    prefix: form.prefix,
+    suffix: form.suffix,
     firstName: form.firstName,
     middleName: form.middleName,
     lastName: form.lastName,

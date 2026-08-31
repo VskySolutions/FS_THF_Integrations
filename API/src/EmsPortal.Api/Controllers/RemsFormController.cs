@@ -47,6 +47,8 @@ public sealed class RemsFormController : ControllerBase
     private const string CodeFormAlreadySubmitted = "REMS_FORM_ALREADY_SUBMITTED";
 
     private readonly IRemsRepository _rems;
+    /// <summary>Only to answer whether an initiator has cover arranged — see RemsSetupAccess.CanWork.</summary>
+    private readonly IRemsDelegationRepository _delegations;
     private readonly IRemsFormRepository _forms;
     private readonly IRemsEngagementRepository _engagements;
     private readonly IUserRepository _users;
@@ -60,6 +62,7 @@ public sealed class RemsFormController : ControllerBase
 
     public RemsFormController(
         IRemsRepository rems,
+        IRemsDelegationRepository delegations,
         IRemsFormRepository forms,
         IRemsEngagementRepository engagements,
         IUserRepository users,
@@ -72,6 +75,7 @@ public sealed class RemsFormController : ControllerBase
         IOptions<AppOptions> appOptions)
     {
         _rems = rems;
+        _delegations = delegations;
         _forms = forms;
         _engagements = engagements;
         _users = users;
@@ -102,7 +106,7 @@ public sealed class RemsFormController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("REMS request not found."));
         }
 
-        if (GuardSetupOwner(rems) is { } denied)
+        if (await GuardSetupOwnerAsync(rems, cancellationToken) is { } denied)
         {
             return denied;
         }
@@ -134,7 +138,7 @@ public sealed class RemsFormController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("REMS request not found."));
         }
 
-        if (GuardSetupOwner(rems) is { } denied)
+        if (await GuardSetupOwnerAsync(rems, cancellationToken) is { } denied)
         {
             return denied;
         }
@@ -226,7 +230,7 @@ public sealed class RemsFormController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("REMS request not found."));
         }
 
-        if (GuardSetupOwner(rems) is { } denied)
+        if (await GuardSetupOwnerAsync(rems, cancellationToken) is { } denied)
         {
             return denied;
         }
@@ -278,7 +282,7 @@ public sealed class RemsFormController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("REMS request not found."));
         }
 
-        if (GuardSetupOwner(rems) is { } denied)
+        if (await GuardSetupOwnerAsync(rems, cancellationToken) is { } denied)
         {
             return denied;
         }
@@ -495,7 +499,7 @@ public sealed class RemsFormController : ControllerBase
             return (null, null, NotFound(ApiResponseFactory.NotFound("REMS request not found.")));
         }
 
-        if (GuardSetupOwner(rems) is { } denied)
+        if (await GuardSetupOwnerAsync(rems, cancellationToken) is { } denied)
         {
             return (null, null, denied);
         }
@@ -601,7 +605,8 @@ public sealed class RemsFormController : ControllerBase
         // Exactly what POST .../form/reminder would decide, asked ahead of the click.
         var blocked = RemindBlocked(rems, form);
         var maySend = User.HasPermission(Permissions.RemsFormsSend);
-        var isOwner = RemsSetupAccess.CanWork(User, rems, me);
+        var isOwner = RemsSetupAccess.CanWork(
+            User, rems, me, await RemsSetupAccess.CoverForWorkAsync(_delegations, rems, me, cancellationToken));
         var reason = !maySend
             ? null
             : blocked?.Reason ?? (isOwner ? null : RemsSetupAccess.WorkDeniedReason(rems));
@@ -676,14 +681,15 @@ public sealed class RemsFormController : ControllerBase
     /// it (<see cref="RemsSetupAccess"/>): whoever the request is with at this stage may set them, and
     /// holding a REMS permission is not on its own an answer to "which requests".
     /// </summary>
-    private IActionResult? GuardSetupOwner(REMS rems)
+    private async Task<IActionResult?> GuardSetupOwnerAsync(REMS rems, CancellationToken cancellationToken)
     {
         if (User.GetUserId() is not { } me)
         {
             return Unauthorized(ApiResponseFactory.Unauthorized("No user context."));
         }
 
-        return RemsSetupAccess.CanWork(User, rems, me)
+        return RemsSetupAccess.CanWork(
+            User, rems, me, await RemsSetupAccess.CoverForWorkAsync(_delegations, rems, me, cancellationToken))
             ? null
             : StatusCode(StatusCodes.Status403Forbidden,
                 ApiResponseFactory.Forbidden(RemsSetupAccess.WorkDeniedReason(rems)));

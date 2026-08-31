@@ -42,8 +42,6 @@
       :loading="loading"
       :total-records="totalRecords"
       :pagination="pagination"
-      default-sort-by="accountName"
-      :default-descending="false"
       selectable
       @request="onRequest"
       @refresh="load"
@@ -128,7 +126,6 @@ import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
 import { useDeletedRecords } from "composables/useDeletedRecords";
-import { useDateFormat } from "composables/useDateFormat";
 import { useAuditColumns } from "composables/useAuditColumns";
 import { useSmtpOptions } from "composables/useSmtpOptions";
 
@@ -144,7 +141,6 @@ const auditColumns = useAuditColumns();
 const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
 const { confirm } = useConfirm();
-const fmt = useDateFormat();
 const { encryptionLabel } = useSmtpOptions();
 const { canChooseTenant } = useTenantOptions();
 
@@ -166,21 +162,27 @@ const columns = [
   { name: "fromEmail", label: "From Email", field: "fromEmail", align: "left", sortable: true, default: true, filterable: false },
   { name: "encryptionType", label: "Encryption", field: "encryptionType", align: "left", default: true, filterable: false },
   { name: "status", label: "Status", field: "isActive", align: "left", sortable: true, default: true, filterOptions: STATUS_OPTIONS },
-  { name: "createdByName", label: "Created By", field: "createdByName", align: "left", default: true, filterable: false },
-  { name: "createdOnUtc", label: "Created Date", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true, default: true, filterable: false },
-  // Created By / Created Date are already visible above under their own labels, so the shared set
-  // contributes the updated pair. The API names them *ByName here, hence the overrides.
-  ...auditColumns({ only: ["updatedBy", "updatedOnUtc"], overrides: { updatedBy: "updatedByName" } }),
+  // All four from the shared set, so this list keeps the platform convention: the updated pair last and
+  // visible, the created pair a click away in the Columns menu. The API names the actors *ByName here,
+  // hence the overrides.
+  ...auditColumns({ overrides: { createdBy: "createdByName", updatedBy: "updatedByName" } }),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 
 const { rows, loading, totalRecords, selected, search, filterOpen, pagination, load, onRequest } = useListTable({
-  fetcher: ({ page, limit }) =>
+  pageKey: "smtp-accounts",
+  // No default column. This list has an order of its own that no single column expresses — the ACTIVE
+  // account pinned above the rest, then most recently touched — and naming a column here would silently
+  // replace it. Clicking a header still sorts, server-side, like every other list.
+  defaultSortBy: null,
+  fetcher: ({ page, limit, sortBy, descending }) =>
     smtpAccountApi.list({
       tenantId: scopeTenantId(),
       status: filters.status || undefined,
       page,
-      limit
+      limit,
+      sortBy,
+      descending
     }).then((r) => ({ data: r?.data, total: r?.meta?.totalRecords ?? r?.data?.length })),
   onError: (err) => notify.error(getApiErrorMessage(err))
 });

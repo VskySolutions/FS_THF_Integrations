@@ -46,7 +46,7 @@
       </q-card>
 
       <!-- Values card -->
-      <q-card flat bordered>
+      <q-card flat bordered class="q-mb-md">
         <q-card-section class="row items-center">
           <div class="text-subtitle1 text-weight-medium">Values</div>
           <q-space />
@@ -98,6 +98,8 @@
         </q-list>
       </q-card>
 
+      <app-record-audit :audit="set.audit" />
+
       <option-item-dialog
         v-model="itemDialogOpen"
         :set-id="set.id"
@@ -119,6 +121,7 @@ import { useConfirm } from "composables/useConfirm";
 import { useEntityMeta } from "composables/uf/useEntityMeta";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import AppSelect from "components/common/AppSelect.vue";
+import AppRecordAudit from "components/common/AppRecordAudit.vue";
 import OptionItemDialog from "modules/option-set/components/OptionItemDialog.vue";
 
 const route = useRoute();

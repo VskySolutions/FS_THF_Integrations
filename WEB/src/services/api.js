@@ -110,11 +110,17 @@ export const personApi = {
   create: (payload) => api.post("/api/admin/persons", payload).then(unwrap),
   update: (id, payload) => api.put(`/api/admin/persons/${id}`, payload).then(unwrap),
   remove: (id) => api.delete(`/api/admin/persons/${id}`).then(envelope),
-  // Lightweight options for the user-create Person dropdown (each carries isUser).
-  selectable: () => api.get("/api/admin/persons/selectable").then(unwrap)
+  // Lightweight options for the user-create Person dropdown (each carries isUser). `tenantId` reads
+  // ANOTHER tenant's people — what the tenant-management screen creates accounts from — and is honoured
+  // only for a caller holding tenants.write; everyone else gets their own tenant either way.
+  selectable: (tenantId) => api.get("/api/admin/persons/selectable", { params: { tenantId } }).then(unwrap)
 };
 
 export const userApi = {
+  // params: { page, limit, search?, isActive?, name?, email?, phone?, role?, group?, tenantId? }.
+  // Without `tenantId` this is the caller's ACTIVE tenant, whoever they are. `tenantId` names one other
+  // tenant — the tenant-management screen listing that tenant's own accounts — and is honoured only for a
+  // caller holding tenants.write; for anybody else it is ignored, not refused.
   list: (params) => api.get("/api/admin/users", { params }).then(envelope),
   get: (id) => api.get(`/api/admin/users/${id}`).then(unwrap),
   // payload: { personId, email?, phoneNumber?, countryCode?, tenantId, roleIds[] } — promotes a Person
@@ -143,7 +149,8 @@ export const userApi = {
 
 // Tenant-scoped user groups (segmentation/tagging, independent of RBAC roles).
 export const userGroupApi = {
-  list: (search) => api.get("/api/admin/user-groups", { params: { search } }).then(unwrap),
+  // params: { search?, sortBy?, descending? } — ordering is the server', not the browser's.
+  list: (params) => api.get("/api/admin/user-groups", { params }).then(unwrap),
   // payload: { name, description? } → created (or existing) group
   create: (payload) => api.post("/api/admin/user-groups", payload).then(unwrap),
   remove: (id) => api.delete(`/api/admin/user-groups/${id}`).then(envelope),
@@ -336,7 +343,8 @@ export const ufConversationApi = {
 
 // Tags (admin CRUD + entity application).
 export const ufTagsApi = {
-  list: (search) => api.get("/api/admin/tags", { params: { search } }).then(unwrap),
+  // params: { search?, sortBy?, descending? }
+  list: (params) => api.get("/api/admin/tags", { params }).then(unwrap),
   // Read-only picker list available to any tenant user (for applying tags).
   picker: (search) => api.get("/api/uf/tags", { params: { search } }).then(unwrap),
   create: (payload) => api.post("/api/admin/tags", payload).then(unwrap),
@@ -429,7 +437,8 @@ export const ufStickyNoteApi = {
   remove: (id) => api.delete(`/api/uf/sticky-notes/${id}`).then(envelope),
   dismiss: (id) => api.post(`/api/uf/sticky-notes/${id}/dismiss`).then(envelope),
   saveState: (noteId, payload) => api.put(`/api/uf/sticky-note-states/${noteId}`, payload).then(envelope),
-  adminList: () => api.get("/api/admin/sticky-notes").then(unwrap)
+  // params: { sortBy?, descending? }
+  adminList: (params) => api.get("/api/admin/sticky-notes", { params }).then(unwrap)
 };
 
 // Deleted records management.

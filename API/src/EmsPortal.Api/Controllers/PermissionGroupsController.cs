@@ -3,6 +3,7 @@ using EmsPortal.Api.Models.PermissionGroups;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.Auditing;
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Common;
 using EmsPortal.Application.Abstractions.Security;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Domain.Enums;
@@ -107,12 +108,15 @@ public sealed class PermissionGroupsController : ControllerBase
         [FromQuery] string? category,
         [FromQuery] int page = 1,
         [FromQuery] int limit = 20,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool descending = true,
         CancellationToken cancellationToken = default)
     {
         Guid? scopeTenant = User.IsSuperAdmin() && tenantId is { } tid ? tid : null;
 
         var (items, total) = await _groups.ListAsync(
-            scopeTenant, search, isActive, usedByRoles, category, Math.Max(1, page), Math.Clamp(limit, 1, 100), cancellationToken);
+            scopeTenant, search, isActive, usedByRoles, category, new SortRequest(sortBy, descending),
+            Math.Max(1, page), Math.Clamp(limit, 1, 100), cancellationToken);
 
         // Batch the per-group current usage (distinct active members) in one query to avoid N+1.
         var usageByGroup = await _groups.CountActiveMembersForGroupsAsync(items.Select(i => i.Id).ToList(), cancellationToken);
@@ -152,7 +156,8 @@ public sealed class PermissionGroupsController : ControllerBase
         var audit = await _auditRead.ListByEntityAsync(nameof(PermissionGroup), id.ToString(), 100, cancellationToken);
         // The trail records WHO as a user id; it is shown to a person, so it is resolved to a name.
         var actorName = await AuditActorNames.ResolverAsync(_users, audit, cancellationToken);
-        return Ok(ApiResponseFactory.Success(ToDetail(group, rolesUsing, audit, usage, actorName), "Permission group retrieved."));
+        var provenance = await RecordAudit.ForAsync(_users, group, cancellationToken);
+        return Ok(ApiResponseFactory.Success(ToDetail(group, rolesUsing, audit, usage, actorName, provenance), "Permission group retrieved."));
     }
 
     // ---- Create ----
@@ -399,13 +404,14 @@ public sealed class PermissionGroupsController : ControllerBase
         IReadOnlyList<(Guid RoleId, string RoleName)> rolesUsing,
         IReadOnlyList<AuditTrailEntry> audit,
         int currentUsage,
-        Func<string?, string?> actorName)
+        Func<string?, string?> actorName,
+        RecordAudit provenance)
         => new(
             g.Id, g.Name, g.Description, g.IsActive, g.TenantId, g.Tenant?.Name,
             g.Permissions.Select(p => p.PermissionKey).OrderBy(k => k).ToList(),
             rolesUsing.Select(r => new RoleUsingGroupResponse(r.RoleId, r.RoleName)).ToList(),
             audit.Select(a => new PermissionGroupAuditEntryResponse(a.Action, actorName(a.PerformedBy), a.CreatedDate, a.Details)).ToList(),
             CanDelete(g),
-            g.CreatedOnUtc, g.UpdatedOnUtc,
+            provenance,
             g.CapacityLimit, currentUsage, IsFull(g.CapacityLimit, currentUsage));
 }

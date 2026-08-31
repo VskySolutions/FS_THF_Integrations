@@ -1,6 +1,7 @@
 using EmsPortal.Api.Models.UniversalFeatures;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Enums;
 using EmsPortal.Shared.Contracts;
 using Microsoft.AspNetCore.Authorization;
@@ -43,6 +44,8 @@ public sealed class MentionsController : ControllerBase
         [FromQuery] bool? isRead = null,
         [FromQuery] int page = 1,
         [FromQuery] int limit = 20,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool descending = true,
         CancellationToken cancellationToken = default)
     {
         if (User.GetUserId() is not { } userId)
@@ -50,7 +53,8 @@ public sealed class MentionsController : ControllerBase
             return Unauthorized(ApiResponseFactory.Unauthorized("No user context."));
         }
 
-        var (items, total) = await _messages.ListMentionsForUserAsync(userId, entityType, isRead, page, limit, cancellationToken);
+        var (items, total) = await _messages.ListMentionsForUserAsync(
+            userId, entityType, isRead, new SortRequest(sortBy, descending), page, limit, cancellationToken);
         var authorNames = await _users.GetFullNamesAsync(
             items.Where(x => x.Message.CreatedById.HasValue).Select(x => x.Message.CreatedById!.Value), cancellationToken);
 
@@ -93,7 +97,7 @@ public sealed class MentionsController : ControllerBase
     {
         // Tenant people who hold a login account are valid @mention targets.
         var (people, _) = await _persons.ListAsync(
-            search, null, isUser: true, isActive: true, page: 1, limit: 20, cancellationToken: cancellationToken);
+            search, null, isUser: true, isActive: true, SortRequest.Default, page: 1, limit: 20, cancellationToken: cancellationToken);
         var data = people
             .Where(p => p.UserId.HasValue)
             .Select(p => new MentionCandidateResponse(

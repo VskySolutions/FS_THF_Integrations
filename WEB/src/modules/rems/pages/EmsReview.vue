@@ -262,10 +262,13 @@ const ASSIGNMENT_FILTERS = [
 const assignment = ref("all");
 
 const { rows, loading, totalRecords, search, filterOpen, pagination, load, onRequest } = useListTable({
-  fetcher: ({ page, limit }) =>
+  pageKey: "rems-ems-review",
+  fetcher: ({ page, limit, sortBy, descending }) =>
     remsApi.clientForms({
       page,
       limit,
+      sortBy,
+      descending,
       search: search.value || undefined,
       // A column filter's value is always a string; the API takes a bool.
       submitted: filters.submitted ? filters.submitted === "true" : undefined,

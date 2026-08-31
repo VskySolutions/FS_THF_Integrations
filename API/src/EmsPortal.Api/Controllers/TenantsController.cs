@@ -1,7 +1,9 @@
+using EmsPortal.Api.Models;
 using EmsPortal.Api.Models.Tenants;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.Auditing;
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Common;
 using EmsPortal.Application.OptionSets;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Domain.Enums;
@@ -80,6 +82,18 @@ public sealed class TenantsController : ControllerBase
             ApiResponseFactory.Success(new TenantResponse(tenant.Id, tenant.Identifier, tenant.Status.ToString()), "Tenant created."));
     }
 
+    /// <summary>
+    /// What the Tenants list may be ordered by. Created By / Updated By are absent: they are ids resolved
+    /// to names one page at a time, so there is nothing to order the whole set on.
+    /// </summary>
+    private static readonly SortMap<Tenant> Sorts = new SortMap<Tenant>("updatedOnUtc")
+        .Add("name", t => t.Name)
+        .Add("identifier", t => t.Identifier)
+        .Add("status", t => t.Status, t => t.UpdatedOnUtc)
+        .Add("timeZoneId", t => t.TimeZoneId)
+        .Add("createdOnUtc", t => t.CreatedOnUtc)
+        .Add("updatedOnUtc", t => t.UpdatedOnUtc);
+
     [HttpGet]
     [RequirePermission(Permissions.TenantsWrite)]
     public async Task<IActionResult> List(
@@ -88,6 +102,8 @@ public sealed class TenantsController : ControllerBase
         [FromQuery] bool includeArchived = false,
         [FromQuery] string? status = null,
         [FromQuery] string? search = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool descending = true,
         CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
@@ -108,7 +124,9 @@ public sealed class TenantsController : ControllerBase
                 t.Identifier.Contains(term, StringComparison.OrdinalIgnoreCase));
         }
 
-        var filtered = filteredSet.ToList();
+        // Ordered before it is paged. This list is small enough to be read whole and filtered in memory,
+        // but "page 1" still means the first rows OF AN ORDER, so the order has to be settled first.
+        var filtered = Sorts.Apply(filteredSet, sortBy, descending).ToList();
         var pageTenants = filtered.Skip((page - 1) * limit).Take(limit).ToList();
         var names = await ResolveActorNamesAsync(pageTenants.SelectMany(t => new[] { t.CreatedById, t.UpdatedById }), cancellationToken);
         var pageItems = pageTenants.Select(t => new TenantSummary(
@@ -131,7 +149,7 @@ public sealed class TenantsController : ControllerBase
 
         var detail = new TenantDetail(
             tenant.Id, tenant.Name, tenant.Identifier, tenant.Status.ToString(), tenant.TimeZoneId,
-            tenant.CreatedOnUtc, tenant.UpdatedOnUtc);
+            await RecordAudit.ForAsync(_users, tenant, cancellationToken));
 
         return Ok(ApiResponseFactory.Success(detail, "Tenant retrieved."));
     }

@@ -1,4 +1,5 @@
 using EmsPortal.Domain.Entities;
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Enums;
 
 namespace EmsPortal.Application.Abstractions.Persistence;
@@ -76,6 +77,7 @@ public sealed record RemsRequestListOptions(
     /// Callers with no toggle on screen should send <see cref="RemsListOwnership.All"/>, which is the
     /// list they had before there was one.</summary>
     RemsListOwnership Ownership,
+    SortRequest Sort,
     int Page,
     int Limit);
 

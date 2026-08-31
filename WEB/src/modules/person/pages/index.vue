@@ -109,7 +109,6 @@ import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
 import { useDeletedRecords } from "composables/useDeletedRecords";
-import { useDateFormat } from "composables/useDateFormat";
 import { useAuditColumns } from "composables/useAuditColumns";
 import { debounce } from "quasar";
 
@@ -128,7 +127,6 @@ const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const { has } = usePermissions();
-const fmt = useDateFormat();
 const auditColumns = useAuditColumns();
 const { canChooseTenant, activeTenantId, tenantOptions, loadingTenants, loadTenants } = useTenantOptions();
 
@@ -170,17 +168,18 @@ const columns = computed(() => [
   // Where the record came from. Filtering is client-side over the loaded page (this list is not
   // server-filtered on it), so it stays a plain column rather than claiming a server filter it lacks.
   { name: "sourceEntityType", label: "Source", field: (r) => sourceLabel(r.sourceEntityType), align: "left", default: true, filterable: false },
-  { name: "updatedOnUtc", label: "Updated", field: (r) => fmt.formatDateTime(r.updatedOnUtc), align: "left", sortable: true, default: true, filterable: false },
-  // Updated On is already visible above, so the shared set contributes the other three.
-  ...auditColumns({ only: ["createdBy", "createdOnUtc", "updatedBy"] }),
+  ...auditColumns(),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ]);
 
 const { rows, loading, totalRecords, selected, search, filterOpen, pagination, load, onRequest } = useListTable({
-  fetcher: ({ page, limit }) =>
+  pageKey: "persons",
+  fetcher: ({ page, limit, sortBy, descending }) =>
     personApi.list({
       page,
       limit,
+      sortBy,
+      descending,
       search: search.value || undefined,
       tenantId: filters.tenantName || undefined,
       isUser: typeof filters.isUser === "boolean" ? filters.isUser : undefined,

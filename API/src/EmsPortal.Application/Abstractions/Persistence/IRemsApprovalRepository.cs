@@ -1,4 +1,5 @@
 using EmsPortal.Domain.Entities;
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Enums;
 
 namespace EmsPortal.Application.Abstractions.Persistence;
@@ -17,6 +18,7 @@ public sealed record RemsApprovalTaskQuery(
     string? Search,
     RemsApproverRole? Role,
     RemsApprovalTaskStatus? Status,
+    SortRequest Sort,
     int Page,
     int Limit);
 

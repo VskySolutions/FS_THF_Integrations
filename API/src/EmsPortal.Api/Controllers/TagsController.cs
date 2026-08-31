@@ -1,6 +1,7 @@
 using EmsPortal.Api.Models.UniversalFeatures;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Common;
 using EmsPortal.Application.Abstractions.UniversalFeatures;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Domain.Enums;
@@ -41,10 +42,23 @@ public sealed class TagsController : ControllerBase
 
     // ---- Tag catalogue (admin) ----
 
+    /// <summary>What the Tags list may be ordered by.</summary>
+    private static readonly SortMap<TagResponse> ListSorts = new SortMap<TagResponse>("updatedOnUtc")
+        .Add("name", t => t.Name)
+        .Add("colour", t => t.Colour, t => t.Name)
+        .Add("category", t => t.Category, t => t.Name)
+        .Add("usageCount", t => t.UsageCount, t => t.Name)
+        .Add("createdOnUtc", t => t.CreatedOnUtc)
+        .Add("updatedOnUtc", t => t.UpdatedOnUtc);
+
     [HttpGet("/api/admin/tags")]
     [RequirePermission(Permissions.SettingsManage)]
     [ProducesResponseType<ApiResponse<IEnumerable<TagResponse>>>(StatusCodes.Status200OK)]
-    public async Task<IActionResult> List([FromQuery] string? search = null, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> List(
+        [FromQuery] string? search = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool descending = true,
+        CancellationToken cancellationToken = default)
     {
         var tags = await _tags.ListAsync(search, cancellationToken);
         var counts = await _tags.GetUsageCountsAsync(cancellationToken);
@@ -59,7 +73,8 @@ public sealed class TagsController : ControllerBase
         var data = tags.Select(t => new TagResponse(
             t.Id, t.Name, t.Colour, t.Category, counts.TryGetValue(t.Id, out var c) ? c : 0,
             NameOf(t.CreatedById), t.CreatedOnUtc, NameOf(t.UpdatedById), t.UpdatedOnUtc));
-        return Ok(ApiResponseFactory.Success(data, "Tags retrieved."));
+        // Ordered after projecting: Usage is a count assembled here, not a column on the tag.
+        return Ok(ApiResponseFactory.Success(ListSorts.Apply(data, sortBy, descending), "Tags retrieved."));
     }
 
     [HttpPost("/api/admin/tags")]

@@ -1,4 +1,5 @@
 using EmsPortal.Domain.Entities;
+using EmsPortal.Application.Common;
 
 namespace EmsPortal.Application.Abstractions.Persistence;
 
@@ -11,7 +12,8 @@ public interface IPermissionGroupRepository
 {
     // ---- Groups ----
     Task<(IReadOnlyList<PermissionGroup> Items, int Total)> ListAsync(
-        Guid? tenantId, string? search, bool? isActive, bool? usedByRoles, string? category, int page, int limit, CancellationToken cancellationToken = default);
+        Guid? tenantId, string? search, bool? isActive, bool? usedByRoles, string? category,
+        SortRequest sort, int page, int limit, CancellationToken cancellationToken = default);
 
     /// <summary>Group with its permission keys loaded; tenant-scoped by the ambient filter.</summary>
     Task<PermissionGroup?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);

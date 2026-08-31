@@ -526,6 +526,8 @@
           </q-card>
         </div>
       </div>
+
+      <app-record-audit :audit="task.audit" class="q-mt-md" />
     </template>
 
     <!-- Reject: a required reason (AC-REMS-020.1). -->
@@ -580,6 +582,7 @@ import { renderRichText } from "utils/richText";
 
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import AppOptionBadge from "components/common/AppOptionBadge.vue";
+import AppRecordAudit from "components/common/AppRecordAudit.vue";
 import AppStoredFileItem from "components/common/AppStoredFileItem.vue";
 import AppTextField from "components/common/AppTextField.vue";
 // Explicit import: boot/components.js registers only the Zw* inputs globally, so without this the tag
@@ -714,9 +717,11 @@ const clientRows = computed(() => {
     { label: "Referral Source", value: text(c.referralSource) },
     { label: "Billing Address", value: addressText(c.billingAddress) }
   ];
-  // The billing CONTACT is asked of individuals only now — every other entity type names one among its
-  // contacts, listed above with a name, an email and a phone. Dropped when blank rather than shown as
-  // "—", which beside a Contacts list that has a Billing Contact in it reads as a missing answer.
+  // The billing CONTACT is not read here: every entity type names one among its contacts now, listed
+  // above with a name, an email and a phone. These two columns carry it only on a submission sent before
+  // the form asked for that contact, and whatever staff have typed into them by hand since. Dropped when
+  // blank rather than shown as "—", which beside a Contacts list that has a Billing Contact in it reads
+  // as a missing answer.
   if (c.billingContactName) rows.push({ label: "Billing Contact", value: text(c.billingContactName) });
   if (c.billingEmail) rows.push({ label: "Billing Email", value: text(c.billingEmail) });
   return rows;

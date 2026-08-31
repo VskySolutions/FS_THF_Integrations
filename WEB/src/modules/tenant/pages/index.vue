@@ -140,7 +140,8 @@ import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { useListTable } from "composables/useListTable";
 import { useDeletedRecords } from "composables/useDeletedRecords";
-import { useDateFormat } from "composables/useDateFormat";
+import { useAuditColumns } from "composables/useAuditColumns";
+import { useTenantScope } from "composables/useTenantScope";
 
 import AppDataTable from "components/common/AppDataTable.vue";
 import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
@@ -153,24 +154,33 @@ import AppTextField from "components/common/AppTextField.vue";
 const { showDeleted, canManageDeleted } = useDeletedRecords();
 const notify = useNotify();
 const { confirm } = useConfirm();
-const fmt = useDateFormat();
+const auditColumns = useAuditColumns();
+// The toolbar's "View as" menu is rendered from a list this composable caches for the whole session, so
+// anything on this page that adds a tenant, renames one or retires one has to tell it.
+const { refreshTenants } = useTenantScope();
 
 const columns = [
   { name: "name", label: "Name", field: "name", align: "left", sortable: true, default: true },
   { name: "identifier", label: "Identifier", field: "identifier", align: "left", sortable: true, default: true },
   { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true },
   { name: "timeZoneId", label: "Time Zone", field: "timeZoneId", align: "left", sortable: true },
-  { name: "createdBy", label: "Created By", field: "createdBy", align: "left", sortable: true },
-  { name: "updatedBy", label: "Updated By", field: "updatedBy", align: "left", sortable: true },
-  { name: "createdOnUtc", label: "Created", field: (r) => fmt.formatDateTime(r.createdOnUtc), align: "left", sortable: true },
-  { name: "updatedOnUtc", label: "Updated", field: (r) => fmt.formatDateTime(r.updatedOnUtc), align: "left", sortable: true, default: true },
+  ...auditColumns(),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ];
 
 const filters = reactive({ status: null, includeArchived: false });
 const { rows, loading, totalRecords, selected, search, filterOpen, pagination, load, onRequest } = useListTable({
-  fetcher: ({ page, limit }) =>
-    tenantApi.list({ page, limit, includeArchived: filters.includeArchived, status: filters.status || undefined, search: search.value || undefined })
+  pageKey: "tenants",
+  fetcher: ({ page, limit, sortBy, descending }) =>
+    tenantApi.list({
+      page,
+      limit,
+      sortBy,
+      descending,
+      includeArchived: filters.includeArchived,
+      status: filters.status || undefined,
+      search: search.value || undefined
+    })
       .then((r) => ({ data: r?.data, total: r?.meta?.totalRecords })),
   onError: (err) => notify.error(getApiErrorMessage(err))
 });
@@ -252,6 +262,7 @@ const submitForm = async ({ clearDraft } = {}) => {
     formOpen.value = false;
     resetForm();
     load();
+    refreshTenants();
   } catch (err) {
     if (getApiErrorCode(err) === ApiErrorCodes.DuplicateIdentifier) {
       identifierError.value = "This identifier is already in use.";
@@ -310,6 +321,8 @@ const archive = async (row) => {
     await tenantApi.archive(row.tenantId);
     notify.success("Tenant archived.");
     load();
+    // An archived tenant drops out of the list the scope picker offers, so it must not stay on the menu.
+    refreshTenants();
   } catch (err) {
     notify.error(getApiErrorMessage(err));
   }

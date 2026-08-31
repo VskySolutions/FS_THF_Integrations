@@ -1,4 +1,5 @@
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -42,8 +43,23 @@ internal sealed class PersonRepository : IPersonRepository
     public Task<bool> PersonCodeExistsAsync(string personCode, CancellationToken cancellationToken = default)
         => _dbContext.Persons.AnyAsync(p => p.PersonCode == personCode, cancellationToken);
 
+    // What the People list may be ordered by. Created By / Updated By are not here: they are ids the
+    // controller resolves to names after the query, so there is no column to order on.
+    private static readonly SortMap<Person> Sorts = new SortMap<Person>("updatedOnUtc")
+        .Add("tenantName", p => p.Tenant!.Name, p => p.UpdatedOnUtc)
+        .Add("personCode", p => p.PersonCode)
+        .Add("fullName", p => p.FirstName, p => p.LastName)
+        .Add("primaryEmail", p => p.PrimaryEmail)
+        .Add("mobileNumber", p => p.MobileNumber)
+        // "Account" is whether the person has been promoted to a login — a null UserId or not.
+        .Add("isUser", p => p.UserId == null, p => p.UpdatedOnUtc)
+        .Add("isActive", p => p.IsActive, p => p.UpdatedOnUtc)
+        .Add("sourceEntityType", p => p.SourceEntityType, p => p.UpdatedOnUtc)
+        .Add("createdOnUtc", p => p.CreatedOnUtc)
+        .Add("updatedOnUtc", p => p.UpdatedOnUtc);
+
     public async Task<(IReadOnlyList<Person> Items, int Total)> ListAsync(
-        string? search, Guid? tenantId, bool? isUser, bool? isActive, int page, int limit,
+        string? search, Guid? tenantId, bool? isUser, bool? isActive, SortRequest sort, int page, int limit,
         EntityType? sourceEntityType = null, CancellationToken cancellationToken = default)
     {
         // Cross-tenant (Super Admin) reads pass an explicit tenant id and bypass the ambient filter;
@@ -80,8 +96,7 @@ internal sealed class PersonRepository : IPersonRepository
         }
 
         var total = await query.CountAsync(cancellationToken);
-        var items = await query
-            .OrderByDescending(p => p.UpdatedOnUtc)
+        var items = await Sorts.Apply(query, sort.SortBy, sort.Descending)
             .Skip((page - 1) * limit)
             .Take(limit)
             .ToListAsync(cancellationToken);
@@ -100,9 +115,16 @@ internal sealed class PersonRepository : IPersonRepository
                     && (excludingPersonId == null || p.Id != excludingPersonId),
                 cancellationToken);
 
-    public async Task<IReadOnlyList<(Person Person, bool IsUser)>> ListSelectableAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<(Person Person, bool IsUser)>> ListSelectableAsync(
+        Guid? tenantId = null, CancellationToken cancellationToken = default)
     {
-        var items = await _dbContext.Persons
+        // Naming a tenant means reading OUTSIDE the ambient one, so the filters come off — and with them
+        // the soft-delete predicate they carry, which is why `Deleted` is then stated in full.
+        var query = tenantId is { } scope
+            ? _dbContext.Persons.IgnoreQueryFilters().Where(p => !p.Deleted && p.TenantId == scope)
+            : _dbContext.Persons.AsQueryable();
+
+        var items = await query
             .OrderBy(p => p.FirstName).ThenBy(p => p.LastName)
             .Select(p => new { Person = p, IsUser = p.UserId != null })
             .ToListAsync(cancellationToken);

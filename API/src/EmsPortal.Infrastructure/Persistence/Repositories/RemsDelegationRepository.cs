@@ -31,6 +31,17 @@ public sealed class RemsDelegationRepository : IRemsDelegationRepository
             .OrderBy(d => d.Principal!.DisplayName)
             .ToListAsync(cancellationToken);
 
+    // Same SQL date-window as ListActiveForDelegateAsync, and for the same reason: IsActiveOn is the
+    // authority but EF cannot translate it. AnyAsync so the answer costs an EXISTS rather than a row.
+    public Task<bool> HasActiveDelegateAsync(
+        Guid principalUserId, DateOnly on, CancellationToken cancellationToken = default)
+        => _dbContext.RemsDelegations
+            .AnyAsync(
+                d => d.PrincipalUserId == principalUserId
+                    && (d.StartsOn == null || d.StartsOn <= on)
+                    && (d.EndsOn == null || d.EndsOn >= on),
+                cancellationToken);
+
     public Task<REMSDelegation?> GetAsync(
         Guid principalUserId, Guid delegateUserId, CancellationToken cancellationToken = default)
         => _dbContext.RemsDelegations

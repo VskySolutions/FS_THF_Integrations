@@ -1,3 +1,4 @@
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Domain.Enums;
 
@@ -27,7 +28,7 @@ public interface IPersonRepository
     /// </para>
     /// </summary>
     Task<(IReadOnlyList<Person> Items, int Total)> ListAsync(
-        string? search, Guid? tenantId, bool? isUser, bool? isActive, int page, int limit,
+        string? search, Guid? tenantId, bool? isUser, bool? isActive, SortRequest sort, int page, int limit,
         EntityType? sourceEntityType = null, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -43,8 +44,16 @@ public interface IPersonRepository
     Task<Person?> FindClientByEmailAsync(
         string email, Guid? excludingPersonId, CancellationToken cancellationToken = default);
 
-    /// <summary>Lightweight projection for the user-create Person dropdown (id, name, email, user-link flag).</summary>
-    Task<IReadOnlyList<(Person Person, bool IsUser)>> ListSelectableAsync(CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Lightweight projection for the user-create Person dropdown (id, name, email, user-link flag).
+    /// <para>
+    /// Scoped to the caller's active tenant by the ambient filter. <paramref name="tenantId"/> names a
+    /// DIFFERENT tenant instead — for the tenant-management screen, which creates accounts in a tenant its
+    /// Super Admin is not currently inside. Callers must gate it; the repository only obeys.
+    /// </para>
+    /// </summary>
+    Task<IReadOnlyList<(Person Person, bool IsUser)>> ListSelectableAsync(
+        Guid? tenantId = null, CancellationToken cancellationToken = default);
 
     Task AddAsync(Person person, CancellationToken cancellationToken = default);
 

@@ -18,7 +18,10 @@
       :rows="rows"
       :columns="columns"
       :loading="loading"
+      :total-records="totalRecords"
+      :pagination="pagination"
       default-sort-by="updatedOnUtc"
+      @request="onRequest"
       @refresh="load"
     >
       <template #body-cell-expiresAtUtc="cell">
@@ -56,13 +59,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from "vue";
+import { ref, reactive } from "vue";
 import { ufStickyNoteApi, getApiErrorMessage, EntityType } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useDeletedRecords } from "composables/useDeletedRecords";
 import { useConfirm } from "composables/useConfirm";
 import { useDateFormat } from "composables/useDateFormat";
 import { useAuditColumns } from "composables/useAuditColumns";
+import { useListTable } from "composables/useListTable";
 import AppDataTable from "components/common/AppDataTable.vue";
 import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
 import AppListHeader from "components/common/AppListHeader.vue";
@@ -74,13 +78,20 @@ const notify = useNotify();
 const { confirm } = useConfirm();
 const { formatDateTime } = useDateFormat();
 
-const rows = ref([]);
-const loading = ref(false);
+// Ordering is the server's, like every other list.
+const { rows, loading, totalRecords, pagination, load, onRequest } = useListTable({
+  pageKey: "uf_sticky_admin",
+  fetcher: ({ sortBy, descending }) =>
+    ufStickyNoteApi.adminList({ sortBy, descending })
+      .then((r) => ({ data: r || [], total: (r || []).length })),
+  onError: (err) => notify.error(getApiErrorMessage(err))
+});
 
 const columns = [
   { name: "title", label: "Title", field: "title", align: "left", default: true },
   { name: "scope", label: "Scope", field: "scope", align: "left", default: true },
-  { name: "createdOnUtc", label: "Created", field: "createdOnUtc", align: "left", sortable: true, default: true },
+  // Created On is NOT defined here: the shared audit set below carries it, and two columns of the same
+  // name is one the visibility map cannot tell from the other.
   { name: "expiresAtUtc", label: "Expires", field: "expiresAtUtc", align: "left", default: true },
   { name: "dismissalCount", label: "Dismissals", field: "dismissalCount", align: "left", sortable: true, default: true },
   ...auditColumns(),
@@ -90,17 +101,6 @@ const columns = [
 const createOpen = ref(false);
 const creating = ref(false);
 const form = reactive({ title: "", body: "", expiresAt: "" });
-
-const load = async () => {
-  loading.value = true;
-  try {
-    rows.value = (await ufStickyNoteApi.adminList()) || [];
-  } catch (err) {
-    notify.error(getApiErrorMessage(err));
-  } finally {
-    loading.value = false;
-  }
-};
 
 const openCreate = () => {
   form.title = "";
@@ -141,6 +141,4 @@ const remove = async (row) => {
     notify.error(getApiErrorMessage(err));
   }
 };
-
-onMounted(load);
 </script>

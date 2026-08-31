@@ -100,7 +100,9 @@ const loading = ref(false);
 const totalRecords = ref(0);
 const selected = ref([]);
 const overdueCount = ref(0);
-const pagination = ref({ page: 1, rowsPerPage: 20, sortBy: null, descending: false, rowsNumber: 0 });
+// Newest deletion first, and ordered by the SERVER: this panel is paged, so ordering the twenty rows it
+// holds would order the page rather than the record of what was deleted.
+const pagination = ref({ page: 1, rowsPerPage: 20, sortBy: "deletedOnUtc", descending: true, rowsNumber: 0 });
 
 const columns = [
   { name: "identity", label: "Record", field: "identity", align: "left", sortable: true, default: true },
@@ -115,7 +117,9 @@ const load = async () => {
     const res = await ufDeletedApi.list({
       entityType: props.entityType,
       page: pagination.value.page,
-      limit: pagination.value.rowsPerPage
+      limit: pagination.value.rowsPerPage,
+      sortBy: pagination.value.sortBy,
+      descending: pagination.value.descending
     });
     rows.value = res?.data || [];
     totalRecords.value = res?.meta?.totalRecords || rows.value.length;

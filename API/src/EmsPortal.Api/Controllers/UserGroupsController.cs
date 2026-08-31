@@ -2,6 +2,7 @@ using EmsPortal.Api.Models.Users;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.Auditing;
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Shared.Contracts;
 using EmsPortal.Shared.Security;
@@ -39,7 +40,11 @@ public sealed class UserGroupsController : ControllerBase
 
     [HttpGet]
     [RequirePermission(Permissions.UsersRead)]
-    public async Task<IActionResult> List([FromQuery] string? search = null, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> List(
+        [FromQuery] string? search = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool descending = true,
+        CancellationToken cancellationToken = default)
     {
         var groups = await _groups.ListAsync(search, cancellationToken);
         var counts = await _groups.GetMemberCountsAsync(cancellationToken);
@@ -54,8 +59,17 @@ public sealed class UserGroupsController : ControllerBase
         var data = groups.Select(g => new UserGroupResponse(
             g.Id, g.Name, g.Description, counts.TryGetValue(g.Id, out var c) ? c : 0,
             NameOf(g.CreatedById), g.CreatedOnUtc, NameOf(g.UpdatedById), g.UpdatedOnUtc));
-        return Ok(ApiResponseFactory.Success(data, "User groups retrieved."));
+        // Ordered after projecting: Members is a count assembled here, not a column on the group.
+        return Ok(ApiResponseFactory.Success(ListSorts.Apply(data, sortBy, descending), "User groups retrieved."));
     }
+
+    /// <summary>What the User Groups list may be ordered by.</summary>
+    private static readonly SortMap<UserGroupResponse> ListSorts = new SortMap<UserGroupResponse>("updatedOnUtc")
+        .Add("name", g => g.Name)
+        .Add("description", g => g.Description)
+        .Add("memberCount", g => g.MemberCount, g => g.Name)
+        .Add("createdOnUtc", g => g.CreatedOnUtc)
+        .Add("updatedOnUtc", g => g.UpdatedOnUtc);
 
     [HttpPost]
     [RequirePermission(Permissions.UsersGroupManagement)]

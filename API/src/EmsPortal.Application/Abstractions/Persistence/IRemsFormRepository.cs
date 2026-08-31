@@ -1,4 +1,5 @@
 using EmsPortal.Domain.Entities;
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Enums;
 
 namespace EmsPortal.Application.Abstractions.Persistence;
@@ -38,6 +39,7 @@ public sealed record RemsClientFormQuery(
     // Who is asking. Only read by the Mine slice, which is "assigned to whoever is looking".
     Guid CallerUserId,
     RemsClientFormAssignment Assignment,
+    SortRequest Sort,
     int Page,
     int Limit);
 

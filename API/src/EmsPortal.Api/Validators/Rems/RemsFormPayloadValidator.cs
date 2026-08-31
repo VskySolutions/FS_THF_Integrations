@@ -112,6 +112,10 @@ public sealed class RemsFormPayloadValidator
         {
             RequireRole(failures, "roles.self", roles.Self);
             OptionalRole(failures, "roles.spouse", roles.Spouse);
+            // Optional — an individual is usually invoiced in their own name — but held to the same shape
+            // as every other contact once they start filling it in. It is the SAME role a business and a
+            // government body name, asked on the same block, so it is validated by the same rule.
+            OptionalRole(failures, "roles.billingContact", roles.BillingContact);
         }
         else if (IsBusinessGroup(industryGroup))
         {

@@ -1,7 +1,9 @@
+using EmsPortal.Api.Models;
 using EmsPortal.Api.Models.Rems;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.OptionSets;
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Common;
 using EmsPortal.Application.Abstractions.UniversalFeatures;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Domain.Enums;
@@ -105,6 +107,8 @@ public sealed class RemsRequestsController : ControllerBase
         // caller who can already see past their own work. "mine" is authorship — what the caller raised,
         // or had raised for them — and drops the requests that merely name them as CSE or reviewing admin.
         [FromQuery] string? ownership = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool descending = true,
         CancellationToken cancellationToken = default)
     {
         if (User.GetUserId() is not { } me)
@@ -119,7 +123,7 @@ public sealed class RemsRequestsController : ControllerBase
         var options = new RemsRequestListOptions(
             me, privileged, clientName, contact, status, type, assignedAdminUserId,
             createdFrom, createdTo, ParseScope(scope), ParsePoolFilter(poolScope),
-            ParseOwnership(ownership), page, limit);
+            ParseOwnership(ownership), new SortRequest(sortBy, descending), page, limit);
         var (items, total) = await _rems.ListRequestsAsync(options, cancellationToken);
 
         var names = await _users.GetFullNamesAsync(
@@ -613,15 +617,26 @@ public sealed class RemsRequestsController : ControllerBase
                 "Only a request under admin review can be sent back to its initiator."));
         }
 
-        // Who the admin is handing it to. Both the initiator and the CSE can already WORK a returned
-        // request, so this settles whose job it is rather than who is permitted — but it is still checked,
-        // because "send this to the CSE" on a request with no CSE named is an instruction to nobody.
+        // Who the admin is handing it to. Checked, not merely recorded: a return names whose job the rework
+        // is, and both ways of getting that wrong leave it with nobody.
+        //
+        // "Send this to the CSE" fails on a request with no CSE named — an instruction to nobody. It also
+        // fails where the INITIATOR has no REMS delegate in force: the rework is the initiator's own work,
+        // and delegating is how they hand their work out. With no delegation arranged the request goes back
+        // to them and only them, which is the same rule RemsSetupAccess.CanWork now applies to editing —
+        // so a return the dialog allows is always a return the CSE can actually act on.
         var toCse = string.Equals(request.ReturnTo, RemsSendBackTargets.Cse, StringComparison.OrdinalIgnoreCase);
         if (toCse && rems.CSEId is null)
         {
             return BadRequest(ApiResponseFactory.Error(
                 ApiErrorCodes.ValidationFailed, "Cannot send back.",
                 "This request has no CSE named on it, so there is nobody to hand the rework to. Send it to the initiator instead."));
+        }
+        if (toCse && !await RemsSetupAccess.InitiatorHasCoverAsync(_delegations, rems, cancellationToken))
+        {
+            return BadRequest(ApiResponseFactory.Error(
+                ApiErrorCodes.ValidationFailed, "Cannot send back.",
+                "The person who raised this request has not named a REMS delegate, so their rework cannot be handed to the CSE. Send it to the initiator instead."));
         }
         var returnedTo = toCse ? rems.CSEId : rems.CreatedById;
 
@@ -822,7 +837,7 @@ public sealed class RemsRequestsController : ControllerBase
         // somebody to open an engagement for. A name nobody matches is not an error — the caller files it
         // as a brand-new client, which is what the empty result offers them.
         var (items, _) = await _persons.ListAsync(
-            term, tenantId: null, isUser: null, isActive: true, page: 1, limit: 20,
+            term, tenantId: null, isUser: null, isActive: true, SortRequest.Default, page: 1, limit: 20,
             sourceEntityType: EntityType.Client, cancellationToken: cancellationToken);
         var results = items.Select(p => new RemsClientLookupItem(p.Id, p.FullName, p.PrimaryEmail, p.MobileNumber, null, null));
         return Ok(ApiResponseFactory.Success(results, "Clients retrieved."));
@@ -947,7 +962,7 @@ public sealed class RemsRequestsController : ControllerBase
         }
 
         var (candidates, _) = await _persons.ListAsync(
-            name, tenantId: null, isUser: null, isActive: true, page: 1, limit: 20,
+            name, tenantId: null, isUser: null, isActive: true, SortRequest.Default, page: 1, limit: 20,
             sourceEntityType: EntityType.Client, cancellationToken: cancellationToken);
         var matches = candidates
             .Where(p => string.Equals(p.FullName.Trim(), name, StringComparison.OrdinalIgnoreCase))
@@ -1201,6 +1216,11 @@ public sealed class RemsRequestsController : ControllerBase
             .Select(f => new RemsFileRef(f.Id, f.MediaId, f.Media?.OriginalFileName, f.Media?.MimeType, f.Media?.FileSize, f.Media?.PublicUrl))
             .ToList();
 
+        // Asked only where a CSE is actually named: with none, the send-back dialog has one answer anyway
+        // and there is nothing for a delegation lookup to decide.
+        var canSendBackToCse = rems.CSEId is not null
+            && await RemsSetupAccess.InitiatorHasCoverAsync(_delegations, rems, cancellationToken);
+
         return new RemsRequestDetail(
             rems.Id, rems.REMSNumber, rems.Description, rems.ClientDisplayName,
             rems.RequestedClientName, rems.ClientNameSuffix,
@@ -1208,8 +1228,9 @@ public sealed class RemsRequestsController : ControllerBase
             rems.ExistingClientReferenceId, rems.ClientPersonId,
             UserRefOf(rems.AdminAssignedToId, names), UserRefOf(rems.CSEId, names),
             form?.IndustryGroup, ems, submission, files,
-            NameOf(names, rems.CreatedById), rems.CreatedOnUtc, NameOf(names, rems.UpdatedById), rems.UpdatedOnUtc,
+            RecordAudit.From(rems, RecordAudit.Names(names)),
             ActionsFor(rems, me, privileged),
+            canSendBackToCse,
             ClientFormLink(form));
     }
 

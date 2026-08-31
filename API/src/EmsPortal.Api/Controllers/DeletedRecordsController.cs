@@ -1,6 +1,7 @@
 using EmsPortal.Api.Models.UniversalFeatures;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Common;
 using EmsPortal.Application.Abstractions.UniversalFeatures;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Domain.Enums;
@@ -60,6 +61,8 @@ public sealed class DeletedRecordsController : ControllerBase
         [FromQuery] Guid? tenantId = null,
         [FromQuery] int page = 1,
         [FromQuery] int limit = 20,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool descending = true,
         CancellationToken cancellationToken = default)
     {
         if (!_deleted.IsSupported(entityType))
@@ -68,7 +71,7 @@ public sealed class DeletedRecordsController : ControllerBase
         }
 
         var tenant = ResolveTenant(tenantId);
-        var (items, total) = await _deleted.ListDeletedAsync(entityType, tenant, page, limit, cancellationToken);
+        var (items, total) = await _deleted.ListDeletedAsync(entityType, tenant, new SortRequest(sortBy, descending), page, limit, cancellationToken);
         var retentionDays = (await _retention.GetAsync(tenant, cancellationToken))?.RetentionDays ?? DefaultRetentionDays;
         var cutoff = DateTime.UtcNow.AddDays(-retentionDays);
 

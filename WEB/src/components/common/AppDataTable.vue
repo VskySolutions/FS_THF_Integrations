@@ -9,6 +9,7 @@
     :loading="loading"
     :selection="selectable ? 'multiple' : 'none'"
     :rows-per-page-options="rowsPerPageOptions"
+    :sort-method="clientSort ? sortMethod : undefined"
     flat
     bordered
     :class="['app-data-table', { 'with-selection': selectable }]"
@@ -107,6 +108,10 @@ const props = defineProps({
   pagination: { type: Object, default: null },
   defaultSortBy: { type: String, default: "updatedOnUtc" },
   defaultDescending: { type: Boolean, default: true },
+  // Sort here instead of asking the server. ONLY for a table that already holds every row it will ever
+  // show and has no endpoint behind it — a dashboard panel, a members list inside a drawer. A paginated
+  // list must never set it: reordering one page of many is not sorting the list, it just looks like it.
+  clientSort: { type: Boolean, default: false },
   // Row-key values to float to the top of the current page (e.g. pinned records), kept above the
   // rest regardless of the active sort.
   pinnedRowKeys: { type: Array, default: () => [] }
@@ -117,6 +122,9 @@ const emit = defineEmits(["request", "refresh", "update:pagination", "update:sel
 const rowsPerPageOptions = [10, 20, 50, 100];
 const prefs = props.pageKey ? usePreferences(props.pageKey) : null;
 
+// The page owns page, size AND sort — useListTable holds them, sends them to the server and remembers
+// them. This is a mirror of that, because QTable insists on a pagination object of its own; every change
+// to it goes straight back out as `request`.
 const innerPagination = ref({
   page: 1,
   rowsPerPage: prefs?.get("pageSize", 20) ?? 20,
@@ -126,17 +134,6 @@ const innerPagination = ref({
   ...(props.pagination || {})
 });
 
-// Persisted sort state (cookie) must survive a refresh. A controlled `pagination` prop
-// (e.g. useListTable always initialises sortBy=null) would otherwise clobber it via the spread
-// above, so re-apply the saved sort here. Only applied when a value was actually saved, so an
-// unsorted list keeps its default/server order rather than being forced to sort.
-if (prefs) {
-  const savedSortBy = prefs.get("sortBy", undefined);
-  if (savedSortBy !== undefined) innerPagination.value.sortBy = savedSortBy;
-  const savedDescending = prefs.get("descending", undefined);
-  if (savedDescending !== undefined) innerPagination.value.descending = savedDescending;
-}
-
 const innerSelected = ref([]);
 watch(innerSelected, (val) => emit("update:selected", val));
 
@@ -144,53 +141,69 @@ watch(() => props.totalRecords, (total) => {
   innerPagination.value = { ...innerPagination.value, rowsNumber: total };
 });
 
-// ---- Client-side sort of the current page's rows, with pinned rows floated to the top ----
+// The page's sort follows the page: a list that resets to page 1 on a new sort, or restores a remembered
+// one, has to be able to say so and see the header arrow move.
+watch(() => props.pagination, (next) => {
+  if (next) innerPagination.value = { ...innerPagination.value, ...next };
+}, { deep: true });
+
+// ---- Sorting ----
+// A list is NOT ordered here. Sorting is the server's: it is the only place that can see the whole set,
+// and a browser can only ever reorder the page it was handed — "oldest first" over twenty of two hundred
+// rows is not the oldest of anything. `onRequest` sends the column back and the page re-fetches.
+//
+// `clientSort` is the exception, for a table that IS its whole set (a dashboard panel, a members list).
+// There QTable does the sorting, through this comparator rather than its default one: the default reads
+// what the CELL shows, and a date cell reads MM/DD/YYYY, which as text sorts by month before year. This
+// reads the column's `sort` accessor (the raw value) where one is given, and compares dates and numbers
+// as dates and numbers.
+const sortValue = (col, name) => {
+  const accessor = col?.sort ?? col?.field ?? name;
+  return typeof accessor === "function" ? accessor : (row) => row[accessor];
+};
+
+// ISO-8601 is what the API sends every timestamp as; anything else is left to the text comparison, so a
+// name that happens to parse as a date is not silently treated as one.
+const isIsoInstant = (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}[T ]/.test(v);
+
+const compare = (x, y) => {
+  if (x == null && y == null) return 0;
+  if (x == null) return 1;
+  if (y == null) return -1;
+  if (typeof x === "boolean" || typeof y === "boolean") return (x === y) ? 0 : (x ? 1 : -1);
+  if (typeof x === "number" && typeof y === "number") return x - y;
+  if (isIsoInstant(x) && isIsoInstant(y)) return Date.parse(x) - Date.parse(y);
+  return String(x).localeCompare(String(y), undefined, { numeric: true });
+};
+
+const sortMethod = (rows, sortBy, descending) => {
+  if (!sortBy) return rows;
+  const get = sortValue(props.columns.find((c) => c.name === sortBy), sortBy);
+  const sorted = [...rows].sort((a, b) => compare(get(a), get(b)));
+  return descending ? sorted.reverse() : sorted;
+};
+
+// The rows as given, with pinned ones floated to the top.
 const displayedRows = computed(() => {
-  const { sortBy, descending } = innerPagination.value;
-  let result = props.rows;
-
-  if (sortBy) {
-    const col = props.columns.find((c) => c.name === sortBy);
-    const field = col?.field ?? sortBy;
-    const get = typeof field === "function" ? field : (row) => row[field];
-    const sorted = [...props.rows].sort((a, b) => {
-      const x = get(a);
-      const y = get(b);
-      if (x == null && y == null) return 0;
-      if (x == null) return 1;
-      if (y == null) return -1;
-      if (typeof x === "number" && typeof y === "number") return x - y;
-      return String(x).localeCompare(String(y), undefined, { numeric: true });
-    });
-    result = descending ? sorted.reverse() : sorted;
-  }
-
-  // Keep pinned rows on top, preserving the sorted order within the pinned and non-pinned groups.
-  if (props.pinnedRowKeys.length) {
-    const pinnedSet = new Set(props.pinnedRowKeys);
-    const isPinned = (row) => pinnedSet.has(row[props.rowKey]);
-    const pinned = result.filter(isPinned);
-    if (pinned.length) result = [...pinned, ...result.filter((row) => !isPinned(row))];
-  }
-
-  return result;
+  if (!props.pinnedRowKeys.length) return props.rows;
+  const pinnedSet = new Set(props.pinnedRowKeys);
+  const isPinned = (row) => pinnedSet.has(row[props.rowKey]);
+  const pinned = props.rows.filter(isPinned);
+  return pinned.length ? [...pinned, ...props.rows.filter((row) => !isPinned(row))] : props.rows;
 });
 
 const onRequest = (requestProps) => {
   const next = requestProps.pagination;
-  const current = innerPagination.value;
-  const pageChanged = next.page !== current.page || next.rowsPerPage !== current.rowsPerPage;
-
-  innerPagination.value = { ...current, ...next };
+  innerPagination.value = { ...innerPagination.value, ...next };
   if (prefs) {
-    prefs.merge({ pageSize: next.rowsPerPage, sortBy: next.sortBy, descending: next.descending });
+    prefs.merge({ pageSize: next.rowsPerPage });
   }
 
-  // Page/size changes reload from the server; sort-only changes are handled client-side.
-  if (pageChanged) {
-    emit("update:pagination", innerPagination.value);
-    emit("request", innerPagination.value);
-  }
+  // Page, size and sort all go back to the server — a new sort is a new question about the whole set,
+  // not a rearrangement of the rows already here. A client-sorted table has nowhere to send it: the
+  // pagination above is the whole change, and `displayedRows` has already acted on it.
+  emit("update:pagination", innerPagination.value);
+  if (!props.clientSort) emit("request", innerPagination.value);
 };
 
 // ---- Column visibility (persisted) ----

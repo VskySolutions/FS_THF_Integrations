@@ -1,4 +1,5 @@
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -19,10 +20,18 @@ internal sealed class NotificationRepository : INotificationRepository
     public Task<Notification?> GetByIdForUserAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
         => _dbContext.Notifications.FirstOrDefaultAsync(n => n.Id == id && n.UserId == userId, cancellationToken);
 
+    // What the Notifications list may be ordered by. A notification is an event, so it has no "updated"
+    // anything — Received is both its default order and its only date.
+    private static readonly SortMap<Notification> Sorts = new SortMap<Notification>("createdOnUtc")
+        .Add("type", n => n.Type, n => n.CreatedOnUtc)
+        .Add("notification", n => n.Title, n => n.CreatedOnUtc)
+        .Add("status", n => n.IsRead, n => n.CreatedOnUtc)
+        .Add("createdOnUtc", n => n.CreatedOnUtc);
+
     public async Task<(IReadOnlyList<Notification> Items, int Total)> ListAsync(
         Guid userId, bool? isRead, NotificationType? type, string? search,
         DateTime? createdFromUtc, DateTime? createdToUtc,
-        int page, int limit, CancellationToken cancellationToken = default)
+        SortRequest sort, int page, int limit, CancellationToken cancellationToken = default)
     {
         var query = _dbContext.Notifications.Where(n => n.UserId == userId);
         if (isRead is { } read)
@@ -49,7 +58,7 @@ internal sealed class NotificationRepository : INotificationRepository
             query = query.Where(n => n.CreatedOnUtc <= to);
         }
 
-        var ordered = query.OrderByDescending(n => n.CreatedOnUtc);
+        var ordered = Sorts.Apply(query, sort.SortBy, sort.Descending);
         var total = await ordered.CountAsync(cancellationToken);
         var items = await ordered.Skip((page - 1) * limit).Take(limit).ToListAsync(cancellationToken);
         return (items, total);

@@ -24,8 +24,8 @@ public sealed class CreateUserRequest
 
 public sealed class UpdateUserRequest
 {
-    /// <summary>The title the person is addressed by (Mr., Dr., …). Written onto their Person record.</summary>
-    public string? Prefix { get; set; }
+    /// <summary>The generational particle on the person's name (Jr., III, …). Written onto their Person record.</summary>
+    public string? Suffix { get; set; }
     public string? FirstName { get; set; }
     public string? LastName { get; set; }
     public string? PhoneNumber { get; set; }
@@ -161,8 +161,8 @@ public sealed record UserDetail(
     Guid UserId,
     Guid? PersonId,
     string Email,
-    /// <summary>The title they are addressed by, from their Person record; null when they have none.</summary>
-    string? Prefix,
+    /// <summary>The generational particle on their name, from their Person record; null when they have none.</summary>
+    string? Suffix,
     string FirstName,
     string LastName,
     string FullName,
@@ -177,4 +177,5 @@ public sealed record UserDetail(
     string? Department,
     bool IsDepartmentHead,
     // The profile picture from the person's own record, or null — in which case the UI shows initials.
-    string? ProfileMediaUrl);
+    string? ProfileMediaUrl,
+    RecordAudit Audit);

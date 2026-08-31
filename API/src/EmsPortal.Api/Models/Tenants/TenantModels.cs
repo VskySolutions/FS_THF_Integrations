@@ -31,11 +31,12 @@ public sealed record TenantSummary(
     DateTime CreatedOnUtc,
     DateTime UpdatedOnUtc);
 
+/// <summary>One tenant, as its detail page reads it. <paramref name="Audit"/> is the provenance block
+/// every detail page ends with.</summary>
 public sealed record TenantDetail(
     Guid TenantId,
     string Name,
     string Identifier,
     string Status,
     string TimeZoneId,
-    DateTime CreatedOnUtc,
-    DateTime UpdatedOnUtc);
+    RecordAudit Audit);

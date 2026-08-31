@@ -252,17 +252,15 @@ const columns = computed(() => [
   // so without the reader opening it.
   { name: "cse", label: "CSE", field: (r) => r.cse?.name || "—", align: "left", default: true, filterable: false },
   { name: "emsFormState", label: "EMS State", field: "emsFormState", align: "left", default: true, filterable: false },
-  // Taken from the shared audit set rather than hand-rolled, so the pair is labelled and formatted like
-  // every other list's — only promoted to visible, which is the one thing this page wants differently.
-  // Neither is filterable: the created range is the From/To pair in the drawer, not a text box.
-  ...auditColumns({ only: ["createdBy", "createdOnUtc"] }).map((c) => ({ ...c, default: true })),
   // Off by default, but every field the row carries is offered in the Columns menu rather than being
   // unreachable.
   { name: "customerEmail", label: "Client Email", field: (r) => r.customerEmail || "—", align: "left", default: false, filterable: false },
   { name: "customerMobileNumber", label: "Client Phone Number", field: (r) => r.customerMobileNumber || "—", align: "left", default: false, filterable: false },
   { name: "industryGroup", label: "Entity Type", field: (r) => r.industryGroup || "—", align: "left", default: false, filterable: false },
   { name: "clientSubmissionState", label: "Client Submission", field: (r) => submissionStateLabel(r.clientSubmissionState), align: "left", default: false, filterable: false },
-  ...auditColumns({ only: ["updatedBy", "updatedOnUtc"] }),
+  // All four from the shared set: Updated By / Updated On visible and last, the created pair a click
+  // away. None is filterable — the created range is the From/To pair in the drawer, not a text box.
+  ...auditColumns(),
   { name: "actions", label: "Actions", field: "actions", align: "right" }
 ]);
 
@@ -274,8 +272,11 @@ const invalidRange = computed(() =>
   !!extras.createdFrom && !!extras.createdTo && extras.createdFrom > extras.createdTo);
 
 const { rows, loading, totalRecords, search, filterOpen, pagination, load, onRequest } = useListTable({
-  fetcher: ({ page, limit }) =>
+  pageKey: "rems-partner",
+  fetcher: ({ page, limit, sortBy, descending }) =>
     remsApi.list({
+      sortBy,
+      descending,
       scope: "partner",
       // Only the admins choose. Everybody else asks for "all", which for them is what this list has
       // always been — what they raised plus what names them as CSE or reviewing admin. Sending "mine"

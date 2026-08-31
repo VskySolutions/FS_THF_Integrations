@@ -1,8 +1,10 @@
+using EmsPortal.Api.Models;
 using EmsPortal.Api.Models.Persons;
 using EmsPortal.Api.Models.Profile;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.Auditing;
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Domain.Enums;
 using EmsPortal.Shared.Contracts;
@@ -70,7 +72,7 @@ public sealed class PersonsController : ControllerBase
             // they are currently viewing (the claim follows the Super-Admin tenant scope) rather than
             // nowhere. (Falls back to active-tenant stamping.)
             TenantId = (User.IsSuperAdmin() ? request.TenantId : null) ?? User.GetActiveTenantId(),
-            Prefix = request.Prefix,
+            Suffix = request.Suffix,
             FirstName = request.FirstName,
             MiddleName = request.MiddleName,
             LastName = request.LastName,
@@ -109,7 +111,7 @@ public sealed class PersonsController : ControllerBase
 
         var created = await LoadAsync(person.Id, cancellationToken) ?? person;
         return StatusCode(StatusCodes.Status201Created,
-            ApiResponseFactory.Success(new PersonDetail(PersonProfileMapper.Map(created), created.UserId is not null), "Person created."));
+            ApiResponseFactory.Success(new PersonDetail(PersonProfileMapper.Map(created, await RecordAudit.ForAsync(_users, created, cancellationToken)), created.UserId is not null), "Person created."));
     }
 
     [HttpGet]
@@ -121,6 +123,8 @@ public sealed class PersonsController : ControllerBase
         [FromQuery] Guid? tenantId = null,
         [FromQuery] bool? isUser = null,
         [FromQuery] bool? isActive = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool descending = true,
         CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
@@ -130,7 +134,8 @@ public sealed class PersonsController : ControllerBase
         // ambient query filter (a client-supplied tenantId is ignored for non-Super-Admins).
         Guid? scopeTenant = User.IsSuperAdmin() && tenantId is { } tid ? tid : null;
         var (items, total) = await _persons.ListAsync(
-            search, scopeTenant, isUser, isActive, page, limit, cancellationToken: cancellationToken);
+            search, scopeTenant, isUser, isActive, new SortRequest(sortBy, descending), page, limit,
+            cancellationToken: cancellationToken);
         var names = await ResolveActorNamesAsync(items.SelectMany(p => new[] { p.CreatedById, p.UpdatedById }), cancellationToken);
         var summaries = items.Select(p => new PersonSummary(
             p.Id, p.PersonCode, p.FullName, p.PrimaryEmail, p.MobileNumber,
@@ -142,12 +147,23 @@ public sealed class PersonsController : ControllerBase
         return Ok(ApiResponseFactory.Paginated(summaries, "Persons retrieved.", page, limit, total));
     }
 
-    /// <summary>Selectable persons for the user-create dropdown (already-promoted persons carry <c>IsUser=true</c>).</summary>
+    /// <summary>
+    /// Selectable persons for the user-create dropdown (already-promoted persons carry <c>IsUser=true</c>).
+    /// <para>
+    /// The caller's own tenant, unless <paramref name="tenantId"/> names another — which the tenant
+    /// management screen does, creating accounts inside a tenant the Super Admin is not switched into.
+    /// Honoured only for a caller who administers tenants at all (tenants.write); ignored for anyone else,
+    /// who is simply shown their own tenant's people as before.
+    /// </para>
+    /// </summary>
     [HttpGet("selectable")]
     [RequirePermission(Permissions.PersonsRead)]
-    public async Task<IActionResult> Selectable(CancellationToken cancellationToken)
+    public async Task<IActionResult> Selectable([FromQuery] Guid? tenantId, CancellationToken cancellationToken)
     {
-        var items = await _persons.ListSelectableAsync(cancellationToken);
+        var scope = tenantId is { } requested && User.HasPermission(Permissions.TenantsWrite)
+            ? requested
+            : (Guid?)null;
+        var items = await _persons.ListSelectableAsync(scope, cancellationToken);
         var options = items.Select(x => new PersonSelectItem(
             x.Person.Id, x.Person.FullName, x.Person.PrimaryEmail, x.Person.MobileNumber, x.Person.CountryCode, x.Person.TenantId, x.IsUser));
         return Ok(ApiResponseFactory.Success(options, "Persons retrieved."));
@@ -160,7 +176,7 @@ public sealed class PersonsController : ControllerBase
         var person = await LoadAsync(id, cancellationToken);
         return person is null
             ? NotFound(ApiResponseFactory.NotFound("Person not found."))
-            : Ok(ApiResponseFactory.Success(new PersonDetail(PersonProfileMapper.Map(person), person.UserId is not null), "Person retrieved."));
+            : Ok(ApiResponseFactory.Success(new PersonDetail(PersonProfileMapper.Map(person, await RecordAudit.ForAsync(_users, person, cancellationToken)), person.UserId is not null), "Person retrieved."));
     }
 
     [HttpPut("{id:guid}")]
@@ -174,7 +190,7 @@ public sealed class PersonsController : ControllerBase
         }
 
         // Personal
-        Apply(request.Prefix, v => person.Prefix = v);
+        Apply(request.Suffix, v => person.Suffix = v);
         Apply(request.FirstName, v => person.FirstName = v);
         Apply(request.MiddleName, v => person.MiddleName = v);
         Apply(request.LastName, v => person.LastName = v);
@@ -238,7 +254,7 @@ public sealed class PersonsController : ControllerBase
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var refreshed = await LoadAsync(person.Id, cancellationToken) ?? person;
-        return Ok(ApiResponseFactory.Success(new PersonDetail(PersonProfileMapper.Map(refreshed), refreshed.UserId is not null), "Person updated."));
+        return Ok(ApiResponseFactory.Success(new PersonDetail(PersonProfileMapper.Map(refreshed, await RecordAudit.ForAsync(_users, refreshed, cancellationToken)), refreshed.UserId is not null), "Person updated."));
     }
 
     [HttpDelete("{id:guid}")]

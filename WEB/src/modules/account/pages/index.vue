@@ -1,11 +1,15 @@
 <template>
   <q-page padding>
     <app-detail-header :items="[{ label: 'Home', icon: 'o_home', to: '/' }, { label: 'My Account' }]">
+      <!-- The same percentage the profile page shows, commented out with it: it counts fields that page no
+           longer asks for, so it reads the same on both screens and can be moved from neither. -->
+      <!--
       <template #actions>
         <q-chip v-if="profile" dense color="teal-1" text-color="primary" class="text-weight-medium">
           {{ completion }}% complete
         </q-chip>
       </template>
+      -->
     </app-detail-header>
 
     <!-- Profile summary -->
@@ -39,12 +43,14 @@
         </div>
       </q-card-section>
 
+      <!--
       <q-separator />
       <q-card-section class="q-py-sm row items-center q-gutter-md">
         <div class="text-caption text-grey-7">Profile completion</div>
         <q-linear-progress :value="completion / 100" rounded color="primary" track-color="teal-1" class="col" style="height: 8px;" />
         <div class="text-caption text-weight-medium">{{ completion }}%</div>
       </q-card-section>
+      -->
     </q-card>
 
     <div class="row q-col-gutter-md">
@@ -132,7 +138,8 @@ const load = async () => {
 const displayName = computed(() =>
   profile.value?.fullName || profile.value?.displayName || authStore.user?.displayName || authStore.user?.email || "—");
 const email = computed(() => profile.value?.primaryEmail || authStore.user?.email || "—");
-const completion = computed(() => profile.value?.profileCompletionPercentage || 0);
+// Kept with the markup that reads it, both commented out — see the note in the template.
+// const completion = computed(() => profile.value?.profileCompletionPercentage || 0);
 
 const avatarUrl = computed(() =>
   (profile.value?.profileMediaUrl ? mediaApi.absoluteUrl(profile.value.profileMediaUrl) : null));

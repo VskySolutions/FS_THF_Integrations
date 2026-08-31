@@ -2,6 +2,7 @@ using EmsPortal.Api.Models.Rems;
 using EmsPortal.Api.Security;
 using EmsPortal.Api.Validators.Rems;
 using EmsPortal.Application.Abstractions.OptionSets;
+using EmsPortal.Application.Common;
 using EmsPortal.Application.Abstractions.Persistence;
 using EmsPortal.Application.Abstractions.UniversalFeatures;
 using EmsPortal.Domain.Entities;
@@ -45,6 +46,8 @@ public sealed class RemsEngagementController : ControllerBase
     private const string TaxFormSetKey = "REMS.TaxForm";
 
     private readonly IRemsRepository _rems;
+    /// <summary>Only to answer whether an initiator has cover arranged — see RemsSetupAccess.CanWork.</summary>
+    private readonly IRemsDelegationRepository _delegations;
     private readonly IRemsFormRepository _forms;
     private readonly IRemsClientRepository _clients;
     private readonly IRemsEngagementRepository _engagements;
@@ -60,6 +63,7 @@ public sealed class RemsEngagementController : ControllerBase
 
     public RemsEngagementController(
         IRemsRepository rems,
+        IRemsDelegationRepository delegations,
         IRemsFormRepository forms,
         IRemsClientRepository clients,
         IRemsEngagementRepository engagements,
@@ -74,6 +78,7 @@ public sealed class RemsEngagementController : ControllerBase
         IOptionCodeResolver codes)
     {
         _rems = rems;
+        _delegations = delegations;
         _forms = forms;
         _clients = clients;
         _engagements = engagements;
@@ -110,6 +115,8 @@ public sealed class RemsEngagementController : ControllerBase
         [FromQuery] bool? submitted = null,
         [FromQuery] string? requestStatus = null,
         [FromQuery] string? assignment = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool descending = true,
         CancellationToken cancellationToken = default)
     {
         if (User.GetUserId() is not { } me)
@@ -125,7 +132,7 @@ public sealed class RemsEngagementController : ControllerBase
             : RemsClientFormAssignment.All;
 
         var (items, total) = await _forms.ListClientFormsAsync(
-            new RemsClientFormQuery(search, submitted, requestStatus, me, slice, page, limit), cancellationToken);
+            new RemsClientFormQuery(search, submitted, requestStatus, me, slice, new SortRequest(sortBy, descending), page, limit), cancellationToken);
         var names = await _users.GetFullNamesAsync(
             items.SelectMany(i => new[] { i.AdminAssignedToId, i.CSEId, i.CreatedById, i.UpdatedById })
                 .Where(id => id.HasValue).Select(id => id!.Value),
@@ -1173,7 +1180,8 @@ public sealed class RemsEngagementController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("REMS request not found."));
         }
 
-        return RemsSetupAccess.CanWork(User, rems, me)
+        return RemsSetupAccess.CanWork(
+            User, rems, me, await RemsSetupAccess.CoverForWorkAsync(_delegations, rems, me, cancellationToken))
             ? null
             : StatusCode(StatusCodes.Status403Forbidden,
                 ApiResponseFactory.Forbidden(RemsSetupAccess.WorkDeniedReason(rems)));

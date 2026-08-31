@@ -45,7 +45,7 @@
               <q-chip v-if="canManageMembers" dense icon="o_group" color="blue-grey-1" text-color="blue-grey-8">
                 {{ memberSummary }}
               </q-chip>
-              <span class="text-caption text-grey-6 q-ml-sm">Updated {{ fmt.formatDateTime(role.updatedOnUtc) }}</span>
+              <span class="text-caption text-grey-6 q-ml-sm">Updated {{ fmt.formatDateTime(role.audit?.updatedOnUtc) }}</span>
             </div>
           </div>
 
@@ -136,6 +136,8 @@
           </q-card>
         </div>
       </div>
+
+      <app-record-audit :audit="role.audit" />
     </div>
 
     <!-- Tenant availability (platform roles, Super Admin only) -->
@@ -172,6 +174,7 @@ import { useDateFormat } from "composables/useDateFormat";
 import { stripHtml } from "utils/richText";
 
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
+import AppRecordAudit from "components/common/AppRecordAudit.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import AppTextField from "components/common/AppTextField.vue";

@@ -1,6 +1,7 @@
 using EmsPortal.Api.Models.UniversalFeatures;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Shared.Contracts;
 using EmsPortal.Shared.Security;
@@ -219,10 +220,23 @@ public sealed class StickyNotesController : ControllerBase
         return Ok(ApiResponseFactory.Success(new { saved = true }, "State saved."));
     }
 
+    /// <summary>What the tenant Sticky Notes list may be ordered by.</summary>
+    private static readonly SortMap<AdminStickyNoteResponse> AdminListSorts =
+        new SortMap<AdminStickyNoteResponse>("updatedOnUtc")
+            .Add("title", n => n.Title, n => n.CreatedOnUtc)
+            .Add("scope", n => n.Scope, n => n.CreatedOnUtc)
+            .Add("expiresAtUtc", n => n.ExpiresAtUtc, n => n.CreatedOnUtc)
+            .Add("dismissalCount", n => n.DismissalCount, n => n.CreatedOnUtc)
+            .Add("createdOnUtc", n => n.CreatedOnUtc)
+            .Add("updatedOnUtc", n => n.UpdatedOnUtc);
+
     [HttpGet("/api/admin/sticky-notes")]
     [RequirePermission(Permissions.SettingsManage)]
     [ProducesResponseType<ApiResponse<IEnumerable<AdminStickyNoteResponse>>>(StatusCodes.Status200OK)]
-    public async Task<IActionResult> AdminList(CancellationToken cancellationToken)
+    public async Task<IActionResult> AdminList(
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool descending = true,
+        CancellationToken cancellationToken = default)
     {
         var rows = await _notes.ListTenantNotesWithCountsAsync(cancellationToken);
 
@@ -236,7 +250,8 @@ public sealed class StickyNotesController : ControllerBase
         var data = rows.Select(r => new AdminStickyNoteResponse(
             r.Note.Id, r.Note.Title, r.Note.Body, r.Note.Colour, r.Note.Scope, r.Note.ExpiresAtUtc, r.DismissalCount,
             r.Note.CreatedOnUtc, NameOf(r.Note.CreatedById), NameOf(r.Note.UpdatedById), r.Note.UpdatedOnUtc));
-        return Ok(ApiResponseFactory.Success(data, "Tenant sticky notes retrieved."));
+        return Ok(ApiResponseFactory.Success(
+            AdminListSorts.Apply(data, sortBy, descending), "Tenant sticky notes retrieved."));
     }
 
     private bool CanManageTenantNotes() => User.IsSuperAdmin() || User.HasPermission(Permissions.SettingsManage);

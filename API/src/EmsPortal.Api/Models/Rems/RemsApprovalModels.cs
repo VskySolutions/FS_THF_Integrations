@@ -114,7 +114,9 @@ public sealed record RemsApprovalTaskView(
     IReadOnlyList<RemsChecklistItemView> Checklist,
     RemsApprovalRequestView Request,
     RemsApprovalEngagementView Engagement,
-    RemsApprovalRoundView Round);
+    RemsApprovalRoundView Round,
+    /// <summary>The TASK's own provenance — the packet is keyed on it — as every detail page ends with.</summary>
+    RecordAudit Audit);
 
 /// <summary>
 /// The originating REMS request as an approver sees it: the intake fields the partner raised, who is on it,

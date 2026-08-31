@@ -18,6 +18,7 @@
       page-key="dashboard-tenant-health"
       default-sort-by="activeUsers"
       :default-descending="true"
+      client-sort
       class="cursor-pointer"
     >
       <template #body-cell-tenantName="cellProps">

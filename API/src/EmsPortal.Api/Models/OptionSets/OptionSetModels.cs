@@ -106,4 +106,5 @@ public sealed record OptionSetDetailResponse(
     bool IsClosed,
     bool IsActive,
     bool IsEditable,
-    IReadOnlyList<OptionSetItemResponse> Items);
+    IReadOnlyList<OptionSetItemResponse> Items,
+    RecordAudit Audit);

@@ -1,3 +1,4 @@
+using EmsPortal.Api.Models;
 using EmsPortal.Api.Models.Profile;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.Auditing;
@@ -29,17 +30,21 @@ public sealed class ProfileController : ControllerBase
     private readonly IAddressRepository _addresses;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditTrailService _audit;
+    // Only to name the actors on the profile's provenance block: the record stores them as user ids.
+    private readonly IUserRepository _users;
 
     public ProfileController(
         IPersonRepository persons,
         IAddressRepository addresses,
         IUnitOfWork unitOfWork,
-        IAuditTrailService audit)
+        IAuditTrailService audit,
+        IUserRepository users)
     {
         _persons = persons;
         _addresses = addresses;
         _unitOfWork = unitOfWork;
         _audit = audit;
+        _users = users;
     }
 
     [HttpGet("/api/users/me/profile")]
@@ -56,7 +61,7 @@ public sealed class ProfileController : ControllerBase
         var person = await _persons.GetByUserIdAsync(userId.Value, cancellationToken);
         return person is null
             ? NotFound(ApiResponseFactory.NotFound("Profile not found."))
-            : Ok(ApiResponseFactory.Success(PersonProfileMapper.Map(person), "Profile retrieved."));
+            : Ok(ApiResponseFactory.Success(PersonProfileMapper.Map(person, await RecordAudit.ForAsync(_users, person, cancellationToken)), "Profile retrieved."));
     }
 
     [HttpPut("/api/users/me/profile")]
@@ -87,7 +92,7 @@ public sealed class ProfileController : ControllerBase
         var person = await _persons.GetByUserIdAsync(userId, cancellationToken);
         return person is null
             ? NotFound(ApiResponseFactory.NotFound("Profile not found."))
-            : Ok(ApiResponseFactory.Success(PersonProfileMapper.Map(person), "Profile retrieved."));
+            : Ok(ApiResponseFactory.Success(PersonProfileMapper.Map(person, await RecordAudit.ForAsync(_users, person, cancellationToken)), "Profile retrieved."));
     }
 
     [HttpPut("/api/admin/users/{userId:guid}/profile")]
@@ -108,7 +113,7 @@ public sealed class ProfileController : ControllerBase
 
     {
         // Personal
-        Apply(request.Prefix, v => person.Prefix = v);
+        Apply(request.Suffix, v => person.Suffix = v);
         Apply(request.FirstName, v => person.FirstName = v);
         Apply(request.MiddleName, v => person.MiddleName = v);
         Apply(request.LastName, v => person.LastName = v);
@@ -166,7 +171,7 @@ public sealed class ProfileController : ControllerBase
 
         // Re-load to project the latest address/media navigations.
         var refreshed = await _persons.GetByIdAsync(person.Id, cancellationToken) ?? person;
-        return Ok(ApiResponseFactory.Success(PersonProfileMapper.Map(refreshed), "Profile updated."));
+        return Ok(ApiResponseFactory.Success(PersonProfileMapper.Map(refreshed, await RecordAudit.ForAsync(_users, refreshed, cancellationToken)), "Profile updated."));
     }
 
     private async Task UpsertAddressAsync(Person person, AddressInput input, CancellationToken cancellationToken)

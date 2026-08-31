@@ -1,4 +1,5 @@
 using EmsPortal.Domain.Entities;
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Enums;
 
 namespace EmsPortal.Application.Abstractions.Persistence;
@@ -28,7 +29,8 @@ public interface IConversationMessageRepository
 
     /// <summary>Paginated @mentions of a user (joined to their message), newest-first; optional entity-type and read filters.</summary>
     Task<(IReadOnlyList<(ConversationMessageMention Mention, ConversationMessage Message)> Items, int Total)> ListMentionsForUserAsync(
-        Guid userId, EntityType? entityType, bool? isRead, int page, int limit, CancellationToken cancellationToken = default);
+        Guid userId, EntityType? entityType, bool? isRead, SortRequest sort, int page, int limit,
+        CancellationToken cancellationToken = default);
 
     /// <summary>A single mention belonging to the user, or null.</summary>
     Task<ConversationMessageMention?> GetMentionForUserAsync(Guid id, Guid userId, CancellationToken cancellationToken = default);

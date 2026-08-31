@@ -153,7 +153,7 @@ const groups = computed(() => {
   // Contact — the name as the client was asked for it.
   const contact = isIndividual.value
     ? [
-      { label: "Prefix", value: val(p.clientPrefix) },
+      { label: "Suffix", value: val(p.clientSuffix) },
       { label: "First Name", value: val(p.clientFirstName ?? p.clientName) },
       { label: "Last Name", value: val(p.clientLastName) }
     ]
@@ -165,6 +165,9 @@ const groups = computed(() => {
     { label: "Referral Details", value: val(p.referralSourceDetail) }
   );
   if (isIndividual.value) {
+    // Retired from the form — the name box asks for a generational suffix now, not a courtesy title —
+    // and rendered for the same reason the spouse rows below are.
+    if (p.clientPrefix) contact.push({ label: "Prefix", value: p.clientPrefix });
     // Retired from the form — the spouse is a contact now, and shows under Contacts. Still rendered when
     // a snapshot carries them: this panel is the record of what that client actually submitted, so it
     // shows what was in the envelope.
@@ -196,9 +199,10 @@ const groups = computed(() => {
   // asked — and in the order they gave them.
   const extraBilling = (p.additionalBillingContacts || []).filter(roleHasAny);
   const billingLabel = (i) => (extraBilling.length ? `Billing Contact ${i}` : "Billing Contact");
-  // `phone: null` on the lighter two-box version records that the question was never PUT, which is what
-  // stops the line reporting "no phone" about a box the client was never shown.
-  const billingPeople = isIndividual.value || !roleHasAny(billingRole)
+  // Read from the contact block every entity type is asked, falling back to the retired two-box answer on
+  // a submission that predates it. `phone: null` on that older shape records that the question was never
+  // PUT, which is what stops the line reporting "no phone" about a box the client was never shown.
+  const billingPeople = !roleHasAny(billingRole)
     ? [{ role: billingLabel(1), name: p.billingContactName, email: p.billingEmail, phone: null }]
     : [{
       role: billingLabel(1),
@@ -221,10 +225,10 @@ const groups = computed(() => {
     peopleTitle: billingPeople.length > 1 ? "Billing Contacts" : "Billing Contact"
   });
 
-  // A non-individual submission that ALSO carries the retired two-box billing answer — sent before every
-  // entity type named a Billing Contact. Not a duplicate of the contact above: a different answer the
-  // client gave, and this panel reports what was in the envelope.
-  if (!isIndividual.value && (p.billingContactName || p.billingEmail) && roleHasAny(billingRole)) {
+  // A submission carrying BOTH the contact block and the retired two-box billing answer. Not a duplicate
+  // of the contact above: a different answer the client gave on an earlier form, and this panel reports
+  // what was in the envelope. Where the block is empty the two boxes ARE the contact above.
+  if ((p.billingContactName || p.billingEmail) && roleHasAny(billingRole)) {
     result.push({
       title: "Billing (as previously given)",
       icon: "o_receipt_long",

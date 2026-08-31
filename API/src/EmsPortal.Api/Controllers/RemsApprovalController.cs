@@ -1,7 +1,9 @@
 using System.Text.Json;
+using EmsPortal.Api.Models;
 using EmsPortal.Api.Models.Rems;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.OptionSets;
+using EmsPortal.Application.Common;
 using EmsPortal.Application.Abstractions.Persistence;
 using EmsPortal.Application.Abstractions.UniversalFeatures;
 using EmsPortal.Domain.Entities;
@@ -58,6 +60,8 @@ public sealed class RemsApprovalController : ControllerBase
     private const string TaxFormSetKey = "REMS.TaxForm";
 
     private readonly IRemsRepository _rems;
+    /// <summary>Only to answer whether an initiator has cover arranged — see RemsSetupAccess.CanWork.</summary>
+    private readonly IRemsDelegationRepository _delegations;
     private readonly IRemsEngagementRepository _engagements;
     private readonly IRemsApprovalRepository _approvals;
     private readonly IRemsClientRepository _clients;
@@ -71,6 +75,7 @@ public sealed class RemsApprovalController : ControllerBase
 
     public RemsApprovalController(
         IRemsRepository rems,
+        IRemsDelegationRepository delegations,
         IRemsEngagementRepository engagements,
         IRemsApprovalRepository approvals,
         IRemsClientRepository clients,
@@ -83,6 +88,7 @@ public sealed class RemsApprovalController : ControllerBase
         IOptionCodeResolver codes)
     {
         _rems = rems;
+        _delegations = delegations;
         _engagements = engagements;
         _approvals = approvals;
         _clients = clients;
@@ -231,7 +237,7 @@ public sealed class RemsApprovalController : ControllerBase
             return ConflictResult(CodeNotSendable, "Only a draft engagement can be sent for approval; a rejected one must be resubmitted.");
         }
 
-        if (GuardSetupOwner(engagement) is { } notOwner)
+        if (await GuardSetupOwnerAsync(engagement, cancellationToken) is { } notOwner)
         {
             return notOwner;
         }
@@ -278,7 +284,7 @@ public sealed class RemsApprovalController : ControllerBase
             return ConflictResult(CodeNotRejected, "Only a rejected engagement can be resubmitted.");
         }
 
-        if (GuardSetupOwner(engagement) is { } notOwner)
+        if (await GuardSetupOwnerAsync(engagement, cancellationToken) is { } notOwner)
         {
             return notOwner;
         }
@@ -310,7 +316,7 @@ public sealed class RemsApprovalController : ControllerBase
     /// and one admin could route a round on a request another was still working.
     /// </para>
     /// </summary>
-    private IActionResult? GuardSetupOwner(REMSEngagement engagement)
+    private async Task<IActionResult?> GuardSetupOwnerAsync(REMSEngagement engagement, CancellationToken cancellationToken)
     {
         if (User.GetUserId() is not { } me)
         {
@@ -324,7 +330,8 @@ public sealed class RemsApprovalController : ControllerBase
             return NotFound(ApiResponseFactory.NotFound("REMS request not found."));
         }
 
-        return RemsSetupAccess.CanWork(User, rems, me)
+        return RemsSetupAccess.CanWork(
+            User, rems, me, await RemsSetupAccess.CoverForWorkAsync(_delegations, rems, me, cancellationToken))
             ? null
             : StatusCode(StatusCodes.Status403Forbidden,
                 ApiResponseFactory.Forbidden(RemsSetupAccess.WorkDeniedReason(rems)));
@@ -438,6 +445,8 @@ public sealed class RemsApprovalController : ControllerBase
         [FromQuery] string? search = null,
         [FromQuery] string? role = null,
         [FromQuery] string? status = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool descending = true,
         CancellationToken cancellationToken = default)
     {
         if (User.GetUserId() is not { } me)
@@ -455,7 +464,7 @@ public sealed class RemsApprovalController : ControllerBase
             Enum.TryParse<RemsApprovalTaskStatus>(status, ignoreCase: true, out var s) ? s : null;
 
         var (tasks, total) = await _approvals.ListTasksByApproverAsync(
-            new RemsApprovalTaskQuery(me, search, roleFilter, statusFilter, page, limit), cancellationToken);
+            new RemsApprovalTaskQuery(me, search, roleFilter, statusFilter, new SortRequest(sortBy, descending), page, limit), cancellationToken);
 
         // The audit actors AND each request's CSE, resolved in one read: the CSE is a column on this list
         // now, and a name lookup per row would be one round trip per task.
@@ -1228,7 +1237,7 @@ public sealed class RemsApprovalController : ControllerBase
             EngagementUserIds(engagement)
                 .Concat(round.Tasks.Select(t => t.ApproverId))
                 .Append(round.SentByUserId)
-                .Concat(new[] { rems.AdminAssignedToId, rems.CSEId, rems.CreatedById }
+                .Concat(new[] { rems.AdminAssignedToId, rems.CSEId, rems.CreatedById, task.CreatedById, task.UpdatedById }
                     .Where(id => id.HasValue).Select(id => id!.Value)),
             cancellationToken);
 
@@ -1277,7 +1286,8 @@ public sealed class RemsApprovalController : ControllerBase
 
         return new RemsApprovalTaskView(
             task.Id, round.Id, round.RoundNumber, task.ApproverRole.ToString(), task.Status.ToString(),
-            task.DecidedOnUtc, task.RejectionReason, canDecide, checklist, requestView, engagementView, roundView);
+            task.DecidedOnUtc, task.RejectionReason, canDecide, checklist, requestView, engagementView, roundView,
+            RecordAudit.From(task, RecordAudit.Names(names)));
     }
 
     private async Task<RemsApprovalEngagementView> BuildApprovalEngagementViewAsync(

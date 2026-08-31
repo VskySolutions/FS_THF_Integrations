@@ -183,8 +183,10 @@ const columns = computed(() => [
   // Descriptions are rich text; the cell shows the text without its markup (see utils/richText).
   { name: "description", label: "Description", field: (r) => stripHtml(r.description), align: "left", default: true, filterable: false },
   { name: "permissionCount", label: "Permission Count", field: "permissionCount", align: "left", sortable: true, default: true, filterable: false },
-  { name: "rolesUsingCount", label: "Roles Using", field: "rolesUsingCount", align: "left", sortable: true, default: true, filterable: false },
-  { name: "members", label: "Members", field: "currentUsage", align: "left", sortable: true, default: true, filterable: false },
+  // Neither is sortable: both are counted in their own batched query after the page of groups is read, so
+  // there is no column for the database to order the whole set by.
+  { name: "rolesUsingCount", label: "Roles Using", field: "rolesUsingCount", align: "left", default: true, filterable: false },
+  { name: "members", label: "Members", field: "currentUsage", align: "left", default: true, filterable: false },
   { name: "status", label: "Status", field: "isActive", align: "left", sortable: true, default: true, filterOptions: STATUS_OPTIONS },
   { name: "category", label: "Category", field: "category", align: "left", default: false, filterOptions: CATEGORY_OPTIONS },
   ...(canChooseTenant.value ? [{ name: "tenantName", label: "Tenant", field: "tenantName", align: "left", sortable: true, default: true, filterable: false }] : []),
@@ -193,10 +195,13 @@ const columns = computed(() => [
 ]);
 
 const { rows, loading, totalRecords, selected, search, filterOpen, pagination, load, onRequest } = useListTable({
-  fetcher: ({ page, limit }) =>
+  pageKey: "permission-groups",
+  fetcher: ({ page, limit, sortBy, descending }) =>
     permissionGroupApi.list({
       page,
       limit,
+      sortBy,
+      descending,
       search: search.value || undefined,
       isActive: filters.status != null ? filters.status === "true" : undefined,
       usedByRoles: filters.usedByRoles || undefined,

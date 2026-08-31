@@ -11,10 +11,14 @@
       <q-separator />
 
       <q-card-section>
-        <!-- Who to hand it to. Both can already work a returned request, so this is not about access —
-             it is about naming whose job it is, which is otherwise left for the two of them to work out
-             between themselves. The other is still told, so nobody carries on with a request that has
-             moved. Offered only where there is a real choice: a request with no CSE has one answer. -->
+        <!-- Who to hand it to. Naming whose job the rework is, which is otherwise left for the two of them
+             to work out between themselves; the other is still told, so nobody carries on with a request
+             that has moved.
+
+             Offered only where there is a real choice, and the CSE is a real choice only where the request
+             names one AND the initiator has a REMS delegate in force. The rework is the initiator's own
+             work and delegating is how they hand it out, so without that the CSE cannot edit the returned
+             setup either — offering them here would be offering a handover to somebody locked out of it. -->
         <div class="sbd-label">Who should make the changes?</div>
         <div class="sbd-choices" role="radiogroup" aria-label="Who should make the changes?">
           <button
@@ -29,7 +33,7 @@
             </span>
           </button>
           <button
-            v-if="cseName" type="button" role="radio" :aria-checked="target === 'cse'"
+            v-if="cseOffered" type="button" role="radio" :aria-checked="target === 'cse'"
             class="sbd-choice" :class="{ 'sbd-choice--on': target === 'cse' }"
             @click="target = 'cse'"
           >
@@ -39,6 +43,14 @@
               <span class="sbd-choice__role">CSE on this request</span>
             </span>
           </button>
+        </div>
+
+        <!-- Said rather than left to be inferred from a missing button: an admin who expects to see the CSE
+             here needs to know why they cannot, and what would change it. -->
+        <div v-if="cseName && !cseEligible" class="sbd-note">
+          <q-icon name="o_info" size="16px" class="q-mr-xs" />
+          {{ cseName }} cannot be given this: {{ initiatorName || "the partner" }} has not named a REMS
+          delegate, so their rework stays with them.
         </div>
 
         <div class="text-body2 q-mb-md">
@@ -75,13 +87,21 @@ const props = defineProps({
   // The two people the rework can be handed to, for the choice above. An empty `cseName` means none is
   // named on the request, and the choice collapses to the one answer there is.
   initiatorName: { type: String, default: "" },
-  cseName: { type: String, default: "" }
+  cseName: { type: String, default: "" },
+  // Whether the CSE may actually be handed the rework: the request's own `canSendBackToCse`, which the
+  // server sets only when the initiator has a REMS delegate in force. Named apart from `cseName` because
+  // the two say different things — who the CSE IS, and whether this return may go to them — and the
+  // dialog explains the second rather than silently dropping the button.
+  cseEligible: { type: Boolean, default: false }
 });
 const emit = defineEmits(["update:modelValue", "confirm"]);
 
 const reason = ref("");
 const target = ref("initiator");
 const attempted = ref(false);
+
+// The CSE is a choice only when the request names one and the initiator has cover arranged.
+const cseOffered = computed(() => !!props.cseName && props.cseEligible);
 
 const open = computed({
   get: () => props.modelValue,
@@ -123,6 +143,15 @@ const confirm = () => {
   flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 18px;
+}
+/* Pulled up under the choices it explains, so it reads as a note on them rather than as a new paragraph. */
+.sbd-note {
+  display: flex;
+  align-items: flex-start;
+  margin: -10px 0 18px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-500);
 }
 .sbd-choice {
   display: inline-flex;

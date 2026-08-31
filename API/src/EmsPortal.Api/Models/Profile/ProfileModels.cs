@@ -22,8 +22,8 @@ public sealed class AddressInput
 public sealed class UpdatePersonProfileRequest
 {
     // Personal
-    /// <summary>The title they are addressed by. Free text; not part of the filed name.</summary>
-    public string? Prefix { get; set; }
+    /// <summary>The generational particle on the name. Free text; not part of the filed name.</summary>
+    public string? Suffix { get; set; }
 
     public string? FirstName { get; set; }
     public string? MiddleName { get; set; }
@@ -81,8 +81,8 @@ public sealed record PersonProfileResponse(
     string PersonCode,
     Guid? UserId,
     Guid? TenantId,
-    /// <summary>The title they are addressed by (Mr., Dr., …); null when they have none.</summary>
-    string? Prefix,
+    /// <summary>The generational particle on the name (Jr., III, …); null when they have none.</summary>
+    string? Suffix,
     string FirstName,
     string? MiddleName,
     string LastName,
@@ -108,4 +108,5 @@ public sealed record PersonProfileResponse(
     string? Notes,
     Guid? ProfileMediaId,
     string? ProfileMediaUrl,
-    AddressResponse? Address);
+    AddressResponse? Address,
+    RecordAudit Audit);

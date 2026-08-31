@@ -15,7 +15,10 @@
       :rows="rows"
       :columns="columns"
       :loading="loading"
+      :total-records="totalRecords"
+      :pagination="pagination"
       default-sort-by="updatedOnUtc"
+      @request="onRequest"
       @refresh="load"
     >
       <template #body-cell-colour="cell">
@@ -55,12 +58,13 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from "vue";
+import { ref, reactive } from "vue";
 import { ufTagsApi, getApiErrorMessage, EntityType } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useDeletedRecords } from "composables/useDeletedRecords";
 import { useConfirm } from "composables/useConfirm";
 import { useAuditColumns } from "composables/useAuditColumns";
+import { useListTable } from "composables/useListTable";
 import AppDataTable from "components/common/AppDataTable.vue";
 import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
 import AppFormDrawer from "components/common/AppFormDrawer.vue";
@@ -72,8 +76,13 @@ const notify = useNotify();
 const { confirm } = useConfirm();
 const palette = ["#ef5350", "#ec407a", "#ab47bc", "#5c6bc0", "#42a5f5", "#26a69a", "#9ccc65", "#ffa726", "#607d8b"];
 
-const rows = ref([]);
-const loading = ref(false);
+// Ordering is the server's, like every other list.
+const { rows, loading, totalRecords, pagination, load, onRequest } = useListTable({
+  pageKey: "uf_tags",
+  fetcher: ({ sortBy, descending }) =>
+    ufTagsApi.list({ sortBy, descending }).then((r) => ({ data: r || [], total: (r || []).length })),
+  onError: (err) => notify.error(getApiErrorMessage(err))
+});
 
 const columns = [
   { name: "name", label: "Name", field: "name", align: "left", sortable: true, default: true },
@@ -89,17 +98,6 @@ const saving = ref(false);
 const editing = ref(null);
 const formRef = ref(null);
 const form = reactive({ name: "", category: "", colour: palette[0] });
-
-const load = async () => {
-  loading.value = true;
-  try {
-    rows.value = (await ufTagsApi.list()) || [];
-  } catch (err) {
-    notify.error(getApiErrorMessage(err));
-  } finally {
-    loading.value = false;
-  }
-};
 
 const openCreate = () => {
   editing.value = null;
@@ -155,7 +153,6 @@ const remove = async (tag) => {
   }
 };
 
-onMounted(load);
 </script>
 
 <style scoped>

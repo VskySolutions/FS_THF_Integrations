@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Common;
 using EmsPortal.Application.Abstractions.Tenancy;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Domain.Enums;
@@ -196,8 +197,15 @@ internal sealed class DeletedRecordsRepository : IDeletedRecordsRepository
 
     // ---- Operations ----
 
+    // What the deleted-records panel may be ordered by. Deleted By is an id the controller resolves to a
+    // name afterwards, so the panel does not offer it as a sort.
+    private static readonly SortMap<DeletedRecordRow> DeletedSorts = new SortMap<DeletedRecordRow>("deletedOnUtc")
+        .Add("identity", r => r.Identity)
+        .Add("deletedOnUtc", r => r.DeletedOnUtc, r => r.Identity);
+
     public async Task<(IReadOnlyList<DeletedRecordRow> Items, int Total)> ListDeletedAsync(
-        EntityType entityType, Guid? tenantId, int page, int limit, CancellationToken cancellationToken = default)
+        EntityType entityType, Guid? tenantId, SortRequest sort, int page, int limit,
+        CancellationToken cancellationToken = default)
     {
         if (!_handlers.TryGetValue(entityType, out var handler))
         {
@@ -206,7 +214,8 @@ internal sealed class DeletedRecordsRepository : IDeletedRecordsRepository
 
         var query = handler.Deleted(Effective(tenantId));
         var total = await query.CountAsync(cancellationToken);
-        var items = await query.Skip((page - 1) * limit).Take(limit).ToListAsync(cancellationToken);
+        var items = await DeletedSorts.Apply(query, sort.SortBy, sort.Descending)
+            .Skip((page - 1) * limit).Take(limit).ToListAsync(cancellationToken);
         return (items, total);
     }
 

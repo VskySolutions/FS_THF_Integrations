@@ -1,7 +1,9 @@
+using EmsPortal.Api.Models;
 using EmsPortal.Api.Models.Roles;
 using EmsPortal.Api.Security;
 using EmsPortal.Application.Abstractions.Auditing;
 using EmsPortal.Application.Abstractions.Persistence;
+using EmsPortal.Application.Common;
 using EmsPortal.Domain.Entities;
 using EmsPortal.Shared.Contracts;
 using EmsPortal.Shared.Security;
@@ -108,7 +110,11 @@ public sealed class RolesController : ControllerBase
 
     [HttpGet("/api/admin/roles")]
     [RequirePermission(Permissions.RolesWrite)]
-    public async Task<IActionResult> List([FromQuery] string? search = null, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> List(
+        [FromQuery] string? search = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool descending = true,
+        CancellationToken cancellationToken = default)
     {
         var (roles, scopeError) = await VisibleRolesAsync(cancellationToken);
         if (scopeError is not null)
@@ -127,8 +133,26 @@ public sealed class RolesController : ControllerBase
         var page = result.ToList();
         var nameOf = await AuditNamesAsync(page, cancellationToken);
         var tenantNameOf = await TenantNamesAsync(page, cancellationToken);
-        return Ok(ApiResponseFactory.Success(page.Select(r => ToSummary(r, nameOf, tenantNameOf)), "Roles retrieved."));
+        // Ordered after projecting, because two of the columns the list offers — Scope and Permissions —
+        // only exist on the summary. This list is returned whole, so there is no page for the order to be
+        // wrong across; it is done here so the browser never has to guess an order from rendered text.
+        var summaries = ListSorts.Apply(page.Select(r => ToSummary(r, nameOf, tenantNameOf)), sortBy, descending);
+        return Ok(ApiResponseFactory.Success(summaries, "Roles retrieved."));
     }
+
+    /// <summary>
+    /// What the Roles list may be ordered by. "Scope" reads as the owning tenant's name, or "Platform"
+    /// for a role that belongs to no tenant — the same string the cell shows, so the order matches what
+    /// is on screen rather than the null behind it.
+    /// </summary>
+    private static readonly SortMap<RoleSummary> ListSorts = new SortMap<RoleSummary>("updatedOnUtc")
+        .Add("name", r => r.Name)
+        .Add("description", r => r.Description)
+        .Add("isSystem", r => r.IsSystem, r => r.Name)
+        .Add("scope", r => r.TenantName ?? "Platform", r => r.Name)
+        .Add("permissionCount", r => r.PermissionCount, r => r.Name)
+        .Add("createdOnUtc", r => r.CreatedOnUtc)
+        .Add("updatedOnUtc", r => r.UpdatedOnUtc);
 
     [HttpGet("/api/admin/roles/{id:guid}")]
     [RequirePermission(Permissions.RolesWrite)]
@@ -451,7 +475,7 @@ public sealed class RolesController : ControllerBase
             : null;
         return new RoleResponse(
             r.Id, r.Name, r.Description, r.IsSystem, r.TenantId, tenantName, RoleAccess.CanManage(User, r),
-            r.Permissions, r.CreatedOnUtc, r.UpdatedOnUtc);
+            r.Permissions, await RecordAudit.ForAsync(_users, r, cancellationToken));
     }
 
     private RoleSummary ToSummary(Role r, Func<Guid?, string?> nameOf, Func<Guid?, string?> tenantNameOf) => new(

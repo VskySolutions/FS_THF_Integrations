@@ -82,22 +82,22 @@ public class REMS : AuditableEntity
     public string? ClientNameSuffix { get; set; }
 
     /// <summary>
-    /// The client's name as it reads — the requested name with the suffix appended. This is what every
-    /// list, notification and email shows; <see cref="RequestedClientName"/> on its own would drop the
-    /// suffix silently wherever it was used.
+    /// The client's name as it reads — the suffix in FRONT of the requested name ("Jr. John Smith"). This
+    /// is what every list, notification and email shows; <see cref="RequestedClientName"/> on its own
+    /// would drop the suffix silently wherever it was used.
     /// </summary>
     [NotMapped]
     public string ClientDisplayName => Append(RequestedClientName?.Trim() ?? string.Empty);
 
     /// <summary>
-    /// Any name of this client, read as it should be — with the request's suffix on the end.
+    /// Any name of this client, read as it should be — with the request's suffix in front of it.
     /// <para>
     /// Needed because the client's name exists in two places once their intake form comes back: the name
     /// the request was raised under (<see cref="RequestedClientName"/>) and the name the CLIENT typed,
     /// which is what <c>REMSClient.Name</c> and the main <c>REMSEntity.Name</c> hold. The intake form
     /// never asks for a suffix — it is the firm's own particle on the name, set at intake — so a surface
     /// showing the client's own version was showing "John Smith" where every list beside it said
-    /// "John Smith Jr.".
+    /// "Jr. John Smith".
     /// </para>
     /// <para>
     /// A blank name falls back to <see cref="ClientDisplayName"/>; a name that already carries the suffix
@@ -112,16 +112,25 @@ public class REMS : AuditableEntity
         return Append(trimmed.Length == 0 ? RequestedClientName?.Trim() ?? string.Empty : trimmed);
     }
 
-    /// <summary>The suffix appended once — a name that already ends with it is left alone.</summary>
+    /// <summary>
+    /// The name with its suffix in front, applied once — a name that already leads with it is left alone.
+    /// <para>
+    /// In FRONT, not on the end. The form asks for the suffix first, in the box to the left of the name,
+    /// and every surface that shows a name echoes the order it was asked in — that is what the contacts
+    /// on the intake form have always done (see <c>RemsRolePayload.NameWithSuffix</c>), and the client's
+    /// own name reading the other way round was the one place the platform disagreed with itself. It also
+    /// puts the particle where a reader scanning a column of identical names actually looks.
+    /// </para>
+    /// </summary>
     private string Append(string name)
     {
         var suffix = ClientNameSuffix?.Trim() ?? string.Empty;
-        if (name.Length == 0 || suffix.Length == 0 || name.EndsWith(" " + suffix, StringComparison.OrdinalIgnoreCase))
+        if (name.Length == 0 || suffix.Length == 0 || name.StartsWith(suffix + " ", StringComparison.OrdinalIgnoreCase))
         {
             return name;
         }
 
-        return $"{name} {suffix}";
+        return $"{suffix} {name}";
     }
 
     /// <summary>Customer email used to reach out; required together-or-with mobile at app level.</summary>

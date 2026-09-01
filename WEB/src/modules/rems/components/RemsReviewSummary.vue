@@ -2,9 +2,10 @@
   <!-- Read-only, grouped presentation of the in-progress payload for the public form's Review step
        (AC-REMS-024.7): Contact · Addresses & Billing · Contract Details (Government only) · Additional
        Contacts · Other Entities. That is the order the form asks the questions in, card for card, so
-       checking an answer here means looking where it was typed — which is also why the billing contact
-       is inside Addresses & Billing rather than in a block of its own at the end. Rendered as plain
-       text — no inputs. Mirrors the admin's submitted-form panel so the client sees what the admin will. -->
+       checking an answer here means looking where it was typed — which is also why each invoice's
+       addressee sits inside Addresses & Billing rather than in a block of its own at the end. Rendered
+       as plain text — no inputs. Mirrors the admin's submitted-form panel so the client sees what the
+       admin will. -->
   <div>
     <div v-for="g in groups" :key="g.title" class="review-group">
       <div class="review-group__title">
@@ -31,7 +32,7 @@
         <div v-if="g.rows.length" class="column q-gutter-sm">
           <div v-for="r in g.rows" :key="r.role" class="role-row">
             <div class="rems-label">{{ r.role }}<span v-if="r.isRequired" class="text-red-6"> *</span></div>
-            <div class="rems-value">{{ r.name || "—" }}</div>
+            <div class="rems-value"><app-name-with-suffix :name="r.name" :suffix="r.suffix" /></div>
             <div class="text-caption text-grey-7">{{ r.email || "no email" }} · {{ r.phone || "no phone" }}</div>
           </div>
         </div>
@@ -51,9 +52,9 @@
         <div v-else class="text-grey-6">No other entities provided.</div>
       </div>
 
-      <!-- People belonging to a FIELDS group — the billing contacts, under the addresses they are the
-           other half of. Each gets a card of its own so a reader can tell one person from the next at a
-           glance, which nine consecutive rows in the grid above could not do.
+      <!-- People belonging to a FIELDS group — the addressees, under the addresses they are the other
+           half of. Each gets a card of its own so a reader can tell one person from the next at a
+           glance, which consecutive rows in the grid above could not do.
 
            Outside the kind chain above rather than inside it: a v-else-if has to follow its v-if with
            nothing in between, and this is an ADDITION to the fields group, not a fourth kind of one. -->
@@ -62,7 +63,7 @@
         <div class="review-people__grid">
           <div v-for="(person, i) in g.people" :key="i" class="review-person">
             <div class="rems-label">{{ person.role }}</div>
-            <div class="rems-value">{{ person.name || "—" }}</div>
+            <div class="rems-value"><app-name-with-suffix :name="person.name" :suffix="person.suffix" /></div>
             <div class="text-caption text-grey-7">
               {{ person.email || "no email" }}<template v-if="person.phone !== null"> · {{ person.phone || "no phone" }}</template>
             </div>
@@ -75,12 +76,13 @@
 
 <script setup>
 import { computed } from "vue";
-import { addressText } from "modules/rems/remsAddress";
+import { addressText, billingAddressList, addresseeParts } from "modules/rems/remsAddress";
 import { formatDateOnly } from "composables/useDateFormat";
 import { isBusinessIndustryGroup } from "modules/rems/useRemsMeta";
 import {
-  answeredRoleKeys, BILLING_ROLE_KEY, groupKey, normalizeRoles, roleAddressedName, roleDefsFor, roleHasAny
+  answeredRoleKeys, groupKey, normalizeRoles, roleDefsFor, roleHasAny, roleNameParts
 } from "modules/rems/remsContactRoles";
+import AppNameWithSuffix from "components/common/AppNameWithSuffix.vue";
 
 const props = defineProps({
   payload: { type: Object, required: true },
@@ -144,52 +146,38 @@ const groups = computed(() => {
   if (isBusiness.value) contact.push({ label: "EIN", value: val(p.ein) });
   result.push({ title: "Contact", icon: "o_person", kind: "fields", rows: contact });
 
-  // Addresses — all three are stored in their own right, so each is simply shown. The billing CONTACT
-  // rides with them, because that is where the form asks it: the billing address and the person it is
-  // addressed to are two halves of one answer, and reviewing them cards apart is how a form gets sent
-  // with one and not the other.
+  // Addresses — each stored in its own right, so each is simply shown. Billing is however many places the
+  // client is invoiced at, and each of them carries the person the invoice is addressed to: that is where
+  // the form asks it, because where an invoice goes and who it is addressed to are two halves of one
+  // answer, and reviewing them cards apart is how a form gets sent with one and not the other.
   const roles = normalizeRoles(p.roles);
-  const billingRole = roles[BILLING_ROLE_KEY];
+  const billing = billingAddressList(p);
+  // Numbered only where there is more than one — a "1" over a lone address answers a question nobody
+  // asked.
+  const billingLabel = (i) => (billing.length > 1 ? `Billing Address ${i + 1}` : "Billing Address");
   const addressRows = [
     { label: "Physical Address", value: addressText(p.physicalAddress) },
-    { label: "Mailing Address", value: addressText(p.mailingAddress) },
-    { label: "Billing Address", value: addressText(p.billingAddress) }
+    { label: "Mailing Address", value: addressText(p.mailingAddress) }
   ];
-  // The people to invoice, as PEOPLE — one block each, the name with the email and phone beneath it —
-  // rather than three label/value rows apiece. Flattened into the address grid, a second contact became
-  // fields called "Billing Contact 2 Email" and "Billing Contact 2 Phone" sitting beside "Mailing
-  // Address" as though they were the same kind of answer, and nothing said where one person ended and
-  // the next began.
-  //
-  // Numbered only where there is more than one — a "1" over a lone contact answers a question nobody
-  // asked. The extras follow it in the order they were typed.
-  const extraBilling = (p.additionalBillingContacts || []).filter(roleHasAny);
-  const billingLabel = (i) => (extraBilling.length ? `Billing Contact ${i}` : "Billing Contact");
-  // Read from the contact block every entity type is asked, falling back to the retired two-box answer on
-  // a payload that predates it. A contact left blank is still shown, because blank IS the answer being
-  // reviewed; `phone: null` rather than "" records that the question was never PUT on that older form,
-  // which is what stops the line reporting "no phone" about a box nobody saw.
-  const billingPeople = !roleHasAny(billingRole)
-    ? [{ role: billingLabel(1), name: p.billingContactName, email: p.billingEmail, phone: null }]
-    : [{
-      role: billingLabel(1),
-      name: roleAddressedName(billingRole),
-      email: billingRole.email,
-      phone: billingRole.phone
-    }];
-  extraBilling.forEach((role, i) => billingPeople.push({
-    role: `Billing Contact ${i + 2}`,
-    name: roleAddressedName(role),
-    email: role.email,
-    phone: role.phone
-  }));
+  // A dash rather than nothing: giving no billing address IS the answer being reviewed, and it means the
+  // mailing address gets the invoices.
+  if (!billing.length) addressRows.push({ label: "Billing Address", value: "—" });
+  billing.forEach((b, i) => addressRows.push({ label: billingLabel(i), value: addressText(b) }));
+
+  // The addressees, as PEOPLE — one block each, the name with the email and phone beneath it — rather
+  // than three label/value rows apiece. Flattened into the address grid, a second one became fields
+  // called "Billing Address 2 Email" and "Billing Address 2 Phone" sitting beside "Mailing Address" as
+  // though they were the same kind of answer, and nothing said where one person ended and the next began.
+  const billingPeople = billing
+    .map((b, i) => ({ role: billingLabel(i), ...addresseeParts(b), email: b?.email, phone: b?.phone }))
+    .filter((person) => person.name || person.email || person.phone);
   result.push({
     title: "Addresses & Billing",
     icon: "o_place",
     kind: "fields",
     rows: addressRows,
     people: billingPeople,
-    peopleTitle: billingPeople.length > 1 ? "Billing Contacts" : "Billing Contact"
+    peopleTitle: "Invoices addressed to"
   });
 
   // Contract Details (Government)
@@ -210,17 +198,17 @@ const groups = computed(() => {
   }
 
   // Additional Contacts (role contacts, in group order). Any role the client answered that this group is
-  // no longer asked — a Banker on a form started before it was retired — is shown after the rest: the
-  // review step reports what will be submitted, and that contact will be. The billing contact is not
-  // among them: it is reviewed above, with the address it is billed to.
+  // no longer asked — a Banker on a form started before it was retired, or a Billing Contact on one
+  // started before the addressee moved onto the billing address — is shown after the rest: the review
+  // step reports what will be submitted, and those contacts will be.
   const key = groupKey(props.industryGroup, isBusinessIndustryGroup(props.industryGroup));
   const contactRows = roleDefsFor(key, answeredRoleKeys(roles))
-    .filter((def) => def.key !== BILLING_ROLE_KEY && roleHasAny(roles[def.key]))
+    .filter((def) => roleHasAny(roles[def.key]))
     .map((def) => ({
       role: def.label,
       isRequired: def.required,
       ...roles[def.key],
-      name: roleAddressedName(roles[def.key])
+      ...roleNameParts(roles[def.key])
     }));
   result.push({ title: "Additional Contacts", icon: "o_groups", kind: "contacts", rows: contactRows });
 
@@ -235,12 +223,13 @@ const groups = computed(() => {
     });
   result.push({ title: "Other Entities", icon: "o_apartment", kind: "entities", rows: entities });
 
-  // Billing is reviewed up in Addresses & Billing, where the form asks it. The one exception: a payload
-  // that carries BOTH the contact block and the retired two-box answer. That is not a second copy of the
-  // contact above — it is a different answer the client gave on an earlier form — and this step reports
-  // what is in hand. Where the block is empty the two boxes ARE the contact above, so there is nothing
-  // here to add.
-  if ((p.billingContactName || p.billingEmail) && roleHasAny(billingRole)) {
+  // The billing answers a payload gave under questions the form no longer asks: the two plain boxes that
+  // preceded the billing-contact block, and the extra billing contacts that preceded the billing-address
+  // list. Neither is asked any more and neither is editable, but this step reports what will actually be
+  // submitted — and these will be. Absent entirely on anything filled in since, which is the ordinary
+  // case.
+  const retiredBilling = (p.additionalBillingContacts || []).filter(roleHasAny);
+  if (p.billingContactName || p.billingEmail || retiredBilling.length) {
     result.push({
       title: "Billing (as previously given)",
       icon: "o_receipt_long",
@@ -248,7 +237,14 @@ const groups = computed(() => {
       rows: [
         { label: "Billing Contact", value: val(p.billingContactName) },
         { label: "Billing Email", value: val(p.billingEmail) }
-      ]
+      ],
+      people: retiredBilling.map((role, i) => ({
+        role: `Billing Contact ${i + 2}`,
+        ...roleNameParts(role),
+        email: role.email,
+        phone: role.phone
+      })),
+      peopleTitle: "Also invoiced"
     });
   }
 
@@ -284,8 +280,8 @@ const groups = computed(() => {
   margin-top: 4px;
 }
 
-/* The billing contacts sit under the addresses they belong to, but outside their grid: a person is not a
-   field, and putting three of them in it was what made the section unreadable. */
+/* The addressees sit under the addresses they belong to, but outside their grid: a person is not a
+   field, and putting several of them in it was what made the section unreadable. */
 .review-people { margin-top: 14px; }
 .review-people__title {
   font-size: 12px;

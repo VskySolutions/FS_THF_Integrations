@@ -434,15 +434,14 @@ public sealed class RemsPublicFormController : ControllerBase
             },
         };
 
-        // The billing ADDRESS is no longer staged here — it is one of the main entity's three addresses now
-        // (see StageEntityAddresses). Only the billing contact's name and email stay on the client.
-        // Email is LOCKED to the request — the payload email is never read on submit.
+        // Billing ADDRESSES are not staged here — they are the main entity's, and there may be several
+        // (see StageEntityAddresses). Email is LOCKED to the request; the payload email is never read on
+        // submit.
         //
-        // …and those two are now only ever filled from a payload that predates the billing CONTACT block —
-        // every entity type names one, and it is staged among the entity's contacts with a name, an email
-        // and a phone. Writing the contact here as well would put the same person on the approval screen
-        // twice, once in the Contacts list and once as a pair of client fields beside it. The columns stay
-        // for the older submissions that carry that answer, and for staff editing them by hand afterwards.
+        // BillingContactName / BillingEmail are only ever filled from a payload that predates the billing
+        // CONTACT block, which the intake form no longer has: whoever an invoice is addressed to travels
+        // on the billing address itself now. The columns stay for the older submissions that carry that
+        // answer, and for staff editing them by hand afterwards.
         graph.Client = new REMSClient
         {
             Id = clientId,
@@ -475,7 +474,7 @@ public sealed class RemsPublicFormController : ControllerBase
         });
         StageEntityAddresses(
             graph, tenantId, mainEntityId,
-            payload.PhysicalAddress, payload.MailingAddress, payload.BillingAddress);
+            payload.PhysicalAddress, payload.MailingAddress, payload.EffectiveBillingAddresses);
         StageRoleContacts(
             graph, tenantId, form.REMSId, form.IndustryGroup!.Value, mainEntityId, payload.Roles,
             payload.AdditionalBillingContacts);
@@ -522,23 +521,33 @@ public sealed class RemsPublicFormController : ControllerBase
     }
 
     /// <summary>
-    /// Stages the entity's physical, mailing and billing addresses. All three are written whenever the
-    /// client supplied them — the form offers "copy from" rather than a differs/hide toggle, and a copied
-    /// address is a snapshot the client can then edit, so each one is stored in its own right. Under the
-    /// old toggle an unticked "mailing differs" wrote no mailing row at all, which meant correcting the
-    /// physical address silently moved the mailing address with it.
+    /// Stages the entity's physical and mailing addresses and every billing address the client gave.
+    /// Each is written whenever the client supplied it — the form offers "copy from" rather than a
+    /// differs/hide toggle, and a copied address is a snapshot the client can then edit, so each one is
+    /// stored in its own right. Under the old toggle an unticked "mailing differs" wrote no mailing row
+    /// at all, which meant correcting the physical address silently moved the mailing address with it.
+    /// <para>
+    /// Billing arrives as a LIST and every row is staged, in the order the client gave them —
+    /// REMSEntityAddress's unique index exempts Billing for exactly this reason. A billing row is present
+    /// on the strength of its ADDRESSEE as well as its postal lines: "invoice this to Jane Smith at
+    /// accounts@acme.com" is an answer even with no street behind it.
+    /// </para>
     /// </summary>
     private static void StageEntityAddresses(
         SubmitGraph graph, Guid tenantId, Guid entityId,
-        RemsAddressPayload? physical, RemsAddressPayload? mailing, RemsAddressPayload? billing)
+        RemsAddressPayload? physical, RemsAddressPayload? mailing,
+        IReadOnlyList<RemsAddressPayload> billing)
     {
-        Stage(physical, AddressType.Office, RemsAddressType.Physical);
-        Stage(mailing, AddressType.Other, RemsAddressType.Mailing);
-        Stage(billing, AddressType.Billing, RemsAddressType.Billing);
-
-        void Stage(RemsAddressPayload? payload, AddressType addressType, RemsAddressType remsType)
+        Stage(physical is { HasAny: true }, physical, AddressType.Office, RemsAddressType.Physical);
+        Stage(mailing is { HasAny: true }, mailing, AddressType.Other, RemsAddressType.Mailing);
+        foreach (var row in billing)
         {
-            if (payload is not { HasAny: true })
+            Stage(row is { HasAnyContent: true }, row, AddressType.Billing, RemsAddressType.Billing);
+        }
+
+        void Stage(bool present, RemsAddressPayload? payload, AddressType addressType, RemsAddressType remsType)
+        {
+            if (!present || payload is null)
             {
                 return;
             }
@@ -562,9 +571,9 @@ public sealed class RemsPublicFormController : ControllerBase
             Stage(role, roleName, isRequired);
         }
 
-        // Everyone else the client asked us to invoice. The same role as the first billing contact — being
-        // named second does not make somebody a different kind of contact — and never marked required:
-        // whatever an entity type requires, it requires ONE of them.
+        // The extra billing contacts an older payload carries. Retired with the Billing Contact block —
+        // whoever an invoice is addressed to travels on the billing ADDRESS now — but still staged, and
+        // never marked required: the form asks for none of them.
         foreach (var extra in additionalBillingContacts ?? Array.Empty<RemsRolePayload>())
         {
             Stage(extra, nameof(RemsContactRole.BillingContact), isRequired: false);
@@ -754,10 +763,12 @@ public sealed class RemsPublicFormController : ControllerBase
                 Clean(r.SourceKey), Clean(r.FullName), Clean(r.EmailAddress), Clean(r.PhoneNumber)))
             .ToList();
 
-        // All three addresses are shown as given. The old "mailing differs" flag decided whether there was
-        // a mailing address at all; the client now copies one forward and edits it, so each stands alone.
+        // Every address is shown as given. The old "mailing differs" flag decided whether there was a
+        // mailing address at all; the client now copies one forward and edits it, so each stands alone —
+        // and billing is however many places the client named, each with its own addressee.
         var address = new RemsReviewAddressGroup(
-            NonEmpty(payload.PhysicalAddress), NonEmpty(payload.MailingAddress), NonEmpty(payload.BillingAddress));
+            NonEmpty(payload.PhysicalAddress), NonEmpty(payload.MailingAddress),
+            payload.EffectiveBillingAddresses);
 
         RemsReviewContactRow Row(RemsRolePayload role, string roleName, bool isRequired)
             => new(
@@ -770,16 +781,17 @@ public sealed class RemsPublicFormController : ControllerBase
             .Select(t => Row(t.Role!, t.RoleName, t.IsRequired))
             .ToList();
 
-        // Everyone named to invoice beyond the first. Never required — whatever an entity type requires,
-        // it requires one billing contact, and that one is among the rows above.
+        // The extra billing contacts an older payload carries. Retired with the Billing Contact block,
+        // and never required.
         var extraBilling = payload.AdditionalBillingContacts
             .Where(r => r is { HasAny: true })
             .Select(r => Row(r, nameof(RemsContactRole.BillingContact), isRequired: false))
             .ToList();
 
+        // Retired, and populated only where an older payload carries it: the billing addresses above are
+        // where a form filled in today puts these answers.
         var billing = new RemsReviewBilling(
-            Clean(payload.BillingContactName), Clean(payload.BillingEmail), NonEmpty(payload.BillingAddress),
-            extraBilling);
+            Clean(payload.BillingContactName), Clean(payload.BillingEmail), extraBilling);
 
         return new RemsReviewModel(contact, contract, others, address, additionalContacts, billing);
     }
@@ -807,11 +819,15 @@ public sealed class RemsPublicFormController : ControllerBase
     /// </summary>
     private static RemsPublicPrefill BuildPrefill(REMS rems)
     {
-        // Off the DISPLAY name, so a client whose request names them "John Smith Jr." is not prefilled as
-        // plain "John Smith" — and the suffix lands on the last name, where a person's name carries it.
-        var (first, last) = RemsNameSplit.Split(rems.ClientDisplayName);
+        // Off the BARE name. The particle is prefilled into the form's own Suffix box beside it, so it is
+        // carried across without ever landing in a name column — "Jr." is neither a given name nor a
+        // family one. Splitting the DISPLAY name instead would now put it in the FIRST name box, since it
+        // leads the name rather than trailing it.
+        var name = rems.RequestedClientName?.Trim() ?? string.Empty;
+        var (first, last) = RemsNameSplit.Split(name);
         return new RemsPublicPrefill(
-            rems.ClientDisplayName, first, last, rems.CustomerEmail ?? string.Empty, rems.CustomerMobileNumber);
+            name, first, last, rems.ClientNameSuffix,
+            rems.CustomerEmail ?? string.Empty, rems.CustomerMobileNumber);
     }
 
     private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
@@ -836,35 +852,35 @@ public sealed class RemsPublicFormController : ControllerBase
     private static IEnumerable<(RemsRolePayload? Role, string RoleName, bool IsRequired)> EnumerateRoles(
         string industryGroup, RemsRolesPayload roles)
     {
-        // Mirrors RemsFormPayloadValidator's branches exactly — the roles staged here must be the roles it
-        // required. if/else rather than a switch because the business branch matches a family of codes.
-        // Takes the roles already NORMALIZED (see RemsRolesPayload.Normalized) — a form filled in under
-        // the old business role names still stages its three contacts, under the names they are known by
-        // now.
+        // Mirrors RemsFormPayloadValidator's branches — the roles it REQUIRES are staged as required here.
+        // if/else rather than a switch because the business branch matches a family of codes. Takes the
+        // roles already NORMALIZED (see RemsRolesPayload.Normalized) — a form filled in under the old
+        // business role names still stages its contacts, under the names they are known by now.
+        //
+        // Three roles are RETIRED and none of them is required: the form asks for none of them, and a
+        // payload only carries one if it was started before the question was dropped. They are still
+        // staged, because the contact a client gave is a contact whether or not the box is still on the
+        // page.
         if (industryGroup == RemsFormPayloadValidator.Individual)
         {
             yield return (roles.Self, nameof(RemsContactRole.Self), true);
             yield return (roles.Spouse, nameof(RemsContactRole.Spouse), false);
-            // Optional, but staged like anybody else's: an individual who names somebody to invoice has
-            // named a contact, and it becomes the same kind of record the second and third ones do.
-            yield return (roles.BillingContact, nameof(RemsContactRole.BillingContact), false);
+            yield return (roles.BillingContact, nameof(RemsContactRole.BillingContact), false);   // retired
         }
         else if (RemsFormPayloadValidator.IsBusinessGroup(industryGroup))
         {
             yield return (roles.PrimaryContact, nameof(RemsContactRole.PrimaryClientContact), true);
             yield return (roles.FinancialContact, nameof(RemsContactRole.FinancialContact), true);
-            yield return (roles.BillingContact, nameof(RemsContactRole.BillingContact), true);
             yield return (roles.OtherContact, nameof(RemsContactRole.OtherContact), false);
-            // Retired from the form. Still staged when an older payload carries one, because the contact
-            // the client gave is a contact whether or not the box is still on the page.
-            yield return (roles.Banker, nameof(RemsContactRole.Banker), false);
-            yield return (roles.Lawyer, nameof(RemsContactRole.Lawyer), false);
+            yield return (roles.BillingContact, nameof(RemsContactRole.BillingContact), false);   // retired
+            yield return (roles.Banker, nameof(RemsContactRole.Banker), false);                   // retired
+            yield return (roles.Lawyer, nameof(RemsContactRole.Lawyer), false);                   // retired
         }
         else if (industryGroup == RemsFormPayloadValidator.Government)
         {
             yield return (roles.FinanceDirector, nameof(RemsContactRole.FinanceDirector), true);
-            yield return (roles.BillingContact, nameof(RemsContactRole.BillingContact), false);
             yield return (roles.OtherContact, nameof(RemsContactRole.OtherContact), false);
+            yield return (roles.BillingContact, nameof(RemsContactRole.BillingContact), false);   // retired
         }
     }
 
@@ -899,6 +915,13 @@ public sealed class RemsPublicFormController : ControllerBase
         CountryCode = Clean(payload.CountryCode),
         CountryName = Clean(payload.CountryName),
         PostalCode = Clean(payload.Zip),
+        // Who the post is addressed to. Null on a physical or mailing node, which is asked for a place
+        // and nothing more; filled on a billing one, where the form asks both halves of the answer.
+        Suffix = Clean(payload.Suffix),
+        FirstName = Clean(payload.FirstName),
+        LastName = Clean(payload.LastName),
+        Email = Clean(payload.Email),
+        PhoneNumber = Clean(payload.Phone),
     };
 
     private static REMSEntityAddress NewEntityAddress(Guid tenantId, Guid entityId, Guid addressId, RemsAddressType type) => new()

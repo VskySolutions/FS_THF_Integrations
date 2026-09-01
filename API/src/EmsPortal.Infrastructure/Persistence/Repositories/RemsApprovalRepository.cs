@@ -95,13 +95,13 @@ internal sealed class RemsApprovalRepository : IRemsApprovalRepository
             // one engagement, and the request already carries the client name it was raised under.
             //
             // Matched WITH the generational suffix as well as without, like the other two REMS lists: the
-            // row shows "John Smith Jr.", so typing what is on the row has to find the row.
+            // row shows "Jr. John Smith", so typing what is on the row has to find the row.
             // (REMS.ClientDisplayName says exactly this but is [NotMapped] and cannot cross into SQL.)
             tasks = tasks.Where(x =>
                 x.Round!.Engagement!.Rems!.REMSNumber.Contains(t) ||
                 x.Round!.Engagement!.Rems!.RequestedClientName.Contains(t) ||
-                (x.Round!.Engagement!.Rems!.RequestedClientName + " "
-                    + x.Round!.Engagement!.Rems!.ClientNameSuffix).Contains(t));
+                (x.Round!.Engagement!.Rems!.ClientNameSuffix + " "
+                    + x.Round!.Engagement!.Rems!.RequestedClientName).Contains(t));
         }
         if (query.Role is { } role)
         {

@@ -68,7 +68,11 @@ public sealed record RemsApprovalTaskRow(
     Guid EngagementId,
     Guid RemsId,
     string RemsNumber,
+    /// <summary>The client's name as it reads — the suffix in front of the name they gave on intake.</summary>
     string ClientName,
+    /// <summary>The two halves of that name, so the Client column can draw the particle in bold.</summary>
+    string ClientNameWithoutSuffix,
+    string? ClientNameSuffix,
     /// <summary>
     /// The request's Client Service Executive. An approver deciding on a round needs to know who to ask
     /// about it, and the CSE is that person — so the inbox shows them by default rather than making the
@@ -126,7 +130,10 @@ public sealed record RemsApprovalRequestView(
     Guid RemsId,
     string RemsNumber,
     string? Description,
+    /// <summary>The name the request was raised under, WITHOUT the particle.</summary>
     string RequestedClientName,
+    /// <summary>The particle, so the packet can draw it in front of that name and in bold.</summary>
+    string? ClientNameSuffix,
     string Type,
     string Status,
     string? CustomerEmail,

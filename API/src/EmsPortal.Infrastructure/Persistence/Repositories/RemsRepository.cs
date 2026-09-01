@@ -170,12 +170,12 @@ internal sealed class RemsRepository : IRemsRepository
         if (!string.IsNullOrWhiteSpace(options.ClientName))
         {
             var t = options.ClientName.Trim();
-            // Against the name WITH its suffix as well as without: the list shows "John Smith Jr.", so
+            // Against the name WITH its suffix as well as without: the list shows "Jr. John Smith", so
             // typing what is on the row has to find the row. (ClientDisplayName says the same thing but
             // is [NotMapped] and cannot cross into SQL.)
             query = query.Where(r =>
                 r.RequestedClientName.Contains(t)
-                || (r.RequestedClientName + " " + r.ClientNameSuffix).Contains(t));
+                || (r.ClientNameSuffix + " " + r.RequestedClientName).Contains(t));
         }
         if (!string.IsNullOrWhiteSpace(options.Contact))
         {

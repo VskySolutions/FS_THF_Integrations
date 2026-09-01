@@ -340,13 +340,44 @@ public static class DefaultOptionSets
         }),
         // Engagement tax forms (WO-114): the checklist values referenced by foreign key from
         // REMSEngagementTaxForm.TaxFormId on a tax engagement's tax detail.
+        //
+        // Ordered as a preparer reads a return shelf rather than alphabetically or by popularity: the
+        // 1040 family, then the 1041s, then the entity returns in form-number order, then the exempt and
+        // plan returns, and finally the four that are not a federal form at all. A checklist is scanned,
+        // not searched, and scanning it is far quicker when the numbers run in order.
+        //
+        // Every label is "form number — who files it", because the number alone is the part staff know
+        // and the gloss is the part that settles which of two similar numbers is meant — 1041 (Trust) and
+        // 1041 (Estate) are the same IRS form filed by two different kinds of client, and the whole
+        // reason they are two rows here is that THF tracks them apart.
         new Definition(EntityType.Rems, "REMS.TaxForm", "REMS Tax Form", OptionItemSortMode.Custom, new[]
         {
             new ItemDefinition("1040", "1040 — Individual", 1),
-            new ItemDefinition("1120", "1120 — C Corporation", 2),
-            new ItemDefinition("1120_s", "1120-S — S Corporation", 3),
-            new ItemDefinition("1065", "1065 — Partnership", 4),
-            new ItemDefinition("990", "990 — Tax-Exempt", 5),
+            new ItemDefinition("1040_es", "1040-ES — Estimated Tax", 2),
+            // One IRS form, two codes. A trust and a decedent's estate file the same 1041 but are
+            // different engagements with different deadlines and different people to chase, so the
+            // checklist says which — and the codes have to differ because each is its own row.
+            new ItemDefinition("1041_trust", "1041 — Trust", 3),
+            new ItemDefinition("1041_estate", "1041 — Estate", 4),
+            new ItemDefinition("1065", "1065 — Partnership", 5),
+            new ItemDefinition("1120", "1120 — C Corporation", 6),
+            new ItemDefinition("1120_pc", "1120-PC — Property & Casualty Insurance", 7),
+            new ItemDefinition("1120_pol", "1120-POL — Political Organization", 8),
+            new ItemDefinition("1120_s", "1120-S — S Corporation", 9),
+            new ItemDefinition("990", "990 — Tax-Exempt", 10),
+            new ItemDefinition("990_t", "990-T — Exempt Organization Business Income", 11),
+            new ItemDefinition("5500", "5500 — Employee Benefit Plan", 12),
+            // The last four are not federal income-tax forms. They are on the same checklist because
+            // they are the same question — what does this engagement actually file? — and a tax
+            // engagement that files a tangible-property return and a payroll return had nowhere to say
+            // so.
+            new ItemDefinition("tpp", "TPP — Tangible Personal Property", 13),
+            new ItemDefinition("payroll", "Payroll", 14),
+            // Deliberately last, and deliberately vague: "Other" is the row that keeps a return nobody
+            // listed from being left off the checklist altogether, and "States" covers whichever state
+            // returns this engagement files.
+            new ItemDefinition("other", "Other", 15),
+            new ItemDefinition("states", "States", 16),
         }),
 
         // ---------------------------------------------------------------------------------------------

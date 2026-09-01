@@ -72,19 +72,48 @@ public sealed class RemsFormPayloadV1
     public RemsAddressPayload? MailingAddress { get; set; }
 
     // ---- Billing ----
-    public string? BillingContactName { get; set; }
-    public string? BillingEmail { get; set; }
+
+    /// <summary>
+    /// Where invoices should be sent, and who each one is addressed to — a LIST, because a client with
+    /// two places to invoice has two, and the form should not be the thing that decides they have one.
+    /// Each node carries the addressee alongside the postal lines (see <see cref="RemsAddressPayload"/>):
+    /// where an invoice goes and who it is addressed to are two halves of one answer, and holding them
+    /// in separate lists is how a client ends up with three addresses, three names, and nothing saying
+    /// which belongs to which.
+    /// <para>
+    /// Optional in full: a client who says nothing here is invoiced at their mailing address.
+    /// </para>
+    /// </summary>
+    public List<RemsAddressPayload> BillingAddresses { get; set; } = new();
+
+    /// <summary>
+    /// The single billing address the form used to ask for. READ, never written — folded into
+    /// <see cref="EffectiveBillingAddresses"/> so a submission saved before the list existed still shows
+    /// and materialises its billing address. Serialised only when present, so a payload re-saved through
+    /// the current form comes back in the new shape.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public RemsAddressPayload? BillingAddress { get; set; }
 
     /// <summary>
-    /// Everyone else the invoice should reach. The FIRST billing contact is
-    /// <c>Roles.BillingContact</c> — the one an entity type asks for, and the one that is required where
-    /// it is required — and these are the rest, in the order the client gave them.
+    /// The name and email of the one billing contact the form used to ask for in two plain boxes.
+    /// RETIRED — the addressee now travels on the billing address itself. Read and round-tripped only,
+    /// because a submission is the immutable record of what the client sent.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? BillingContactName { get; set; }
+
+    /// <inheritdoc cref="BillingContactName"/>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? BillingEmail { get; set; }
+
+    /// <summary>
+    /// Everyone else the invoice should reach, as CONTACTS. RETIRED with the Billing Contact block that
+    /// asked for them: the addressee travels on the billing address now, and a client with several
+    /// people to invoice gives several billing addresses instead.
     /// <para>
-    /// A list rather than a second and third slot: a client whose accounts payable is four people has
-    /// four, and the form should not be the thing that decides they have one. Each becomes a
-    /// <c>BillingContact</c> on the entity exactly as the first does, marked not-required — being named
-    /// second does not make somebody a different kind of contact.
+    /// Still read, still materialised and still rendered where a submission carries them — a retired
+    /// question does not un-ask itself on records that answered it.
     /// </para>
     /// </summary>
     public List<RemsRolePayload> AdditionalBillingContacts { get; set; } = new();
@@ -132,6 +161,32 @@ public sealed class RemsFormPayloadV1
     /// <summary>The roles with the legacy keys folded in — always read the contacts through this.</summary>
     [JsonIgnore]
     public RemsRolesPayload EffectiveRoles => (Roles ?? new RemsRolesPayload()).Normalized();
+
+    /// <summary>
+    /// The billing addresses this payload actually carries, with the retired single
+    /// <see cref="BillingAddress"/> folded in — always read them through this. A payload holding BOTH
+    /// keeps the list: it was written later, by a form that offered the single box nowhere.
+    /// <para>
+    /// Blank nodes are dropped: an address block somebody opened and left empty is a change of mind, not
+    /// an answer, and staging it would file a nameless, placeless billing address against the entity.
+    /// </para>
+    /// </summary>
+    [JsonIgnore]
+    public IReadOnlyList<RemsAddressPayload> EffectiveBillingAddresses
+    {
+        get
+        {
+            var live = BillingAddresses.Where(a => a is { HasAnyContent: true }).ToList();
+            if (live.Count > 0)
+            {
+                return live;
+            }
+
+            return BillingAddress is { HasAnyContent: true }
+                ? new List<RemsAddressPayload> { BillingAddress }
+                : Array.Empty<RemsAddressPayload>();
+        }
+    }
 }
 
 /// <summary>
@@ -163,15 +218,45 @@ public sealed class RemsAddressPayload
     /// <summary>ISO-3166-2 subdivision code for <see cref="State"/>; null when the country has no state list.</summary>
     public string? StateCode { get; set; }
 
+    // ---- Who the post is addressed to ----
+    //
+    // The person AT the address, carried on the address itself. Asked only where the form opts in, which
+    // today is the client intake's billing addresses: where an invoice goes and who it is addressed to
+    // are two halves of one answer, and a client with three billing addresses has three addressees.
+    // Absent (all null) on the physical and mailing nodes, which are places and nothing more.
+
+    /// <summary>The generational particle on the addressee's name — Jr., Sr., III.</summary>
+    public string? Suffix { get; set; }
+
+    public string? FirstName { get; set; }
+    public string? LastName { get; set; }
+    public string? Email { get; set; }
+    public string? Phone { get; set; }
+
     /// <summary>
     /// True when at least one postal line carries content (an all-blank node is treated as absent). The
     /// country is deliberately NOT counted: it is pre-selected on every blank address, so on its own it
     /// does not make an address present.
     /// </summary>
+    [JsonIgnore]
     public bool HasAny =>
         !string.IsNullOrWhiteSpace(Street) || !string.IsNullOrWhiteSpace(AddressLine2)
         || !string.IsNullOrWhiteSpace(City) || !string.IsNullOrWhiteSpace(State)
         || !string.IsNullOrWhiteSpace(Zip);
+
+    /// <summary>True when anything was said about the addressee. Neither particle nor place counts.</summary>
+    [JsonIgnore]
+    public bool HasContact =>
+        !string.IsNullOrWhiteSpace(FirstName) || !string.IsNullOrWhiteSpace(LastName)
+        || !string.IsNullOrWhiteSpace(Email) || !string.IsNullOrWhiteSpace(Phone);
+
+    /// <summary>
+    /// True when the node carries an address, an addressee, or both. What decides whether a billing row
+    /// is somebody's answer or an empty block they opened and thought better of — a name with no postal
+    /// lines behind it is still an answer, and is still validated as one.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasAnyContent => HasAny || HasContact;
 }
 
 /// <summary>
@@ -204,7 +289,7 @@ public sealed class RemsRolePayload
     /// <see cref="DisplayName"/> for exactly the reason the prefix is: the joined name is what the
     /// contact's <c>Person</c> is filed and searched under, and "Smith Jr." in a surname column is a
     /// contact nobody finds by searching for their name. It is joined back on in
-    /// <see cref="AddressedName"/>, which is what the materialised Person is DISPLAYED as.
+    /// <see cref="NameWithSuffix"/>, which is what the materialised Person is DISPLAYED as.
     /// </summary>
     public string? Suffix { get; set; }
 
@@ -231,10 +316,14 @@ public sealed class RemsRolePayload
     }
 
     /// <summary>
-    /// The joined name with its generational particle on the end — "Jane Smith Jr.". What a materialised
+    /// The joined name with its generational particle in FRONT — "Jr. Jane Smith". What a materialised
     /// contact's <c>Person.DisplayName</c> is set from: DisplayName is the "as it reads" field, and it is
     /// what every REMS surface shows a contact by. The particle also travels separately into
     /// <c>Person.Suffix</c>, which is where it is EDITED; this is only how it reads.
+    /// <para>
+    /// In front because that is the order the form asks in — the suffix box sits to the left of First
+    /// Name — and a screen whose job is to echo the answers back should not reorder them.
+    /// </para>
     /// <para>
     /// The retired PREFIX is deliberately not in here. A Person holds one particle and it is the suffix,
     /// so a courtesy title on an older submission stays in that submission — which is the record of what
@@ -257,7 +346,7 @@ public sealed class RemsRolePayload
             }
 
             var suffix = Suffix?.Trim();
-            return string.IsNullOrWhiteSpace(suffix) ? name : $"{name} {suffix}";
+            return string.IsNullOrWhiteSpace(suffix) ? name : $"{suffix} {name}";
         }
     }
 
@@ -438,9 +527,20 @@ public sealed record RemsPublicOption(string Value, string Label, string? Descri
 /// The name arrives both whole and split: staff intake asks for it in one box, and an individual's form
 /// asks for it in two, so the split is done here rather than in the browser — it is the same split the
 /// contacts and the client's Person record already get.
+/// <para>
+/// Every name field here is the BARE name; the generational particle travels in
+/// <see cref="ClientSuffix"/>, which the form has a box of its own for. It used to be smuggled into the
+/// split — the prefill was taken off the display name, so "Smith Jr." landed in the last-name box — and
+/// that only ever worked while the particle trailed the name. It does not: it leads.
+/// </para>
 /// </summary>
 public sealed record RemsPublicPrefill(
-    string? ClientName, string? ClientFirstName, string? ClientLastName, string Email, string? MobileNumber);
+    string? ClientName,
+    string? ClientFirstName,
+    string? ClientLastName,
+    string? ClientSuffix,
+    string Email,
+    string? MobileNumber);
 
 /// <summary>Draft auto-save acknowledgement (WO-113 PUT draft).</summary>
 public sealed record RemsDraftSavedResponse(DateTime LastSavedOnUtc);
@@ -491,11 +591,14 @@ public sealed record RemsReviewOtherEntity(
     string? EmailAddress,
     string? PhoneNumber);
 
-/// <summary>The main entity's three addresses. Each is stored in its own right, so none is conditional.</summary>
+/// <summary>
+/// The main entity's addresses. Physical and mailing are one each; billing is a LIST, because a client
+/// may be invoiced at more than one place and each of those places has its own addressee.
+/// </summary>
 public sealed record RemsReviewAddressGroup(
     RemsAddressPayload? Physical,
     RemsAddressPayload? Mailing,
-    RemsAddressPayload? Billing);
+    IReadOnlyList<RemsAddressPayload> Billing);
 
 /// <summary>
 /// A role contact row on review. <see cref="Name"/> is the two parts joined, for reading; the particles
@@ -507,13 +610,14 @@ public sealed record RemsReviewContactRow(
     string? Name, string? Email, string? Phone);
 
 /// <summary>
-/// Billing block. <see cref="AdditionalContacts"/> is everyone the client named to invoice BEYOND the
-/// first — the first is the <c>billingContact</c> role, listed among the contacts above.
+/// Billing block. Every field on it is RETIRED: the addressee travels on the billing address itself now,
+/// so <see cref="RemsReviewAddressGroup.Billing"/> is where a current submission's billing answers are.
+/// These are populated only where an older payload carries them, and are the record of what that client
+/// was actually asked.
 /// </summary>
 public sealed record RemsReviewBilling(
     string? BillingContactName,
     string? BillingEmail,
-    RemsAddressPayload? BillingAddress,
     IReadOnlyList<RemsReviewContactRow> AdditionalContacts);
 
 /// <summary>Shared JSON options for (de)serializing the stored draft / submission payloads (web defaults: camelCase, case-insensitive).</summary>

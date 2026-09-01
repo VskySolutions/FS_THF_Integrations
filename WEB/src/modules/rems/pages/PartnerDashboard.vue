@@ -63,8 +63,13 @@
         />
       </template>
 
+      <!-- The particle in front of the name and in bold: a column of "John Smith" rows is told apart by
+           the "Jr." and the "III" alone. The column still SORTS and searches on `clientName`, which is
+           the two joined. -->
       <template #body-cell-clientName="cell">
-        <q-td :props="cell">{{ cell.row.clientName || "—" }}</q-td>
+        <q-td :props="cell">
+          <app-name-with-suffix :name="cell.row.requestedClientName" :suffix="cell.row.clientNameSuffix" />
+        </q-td>
       </template>
 
       <!-- No icon per row — a column of them is noise — but the explanation is still a hover away. -->
@@ -164,6 +169,7 @@ import { REMS_STATUS } from "modules/rems/remsStatus";
 
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppOptionBadge from "components/common/AppOptionBadge.vue";
+import AppNameWithSuffix from "components/common/AppNameWithSuffix.vue";
 import ActingAsBanner from "modules/rems/components/ActingAsBanner.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";

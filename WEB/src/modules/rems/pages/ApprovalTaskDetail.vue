@@ -104,13 +104,32 @@
                     <div class="rems-label">Mailing Address</div>
                     <div class="rems-value">{{ addressOf("Mailing") }}</div>
                   </div>
+                  <!-- However many places the client is invoiced at, each with the person the invoice is
+                       addressed to underneath it. An approver signing off a fee wants to know where the
+                       bill goes, and a client invoiced at two offices has two answers to that. -->
+                  <div v-for="(b, i) in billingAddresses" :key="b.id || i" class="col-12 col-sm-6">
+                    <div class="rems-label">
+                      Billing Address<template v-if="billingAddresses.length > 1"> {{ i + 1 }}</template>
+                    </div>
+                    <div class="rems-value">{{ addressText(b) }}</div>
+                    <div v-if="addressee(b)" class="text-caption text-grey-7">
+                      <app-name-with-suffix
+                        :name="addressee(b).name" :suffix="addressee(b).suffix" empty="Addressee not named"
+                      /><template v-if="addressee(b).reach"> · {{ addressee(b).reach }}</template>
+                    </div>
+                  </div>
+                  <div v-if="!billingAddresses.length" class="col-12 col-sm-6">
+                    <div class="rems-label">Billing Address</div>
+                    <div class="rems-value">—</div>
+                  </div>
                 </div>
 
                 <q-separator class="q-my-md" />
                 <div class="rems-subhead">Contacts</div>
                 <div v-if="entityContacts.length" class="column q-gutter-xs">
                   <div v-for="c in entityContacts" :key="c.id" class="rems-value">
-                    <span class="text-weight-medium">{{ roleText(c.role) }}:</span> {{ c.name || "—" }}
+                    <span class="text-weight-medium">{{ roleText(c.role) }}:</span>
+                    <app-name-with-suffix :name="nameWithoutSuffix(c)" :suffix="c.suffix" />
                     <span class="text-grey-6">({{ c.email || "no email" }} · {{ c.phone || "no phone" }})</span>
                   </div>
                 </div>
@@ -147,6 +166,10 @@
                     <div class="rems-label">{{ item.label }}</div>
                     <div v-if="item.type === 'status'">
                       <app-option-badge :option="requestStatusOption(request)" />
+                    </div>
+                    <!-- A row that names somebody: the particle in front and in bold, as everywhere else. -->
+                    <div v-else-if="item.suffix !== undefined" class="rems-value">
+                      <app-name-with-suffix :name="String(item.value ?? '')" :suffix="item.suffix" />
                     </div>
                     <div v-else class="rems-value">
                       {{ item.value }}
@@ -577,7 +600,8 @@ import {
   useRemsMeta, isAssuranceDepartment, isGcsDepartment, isCasDepartment, isTaxDepartment,
   isGovernmentAudit, requiresClientAcceptanceForm
 } from "modules/rems/useRemsMeta";
-import { addressText } from "modules/rems/remsAddress";
+import { addressText, addresseeParts } from "modules/rems/remsAddress";
+import AppNameWithSuffix from "components/common/AppNameWithSuffix.vue";
 import { renderRichText } from "utils/richText";
 
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
@@ -684,7 +708,7 @@ const requestRows = computed(() => {
   return [
     { label: "Request ID", value: r.remsNumber },
     // No Title row: a request has no title of its own any more — the client it is for is what names it.
-    { label: "Requested Client", value: text(r.requestedClientName) },
+    { label: "Requested Client", value: r.requestedClientName, suffix: r.clientNameSuffix || "" },
     { label: "Type", value: typeLabel(r.type), hint: typeHint(r.type) },
     { label: "Request Status", type: "status" },
     { label: "Customer Email", value: text(r.customerEmail) },
@@ -714,14 +738,15 @@ const clientRows = computed(() => {
     { label: "Name", value: text(c.name) },
     { label: "Email", value: text(c.email) },
     { label: "Phone Number", value: text(c.mobileNumber) },
-    { label: "Referral Source", value: text(c.referralSource) },
-    { label: "Billing Address", value: addressText(c.billingAddress) }
+    { label: "Referral Source", value: text(c.referralSource) }
   ];
-  // The billing CONTACT is not read here: every entity type names one among its contacts now, listed
-  // above with a name, an email and a phone. These two columns carry it only on a submission sent before
-  // the form asked for that contact, and whatever staff have typed into them by hand since. Dropped when
-  // blank rather than shown as "—", which beside a Contacts list that has a Billing Contact in it reads
-  // as a missing answer.
+  // No billing address row here. Billing addresses are the entity's, and there may be several — they are
+  // read below with the physical and mailing ones, each carrying the person its invoice is addressed to.
+  //
+  // The two billing CONTACT columns are all that stay on the client. They carry an answer given before
+  // the addressee moved onto the billing address, and whatever staff have typed into them by hand since.
+  // Dropped when blank rather than shown as "—", which beside addresses that name their own addressee
+  // would read as a missing answer.
   if (c.billingContactName) rows.push({ label: "Billing Contact", value: text(c.billingContactName) });
   if (c.billingEmail) rows.push({ label: "Billing Email", value: text(c.billingEmail) });
   return rows;
@@ -848,9 +873,40 @@ const marketingGroups = computed(() => {
   return groups;
 });
 
+const entityAddresses = computed(() => engagement.value.entity?.addresses || []);
+
 const addressOf = (type) => {
-  const row = (engagement.value.entity?.addresses || []).find((a) => a.addressType === type);
+  const row = entityAddresses.value.find((a) => a.addressType === type);
   return addressText(row?.address);
+};
+
+// Billing is the one address type an entity may have several of — see REMSEntityAddress's unique index,
+// which exempts it. In the order they were submitted.
+const billingAddresses = computed(() =>
+  entityAddresses.value.filter((a) => a.addressType === "Billing").map((a) => a.address));
+
+// Who the invoice is addressed to, under the address it belongs to. The workspace address view carries
+// the addressee on the address itself, so this reads them off the same row; the name is handed over in
+// two halves so the particle can be drawn in front of it and in bold.
+const addressee = (address) => {
+  const parts = addresseeParts(address);
+  const reach = [address?.email, address?.phoneNumber].map((v) => String(v ?? "").trim()).filter(Boolean);
+  if (!parts.name && !reach.length) return null;
+  return { ...parts, reach: reach.join(" · ") };
+};
+
+// A contact's DisplayName already reads with the particle on it. The particle is repeated on the row, so
+// it comes off again here and the two halves are drawn separately.
+//
+// Stripped from EITHER end: it leads the name on anything written since the order settled, and trails it
+// on a contact materialised before that. Left on, an older record would render its particle twice.
+const nameWithoutSuffix = (contact) => {
+  const name = String(contact?.name ?? "").trim();
+  const suffix = String(contact?.suffix ?? "").trim();
+  if (!suffix) return name;
+  if (name.startsWith(`${suffix} `)) return name.slice(suffix.length + 1);
+  if (name.endsWith(` ${suffix}`)) return name.slice(0, -(suffix.length + 1));
+  return name;
 };
 const roleText = (r) => (r || "").replace(/([a-z])([A-Z])/g, "$1 $2");
 

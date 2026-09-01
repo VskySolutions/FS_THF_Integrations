@@ -810,9 +810,7 @@ public sealed class RemsRequestsController : ControllerBase
     // -------------------- Pickers --------------------
 
     /// <summary>
-    /// Search of existing <see cref="Person"/> records (by name, email, phone) for the client picker. No
-    /// external client directory exists in this platform, so <c>parentCompany</c>/<c>pastWork</c> are
-    /// always null.
+    /// Search of existing <see cref="Person"/> records (by name, email, phone) for the client picker.
     /// <para>
     /// Any non-empty term searches — a minimum length would make a client whose name IS two or three
     /// characters unfindable by typing it. What bounds the work is the page limit below, not the length
@@ -839,7 +837,11 @@ public sealed class RemsRequestsController : ControllerBase
         var (items, _) = await _persons.ListAsync(
             term, tenantId: null, isUser: null, isActive: true, SortRequest.Default, page: 1, limit: 20,
             sourceEntityType: EntityType.Client, cancellationToken: cancellationToken);
-        var results = items.Select(p => new RemsClientLookupItem(p.Id, p.FullName, p.PrimaryEmail, p.MobileNumber, null, null));
+        // The suffix travels beside the name, not inside it: FullName is what the search matched on and
+        // what picking a result files the request under, and joining "Jr." into it would break both. The
+        // picker renders the two together — see ClientInformationFields.
+        var results = items.Select(p => new RemsClientLookupItem(
+            p.Id, p.FullName, p.PrimaryEmail, p.MobileNumber, p.Suffix));
         return Ok(ApiResponseFactory.Success(results, "Clients retrieved."));
     }
 
@@ -995,11 +997,17 @@ public sealed class RemsRequestsController : ControllerBase
     /// </summary>
     private async Task<Guid> ResolveClientPersonAsync(REMS rems, Guid tenantId, CancellationToken cancellationToken)
     {
-        // Two names, on purpose. The FIRST/LAST split runs on the requested name alone — "Jr." is neither a
-        // given name nor a family one, and a Person filed with it stuck on the end of LastName is a Person
-        // nobody finds by searching for their surname. The DISPLAY name is the one the suffix belongs to.
+        // Two names and a particle, on purpose. The FIRST/LAST split runs on the requested name alone —
+        // "Jr." is neither a given name nor a family one, and a Person filed with it stuck on LastName is
+        // a Person nobody finds by searching for their surname. The DISPLAY name is the one it reads in
+        // front of, and the SUFFIX column is where it is stored in its own right.
+        //
+        // That column is what the client picker offers the particle from: without it a partner who picked
+        // "John Smith" off the list had no way to tell him from his father, and the Suffix box beside the
+        // search stayed empty however the request that minted him was filled in.
         var name = rems.RequestedClientName?.Trim() ?? string.Empty;
         var displayName = rems.ClientDisplayName.Trim();
+        var suffix = Normalize(rems.ClientNameSuffix);
         var email = Normalize(rems.CustomerEmail);
         var phone = Normalize(rems.CustomerMobileNumber);
 
@@ -1017,6 +1025,13 @@ public sealed class RemsRequestsController : ControllerBase
             if (phone is not null && string.IsNullOrWhiteSpace(matched.MobileNumber))
             {
                 matched.MobileNumber = phone;
+                filled = true;
+            }
+            // Only into a blank, like the two above: this request's particle is an answer about the
+            // client, but a particle already on their record was put there deliberately and is theirs.
+            if (suffix is not null && string.IsNullOrWhiteSpace(matched.Suffix))
+            {
+                matched.Suffix = suffix;
                 filled = true;
             }
             if (filled)
@@ -1038,6 +1053,7 @@ public sealed class RemsRequestsController : ControllerBase
             var (first, last) = SplitName(name);
             owned.FirstName = first;
             owned.LastName = last;
+            owned.Suffix = suffix;
             owned.DisplayName = displayName;
             owned.PrimaryEmail = email;
             owned.MobileNumber = phone;
@@ -1062,6 +1078,7 @@ public sealed class RemsRequestsController : ControllerBase
             SourceEntityId = rems.Id,
             FirstName = newFirst,
             LastName = newLast,
+            Suffix = suffix,
             DisplayName = displayName,
             PrimaryEmail = email,
             MobileNumber = phone,
@@ -1194,7 +1211,8 @@ public sealed class RemsRequestsController : ControllerBase
         forms.TryGetValue(r.Id, out var form);
         var (ems, submission) = MapFormState(form);
         return new RemsRequestRow(
-            r.Id, r.REMSNumber, r.ClientDisplayName, r.Type!.Value, r.CreatedOnUtc, r.Status!.Value,
+            r.Id, r.REMSNumber, r.ClientDisplayName, r.RequestedClientName, r.ClientNameSuffix,
+            r.Type!.Value, r.CreatedOnUtc, r.Status!.Value,
             r.CustomerEmail, r.CustomerMobileNumber,
             UserRefOf(r.AdminAssignedToId, names), UserRefOf(r.CSEId, names),
             form?.IndustryGroup, ems, submission,

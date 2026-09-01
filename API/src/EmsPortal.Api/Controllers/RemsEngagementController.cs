@@ -148,7 +148,8 @@ public sealed class RemsEngagementController : ControllerBase
         var elevated = RemsSetupAccess.IsElevated(User);
 
         var rows = items.Select(i => new RemsClientFormRow(
-            i.RemsId, i.RemsNumber, i.ClientName, i.RequestStatus,
+            i.RemsId, i.RemsNumber, i.ClientName, i.RequestedClientName, i.ClientNameSuffix,
+            i.RequestStatus,
             HasForm: true, i.Submitted, i.SubmittedOnUtc,
             RemsWorkspaceMapper.UserRef(i.AdminAssignedToId, names), RemsWorkspaceMapper.UserRef(i.CSEId, names),
             CanPickUp: mayAssign && i.AdminAssignedToId is null,
@@ -421,8 +422,8 @@ public sealed class RemsEngagementController : ControllerBase
         if (request.BillingContactName is not null) client.BillingContactName = Normalize(request.BillingContactName);
         if (request.BillingEmail is not null) client.BillingEmail = Normalize(request.BillingEmail);
 
-        // The billing ADDRESS is edited with the entity's other two (see UpdateEntityAddresses) rather than
-        // here — it is one of the main entity's three addresses now, not a field on the client.
+        // Billing ADDRESSES are not edited here. They are the main entity's rows rather than the client's,
+        // there may be several of them, and they are written by the client's own intake form.
         _clients.Update(client);
         await _activity.WriteAsync(new CreateActivityEventDto(EntityType.Rems, remsId, ActivityEventTypes.RemsEngagementUpdated), cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -528,7 +529,9 @@ public sealed class RemsEngagementController : ControllerBase
 
         var refreshed = await _clients.GetEntityAsync(entityId, cancellationToken) ?? entity;
         var rows = refreshed.Contacts.Where(c => !c.Deleted)
-            .Select(c => new RemsEntityContactView(c.Id, c.ContactRole, c.IsRequired, c.Person?.DisplayName, c.Person?.PrimaryEmail, c.Person?.MobileNumber));
+            .Select(c => new RemsEntityContactView(
+                c.Id, c.ContactRole, c.IsRequired, c.Person?.DisplayName, c.Person?.PrimaryEmail,
+                c.Person?.MobileNumber, c.Person?.Suffix));
         return Ok(ApiResponseFactory.Success(rows, "REMS entity contacts updated."));
     }
 

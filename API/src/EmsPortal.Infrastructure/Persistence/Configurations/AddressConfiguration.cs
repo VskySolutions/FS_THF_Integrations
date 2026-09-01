@@ -27,5 +27,13 @@ internal sealed class AddressConfiguration : IEntityTypeConfiguration<Address>
         builder.Property(a => a.StateName).HasMaxLength(100);
         builder.Property(a => a.CityName).HasMaxLength(100);
         builder.Property(a => a.PostalCode).HasMaxLength(20);
+
+        // The addressee. Sized like the equivalent columns on Person, so a name that fits there fits
+        // here — the two hold the same kind of value and a form can copy one into the other.
+        builder.Property(a => a.Suffix).HasMaxLength(16);
+        builder.Property(a => a.FirstName).HasMaxLength(100);
+        builder.Property(a => a.LastName).HasMaxLength(100);
+        builder.Property(a => a.Email).HasMaxLength(256);
+        builder.Property(a => a.PhoneNumber).HasMaxLength(32);
     }
 }

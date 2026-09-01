@@ -3,8 +3,10 @@ using EmsPortal.Domain.Enums;
 namespace EmsPortal.Domain.Entities;
 
 /// <summary>
-/// An address of a <see cref="REMSEntity"/> (WO-110). At most one address per
-/// (entity, <see cref="AddressType"/>). Links to a shared <see cref="Address"/> record.
+/// An address of a <see cref="REMSEntity"/> (WO-110). At most one PHYSICAL and one MAILING address per
+/// entity; billing addresses are plural, because a client may be invoiced at more than one place and
+/// each carries its own addressee. The unique index says exactly that. Links to a shared
+/// <see cref="Address"/> record, which is where the addressee lives.
 /// </summary>
 public class REMSEntityAddress : AuditableEntity
 {

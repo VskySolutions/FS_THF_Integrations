@@ -77,7 +77,11 @@ public sealed record RemsInboxItem(
 public sealed record RemsClientFormItem(
     Guid RemsId,
     string RemsNumber,
+    /// <summary>The client's name as it reads — the suffix in front of the requested name.</summary>
     string ClientName,
+    /// <summary>The two halves of that name, so the Client column can draw the particle in bold.</summary>
+    string RequestedClientName,
+    string? ClientNameSuffix,
     string RequestStatus,
     bool Submitted,
     DateTime? SubmittedOnUtc,

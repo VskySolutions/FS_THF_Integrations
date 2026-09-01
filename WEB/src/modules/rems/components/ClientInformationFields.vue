@@ -116,7 +116,14 @@
                 @mousedown.prevent @click="pickClient(client)"
               >
                 <q-item-section>
-                  <q-item-label>{{ client.name }}</q-item-label>
+                  <!-- The name AS IT READS — the generational particle in front of it, in bold. The
+                       search matched the name alone (a record filed under "Smith Jr." is one nobody
+                       finds by surname), but two clients who differ only by that particle are two
+                       different people, and a list offering both of them as "John Smith" asks the
+                       partner to pick blind. -->
+                  <q-item-label>
+                    <app-name-with-suffix :name="client.name" :suffix="client.suffix" />
+                  </q-item-label>
                   <q-item-label caption>
                     {{ client.email || "no email" }} · {{ client.phone || "no phone" }}
                   </q-item-label>
@@ -278,6 +285,7 @@ import AppTextField from "components/common/AppTextField.vue";
 import AppSelect from "components/common/AppSelect.vue";
 import AppPhoneInput from "components/common/AppPhoneInput.vue";
 import AppFieldLabel from "components/common/AppFieldLabel.vue";
+import AppNameWithSuffix from "components/common/AppNameWithSuffix.vue";
 import AppMultiFileUpload from "components/common/AppMultiFileUpload.vue";
 import AppStoredFileItem from "components/common/AppStoredFileItem.vue";
 
@@ -556,7 +564,7 @@ const onClientTyped = (val) => {
   runLookup(term);
 };
 
-const autofilled = reactive({ email: "", phone: "" });
+const autofilled = reactive({ email: "", phone: "", suffix: "" });
 
 const sameEmail = (a, b) =>
   String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
@@ -570,6 +578,7 @@ const samePhone = (a, b) => {
 };
 
 const releaseAutofill = () => {
+  if (autofilled.suffix && model.clientNameSuffix === autofilled.suffix) model.clientNameSuffix = "";
   if (autofilled.email && sameEmail(model.customerEmail, autofilled.email)) model.customerEmail = "";
   if (autofilled.phone && samePhone(model.customerMobileNumber, autofilled.phone)) {
     model.customerMobileNumber = "";
@@ -577,6 +586,7 @@ const releaseAutofill = () => {
   }
   autofilled.email = "";
   autofilled.phone = "";
+  autofilled.suffix = "";
 };
 
 const pickClient = (client) => {
@@ -586,6 +596,15 @@ const pickClient = (client) => {
   clientQuery.value = client.name || "";
   model.clientName = clientQuery.value.trim();
   model.existingClientReferenceId = client.id;
+  // The particle on THEIR name, brought across with the name it belongs to. Without it a request raised
+  // against that record reads "John Smith" everywhere beside a list that says "Jr. John Smith" — and
+  // that particle is the only thing telling him apart from his father, who is also a client. Only into
+  // an empty box, and released again if the client is taken back out, exactly as the email and phone
+  // below are.
+  if (client.suffix && !model.clientNameSuffix?.trim() && !props.clientLocked) {
+    model.clientNameSuffix = client.suffix;
+    autofilled.suffix = client.suffix;
+  }
   if (client.email && !model.customerEmail?.trim() && !props.clientLocked) {
     model.customerEmail = client.email;
     autofilled.email = client.email;

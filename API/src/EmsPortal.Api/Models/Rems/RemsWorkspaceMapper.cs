@@ -50,7 +50,10 @@ internal static class RemsWorkspaceMapper
             ? null
             : new RemsAddressView(
                 address.Id, address.AddressLine1, address.AddressLine2, address.CityName, address.StateName,
-                address.StateCode, address.PostalCode, address.CountryCode, address.CountryName);
+                address.StateCode, address.PostalCode, address.CountryCode, address.CountryName,
+                // Who the post is addressed to, carried on the address itself. Null on a physical or
+                // mailing row; filled on a billing one, where the intake form asks for both halves.
+                address.Suffix, address.FirstName, address.LastName, address.Email, address.PhoneNumber);
 
     public static RemsEngagementView Engagement(
         REMSEngagement engagement,
@@ -127,8 +130,8 @@ internal static class RemsWorkspaceMapper
         IReadOnlyList<RemsAdditionalEntityView> additionalEntities,
         IReadOnlyList<RemsDepartmentDirectorView> departmentDirectors)
     {
-        // The billing ADDRESS is one of the main entity's three now, so it rides along with that entity's
-        // addresses below rather than being read off the client.
+        // Billing addresses are the main entity's, so they ride along with that entity's addresses below
+        // rather than being read off the client. There may be more than one.
         var clientView = client is null
             ? null
             : new RemsClientView(
@@ -163,7 +166,7 @@ internal static class RemsWorkspaceMapper
                     .Where(c => !c.Deleted)
                     .Select(c => new RemsEntityContactView(
                         c.Id, c.ContactRole, c.IsRequired,
-                        c.Person?.DisplayName, c.Person?.PrimaryEmail, c.Person?.MobileNumber))
+                        c.Person?.DisplayName, c.Person?.PrimaryEmail, c.Person?.MobileNumber, c.Person?.Suffix))
                     .ToList();
 
                 return new RemsEntityView(e.Id, e.Name, e.EIN, e.IsMainEntity, addresses, contacts);

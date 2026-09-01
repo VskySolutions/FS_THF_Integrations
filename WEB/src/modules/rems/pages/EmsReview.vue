@@ -56,9 +56,14 @@
         </q-td>
       </template>
 
+      <!-- The particle in front of the name and heavier than it, even here where the whole name is
+           already medium: it is what tells one "John Smith" row from the next. The column still SORTS
+           and searches on `clientName`, which is the two joined. -->
       <template #body-cell-clientName="cell">
         <q-td :props="cell">
-          <div class="text-weight-medium">{{ cell.row.clientName || "—" }}</div>
+          <div class="text-weight-medium">
+            <app-name-with-suffix :name="cell.row.requestedClientName" :suffix="cell.row.clientNameSuffix" />
+          </div>
         </q-td>
       </template>
 
@@ -192,6 +197,7 @@ import { useRemsMeta } from "modules/rems/useRemsMeta";
 
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppOptionBadge from "components/common/AppOptionBadge.vue";
+import AppNameWithSuffix from "components/common/AppNameWithSuffix.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppDataTable from "components/common/AppDataTable.vue";

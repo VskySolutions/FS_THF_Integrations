@@ -8,6 +8,11 @@
            escapes it. -->
       <!-- eslint-disable-next-line vue/no-v-html -->
       <div v-if="row.html" class="dg__value dg__value--rich" v-html="renderRichText(row.value)" />
+      <!-- A row that names somebody. The generational particle is drawn in front and in bold, the way it
+           reads everywhere else — a joined string could not tell the two apart. -->
+      <div v-else-if="row.suffix !== undefined" class="dg__value">
+        <app-name-with-suffix :name="String(row.value ?? '')" :suffix="row.suffix" />
+      </div>
       <div v-else class="dg__value">{{ display(row.value) }}</div>
     </div>
   </div>
@@ -20,9 +25,12 @@
 // rather than "here is the record". View mode is for reading, so it drops the form furniture entirely.
 import { computed } from "vue";
 import { renderRichText } from "utils/richText";
+import AppNameWithSuffix from "components/common/AppNameWithSuffix.vue";
 
 const props = defineProps({
-  // [{ label, value, wide?, html?, hideWhenEmpty? }]
+  // [{ label, value, wide?, html?, hideWhenEmpty?, suffix? }]
+  // `suffix` marks the row as a NAME: present (even as "") it renders through AppNameWithSuffix, which
+  // puts the particle in front of the name and in bold.
   rows: { type: Array, default: () => [] }
 });
 

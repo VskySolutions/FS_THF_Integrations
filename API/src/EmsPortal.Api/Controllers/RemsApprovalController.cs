@@ -488,10 +488,14 @@ public sealed class RemsApprovalController : ControllerBase
                 round.SentOnUtc, t.DecidedOnUtc, round.Status.ToString(),
                 // The client's name as they gave it on intake, falling back to the name the request was
                 // raised under when the row is somehow reached before a submission exists — and either
-                // way with the request's generational suffix on it. The intake form never asks for one,
-                // so the client's own version of their name arrives without it, and this row would
-                // otherwise read "John Smith" beside an EMS Review list saying "John Smith Jr.".
-                engagement.Id, rems.Id, rems.REMSNumber, rems.WithClientSuffix(client?.Name),
+                // way with the request's generational suffix in front of it. The client's own version of
+                // their name arrives without the firm's particle, and this row would otherwise read
+                // "John Smith" beside an EMS Review list saying "Jr. John Smith". The bare name follows,
+                // so the cell can draw the particle in bold beside it.
+                engagement.Id, rems.Id, rems.REMSNumber,
+                rems.WithClientSuffix(client?.Name),
+                (client?.Name is { Length: > 0 } given ? given : rems.RequestedClientName).Trim(),
+                rems.ClientNameSuffix,
                 RemsWorkspaceMapper.UserRef(rems.CSEId, auditNames),
                 round.Tasks.Count(x => x.Status == RemsApprovalTaskStatus.Approved),
                 round.Tasks.Count(x => x.Status == RemsApprovalTaskStatus.Rejected),
@@ -1243,7 +1247,8 @@ public sealed class RemsApprovalController : ControllerBase
 
         var (emsFormState, clientSubmissionState) = RemsWorkspaceMapper.FormState(formState);
         var requestView = new RemsApprovalRequestView(
-            rems.Id, rems.REMSNumber, rems.Description, rems.ClientDisplayName,
+            rems.Id, rems.REMSNumber, rems.Description,
+            rems.RequestedClientName, rems.ClientNameSuffix,
             rems.Type!.Value, rems.Status!.Value, rems.CustomerEmail, rems.CustomerMobileNumber,
             formState?.IndustryGroup, emsFormState, clientSubmissionState,
             RemsWorkspaceMapper.UserRef(rems.AdminAssignedToId, names),
@@ -1343,7 +1348,7 @@ public sealed class RemsApprovalController : ControllerBase
         // The client's name, and the MAIN entity's, read with the request's generational suffix on them.
         // Both hold what the client typed on their intake form, which never asks for a suffix — so
         // without this an approver reads "John Smith" on a request every other REMS surface calls
-        // "John Smith Jr.". Only the main entity: an additional entity is another business, and the
+        // "Jr. John Smith". Only the main entity: an additional entity is another business, and the
         // client's own particle is not part of its name.
         string EntityName(REMSEntity e) => e.IsMainEntity ? rems.WithClientSuffix(e.Name) : e.Name;
 
@@ -1365,7 +1370,8 @@ public sealed class RemsApprovalController : ControllerBase
                 .ToList(),
             entity.Contacts.Where(c => !c.Deleted)
                 .Select(c => new RemsEntityContactView(
-                    c.Id, c.ContactRole, c.IsRequired, c.Person?.DisplayName, c.Person?.PrimaryEmail, c.Person?.MobileNumber))
+                    c.Id, c.ContactRole, c.IsRequired, c.Person?.DisplayName, c.Person?.PrimaryEmail,
+                    c.Person?.MobileNumber, c.Person?.Suffix))
                 .ToList());
 
         return new RemsApprovalEngagementView(

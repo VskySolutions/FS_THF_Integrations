@@ -31,8 +31,9 @@ public class Person : AuditableEntity
     /// The generational particle on a person's name — Jr., Sr., II, III, IV — held beside the family name
     /// rather than typed into it. It is not part of the name a person is FILED under, so it stays out of
     /// <see cref="FullName"/>: "Smith Jr." in a surname column is somebody nobody finds by searching for
-    /// their name, and "John Smith Jr." matches no record when "John Smith" matches the man. It is joined
-    /// back on wherever the name is READ.
+    /// their name, and "John Smith Jr." matches no record when "John Smith" matches the man. It is put
+    /// back in FRONT of the name wherever the name is READ — the order every box that asks for one uses,
+    /// with Suffix to the left of First Name.
     /// <para>
     /// Free text, capped at 16 characters, with the common suffixes offered as suggestions — the same
     /// bargain the REMS client name's suffix strikes: the list is what most people need, not all any

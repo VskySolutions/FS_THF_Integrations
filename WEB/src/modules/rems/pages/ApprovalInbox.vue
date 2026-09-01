@@ -55,6 +55,15 @@
            APPROVED and the tooltip gives the tally. Before this, the only status on the row was the
            reader's own task, which flipped to Approved the moment they signed and left them reading their
            own signature as the request's outcome. -->
+      <!-- The particle in front of the name and in bold: on an approver's inbox the name is how a request
+           is recognised, and two clients called John Smith differ by nothing else. The column still SORTS
+           and searches on `clientName`, which is the two joined. -->
+      <template #body-cell-client="cell">
+        <q-td :props="cell">
+          <app-name-with-suffix :name="cell.row.clientNameWithoutSuffix" :suffix="cell.row.clientNameSuffix" />
+        </q-td>
+      </template>
+
       <template #body-cell-roundStatus="cell">
         <q-td :props="cell">
           <app-option-badge :option="roundMeta(cell.row)" />
@@ -140,6 +149,7 @@ import { useRemsMeta } from "modules/rems/useRemsMeta";
 
 import AppListHeader from "components/common/AppListHeader.vue";
 import AppOptionBadge from "components/common/AppOptionBadge.vue";
+import AppNameWithSuffix from "components/common/AppNameWithSuffix.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppDataTable from "components/common/AppDataTable.vue";

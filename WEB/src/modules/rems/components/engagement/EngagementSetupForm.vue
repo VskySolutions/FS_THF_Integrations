@@ -321,10 +321,13 @@
           <div v-if="taxFormUnavailable" class="text-caption text-grey-6">
             The tax-form list could not be loaded for your account.
           </div>
+          <!-- Three across on a desktop, two on a tablet, one on a phone. The list is sixteen returns
+               now rather than five, and in a single pair of columns that is eight rows of checkboxes to
+               scan for the two or three that apply. -->
           <div v-else class="row q-col-gutter-x-md">
             <q-checkbox
               v-for="opt in taxFormOptions" :key="opt.value" v-model="tax.taxFormIds" :val="opt.value"
-              :label="opt.label" :disable="!editable" class="col-12 col-sm-6"
+              :label="opt.label" :disable="!editable" class="col-12 col-sm-6 col-md-4"
             />
           </div>
         </q-card-section>

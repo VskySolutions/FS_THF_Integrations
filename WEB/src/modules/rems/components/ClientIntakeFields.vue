@@ -78,12 +78,12 @@
       </q-card-section>
     </q-card>
 
-    <!-- Addresses: three of them, each stored in its own right. "Copy from" fills the fields once and
-         leaves them editable — it is not a live mirror, so correcting the physical address later does not
-         silently move the other two with it.
-         The billing CONTACT is asked here too, under the billing address: where the invoice goes and who
-         it is addressed to are two halves of one answer, and asking them cards apart is how a form comes
-         back with an address and nobody to send it to. -->
+    <!-- Addresses. One physical, one mailing, and however many places the client is invoiced at — each
+         stored in its own right. "Copy from" fills the fields once and leaves them editable: it is not a
+         live mirror, so correcting the physical address later does not silently move the others with it.
+         Each billing address carries the person the invoice is addressed to, because where it goes and
+         who it is addressed to are two halves of one answer — asked in two sections, a form came back
+         with three addresses, two names and nothing saying which went with which. -->
     <q-card flat bordered class="cif-card q-mb-md">
       <q-card-section class="cif-card__head">
         Addresses &amp; Billing
@@ -93,12 +93,12 @@
       </q-card-section>
       <q-separator />
       <q-card-section>
-        <!-- Each heading carries what that address IS. Three addresses under three similar names is the
-             one place on this form where a client can reasonably give the right answer to the wrong
-             question — a mailing address typed into the physical box sends nothing anywhere wrong, but a
-             physical address typed into the billing box sends the invoice to a building nobody opens post
-             in. The note is on the heading, a hover away, rather than as three caption lines read once and
-             never again. -->
+        <!-- Each heading carries what that address IS. Several addresses under similar names are the one
+             place on this form where a client can reasonably give the right answer to the wrong question
+             — a mailing address typed into the physical box sends nothing anywhere wrong, but a physical
+             address typed into the billing box sends the invoice to a building nobody opens post in. The
+             note is on the heading, a hover away, rather than as caption lines read once and never
+             again. -->
         <div class="cif-addr-head">
           <div class="cif-subhead">
             Physical Address
@@ -126,7 +126,7 @@
           </div>
           <q-btn
             flat dense no-caps size="sm" color="primary" icon="o_content_copy"
-            label="Copy from physical" :disable="!addressHasContent(payload.physicalAddress)"
+            label="Copy from physical" :disable="!addressHasAny(payload.physicalAddress)"
             @click="copyIntakeAddress(payload, 'physicalAddress', 'mailingAddress')"
           />
         </div>
@@ -134,93 +134,79 @@
           v-model="payload.mailingAddress" required :errors="addressErrors(errors, 'mailingAddress')"
         />
 
+        <!-- Billing addresses: as many as the client is invoiced at, each carrying the person it is
+             addressed to. Where an invoice goes and who it is addressed to are one question, so they are
+             one block — the form used to ask them in two sections with nothing saying which name belonged
+             to which address, and a client invoiced at two offices could give only one of them.
+             None of them is required: say nothing here and we bill the mailing address. -->
         <q-separator class="cif-rule" />
 
         <div class="cif-addr-head">
           <div class="cif-subhead">
-            Billing Address
+            {{ billingAddresses.length > 1 ? "Billing Addresses" : "Billing Address" }}
             <q-icon name="o_info" size="15px" color="grey-6" class="cif-subhead__info">
               <q-tooltip anchor="top middle" self="bottom middle" max-width="300px" :delay="200">
                 {{ ADDRESS_HINTS.billing }}
               </q-tooltip>
             </q-icon>
           </div>
-          <!-- BOTH sources, because either can be the right one: a client whose post goes to a PO box is
-               often invoiced at the office they actually work from, and offering only the mailing address
-               made them retype the physical one they had already given us. -->
-          <div class="cif-addr-copy">
-            <q-btn
-              flat dense no-caps size="sm" color="primary" icon="o_content_copy"
-              label="Copy from physical" :disable="!addressHasContent(payload.physicalAddress)"
-              @click="copyIntakeAddress(payload, 'physicalAddress', 'billingAddress')"
-            />
-            <q-btn
-              flat dense no-caps size="sm" color="primary" icon="o_content_copy"
-              label="Copy from mailing" :disable="!addressHasContent(payload.mailingAddress)"
-              @click="copyIntakeAddress(payload, 'mailingAddress', 'billingAddress')"
-            />
-          </div>
         </div>
-        <app-address-fields
-          v-model="payload.billingAddress" :errors="addressErrors(errors, 'billingAddress')"
-        />
 
-        <!-- Who the invoice is addressed to, directly under where it is sent. Asked of every entity type,
-             and asked the same way: a first name, a last name, an email and a phone — the same block as
-             the second and third billing contacts below it, because they are the same kind of answer.
-             Required where the entity type requires it, optional for an individual (it is usually them). -->
-        <q-separator class="cif-rule" />
-
-        <div class="cif-subhead">
-          Billing Contact
-          <q-icon name="o_info" size="15px" color="grey-6" class="cif-subhead__info">
-            <q-tooltip anchor="top middle" self="bottom middle" max-width="300px" :delay="200">
-              {{ BILLING_CONTACT_HINT }}
-            </q-tooltip>
-          </q-icon>
+        <div v-if="!billingAddresses.length" class="text-caption text-grey-7 q-mb-sm">
+          None given — invoices go to the mailing address above.
         </div>
-        <role-contact-fields
-          v-if="billingRoleDef"
-          v-model="payload.roles[billingRoleDef.key]"
-          :label="billingContactLabel" :required="billingRoleDef.required"
-          :prefix="`roles.${billingRoleDef.key}`" :errors="errors"
-        />
 
-        <!-- And anybody else the invoice should go to. One billing contact is what the form used to allow,
-             and a client whose accounts payable is three people had to pick one of them and email us about
-             the others. Each extra one is the same block as the first and becomes the same kind of contact
-             on the record; none of them is required, but a block that has been started has to be
-             finished. -->
-        <div class="column q-gutter-md q-mt-md">
-          <div
-            v-for="(contact, i) in extraBillingContacts" :key="contact.key"
-            class="row no-wrap items-start q-gutter-sm"
-          >
-            <role-contact-fields
-              v-model="payload.additionalBillingContacts[i]"
-              class="col"
-              :label="`Billing Contact ${i + 2}`"
-              :prefix="`additionalBillingContacts[${i}]`" :errors="errors"
+        <div v-else class="column q-gutter-md">
+          <div v-for="(row, i) in billingAddresses" :key="row.key" class="cif-billing">
+            <div class="cif-addr-head cif-billing__head">
+              <!-- Numbered only once there is more than one: a "1" over a lone block answers a question
+                   nobody asked. -->
+              <div class="cif-subhead">Billing Address<template v-if="billingAddresses.length > 1"> {{ i + 1 }}</template></div>
+              <!-- BOTH sources, because either can be the right one: a client whose post goes to a PO box
+                   is often invoiced at the office they actually work from, and offering only the mailing
+                   address made them retype the physical one they had already given us. The copy moves the
+                   PLACE only — whoever it is addressed to stays as typed. -->
+              <div class="cif-addr-copy">
+                <q-btn
+                  flat dense no-caps size="sm" color="primary" icon="o_content_copy"
+                  label="Copy from physical" :disable="!addressHasAny(payload.physicalAddress)"
+                  @click="copyIntakeAddress(payload, 'physicalAddress', row)"
+                />
+                <q-btn
+                  flat dense no-caps size="sm" color="primary" icon="o_content_copy"
+                  label="Copy from mailing" :disable="!addressHasAny(payload.mailingAddress)"
+                  @click="copyIntakeAddress(payload, 'mailingAddress', row)"
+                />
+                <q-btn
+                  flat round dense color="negative" icon="o_delete" size="sm"
+                  :aria-label="`Remove billing address ${i + 1}`" @click="removeBillingAddress(i)"
+                >
+                  <q-tooltip>Remove this billing address</q-tooltip>
+                </q-btn>
+              </div>
+            </div>
+            <!-- Bound through the payload rather than through the `billingAddresses` computed above: the
+                 computed is for reading, and a v-model writing back into one is a warning waiting to
+                 happen the first time this field-set replaces the object instead of mutating it. -->
+            <app-address-fields
+              v-model="payload.billingAddresses[i]" contact contact-label="Invoice addressed to"
+              :errors="addressErrors(errors, `billingAddresses[${i}]`)"
             />
-            <q-btn
-              flat round dense color="negative" icon="o_delete" class="cif-extra__remove"
-              :aria-label="`Remove billing contact ${i + 2}`" @click="removeBillingContact(i)"
-            >
-              <q-tooltip>Remove this billing contact</q-tooltip>
-            </q-btn>
           </div>
         </div>
 
         <div class="q-mt-md">
           <q-btn
-            outline no-caps color="primary" icon="o_add" label="Add another billing contact"
-            :disable="!canAddBillingContact" @click="addBillingContact"
+            outline no-caps color="primary" icon="o_add"
+            :label="billingAddresses.length ? 'Add another billing address' : 'Add a billing address'"
+            :disable="!canAddBillingAddress" @click="addBillingAddress"
           >
-            <q-tooltip v-if="!canAddBillingContact">
-              You can name up to {{ MAX_ADDITIONAL_BILLING_CONTACTS + 1 }} billing contacts.
+            <q-tooltip v-if="!canAddBillingAddress">
+              You can give up to {{ MAX_BILLING_ADDRESSES }} billing addresses.
             </q-tooltip>
           </q-btn>
         </div>
+
       </q-card-section>
     </q-card>
 
@@ -240,8 +226,9 @@
       </q-card-section>
     </q-card>
 
-    <!-- Contacts (roles). The Billing Contact is NOT among them — it is asked with the billing address
-         above, where the other half of that answer is. -->
+    <!-- Contacts (roles). No Billing Contact among them: whoever an invoice is addressed to is asked for
+         on the billing address itself, above. A submission that answered the retired role still shows it
+         here — roleDefsFor puts back any role a payload carries that the group is no longer asked. -->
     <q-card v-if="contactRoleDefs.length" flat bordered class="cif-card q-mb-md">
       <q-card-section class="cif-card__head">
         Contacts
@@ -334,12 +321,11 @@
 // host and is written through directly (a `reactive` object from useRemsIntakeForm, which also knows how
 // to seed it, build it and say what is still missing).
 import { computed } from "vue";
-import { addressErrors } from "modules/rems/remsAddress";
 import { isBusinessIndustryGroup } from "modules/rems/useRemsMeta";
-import { BILLING_ROLE_KEY } from "modules/rems/remsContactRoles";
+import { addressErrors, addressHasAny } from "modules/rems/remsAddress";
 import {
-  addressHasContent, copyIntakeAddress, intakeRoleDefs, newBillingContact, newRelatedEntity,
-  relatedEntityHasData, MAX_ADDITIONAL_BILLING_CONTACTS
+  copyIntakeAddress, intakeRoleDefs, newBillingAddress, newRelatedEntity, relatedEntityHasData,
+  MAX_BILLING_ADDRESSES
 } from "modules/rems/useRemsIntakeForm";
 
 import { nameRules } from "utils/personName";
@@ -372,16 +358,14 @@ const props = defineProps({
 // Asked when the client is confirming a change they may not have intended.
 const emit = defineEmits(["confirm-clear-entities"]);
 
-// What each of the three addresses is, said on the heading it belongs to rather than in a caption line.
+// What each kind of address is, said on the heading it belongs to rather than in a caption line.
 const ADDRESS_HINTS = {
   physical: "Where the business actually operates, or where the client lives — the address we would visit. Not a PO box.",
   mailing: "Where post should reach them. Use this for a PO box, or if their post goes somewhere other than the physical address.",
-  billing: "Where invoices should be sent, if that is not the mailing address. Leave it blank and we will bill the mailing address."
+  billing: "Where invoices should be sent, and who each one should be addressed to. Add another for " +
+    "every further place you are invoiced at. Leave it blank and we will bill the mailing address, " +
+    "addressed to you."
 };
-
-// Said once, on the heading above the blocks it covers — the first contact and every extra one.
-const BILLING_CONTACT_HINT = "Who our invoices should be addressed to. Name as many people as they " +
-  "should go to. Leave it blank and we will address them to the client themselves.";
 
 const isIndividual = computed(() => props.industryGroup === "individual");
 const isBusiness = computed(() => isBusinessIndustryGroup(props.industryGroup));
@@ -394,38 +378,25 @@ const referralDetailPlaceholder = computed(() => {
   return chosen?.description || "Please provide details";
 });
 
-// Every role this entity type is asked, split between the two places they are asked: the billing contact
-// sits with the billing address, the rest in the Contacts card. Every entity type now has one, so this is
-// a plain lookup rather than a lookup with an exception in it.
-const allRoleDefs = computed(() => intakeRoleDefs(props.industryGroup));
-const billingRoleDef = computed(() =>
-  allRoleDefs.value.find((d) => d.key === BILLING_ROLE_KEY) || null);
-const contactRoleDefs = computed(() =>
-  allRoleDefs.value.filter((d) => d.key !== BILLING_ROLE_KEY || !billingRoleDef.value));
+// Every role this entity type is asked. A plain lookup now: the billing contact used to be lifted out of
+// this list and rendered with the billing address, and it is not asked at all any more.
+const contactRoleDefs = computed(() => intakeRoleDefs(props.industryGroup));
 
-// Everyone the invoice should go to BEYOND the first. Read defensively: a payload seeded from a draft
-// saved before this list existed simply has none, and a missing key must render an empty section rather
-// than throw on the way in.
-const extraBillingContacts = computed(() => payload.value.additionalBillingContacts || []);
+// Where the client is invoiced. Read defensively: a payload seeded from a draft saved before this list
+// existed simply has none, and a missing key must render an empty section rather than throw on the way in.
+const billingAddresses = computed(() => payload.value.billingAddresses || []);
 
-// The first billing contact is numbered only once there is a second — "Billing Contact 1" over a lone
-// block is a number answering a question nobody asked.
-const billingContactLabel = computed(() => (extraBillingContacts.value.length
-  ? `${billingRoleDef.value?.label || "Billing Contact"} 1`
-  : billingRoleDef.value?.label || "Billing Contact"));
+const canAddBillingAddress = computed(() => billingAddresses.value.length < MAX_BILLING_ADDRESSES);
 
-const canAddBillingContact = computed(() =>
-  extraBillingContacts.value.length < MAX_ADDITIONAL_BILLING_CONTACTS);
-
-function addBillingContact () {
-  if (!payload.value.additionalBillingContacts) payload.value.additionalBillingContacts = [];
-  if (canAddBillingContact.value) payload.value.additionalBillingContacts.push(newBillingContact());
+function addBillingAddress () {
+  if (!payload.value.billingAddresses) payload.value.billingAddresses = [];
+  if (canAddBillingAddress.value) payload.value.billingAddresses.push(newBillingAddress());
 }
 
 // No confirmation. Unlike the Other Entities toggle — which throws away every row at once — this takes
 // one block off, and the block below it is still on screen to make the mistake obvious.
-function removeBillingContact (i) {
-  payload.value.additionalBillingContacts.splice(i, 1);
+function removeBillingAddress (i) {
+  payload.value.billingAddresses.splice(i, 1);
 }
 
 const entityErr = (i, field) => props.errors[`relatedEntities[${i}].${field}`] || "";
@@ -475,10 +446,10 @@ function onToggleRelated (val) {
   color: var(--q-primary);
   margin-bottom: 8px;
 }
-/* The rule between two groups of fields inside one card. Three addresses one under another are three
-   answers to three different questions, and whitespace alone left them reading as one long block —
-   which is how a mailing address ends up typed into the physical one. The line does the separating and
-   carries the spacing with it, so the headings below it sit where the old q-mt-lg put them. */
+/* The rule between two groups of fields inside one card. Addresses stacked one under another are answers
+   to different questions, and whitespace alone left them reading as one long block — which is how a
+   mailing address ends up typed into the physical one. The line does the separating and carries the
+   spacing with it, so the headings below it sit where the old q-mt-lg put them. */
 .cif-rule {
   margin: 22px 0 16px;
   background: var(--line, #e0e6ed);
@@ -514,10 +485,17 @@ function onToggleRelated (val) {
   border-radius: 10px;
   background: #fbfcfe;
 }
-/* The ✕ that takes an extra billing contact off, beside its block rather than under it — the block
-   already carries its own Required / Optional badge in the corner, and a button on top of that would sit
-   on the badge. Nudged down so it lines up with the block's heading rather than with its border. */
-.cif-extra__remove {
-  margin-top: 8px;
+/* One place the client is invoiced at: a boxed block, so where several run down the card a reader can see
+   where one ends and the next begins. Without the border they were address grids of identical shape
+   separated by whitespace, and the addressee of the second read as the tail of the first. */
+.cif-billing {
+  border: 1px solid #e0e6ed;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #fff;
+}
+/* The block's own heading sits inside it, so it needs the gap the card-level headings get from .cif-rule. */
+.cif-billing__head {
+  margin-bottom: 10px;
 }
 </style>

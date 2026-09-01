@@ -61,6 +61,43 @@
       :error="!!postalMessage" :error-message="postalMessage" @blur="validatePostal"
     />
 
+    <!-- Who the post is addressed to. Opt-in, because most addresses in the app are a place and nothing
+         more — a home, an office. A form that DOES ask both halves asks them here rather than in a
+         section of its own: "where does the invoice go?" and "who is it addressed to?" are one question,
+         and a client with three places to invoice has three answers to it. Split across two sections
+         there was nothing saying which name belonged to which address.
+         Never required. An invoice addressed to "Accounts Payable" at a street is a perfectly ordinary
+         answer, and so is an email address with no name in front of it. -->
+    <template v-if="contact">
+      <div class="col-12 section-subhead">{{ contactLabel }}</div>
+      <!-- The generational particle, in a box of its own for the reason it always is: a record is filed
+           under a given name and a family name, and "Jr." is neither. -->
+      <app-name-suffix-field
+        v-model="address.suffix" class="col-4 col-sm-2" :readonly="readonly" :disable="disable"
+      />
+      <app-text-field
+        v-model="address.firstName" label="First Name" class="col-8 col-sm-4"
+        :dense="dense" :disable="disable" :readonly="readonly" :rules="nameRules('First Name')"
+        :error="!!errorFor('firstName')" :error-message="errorFor('firstName')"
+      />
+      <app-text-field
+        v-model="address.lastName" label="Last Name" class="col-12 col-sm-6"
+        :dense="dense" :disable="disable" :readonly="readonly" :rules="nameRules('Last Name')"
+        :error="!!errorFor('lastName')" :error-message="errorFor('lastName')"
+      />
+      <app-text-field
+        v-model="address.email" label="Email" type="email" class="col-12 col-sm-6"
+        :dense="dense" :disable="disable" :readonly="readonly"
+        :error="!!errorFor('email')" :error-message="errorFor('email')"
+      />
+      <div class="col-12 col-sm-6">
+        <app-phone-input
+          v-model="address.phone" label="Phone Number" :dense="dense" :disable="disable" :readonly="readonly"
+        />
+        <div v-if="errorFor('phone')" class="text-negative text-caption q-mt-xs">{{ errorFor('phone') }}</div>
+      </div>
+    </template>
+
     <!-- Opt-in extras kept for the records that already capture them (profile / person). Not part of the
          standard block, so a form has to ask for them. -->
     <template v-if="extended">
@@ -80,7 +117,8 @@
 // Binds a canonical address object via v-model — the same names the Address record and the profile /
 // person APIs use:
 //   { countryCode, countryName, stateCode, stateName, cityName, addressLine1, addressLine2, postalCode,
-//     landmark, buildingName, floorNumber, unitNumber }   // the last four only with `extended`
+//     landmark, buildingName, floorNumber, unitNumber,    // the four above only with `extended`
+//     suffix, firstName, lastName, email, phone }         // the addressee, only with `contact`
 // countryName / stateName are kept in sync from the selected ISO codes so callers can persist names.
 // Callers on a different wire shape (REMS stores a frozen legacy shape) map at their own boundary.
 //
@@ -91,8 +129,11 @@ import { ref, reactive, computed, watch } from "vue";
 import { State, City } from "country-state-city";
 import validator from "validator";
 import { orderedCountries, countryOption, countryNameFromIso } from "composables/useCountries";
+import { nameRules } from "utils/personName";
 import AppSelect from "components/common/AppSelect.vue";
 import AppTextField from "components/common/AppTextField.vue";
+import AppNameSuffixField from "components/common/AppNameSuffixField.vue";
+import AppPhoneInput from "components/common/AppPhoneInput.vue";
 
 const address = defineModel({ type: Object, required: true });
 
@@ -105,6 +146,12 @@ const props = defineProps({
   required: { type: Boolean, default: false },
   // Also capture Landmark / Building / Floor / Unit.
   extended: { type: Boolean, default: false },
+  // Also capture the addressee — suffix, first name, last name, email, phone. Off by default: an address
+  // is a place, and only a form that genuinely asks "and who is it addressed to?" wants these.
+  contact: { type: Boolean, default: false },
+  // The heading over that block. A prop because what the person AT the address is called depends on the
+  // form asking — "Addressed to" on an invoice, something else elsewhere.
+  contactLabel: { type: String, default: "Addressed to" },
   // Server-side messages for THIS address, keyed by the canonical field names above. A host whose API
   // reports them under other names re-keys first (see modules/rems/remsAddress).
   errors: { type: Object, default: () => ({}) }

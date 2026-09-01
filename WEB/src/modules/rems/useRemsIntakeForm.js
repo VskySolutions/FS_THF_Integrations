@@ -1,7 +1,10 @@
 import { reactive } from "vue";
-import { blankAddress, toAddress, fromAddress, addressComplete } from "modules/rems/remsAddress";
 import {
-  ALL_ROLE_KEYS, BILLING_ROLE_KEY, GROUP_ROLES, groupKey, normalizeRoles, roleDefsFor
+  blankAddress, toAddress, fromAddress, addressComplete, addressHasAny, addressHasAnyContent,
+  billingAddressList, copyPostalInto
+} from "modules/rems/remsAddress";
+import {
+  ALL_ROLE_KEYS, GROUP_ROLES, groupKey, normalizeRoles, roleDefsFor
 } from "modules/rems/remsContactRoles";
 // Only the group predicate, which is a plain frozen list. useRemsMeta reaches for the auth store inside
 // its composable, never at import time — this form renders on an anonymous page and must not wake one.
@@ -37,7 +40,7 @@ const blankRoles = () => Object.fromEntries(ALL_ROLE_KEYS.map((k) => [k, blankRo
 
 /**
  * A blank editable payload — the RemsFormPayloadV1 camelCase wire shape (field names match
- * RemsPublicFormModels.cs exactly), EXCEPT the three addresses, which are held canonically.
+ * RemsPublicFormModels.cs exactly), EXCEPT the addresses, which are held canonically.
  */
 export const blankIntakePayload = () => reactive({
   version: 1,
@@ -58,13 +61,21 @@ export const blankIntakePayload = () => reactive({
   referralSourceDetail: "",
   physicalAddress: blankAddress(),
   mailingAddress: blankAddress(),
+  // Where invoices go, and who each one is addressed to — a LIST, because a client invoiced at two
+  // places has two, and the form should not be the thing that decides they have one. Each row is a whole
+  // address AND its addressee: "where does the invoice go?" and "who is it addressed to?" are one
+  // question, and the answers used to live in two sections with nothing saying which belonged to which.
+  // Opens with one row ready to fill in — see openBillingAddresses.
+  billingAddresses: openBillingAddresses(null),
+  // The retired billing CONTACT answers, kept in the shape and echoed back untouched. A submission is
+  // the immutable record of what the client sent, and a form that no longer shows the box a thing was
+  // typed into must not be the reason that answer disappears. Nothing writes them any more.
+  //
+  // The retired single `billingAddress` is NOT among them: it is folded into billingAddresses on the way
+  // in, so re-saving through this form loses nothing and comes back in the one shape — exactly what
+  // normalizeRoles does for the renamed contact roles.
   billingContactName: "",
   billingEmail: "",
-  billingAddress: blankAddress(),
-  // Everyone the invoice should ALSO go to. The first billing contact is `roles.billingContact` — the one
-  // the entity type asks for, and the one that is required where it is required — and these are the rest.
-  // A list rather than a fixed second and third slot, because a client with four people in accounts
-  // payable has four, and the form should not be the thing that decides they have two.
   additionalBillingContacts: [],
   spouseName: "",
   spousePhone: "",
@@ -80,20 +91,51 @@ export const blankIntakePayload = () => reactive({
   relatedEntities: []   // [{ sourceKey, fullName, emailAddress, phoneNumber }]
 });
 
-/** True when a canonical address has anything in it — what decides if there is something worth copying. */
-export const addressHasContent = (address) =>
-  !!address && Object.values(address).some((v) => typeof v === "string" && v.trim() !== "");
-
 /**
  * Copy one address into another, ONCE. Deliberately not a live mirror: the client can correct the copy
  * afterwards, and a later edit to the source must not silently drag the copy along with it — a live
  * mirror would move the billing address every time the physical one was corrected.
  *
- * Assigned field by field into the EXISTING object rather than replacing it, so the bound model instance
- * survives (AppAddressFields resolves its country → state → city cascade from that instance).
+ * Only the PLACE is copied. A billing row copied from the office is still addressed to whoever is in
+ * accounts payable, so the addressee stays as typed — and so does the row's own local key, which is what
+ * keeps Vue from re-using one row's inputs for another. See copyPostalInto.
+ *
+ * `target` is a payload key for the mailing address and the row itself for a billing one, which has no
+ * key of its own to name.
  */
-export const copyIntakeAddress = (payload, fromKey, toKey) => {
-  Object.assign(payload[toKey], { ...payload[fromKey] });
+export const copyIntakeAddress = (payload, fromKey, target) => {
+  copyPostalInto(typeof target === "string" ? payload[target] : target, payload[fromKey]);
+};
+
+/**
+ * How many places one client may be invoiced at. Not a limit anybody should meet — it is the guard
+ * against a stuck key adding four hundred blocks to one form. Mirrors the server's
+ * RemsFormPayloadValidator.MaxBillingAddresses, which is what actually enforces it.
+ */
+export const MAX_BILLING_ADDRESSES = 10;
+
+// A stable identity for each billing row, so removing the second of three does not make Vue re-use the
+// third's inputs for the second. Local to the browser and never sent: fromAddress picks the fields it
+// writes, and `key` is not one of them.
+let billingAddressSeq = 0;
+export const newBillingAddress = (stored = null) => ({
+  key: `billing-address-${++billingAddressSeq}`,
+  ...toAddress(stored)
+});
+
+/**
+ * The billing rows a form OPENS with: whatever the stored payload carries, or one blank row where it
+ * carries none.
+ *
+ * The section is optional and stays optional — a row nobody types into is dropped on the way out (see
+ * buildIntakePayload) and never validated (see intakeIssues), so a client who ignores it is still
+ * invoiced at their mailing address exactly as before. What the blank row changes is the reading: a
+ * section whose only control is an "Add" button looks like an extra somebody else deals with, and the
+ * billing address was the answer most often left off because of it. One open block asks the question.
+ */
+const openBillingAddresses = (stored) => {
+  const rows = billingAddressList(stored).map((a) => newBillingAddress(a));
+  return rows.length ? rows : [newBillingAddress()];
 };
 
 // A contact answered at all. `prefix` is deliberately not counted — see roleHasAny in remsContactRoles.
@@ -136,41 +178,15 @@ export const newRelatedEntity = (index = 0) => ({
   phoneNumber: ""
 });
 
-// How many people one client may be invoiced through, BEYOND the first. Not a limit anybody should meet
-// — it is the guard against a stuck key adding four hundred blocks to one form. Mirrors the server's
-// RemsFormPayloadValidator.MaxAdditionalBillingContacts, which is what actually enforces it.
-export const MAX_ADDITIONAL_BILLING_CONTACTS = 9;
-
-// A stable identity for each extra billing contact's ROW, so removing the second of three does not make
-// Vue re-use the third's inputs for the second. It is local to the browser and never sent: outRole picks
-// the fields it writes, and `key` is not one of them.
+// A retired billing contact read back off a stored payload. Nothing on the form produces one any more —
+// the addressee travels on the billing address — but a submission that carries them has to round-trip
+// through the editor untouched. The local `key` is never sent: outRole picks the fields it writes.
 let billingContactSeq = 0;
-export const newBillingContact = (stored = null) => {
+const newBillingContact = (stored = null) => {
   const row = { key: `billing-${++billingContactSeq}`, ...blankRole() };
   if (stored) fillRole(row, stored);
   return row;
 };
-
-/**
- * Fold a payload written when an individual's billing contact was two plain boxes into the contact block
- * that asks for it now, and leave the two boxes empty so the next save writes the answer in one place.
- *
- * The same courtesy normalizeRoles does for the renamed business roles: the answer is the client's, and a
- * form that no longer shows the field it was typed into must not be a form that appears to have lost it.
- * The single name is cut at the first space — the split the server already falls back to for a pre-split
- * contact (RemsNameSplit) — so the two boxes open filled rather than asking for a name already given.
- */
-function adoptLegacyBillingContact (payload, stored) {
-  const role = payload.roles[BILLING_ROLE_KEY];
-  if (roleAny(role) || (!filled(stored.billingContactName) && !filled(stored.billingEmail))) return;
-
-  const [first, ...rest] = s(stored.billingContactName).trim().split(" ");
-  role.firstName = first || "";
-  role.lastName = rest.join(" ").trim();
-  role.email = s(stored.billingEmail);
-  payload.billingContactName = "";
-  payload.billingEmail = "";
-}
 
 /**
  * Read a stored payload into the editable one, in place.
@@ -183,7 +199,10 @@ export function seedIntakePayload (payload, stored, prefill = null) {
   const d = stored || {};
 
   payload.clientName = d.clientName ?? prefill?.clientName ?? "";
-  payload.clientSuffix = d.clientSuffix ?? "";
+  // From the prefill where the client has not answered yet: the staff intake asks for the particle, and
+  // the client's form has a box of its own for it, so it is carried across rather than smuggled into a
+  // name column.
+  payload.clientSuffix = d.clientSuffix ?? prefill?.clientSuffix ?? "";
   payload.clientPrefix = d.clientPrefix ?? "";
   // The two parts come from the stored answer where they were given, and from the prefill's own split of
   // the name staff typed at intake where they were not. `?? ""` rather than a fallback chain into
@@ -210,13 +229,16 @@ export function seedIntakePayload (payload, stored, prefill = null) {
 
   payload.physicalAddress = toAddress(d.physicalAddress);
   payload.mailingAddress = toAddress(d.mailingAddress);
-  payload.billingAddress = toAddress(d.billingAddress);
+  // The list, with the single billing address a payload written before it carries folded in as the first
+  // row — the same courtesy normalizeRoles does for the renamed contact roles. A payload holding both
+  // keeps the list: it was written later, by a form that offered the single box nowhere. A payload with
+  // no billing address at all re-opens the one blank row the form starts with.
+  payload.billingAddresses = openBillingAddresses(d);
 
   // Normalized first: a payload filled in under the old business role names still has its contacts, and
   // they belong in the boxes those roles are called by now.
   const storedRoles = normalizeRoles(d.roles);
   ALL_ROLE_KEYS.forEach((k) => fillRole(payload.roles[k], storedRoles[k]));
-  adoptLegacyBillingContact(payload, d);
   payload.additionalBillingContacts = (d.additionalBillingContacts || []).map((r) => newBillingContact(r));
 
   payload.relatedEntities = (d.relatedEntities || []).map(makeEntity);
@@ -277,11 +299,15 @@ export function buildIntakePayload (payload, industryGroup) {
     referralSourceDetail: s(payload.referralSourceDetail),
     physicalAddress: fromAddress(payload.physicalAddress),
     mailingAddress: fromAddress(payload.mailingAddress),
+    // Blank rows are dropped rather than sent: adding a block and leaving it empty is somebody changing
+    // their mind, not an answer, and it would otherwise become a placeless, nameless billing address on
+    // the entity.
+    billingAddresses: (payload.billingAddresses || []).filter(addressHasAnyContent).map(fromAddress),
+    // The retired billing CONTACT answers, echoed back exactly as they arrived. Nothing on the form
+    // writes them, and nothing folds them anywhere either — dropping them here would delete, on the next
+    // save, an answer the client actually gave.
     billingContactName: s(payload.billingContactName),
     billingEmail: s(payload.billingEmail),
-    billingAddress: fromAddress(payload.billingAddress),
-    // Blank rows are dropped rather than sent: adding a block and leaving it empty is somebody changing
-    // their mind, not an answer, and it would otherwise become a nameless contact on the entity.
     additionalBillingContacts: (payload.additionalBillingContacts || []).filter(roleAny).map(outRole),
     spouseName: s(payload.spouseName),
     spousePhone: s(payload.spousePhone),
@@ -309,9 +335,8 @@ export function intakeRoleSetKey (industryGroup) {
 }
 
 /**
- * Every role this entity type is asked, as [{ key, label, hint, required }]. The billing contact is among
- * them: it is asked with the billing ADDRESS rather than in the Contacts card, but it is still a role and
- * it is still validated.
+ * Every role this entity type is asked, as [{ key, label, hint, required }]. The billing contact is NOT
+ * among them any more — whoever an invoice is addressed to travels on the billing address itself.
  */
 export const intakeRoleDefs = (industryGroup) => {
   const key = intakeRoleSetKey(industryGroup);
@@ -342,17 +367,25 @@ export function intakeIssues (payload, industryGroup) {
   // Both are required: there is no "same as" flag deciding whether a mailing address exists, only a copy
   // button that fills it in for you.
   if (!addressComplete(payload.mailingAddress)) out.push(`Mailing address ${addressIssue}`);
-  if (filled(payload.billingEmail) && !emailOk(payload.billingEmail)) {
-    out.push("Billing email is not a valid email address.");
-  }
+  // Every billing address is optional — a client who gives none is invoiced at their mailing address —
+  // but a row somebody has STARTED has to be finished, exactly as an optional contact is. Either half of
+  // the row is a real answer on its own: an invoice can go to a street with no name on it, or by email to
+  // a named person with no street at all. So what is checked is that whichever half they began is whole.
+  // The addressee's name is never required: plenty of clients are invoiced at a department.
+  (payload.billingAddresses || []).forEach((row, i) => {
+    if (!addressHasAnyContent(row)) return;
+    const label = (payload.billingAddresses.length > 1) ? `Billing address ${i + 1}` : "Billing address";
+    if (addressHasAny(row) && !addressComplete(row)) out.push(`${label} ${addressIssue}`);
+    if (filled(row.email) && !emailOk(row.email)) out.push(`${label} has an invalid email address.`);
+    pushIf(out, nameIssue(row.firstName, `${label} first name`));
+    pushIf(out, nameIssue(row.lastName, `${label} last name`));
+  });
 
   if (isBusinessIndustryGroup(industryGroup) && !filled(payload.ein)) {
     out.push("EIN is required for a business.");
   }
 
-  // Driven off the same role definitions the cards are rendered from — all of them, wherever on the form
-  // they are asked, so moving the billing contact up to the billing address cannot quietly stop it being
-  // required.
+  // Driven off the same role definitions the cards are rendered from.
   intakeRoleDefs(industryGroup).forEach(({ key, label, required }) => {
     const role = payload.roles[key];
     if (required) {
@@ -365,18 +398,8 @@ export function intakeIssues (payload, industryGroup) {
     pushIf(out, nameIssue(role?.lastName, `${label} last name`));
   });
 
-  // The extra billing contacts. Each is optional — nobody has to name a second — but one that has been
-  // started has to be finished, exactly as an optional role is: a half-typed contact is an invoice
-  // addressed to a name with no way to send it. Numbered from 2, because the first billing contact is the
-  // one asked above.
-  (payload.additionalBillingContacts || []).forEach((role, i) => {
-    const label = `Billing Contact ${i + 2}`;
-    if (roleAny(role) && !roleComplete(role)) {
-      out.push(`${label} needs a first name, a last name and a valid email.`);
-    }
-    pushIf(out, nameIssue(role?.firstName, `${label} first name`));
-    pushIf(out, nameIssue(role?.lastName, `${label} last name`));
-  });
+  // The retired billing contacts are not checked. The form stopped asking for them, so a complaint about
+  // one would point at a box nobody can see; they are echoed back exactly as they arrived.
 
   // Name and email both required — the phone stays optional, as on every contact on this form.
   payload.relatedEntities.forEach((e, i) => {

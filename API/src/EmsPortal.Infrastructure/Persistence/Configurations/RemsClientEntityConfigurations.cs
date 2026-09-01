@@ -81,10 +81,21 @@ internal sealed class RemsEntityAddressConfiguration : IEntityTypeConfiguration<
         builder.HasOne(a => a.Entity).WithMany(e => e.Addresses).HasForeignKey(a => a.REMSEntityId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(a => a.Address).WithMany().HasForeignKey(a => a.AddressId).OnDelete(DeleteBehavior.Restrict);
 
-        // One address per (entity, type) — now Physical, Mailing AND Billing. The billing address used to
-        // sit on REMSClient with its own FK; it is an entity address like the other two, so the same rule
-        // covers it.
-        builder.HasIndex(a => new { a.TenantId, a.REMSEntityId, a.AddressType }).IsUnique().HasFilter("[Deleted] = 0");
+        // One address per (entity, type) — with ONE exception, which is why the filter names it.
+        //
+        // Billing addresses are deliberately plural: the client intake form asks where invoices should be
+        // sent and lets the client name more than one place, each with its own addressee, and being given
+        // second does not make an address a different kind of address. Exactly the rule REMSEntityContact
+        // already applies to the billing CONTACT, and for the same reason — under a plain unique index the
+        // second billing address failed the insert at the end of a submit that had already built the
+        // client, the entity and every contact, so the client lost the whole form.
+        //
+        // Physical and Mailing ARE singular — an entity operates from one place and takes post at one —
+        // and the index still says so. Dropping uniqueness altogether would give that up everywhere to
+        // make room for the one type that does not want it.
+        builder.HasIndex(a => new { a.TenantId, a.REMSEntityId, a.AddressType })
+            .IsUnique()
+            .HasFilter("[Deleted] = 0 AND [AddressType] <> 'Billing'");
     }
 }
 

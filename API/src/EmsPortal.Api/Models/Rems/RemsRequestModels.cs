@@ -129,7 +129,15 @@ public sealed record RemsRowActions(
 public sealed record RemsRequestRow(
     Guid Id,
     string RemsNumber,
+    /// <summary>The client's name as it reads — the suffix in front of the requested name.</summary>
     string ClientName,
+    /// <summary>
+    /// The two halves of that name, so the Client column can draw the particle in bold and the name
+    /// beside it. <see cref="ClientName"/> stays the value the column SORTS and searches on; a joined
+    /// string is all that is useful for those, and all that a cell can render is the parts.
+    /// </summary>
+    string RequestedClientName,
+    string? ClientNameSuffix,
     string Type,
     DateTime CreatedOnUtc,
     string Status,
@@ -163,7 +171,7 @@ public sealed record RemsRequestDetail(
     Guid Id,
     string RemsNumber,
     string? Description,
-    /// <summary>The client's name as it reads — the requested name with the suffix on it.</summary>
+    /// <summary>The client's name as it reads — the suffix in front of the requested name.</summary>
     string ClientName,
     /// <summary>
     /// The requested name WITHOUT the suffix, and the suffix itself. The form edits these two; every
@@ -205,17 +213,23 @@ public sealed record RemsRequestDetail(
     string? ClientFormLink);
 
 /// <summary>
-/// A client-lookup result (WO-111). <see cref="ParentCompany"/> and <see cref="PastWork"/> are always
-/// null: no external client directory exists in this platform, so the lookup runs over Person records
-/// which carry no such fields.
+/// A client-lookup result (WO-111). The lookup runs over Person records — there is no external client
+/// directory in this platform — so this is everything the picker can show: who they are, and the two
+/// ways of reaching them that the search also matches on.
+/// <para>
+/// The generational particle on the person's name — Jr., Sr., III — is carried BESIDE the name rather
+/// than joined into it. The picker searches on the name, and a record filed as "John Smith Jr." is one
+/// nobody finds by typing "John Smith"; but two clients whose names differ only by that particle are two
+/// different people, and a list showing both as "John Smith" asks the caller to pick blind. So the name
+/// stays the name, and the picker draws the particle in front of it.
+/// </para>
 /// </summary>
 public sealed record RemsClientLookupItem(
     Guid Id,
     string Name,
     string? Email,
     string? Phone,
-    string? ParentCompany,
-    string? PastWork);
+    string? Suffix);
 
 /// <summary>An option in the assign-to-admin dropdown (WO-111).</summary>
 public sealed record RemsAdminOption(Guid Id, string Name, string? Email);

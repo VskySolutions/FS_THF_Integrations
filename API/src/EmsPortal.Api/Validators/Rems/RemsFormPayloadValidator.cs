@@ -13,10 +13,10 @@ namespace EmsPortal.Api.Validators.Rems;
 /// <c>ApiResponseFactory.ValidationError</c>.
 /// <para>
 /// Required per group: Individual → a first and last name + <c>self</c>; Business → <c>ein</c> +
-/// <c>primaryContact</c>/<c>financialContact</c>/<c>billingContact</c>; Government →
-/// <c>financeDirector</c>. The physical and mailing addresses are both required, as are each related
-/// entity's name and email address; a required role must carry a first name, a last name and a valid email.
-/// Any further billing contact is optional but, once started, is held to the same shape.
+/// <c>primaryContact</c>/<c>financialContact</c>; Government → <c>financeDirector</c>. The physical and
+/// mailing addresses are both required, as are each related entity's name and email address; a required
+/// role must carry a first name, a last name and a valid email. Billing addresses are optional in full,
+/// but one that has been started must carry a whole address, and a valid email where it gives one.
 /// </para>
 /// </summary>
 public sealed class RemsFormPayloadValidator
@@ -25,12 +25,11 @@ public sealed class RemsFormPayloadValidator
     public const string Government = "government";
 
     /// <summary>
-    /// How many billing contacts a client may name BEYOND the first, which is the <c>billingContact</c>
-    /// role. Not a limit anybody should meet — it is the guard against a stuck key or a hand-written
-    /// request filing four hundred contacts against one entity. Mirrors the browser's
-    /// <c>MAX_ADDITIONAL_BILLING_CONTACTS</c>.
+    /// How many places a client may be invoiced at. Not a limit anybody should meet — it is the guard
+    /// against a stuck key or a hand-written request filing four hundred addresses against one entity.
+    /// Mirrors the browser's <c>MAX_BILLING_ADDRESSES</c>.
     /// </summary>
-    public const int MaxAdditionalBillingContacts = 9;
+    public const int MaxBillingAddresses = 10;
 
     // The business FAMILY: the kinds of business THF onboards are asked for exactly the same things, so
     // what separates them is what the client IS, not what the form asks.
@@ -91,9 +90,23 @@ public sealed class RemsFormPayloadValidator
         RequireAddress(failures, "physicalAddress", payload.PhysicalAddress);
         RequireAddress(failures, "mailingAddress", payload.MailingAddress);
 
-        if (!string.IsNullOrWhiteSpace(payload.BillingEmail) && !IsEmail(payload.BillingEmail))
+        // Where invoices go, and who each one is addressed to. Every row is optional — a client who gives
+        // none is invoiced at their mailing address — but a row somebody has STARTED has to be finished:
+        // an invoice addressed to half an address reaches nobody. The addressee's NAME is not required
+        // even then, because plenty of clients are invoiced at a department rather than at a person.
+        //
+        // `billingEmail` — the retired two-box billing contact's address — is deliberately no longer
+        // checked. The form stopped asking for it, so a message about it would point at a box nobody can
+        // see, and the only payloads still carrying one are the record of a form that is gone.
+        if (payload.BillingAddresses.Count > MaxBillingAddresses)
         {
-            failures.Add(new ValidationFailure("billingEmail", "Billing email is not a valid email address."));
+            failures.Add(new ValidationFailure(
+                "billingAddresses", $"Give at most {MaxBillingAddresses} billing addresses."));
+        }
+
+        for (var i = 0; i < payload.BillingAddresses.Count; i++)
+        {
+            ValidateBillingAddress(failures, $"billingAddresses[{i}]", payload.BillingAddresses[i]);
         }
 
         // Optional like the rest of the spouse block, but checked when given — a mistyped address is
@@ -112,10 +125,6 @@ public sealed class RemsFormPayloadValidator
         {
             RequireRole(failures, "roles.self", roles.Self);
             OptionalRole(failures, "roles.spouse", roles.Spouse);
-            // Optional — an individual is usually invoiced in their own name — but held to the same shape
-            // as every other contact once they start filling it in. It is the SAME role a business and a
-            // government body name, asked on the same block, so it is validated by the same rule.
-            OptionalRole(failures, "roles.billingContact", roles.BillingContact);
         }
         else if (IsBusinessGroup(industryGroup))
         {
@@ -126,13 +135,11 @@ public sealed class RemsFormPayloadValidator
 
             RequireRole(failures, "roles.primaryContact", roles.PrimaryContact);
             RequireRole(failures, "roles.financialContact", roles.FinancialContact);
-            RequireRole(failures, "roles.billingContact", roles.BillingContact);
             OptionalRole(failures, "roles.otherContact", roles.OtherContact);
         }
         else if (industryGroup == Government)
         {
             RequireRole(failures, "roles.financeDirector", roles.FinanceDirector);
-            OptionalRole(failures, "roles.billingContact", roles.BillingContact);
             OptionalRole(failures, "roles.otherContact", roles.OtherContact);
         }
         else
@@ -140,25 +147,12 @@ public sealed class RemsFormPayloadValidator
             failures.Add(new ValidationFailure("industryGroup", $"Unsupported entity type '{industryGroup}'."));
         }
 
-        // ---- Additional billing contacts ----
-        // None of them is required — naming a second person to invoice is the client's choice — but one
-        // that has been STARTED has to be finished, exactly as an optional role is: an invoice addressed
-        // to a name with no email is an invoice nobody can send. A blank block is dropped by the browser
-        // before it is sent, so anything arriving here is somebody's answer.
-        //
-        // The paths are the payload's own, so the field messages land on the right block — see
-        // parseIntakeFieldErrors, which the form looks its per-field messages up by.
-        if (payload.AdditionalBillingContacts.Count > MaxAdditionalBillingContacts)
-        {
-            failures.Add(new ValidationFailure(
-                "additionalBillingContacts",
-                $"Name at most {MaxAdditionalBillingContacts + 1} billing contacts."));
-        }
-
-        for (var i = 0; i < payload.AdditionalBillingContacts.Count; i++)
-        {
-            OptionalRole(failures, $"additionalBillingContacts[{i}]", payload.AdditionalBillingContacts[i]);
-        }
+        // ---- Billing contacts ----
+        // Neither `roles.billingContact` nor `additionalBillingContacts` is validated any more. The
+        // Billing Contact block is gone from the form — whoever an invoice is addressed to travels ON the
+        // billing address now — so a half-finished answer to a question nobody is asked would block a
+        // client on a box their form does not show. The only payloads still carrying one are drafts
+        // started before the change; they are read, materialised and shown exactly as they always were.
 
         // ---- Additional entities ----
         // Each row is another of the client's businesses for the firm to set up separately, so it needs a
@@ -206,6 +200,37 @@ public sealed class RemsFormPayloadValidator
         RequireField(failures, $"{prefix}.city", address.City, "City is required.");
         RequireField(failures, $"{prefix}.street", address.Street, "Address Line 1 is required.");
         RequireField(failures, $"{prefix}.zip", address.Zip, "Zip Code is required.");
+    }
+
+    /// <summary>
+    /// A billing address the client has started. It is a place AND a person, and either half on its own
+    /// is a legitimate answer — an invoice can be addressed to "Accounts Payable" at a street, or emailed
+    /// to a named person with no street at all — so what is enforced is that whichever half they began is
+    /// complete: one postal line typed means the whole postal block. A row with nothing in it is not an
+    /// answer and never reaches here.
+    /// </summary>
+    private static void ValidateBillingAddress(
+        List<ValidationFailure> failures, string prefix, RemsAddressPayload? address)
+    {
+        if (address is null || !address.HasAnyContent)
+        {
+            return;
+        }
+
+        if (address.HasAny)
+        {
+            RequireAddress(failures, prefix, address);
+        }
+
+        if (!string.IsNullOrWhiteSpace(address.Email) && !IsEmail(address.Email))
+        {
+            failures.Add(new ValidationFailure($"{prefix}.email", "Email is not a valid email address."));
+        }
+
+        // Whatever HAS been typed into the two name boxes has to read as a name. The addressee is never
+        // required, but it is printed on an invoice.
+        RequireName(failures, $"{prefix}.firstName", address.FirstName, "First name");
+        RequireName(failures, $"{prefix}.lastName", address.LastName, "Last name");
     }
 
     /// <summary>A required role must carry a first name, a last name and a valid email; the phone is optional.</summary>

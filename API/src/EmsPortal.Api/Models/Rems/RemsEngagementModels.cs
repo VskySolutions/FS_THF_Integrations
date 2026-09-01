@@ -15,7 +15,11 @@ namespace EmsPortal.Api.Models.Rems;
 public sealed record RemsClientFormRow(
     Guid RemsId,
     string RemsNumber,
+    /// <summary>The client's name as it reads — the suffix in front of the requested name.</summary>
     string ClientName,
+    /// <summary>The two halves of that name, so the Client column can draw the particle in bold.</summary>
+    string RequestedClientName,
+    string? ClientNameSuffix,
     string RequestStatus,
     bool HasForm,
     bool Submitted,
@@ -119,7 +123,12 @@ public sealed record RemsClientView(
     string? BillingContactName,
     string? BillingEmail);
 
-/// <summary>A shared postal address projected for the workspace (mirrors <see cref="RemsAddressInput"/>).</summary>
+/// <summary>
+/// A shared postal address projected for the workspace (mirrors <see cref="RemsAddressInput"/>), plus
+/// whoever the post is addressed to. The last five are filled only on a billing address, which is the one
+/// kind the intake form asks both halves of the question about; a physical or mailing row is a place and
+/// nothing more, and carries nulls.
+/// </summary>
 public sealed record RemsAddressView(
     Guid Id,
     string? Street,
@@ -129,7 +138,12 @@ public sealed record RemsAddressView(
     string? StateCode,
     string? Zip,
     string? CountryCode,
-    string? CountryName);
+    string? CountryName,
+    string? Suffix = null,
+    string? FirstName = null,
+    string? LastName = null,
+    string? Email = null,
+    string? PhoneNumber = null);
 
 /// <summary>
 /// An entity within the workspace, with its addresses and contacts. It no longer carries an engagement:
@@ -146,8 +160,13 @@ public sealed record RemsEntityView(
 /// <summary>An entity address (physical/mailing/billing) row.</summary>
 public sealed record RemsEntityAddressView(Guid Id, string AddressType, RemsAddressView Address);
 
-/// <summary>An entity contact row (person resolved to name/email/phone).</summary>
-public sealed record RemsEntityContactView(Guid Id, string Role, bool IsRequired, string? Name, string? Email, string? Phone);
+/// <summary>
+/// An entity contact row (person resolved to name/email/phone). <paramref name="Name"/> is the person's
+/// DisplayName, which already reads with the particle in front; <paramref name="Suffix"/> repeats that
+/// particle on its own so a surface can draw it in bold rather than hunt for it inside the name.
+/// </summary>
+public sealed record RemsEntityContactView(
+    Guid Id, string Role, bool IsRequired, string? Name, string? Email, string? Phone, string? Suffix = null);
 
 /// <summary>An engagement with its team, fee/realization, marketing, commission and conditional details.</summary>
 public sealed record RemsEngagementView(
@@ -252,7 +271,10 @@ public sealed class UpdateRemsClientRequest
     public string? ReferralSource { get; set; }
     public string? BillingContactName { get; set; }
     public string? BillingEmail { get; set; }
-    public RemsAddressInput? BillingAddress { get; set; }
+
+    // No billing ADDRESS here. There may be several of them, they are the main entity's rows rather than
+    // the client's, and they are written by the client's intake form — this endpoint never touched the
+    // single one it used to name.
 }
 
 /// <summary>Replace an entity's physical/mailing addresses (each null =&gt; remove that address type).</summary>

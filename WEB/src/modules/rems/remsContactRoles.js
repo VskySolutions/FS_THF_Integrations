@@ -13,6 +13,9 @@ export const CONTACT_ROLE_LABELS = {
   spouse: "Spouse",
   primaryContact: "Primary Client Contact",
   financialContact: "Financial Contact",
+  // Retired with the Billing Contact block. Kept so a submission that carries one still says what it
+  // is — whoever an invoice is addressed to travels on the billing ADDRESS now, which is where the form
+  // asks for it.
   billingContact: "Billing Contact",
   otherContact: "Other Contact",
   financeDirector: "Finance Director",
@@ -29,7 +32,6 @@ export const CONTACT_ROLE_LABELS = {
 export const CONTACT_ROLE_HINTS = {
   primaryContact: "Who we speak to about this engagement — the main person on your side.",
   financialContact: "Who we speak to about your finances and reporting.",
-  billingContact: "Who receives our invoices.",
   otherContact: "Anyone else you would like us to have on file.",
   financeDirector: "The finance director for this entity."
 };
@@ -45,21 +47,21 @@ export const ALL_ROLE_KEYS = [
 
 /// What each industry group is asked, in display order. The three business groups share one set, so they
 /// all look up under "business" (see groupKey below).
+// The billing contact is no longer among them. Whoever an invoice is addressed to travels ON the billing
+// address — the form asks for a name, an email and a phone beside each place to invoice — so a contact of
+// its own asked the same question in a second place and left nothing saying which address the answer
+// belonged to. `billingContact` stays in ALL_ROLE_KEYS and in the labels above so a submission that
+// answered it still reads, and roleDefsFor's extraKeys is what puts it back on screen for those records.
 export const GROUP_ROLES = {
-  // An individual is asked for a billing contact too, and asked for it as a CONTACT. It stays optional —
-  // most people are invoiced in their own name — but somebody they do name is a contact like any other,
-  // and is collected and stored exactly as the second and third billing contacts beside it already were.
-  // Two plain boxes here meant the first block on the form asked for less than the block the "Add another"
-  // button produced, and put that one answer somewhere no other contact lives.
-  individual: ["self", "spouse", "billingContact"],
-  business: ["primaryContact", "financialContact", "billingContact", "otherContact"],
-  government: ["financeDirector", "billingContact", "otherContact"]
+  individual: ["self", "spouse"],
+  business: ["primaryContact", "financialContact", "otherContact"],
+  government: ["financeDirector", "otherContact"]
 };
 
 /// Which of them must be filled in. Mirrors RemsFormPayloadValidator.
 export const REQUIRED_ROLES = {
   individual: ["self"],
-  business: ["primaryContact", "financialContact", "billingContact"],
+  business: ["primaryContact", "financialContact"],
   government: ["financeDirector"]
 };
 
@@ -124,6 +126,16 @@ export const roleHasAny = hasAny;
  * Smith" and one answered after reads "Jr. Jane Smith", each as the client actually gave it. No record
  * carries both, so their order relative to each other never arises in practice.
  */
+/**
+ * The same two halves, unjoined, for a surface that RENDERS the name rather than needing a string —
+ * AppNameWithSuffix draws the particle in bold, and cannot find it inside a joined name. The retired
+ * courtesy prefix rides with the name: it is not the particle this is about, and no record carries both.
+ */
+export const roleNameParts = (role) => ({
+  name: [String(role?.prefix ?? "").trim(), roleDisplayName(role)].filter(Boolean).join(" "),
+  suffix: roleDisplayName(role) ? String(role?.suffix ?? "").trim() : ""
+});
+
 export const roleAddressedName = (role) => {
   const name = roleDisplayName(role);
   const prefix = String(role?.prefix ?? "").trim();
@@ -131,13 +143,6 @@ export const roleAddressedName = (role) => {
   // A particle with no name behind it is not a name — the caller renders the em dash for that instead.
   return name ? [suffix, prefix, name].filter(Boolean).join(" ") : "";
 };
-
-/**
- * Which role key carries the billing contact. It is asked with the billing ADDRESS rather than among the
- * other contacts — where the invoice goes and who it is addressed to are two halves of one answer — so
- * every surface that groups the answers reads it from here rather than each deciding for itself.
- */
-export const BILLING_ROLE_KEY = "billingContact";
 
 /** Which role set an industry group is asked. The three business groups share one. */
 export const groupKey = (industryGroup, isBusiness) => (isBusiness ? "business" : industryGroup);
@@ -172,6 +177,14 @@ export const answeredRoleKeys = (roles) =>
  */
 export const CLIENT_NAME_SUFFIXES = NAME_SUFFIXES;
 
-/** A client's name as it reads — the name with its suffix on the end. Mirrors REMS.ClientDisplayName. */
+/**
+ * A client's name as it reads — the suffix in FRONT of the name ("Jr. John Smith"). Mirrors
+ * REMS.ClientDisplayName.
+ *
+ * In front, because that is the order the form asks in: the Suffix box sits to the LEFT of the name, and
+ * every surface that shows a name echoes the order it was typed in. The contacts on the intake form have
+ * always read this way (roleAddressedName); the client's own name reading the other way round was the one
+ * place the platform disagreed with itself.
+ */
 export const clientDisplayName = (name, suffix) =>
-  [String(name ?? "").trim(), String(suffix ?? "").trim()].filter(Boolean).join(" ");
+  [String(suffix ?? "").trim(), String(name ?? "").trim()].filter(Boolean).join(" ");

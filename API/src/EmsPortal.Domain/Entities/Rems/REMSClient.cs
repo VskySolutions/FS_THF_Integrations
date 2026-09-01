@@ -41,16 +41,19 @@ public class REMSClient : AuditableEntity
     /// <summary>The client's own follow-up detail for that referral source (who referred them, which event).</summary>
     public string? ReferralSourceDetail { get; set; }
 
-    /// <summary>Billing contact name.</summary>
+    /// <summary>
+    /// Billing contact name. RETIRED: the intake form stopped asking for a billing contact once the
+    /// addressee moved onto the billing address itself. Carried on submissions sent before that, and on
+    /// whatever staff have typed here by hand since.
+    /// </summary>
     public string? BillingContactName { get; set; }
 
     /// <summary>Billing email.</summary>
     public string? BillingEmail { get; set; }
 
-    // Note: the billing ADDRESS is no longer here. It lives with the other two on the main entity, as a
-    // REMSEntityAddress of type Billing — the client's physical, mailing and billing addresses share one
-    // shape and one "at most one per (entity, type)" rule. Only the billing contact's name and email stay
-    // on the client, because they describe a person rather than a place.
+    // Note: the billing ADDRESS is no longer here. Billing addresses live on the main entity, as
+    // REMSEntityAddress rows of type Billing — every address the client gives shares one shape, and
+    // there may be several billing ones. Only the two retired columns above stay on the client.
 
     // ---- Navigations ----
     public OptionSetItem? ReferralSource { get; set; }

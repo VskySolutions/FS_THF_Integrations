@@ -449,7 +449,6 @@ import {
   isCasDepartment, isAssuranceDepartment, isGcsDepartment, isTaxDepartment, requiresClientAcceptanceForm
 } from "modules/rems/useRemsMeta";
 import { useAutoSave } from "modules/rems/useAutoSave";
-import { clientDisplayName } from "modules/rems/remsContactRoles";
 import { REMS_STATUS, REMS_REWORK_STATUSES } from "modules/rems/remsStatus";
 import { useAuthStore } from "stores/auth";
 
@@ -1049,9 +1048,9 @@ const commissionLabels = computed(() =>
     .map((s) => `${s.employee?.name || nameOf(cseOptions.value, s.employeeId)} — ${s.percentage}%`));
 
 const clientRows = computed(() => [
-  // Read as one name, with the suffix on it — the pair is edited as two boxes because they are two
+  // Read as one name, the particle in front of it — the pair is edited as two boxes because they are two
   // different things to store, not because they are two things about the client.
-  { label: "Client", value: clientDisplayName(clientForm.clientName, clientForm.clientNameSuffix) },
+  { label: "Client", value: clientForm.clientName, suffix: clientForm.clientNameSuffix || "" },
   { label: "Client Email Address", value: clientForm.customerEmail },
   { label: "Client Phone Number", value: clientForm.customerMobileNumber },
   { label: "Relationship to THF", value: labelOf(typeOptions.value, clientForm.type) },

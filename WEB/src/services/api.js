@@ -552,8 +552,8 @@ export const remsApi = {
   handBack: (id) => api.post(`/api/rems/requests/${id}/hand-back`).then(unwrap),
 
   remove: (id) => api.delete(`/api/rems/requests/${id}`).then(envelope),
-  // Client picker (2+ chars): [{ id, name, email, phone, parentCompany:null, pastWork:null }].
-  // parentCompany/pastWork are always null — no external client directory exists in this platform.
+  // Client picker: [{ id, name, email, phone, suffix }]. Any non-empty term searches; the server caps the
+  // result set at 20. The suffix is beside the name, never joined into it — see RemsClientLookupItem.
   clientLookup: (q) => api.get("/api/rems/clients/lookup", { params: { q } }).then(unwrap),
   // Users in the active tenant, by role: [{ id, name, email }].
   // Without `role`: Admin + Super Admin users. With `role`: the holders of that role — how the CSE /
@@ -726,7 +726,7 @@ export const remsApi = {
   //       assignedAdmin, cse, requestedBy, createdOnUtc, files:[{ id, mediaId, fileName, mimeType, fileSize, url }] },
   //     engagement:{ engagementId, status, department, subServiceLine, subIndustry,
   //       client:{ id, name, email, mobileNumber, referralSource, billingContactName, billingEmail,
-  //         billingAddress, entities:[{ id, name, ein, isMainEntity }] },
+  //         entities:[{ id, name, ein, isMainEntity }] },
   //       entity:{ id, name, ein, isMainEntity, addresses:[{ id, addressType, address }],
   //         contacts:[{ id, role, isRequired, name, email, phone }] },
   //       departmentDirector, engagementExecutive, billingManager,

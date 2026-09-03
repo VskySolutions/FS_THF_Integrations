@@ -148,7 +148,7 @@ public sealed class RemsEngagementController : ControllerBase
         var elevated = RemsSetupAccess.IsElevated(User);
 
         var rows = items.Select(i => new RemsClientFormRow(
-            i.RemsId, i.RemsNumber, i.ClientName, i.RequestedClientName, i.ClientNameSuffix,
+            i.RemsId, i.RemsNumber, i.ClientName, i.ClientNameSuffix,
             i.RequestStatus,
             HasForm: true, i.Submitted, i.SubmittedOnUtc,
             RemsWorkspaceMapper.UserRef(i.AdminAssignedToId, names), RemsWorkspaceMapper.UserRef(i.CSEId, names),

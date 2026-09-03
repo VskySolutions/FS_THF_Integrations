@@ -102,19 +102,20 @@
             </q-card-section>
             <q-separator />
             <q-card-section class="row q-col-gutter-md">
-              <!-- The generational particle on the name. The same box every other screen asks it in, so
-                   the suggestions and the cap match; saved on the way past with the rest of the basics,
-                   because it lives on the same Person record the two name fields do. -->
-              <app-name-suffix-field
-                v-model="suffix" class="col-4 col-sm-2" :readonly="!canEdit" @blur="autoSaveBasics"
-              />
               <app-text-field
-                v-model="firstName" label="First Name" class="col-8 col-sm-4"
+                v-model="firstName" label="First Name" class="col-12 col-sm-6"
                 :readonly="!canEdit" :rules="nameRules('First name')" @blur="autoSaveBasics"
               />
               <app-text-field
-                v-model="lastName" label="Last Name" class="col-12 col-sm-6"
+                v-model="lastName" label="Last Name" class="col-8 col-sm-4"
                 :readonly="!canEdit" :rules="nameRules('Last name')" @blur="autoSaveBasics"
+              />
+              <!-- The generational particle on the name, after the surname where it is read. The same box
+                   every other screen asks it in, so the suggestions and the cap match; saved on the way
+                   past with the rest of the basics, because it lives on the same Person record the two
+                   name fields do. -->
+              <app-name-suffix-field
+                v-model="suffix" class="col-4 col-sm-2" :readonly="!canEdit" @blur="autoSaveBasics"
               />
               <!-- This IS the sign-in credential, not a contact address — labelled so whoever edits it
                    knows, and committed through its own path rather than saved on the way past. -->

@@ -35,21 +35,14 @@
         <q-td :props="cell">{{ formatDateTime(cell.row.deletedOnUtc) }}</q-td>
       </template>
       <template #body-cell-actions="cell">
-        <q-td :props="cell" class="text-right">
-          <q-btn flat round dense icon="o_more_vert">
-            <q-menu auto-close>
-              <q-list style="min-width: 180px;">
-                <q-item clickable @click="restore(cell.row)">
-                  <q-item-section avatar><q-icon name="o_restore" color="primary" /></q-item-section>
-                  <q-item-section>Restore</q-item-section>
-                </q-item>
-                <q-separator />
-                <q-item clickable @click="hardDelete(cell.row)">
-                  <q-item-section avatar><q-icon name="o_delete_forever" color="negative" /></q-item-section>
-                  <q-item-section class="text-negative">Permanently Delete</q-item-section>
-                </q-item>
-              </q-list>
-            </q-menu>
+        <q-td :props="cell">
+          <!-- One button per action, both of them on the row. The pair reads as what it is — put it back,
+               or end it — and the second is the only red thing on this panel. -->
+          <q-btn type="a" flat round dense color="primary" icon="o_restore" @click="restore(cell.row)">
+            <q-tooltip>Restore</q-tooltip>
+          </q-btn>
+          <q-btn type="a" flat round dense color="negative" icon="o_delete_forever" @click="hardDelete(cell.row)">
+            <q-tooltip>Permanently Delete</q-tooltip>
           </q-btn>
         </q-td>
       </template>
@@ -108,7 +101,7 @@ const columns = [
   { name: "identity", label: "Record", field: "identity", align: "left", sortable: true, default: true },
   { name: "deletedByName", label: "Deleted By", field: "deletedByName", align: "left", default: true },
   { name: "deletedOnUtc", label: "Deleted On", field: "deletedOnUtc", align: "left", sortable: true, default: true },
-  { name: "actions", label: "Actions", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "left" }
 ];
 
 const load = async () => {

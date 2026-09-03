@@ -78,6 +78,14 @@ public static class ActivityEventTypes
     /// </summary>
     public const string RemsFormCorrected = "RemsFormCorrected";
 
+    /// <summary>
+    /// Somebody moved a related client along on the Related Entities list — a spouse, a child, another
+    /// business the client named. Written on the PARENT request, because that is the only record these
+    /// rows have a timeline on, and it carries the old and new codes: the status moves only by hand, so
+    /// who changed it and to what is the whole audit of it.
+    /// </summary>
+    public const string RemsRelatedEntityStatusChanged = "RemsRelatedEntityStatusChanged";
+
     // ---- REMS engagement workspace + approval (WO-114) ----
     public const string RemsEngagementUpdated = "RemsEngagementUpdated";
     public const string RemsApprovalSent = "RemsApprovalSent";

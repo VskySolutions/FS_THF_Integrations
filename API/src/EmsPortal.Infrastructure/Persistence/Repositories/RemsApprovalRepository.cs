@@ -94,14 +94,14 @@ internal sealed class RemsApprovalRepository : IRemsApprovalRepository
             // The entity's own name is deliberately not searched: an approval is about a request and its
             // one engagement, and the request already carries the client name it was raised under.
             //
-            // Matched WITH the generational suffix as well as without, like the other two REMS lists: the
-            // row shows "Jr. John Smith", so typing what is on the row has to find the row.
-            // (REMS.ClientDisplayName says exactly this but is [NotMapped] and cannot cross into SQL.)
+            // Against the client's name as the row SHOWS it — "Smith John Jr." — and against each half of
+            // it on its own, like the other REMS lists: surname first is how it reads, but nobody hunting
+            // for John Smith types "Smith John".
             tasks = tasks.Where(x =>
                 x.Round!.Engagement!.Rems!.REMSNumber.Contains(t) ||
-                x.Round!.Engagement!.Rems!.RequestedClientName.Contains(t) ||
-                (x.Round!.Engagement!.Rems!.ClientNameSuffix + " "
-                    + x.Round!.Engagement!.Rems!.RequestedClientName).Contains(t));
+                x.Round!.Engagement!.Rems!.ClientPerson!.ClientDisplayName.Contains(t) ||
+                x.Round!.Engagement!.Rems!.ClientPerson!.FirstName.Contains(t) ||
+                x.Round!.Engagement!.Rems!.ClientPerson!.LastName.Contains(t));
         }
         if (query.Role is { } role)
         {
@@ -123,7 +123,7 @@ internal sealed class RemsApprovalRepository : IRemsApprovalRepository
             .Include(t => t.Round).ThenInclude(r => r!.Engagement).ThenInclude(e => e!.Rems);
         var sorts = SortMap.For(withGraph, "updatedOnUtc")
             .Add("remsNumber", t => t.Round!.Engagement!.Rems!.REMSNumber)
-            .Add("client", t => t.Round!.Engagement!.Rems!.RequestedClientName, t => t.UpdatedOnUtc)
+            .Add("client", t => t.Round!.Engagement!.Rems!.ClientPerson!.ClientDisplayName, t => t.UpdatedOnUtc)
             .Add("status", t => t.Status, t => t.UpdatedOnUtc)
             .Add("sentOnUtc", t => t.Round!.SentOnUtc, t => t.UpdatedOnUtc)
             .Add("decidedOnUtc", t => t.DecidedOnUtc, t => t.UpdatedOnUtc)

@@ -1,6 +1,7 @@
 using EmsPortal.Api.Models;
 using EmsPortal.Api.Models.Rems;
 using EmsPortal.Api.Security;
+using EmsPortal.Api.Validators.Rems;
 using EmsPortal.Application.Abstractions.OptionSets;
 using EmsPortal.Application.Abstractions.Persistence;
 using EmsPortal.Application.Common;
@@ -233,10 +234,9 @@ public sealed class RemsRequestsController : ControllerBase
             TypeId = await _codes.RequireRemsIdAsync(RemsOptionSetKeys.Type, type, cancellationToken),
             StatusId = await _codes.RequireRemsIdAsync(
                 RemsOptionSetKeys.Status, RemsRequestStatuses.Draft, cancellationToken),
-            RequestedClientName = request.ClientName,
-            ClientNameSuffix = Normalize(request.ClientNameSuffix),
-            CustomerEmail = Normalize(request.CustomerEmail),
-            CustomerMobileNumber = Normalize(request.CustomerMobileNumber),
+            // The client's name, suffix, email and mobile are NOT set here any more. They belong to the
+            // client's Person record, which ResolveClientPersonAsync writes below from this same payload —
+            // and which this request then reads them back through.
             CSEId = request.CSEId,
             ExistingClientReferenceId = request.ExistingClientReferenceId,
             OnBehalfOfUserId = seat?.PrincipalUserId,
@@ -247,7 +247,13 @@ public sealed class RemsRequestsController : ControllerBase
         await _unitOfWork.ExecuteInTransactionAsync(async ct =>
         {
             rems.REMSNumber = await _numberGenerator.GenerateAsync(tenantId, ct);
-            rems.ClientPersonId = await ResolveClientPersonAsync(rems, tenantId, ct);
+            rems.ClientPersonId = await ResolveClientPersonAsync(
+                rems,
+                new ClientDetails(
+                    request.ClientName, request.ClientNameSuffix,
+                    request.CustomerEmail, request.CustomerMobileNumber,
+                    request.ClientFirstName, request.ClientLastName, request.ClientCorporateName),
+                tenantId, ct);
             await _rems.AddAsync(rems, ct);
 
             // The request's one engagement, created here rather than on client submit. The initiator fills
@@ -347,17 +353,27 @@ public sealed class RemsRequestsController : ControllerBase
         {
             rems.TypeId = await _codes.RequireRemsIdAsync(RemsOptionSetKeys.Type, request.Type, cancellationToken);
         }
-        if (request.ClientName is not null) rems.RequestedClientName = request.ClientName;
-        // Cleared by sending "" — the suffix is the one client field somebody routinely takes back off,
-        // having picked "Jr." for the wrong John Smith, and an omitted field means "leave it alone" here.
-        if (request.ClientNameSuffix is not null) rems.ClientNameSuffix = Normalize(request.ClientNameSuffix);
-        if (request.CustomerEmail is not null) rems.CustomerEmail = Normalize(request.CustomerEmail);
-        if (request.CustomerMobileNumber is not null) rems.CustomerMobileNumber = Normalize(request.CustomerMobileNumber);
+        // The client's name, suffix, email and mobile are not the REQUEST's to hold any more. They are
+        // written onto the client's Person by ResolveClientPersonAsync below, from this same payload — the
+        // suffix included, which is still cleared by sending "" rather than by omitting it, because it is
+        // the one client field somebody routinely takes back off having picked "Jr." for the wrong John
+        // Smith.
         if (request.CSEId.HasValue) rems.CSEId = request.CSEId;
         if (request.ExistingClientReferenceId.HasValue) rems.ExistingClientReferenceId = request.ExistingClientReferenceId;
 
-        // After the client fields land, so the person record follows what the request now says.
-        rems.ClientPersonId = await ResolveClientPersonAsync(rems, rems.TenantId, cancellationToken);
+        // The client IS the person record now, so this is where an edited name, suffix, email or mobile
+        // actually lands. An omitted field leaves what is already on the person alone.
+        rems.ClientPersonId = await ResolveClientPersonAsync(
+            rems,
+            new ClientDetails(
+                request.ClientName ?? rems.ClientPerson?.ClientDisplayName,
+                request.ClientNameSuffix ?? rems.ClientNameSuffix,
+                request.CustomerEmail ?? rems.CustomerEmail,
+                request.CustomerMobileNumber ?? rems.CustomerMobileNumber,
+                request.ClientFirstName ?? rems.ClientPerson?.FirstName,
+                request.ClientLastName ?? rems.ClientPerson?.LastName,
+                request.ClientCorporateName ?? rems.ClientPerson?.CorporateName),
+            rems.TenantId, cancellationToken);
 
         // Editing never moves a request along any more. A draft leaves draft only by being sent to the
         // client, which is its own action.
@@ -821,7 +837,14 @@ public sealed class RemsRequestsController : ControllerBase
     [HttpGet("/api/rems/clients/lookup")]
     [RequirePermission(Permissions.RemsRequestsCreate)]
     [ProducesResponseType<ApiResponse<IEnumerable<RemsClientLookupItem>>>(StatusCodes.Status200OK)]
-    public async Task<IActionResult> ClientLookup([FromQuery] string? q, CancellationToken cancellationToken)
+    /// <param name="entityType">
+    /// The REMS.IndustryGroup code the request is being raised under. It decides which KIND of client the
+    /// picker offers: <c>individual</c> offers people, anything else offers organisations. Omitted, the
+    /// picker offers both — which is what a caller who has not answered the entity type yet should see,
+    /// rather than an empty list they cannot explain.
+    /// </param>
+    public async Task<IActionResult> ClientLookup(
+        [FromQuery] string? q, [FromQuery] string? entityType, CancellationToken cancellationToken)
     {
         var term = q?.Trim() ?? string.Empty;
         if (term.Length == 0)
@@ -830,18 +853,34 @@ public sealed class RemsRequestsController : ControllerBase
                 Array.Empty<RemsClientLookupItem>(), "Enter a name, email or phone number to search."));
         }
 
+        // A request for an Individual can only be filed under a person, and a request for any other entity
+        // type can only be filed under a company — so the picker offers one or the other rather than
+        // letting somebody pick a client the request cannot be raised for. Answered from a COLUMN on the
+        // person (PartyType), not by joining back through whatever requests they already appear on: a
+        // client can appear on two requests of different types, and a join could not say which they are.
+        PartyType? partyType = string.IsNullOrWhiteSpace(entityType)
+            ? null
+            : entityType.Trim().Equals(RemsFormPayloadValidator.Individual, StringComparison.OrdinalIgnoreCase)
+                ? PartyType.Individual
+                : PartyType.Organisation;
+
         // The ambient tenant filter pins the search to the caller's active tenant. Clients only: a
         // colleague and a role contact captured off an EMS form sit in the same table, and neither is
         // somebody to open an engagement for. A name nobody matches is not an error — the caller files it
         // as a brand-new client, which is what the empty result offers them.
         var (items, _) = await _persons.ListAsync(
             term, tenantId: null, isUser: null, isActive: true, SortRequest.Default, page: 1, limit: 20,
-            sourceEntityType: EntityType.Client, cancellationToken: cancellationToken);
-        // The suffix travels beside the name, not inside it: FullName is what the search matched on and
-        // what picking a result files the request under, and joining "Jr." into it would break both. The
-        // picker renders the two together — see ClientInformationFields.
+            sourceEntityType: EntityType.Client, partyType: partyType, cancellationToken: cancellationToken);
+
+        // The PARTS, not one joined string. The picker fills three separate boxes for a person — first
+        // name, last name and the particle — and one box for a company, so handing it a pre-joined name
+        // would only make it split the name back up and guess where the split was.
         var results = items.Select(p => new RemsClientLookupItem(
-            p.Id, p.FullName, p.PrimaryEmail, p.MobileNumber, p.Suffix));
+            p.Id, p.ClientDisplayName, p.PrimaryEmail, p.MobileNumber, p.Suffix,
+            p.IsOrganisation ? string.Empty : p.FirstName,
+            p.IsOrganisation ? string.Empty : p.LastName,
+            p.CorporateName,
+            p.IsOrganisation));
         return Ok(ApiResponseFactory.Success(results, "Clients retrieved."));
     }
 
@@ -995,21 +1034,46 @@ public sealed class RemsRequestsController : ControllerBase
     /// Runs inside the caller's unit of work: a new person is staged, not saved, so a request that fails
     /// to save leaves no client behind.
     /// </summary>
-    private async Task<Guid> ResolveClientPersonAsync(REMS rems, Guid tenantId, CancellationToken cancellationToken)
+    /// <param name="client">
+    /// The client's details AS SUBMITTED. Taken as a parameter rather than read off the request, because
+    /// the request no longer holds them: its name, suffix, email and mobile are read-throughs onto the
+    /// very Person this method is about to write, so reading them here would be asking the answer to
+    /// produce itself.
+    /// </param>
+    private async Task<Guid> ResolveClientPersonAsync(
+        REMS rems, ClientDetails client, Guid tenantId, CancellationToken cancellationToken)
     {
-        // Two names and a particle, on purpose. The FIRST/LAST split runs on the requested name alone —
+        // Two names and a particle, on purpose. The FIRST/LAST split runs on the submitted name alone —
         // "Jr." is neither a given name nor a family one, and a Person filed with it stuck on LastName is
-        // a Person nobody finds by searching for their surname. The DISPLAY name is the one it reads in
-        // front of, and the SUFFIX column is where it is stored in its own right.
+        // a Person nobody finds by searching for their surname. The DISPLAY name is the one it reads on
+        // the end of, and the SUFFIX column is where it is stored in its own right.
         //
         // That column is what the client picker offers the particle from: without it a partner who picked
         // "John Smith" off the list had no way to tell him from his father, and the Suffix box beside the
         // search stayed empty however the request that minted him was filled in.
-        var name = rems.RequestedClientName?.Trim() ?? string.Empty;
-        var displayName = rems.ClientDisplayName.Trim();
-        var suffix = Normalize(rems.ClientNameSuffix);
-        var email = Normalize(rems.CustomerEmail);
-        var phone = Normalize(rems.CustomerMobileNumber);
+        var corporate = Normalize(client.CorporateName);
+        var isOrganisation = corporate is not null;
+        var suffix = isOrganisation ? null : Normalize(client.Suffix);
+        var email = Normalize(client.Email);
+        var phone = Normalize(client.Phone);
+
+        // The PARTS where the form sent them, the guessed split only where it did not. The form asks an
+        // individual for a first and a last name in two boxes now, so "Van Der Berg" arrives as a surname
+        // instead of becoming "Der Berg" behind a given name of "Van".
+        var (first, last) = isOrganisation
+            ? (string.Empty, string.Empty)
+            : Normalize(client.FirstName) is not null || Normalize(client.LastName) is not null
+                ? (Normalize(client.FirstName) ?? string.Empty, Normalize(client.LastName) ?? string.Empty)
+                : SplitName(client.Name?.Trim() ?? string.Empty);
+
+        // What the record reads as. An organisation is its legal name; a person is the two parts with the
+        // particle after them, in the order a name is WRITTEN — "John Smith Jr." Not the surname-first
+        // order the client lists sort by: that one is composed by the database on Person.ClientDisplayName
+        // and is a reading of this record, not a second copy of it.
+        var name = isOrganisation
+            ? corporate!
+            : string.Join(" ", new[] { first, last }.Where(p => p.Length > 0));
+        var displayName = suffix is null || name.Length == 0 ? name : $"{name} {suffix}";
 
         // Matched an existing client. A reference that no longer resolves (person deleted, or another
         // tenant's) falls through and is treated as a client we do not have.
@@ -1050,7 +1114,8 @@ public sealed class RemsRequestsController : ControllerBase
             && owned.SourceEntityId == rems.Id
             && !await _rems.IsClientPersonSharedAsync(ownedId, rems.Id, cancellationToken))
         {
-            var (first, last) = SplitName(name);
+            owned.PartyType = isOrganisation ? PartyType.Organisation : PartyType.Individual;
+            owned.CorporateName = corporate;
             owned.FirstName = first;
             owned.LastName = last;
             owned.Suffix = suffix;
@@ -1062,7 +1127,6 @@ public sealed class RemsRequestsController : ControllerBase
             return owned.Id;
         }
 
-        var (newFirst, newLast) = SplitName(name);
         var person = new Person
         {
             Id = Guid.NewGuid(),
@@ -1076,8 +1140,12 @@ public sealed class RemsRequestsController : ControllerBase
             // as captured on REMS-123".
             SourceEntityType = EntityType.Client,
             SourceEntityId = rems.Id,
-            FirstName = newFirst,
-            LastName = newLast,
+            // Which shape this record is. It decides where the name lives, how the client lists read it
+            // back, and whether the picker offers this record for an individual request or a corporate one.
+            PartyType = isOrganisation ? PartyType.Organisation : PartyType.Individual,
+            CorporateName = corporate,
+            FirstName = first,
+            LastName = last,
             Suffix = suffix,
             DisplayName = displayName,
             PrimaryEmail = email,
@@ -1132,7 +1200,7 @@ public sealed class RemsRequestsController : ControllerBase
         return StatusCode(StatusCodes.Status409Conflict, ApiResponseFactory.Error(
             CodeDuplicateEmail,
             "A client is already on file with that email address.",
-            $"“{holder.FullName}” is already on file with the email {trimmed}. Search for them in the "
+            $"“{holder.ClientDisplayName}” is already on file with the email {trimmed}. Search for them in the "
                 + "Client box and pick them, rather than filing a second record for the same client."));
     }
 
@@ -1211,7 +1279,7 @@ public sealed class RemsRequestsController : ControllerBase
         forms.TryGetValue(r.Id, out var form);
         var (ems, submission) = MapFormState(form);
         return new RemsRequestRow(
-            r.Id, r.REMSNumber, r.ClientDisplayName, r.RequestedClientName, r.ClientNameSuffix,
+            r.Id, r.REMSNumber, r.ClientDisplayName, r.ClientNameSuffix,
             r.Type!.Value, r.CreatedOnUtc, r.Status!.Value,
             r.CustomerEmail, r.CustomerMobileNumber,
             UserRefOf(r.AdminAssignedToId, names), UserRefOf(r.CSEId, names),
@@ -1241,7 +1309,10 @@ public sealed class RemsRequestsController : ControllerBase
 
         return new RemsRequestDetail(
             rems.Id, rems.REMSNumber, rems.Description, rems.ClientDisplayName,
-            rems.RequestedClientName, rems.ClientNameSuffix,
+            rems.ClientNameSuffix,
+            rems.ClientPerson?.IsOrganisation == true ? null : rems.ClientPerson?.FirstName,
+            rems.ClientPerson?.IsOrganisation == true ? null : rems.ClientPerson?.LastName,
+            rems.ClientPerson?.CorporateName,
             rems.Type!.Value, rems.Status!.Value, rems.CustomerEmail, rems.CustomerMobileNumber,
             rems.ExistingClientReferenceId, rems.ClientPersonId,
             UserRefOf(rems.AdminAssignedToId, names), UserRefOf(rems.CSEId, names),

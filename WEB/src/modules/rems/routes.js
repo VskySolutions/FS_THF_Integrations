@@ -1,4 +1,4 @@
-// REMS (Phase 16, initiator-first rebuild). THREE lists and one form.
+// REMS (Phase 16, initiator-first rebuild). THREE lists, one form, and one shared board.
 //
 // The Partner/CSE creates a request, fills the whole thing — client details AND engagement setup — and
 // sends the intake link to the client themselves. The Admin appears only once the client has answered,
@@ -32,6 +32,16 @@ export default [
         meta: { requiresAuth: true, permissions: ["rems.engagements.manage"], title: "EMS Review" }
       },
       { path: "client-forms", redirect: { name: "rems_ems_review" } },
+      {
+        // Related Entities: every submitted request whose client declared somebody ALONGSIDE themselves,
+        // and how far each of those related clients has got. Open to every signed-in user, and — unlike
+        // the three lists above — the rows are NOT narrowed to the caller's own requests: it is a shared
+        // tracking board, and the point of it is that anybody chasing a client group sees all of it.
+        path: "related-entities",
+        name: "rems_related_entities",
+        component: () => import("modules/rems/pages/RelatedEntities.vue"),
+        meta: { requiresAuth: true, title: "Related Entities" }
+      },
       // THE form (WO-118): one tabbed page covering client information and the complete engagement setup.
       // Replaces the old create/edit drawer, the entity tab strip and the four-step
       // Setup/Marketing/Commission/Approval wizard. Reached from both lists — what a given user may EDIT

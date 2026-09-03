@@ -4,6 +4,10 @@
   <q-badge :style="style" class="app-option-badge">
     <q-icon v-if="option.icon" :name="option.icon" size="13px" class="q-mr-xs" />
     {{ option.label }}
+    <!-- Trailing affordance, for the one place a badge is also a CONTROL: the Related Entities list sets a
+         status on the badge itself, and the chevron that says so has to sit inside the pill and in the
+         pill's own text colour. Empty everywhere else, so every other badge is unchanged. -->
+    <slot />
     <q-tooltip v-if="option.description" max-width="320px" :delay="300">{{ option.description }}</q-tooltip>
   </q-badge>
 </template>

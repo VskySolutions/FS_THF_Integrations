@@ -29,6 +29,15 @@ public static class DefaultOptionSets
     private const string Green = "#21BA45";
     private const string Brand = "#1f6478";
 
+    // ---- and the categorical half of it ----
+    // A status list is a PROGRESSION and reads as one — grey, then teal, then amber, then green. An entity
+    // type is not: Commercial is not further along than Insurance. So the three below exist to give that
+    // list six hues a reader can tell apart at a glance rather than a ramp implying an order that is not
+    // there. All are dark enough to carry white text, like every colour above them.
+    private const string Blue = "#0277bd";
+    private const string Slate = "#546e7a";
+    private const string Brown = "#6d4c41";
+
     /// <summary>
     /// <paramref name="Description"/> is what the value MEANS, surfaced as its tooltip wherever the value
     /// is offered or displayed. Worth filling in wherever the labels alone could be mistaken for one
@@ -45,7 +54,14 @@ public static class DefaultOptionSets
         /// <summary>Badge text colour, as hex.</summary>
         string? TextColor = null,
         /// <summary>Material icon name shown beside the value, e.g. <c>o_support_agent</c>.</summary>
-        string? Icon = null);
+        string? Icon = null,
+        /// <summary>
+        /// Whether the value is OFFERED. False seeds it hidden: the code stays on the list, records
+        /// already recorded against it keep reading correctly, and nothing new can be filed under it —
+        /// which is the difference between retiring a value and deleting one. A tenant can put it back
+        /// in Administration → Option Sets, so this is a starting position like every other field here.
+        /// </summary>
+        bool IsActive = true);
 
     /// <summary>
     /// Two different kinds of protection, because two different things can be true of a list.
@@ -160,6 +176,34 @@ public static class DefaultOptionSets
                 "Fully approved. Permanently read-only.",
                 BackgroundColor: Green, TextColor: OnDark),
         }, IsClosed: true),
+        // How far a client's RELATED client has got — the other people on an individual's return, and the
+        // other businesses a company named at intake. The Related Entities list draws one badge per row
+        // from this and is where it is set.
+        //
+        // SET BY HAND, always. Nothing in the workflow advances it: raising the follow-up request does
+        // not, approving it does not, and neither does the parent request. It is the firm's own note about
+        // work that largely happens outside this portal, so the value of it is that whoever is doing that
+        // work says where it stands.
+        //
+        // Which is why this is the one status list here that is NOT closed. Nothing branches on the set of
+        // values, so a firm that tracks a fifth position — declined, on hold, not applicable — can add it
+        // and every row can be set to it. The four seeded codes are locked against deletion and re-coding
+        // all the same: `not_initiated` is the value the server writes for a row nobody has answered for.
+        new Definition(EntityType.Rems, "REMS.RelatedEntityStatus", "REMS Related Entity Status", OptionItemSortMode.Custom, new[]
+        {
+            new ItemDefinition("not_initiated", "Not Initiated", 1, Description:
+                "Nothing has been raised for this related client yet. Every row starts here.",
+                BackgroundColor: Grey, TextColor: OnDark),
+            new ItemDefinition("rems_initiated", "REMS Initiated", 2, Description:
+                "A REMS request has been raised for this related client and is being worked.",
+                BackgroundColor: Teal, TextColor: OnDark),
+            new ItemDefinition("pending_approval", "Pending Approval", 3, Description:
+                "Their request has reached the approvers and is waiting on their decisions.",
+                BackgroundColor: Amber, TextColor: OnDark),
+            new ItemDefinition("approved", "Approved", 4, Description:
+                "Their engagement is approved — the end of the road for this row.",
+                BackgroundColor: Brand, TextColor: OnDark),
+        }, LockSeededValues: true),
         new Definition(EntityType.Rems, "REMS.BillingPeriod", "REMS Billing Period", OptionItemSortMode.Custom, new[]
         {
             // How often the client is billed. Pairs with the engagement's Description of Billing Process,
@@ -184,18 +228,29 @@ public static class DefaultOptionSets
             // "Business" was split into the three kinds THF actually onboards. All three ask the client
             // exactly the same questions the old single group did (EIN, CEO/CFO/AP, banker, lawyer) — see
             // RemsFormPayloadValidator.IsBusinessGroup, which is what keeps them one family on the form.
-            new ItemDefinition("individual", "Individual", 1),
-            new ItemDefinition("not_for_profit", "Not-for-Profit", 2),
-            new ItemDefinition("insurance", "Insurance", 3),
-            new ItemDefinition("commercial", "Commercial", 4),
-            new ItemDefinition("government", "Government", 5),
+            // COLOURED, because this is a badge now: the Related Entities list shows the entity type on
+            // every row, and it is what decides which question the client was asked — the individual's
+            // "Spouse & More Individuals", or everybody else's "Other Entities". Six hues rather than a
+            // ramp: these are categories, not stages. Like every colour here they are a STARTING point,
+            // recolourable in Administration → Option Sets.
+            new ItemDefinition("individual", "Individual", 1,
+                BackgroundColor: Teal, TextColor: OnDark),
+            new ItemDefinition("not_for_profit", "Not-for-Profit", 2,
+                BackgroundColor: Purple, TextColor: OnDark),
+            new ItemDefinition("insurance", "Insurance", 3,
+                BackgroundColor: Brand, TextColor: OnDark),
+            new ItemDefinition("commercial", "Commercial", 4,
+                BackgroundColor: Blue, TextColor: OnDark),
+            new ItemDefinition("government", "Government", 5,
+                BackgroundColor: Slate, TextColor: OnDark),
             // A trust or an estate is a legal entity with a name, a tax number and people who act for it,
             // so it is asked exactly what the three business groups are asked (see IsBusinessGroup) —
             // an EIN and the primary / financial / billing contacts. What it is NOT is an individual:
             // filing one as its trustee is what put the trust's affairs under a person's own name.
             new ItemDefinition("trust_estate", "Trust and Estate", 6, Description:
                 "A trust or a decedent's estate. Asked the same questions as a business — it has an EIN " +
-                "and is acted for by trustees or personal representatives rather than by an individual."),
+                "and is acted for by trustees or personal representatives rather than by an individual.",
+                BackgroundColor: Brown, TextColor: OnDark),
         // The client's intake form is SHAPED by these codes: individual asks for a spouse, the business
         // family for an EIN and three contacts, government for a finance director and a contract block
         // (RemsFormPayloadValidator). Deleting or re-coding one would leave submitted forms nobody can
@@ -280,7 +335,13 @@ public static class DefaultOptionSets
         {
             new ItemDefinition("cas", "CAS", 1),
             new ItemDefinition("tax", "Tax", 2),
-            new ItemDefinition("audit", "Audit", 3),
+            // RETIRED, not removed. The firm does not place new engagements in Audit — Assurance below is
+            // where attest work goes — but the code is branched on all over the setup (the signed CAF, the
+            // government contract block, the approval prerequisites) and engagements are already filed
+            // under it. Hidden from the picker leaves every one of those reading correctly while nothing
+            // new can be booked into it; deleting it would strand them. A firm that wants it back turns it
+            // on in Administration → Option Sets.
+            new ItemDefinition("audit", "Audit", 3, IsActive: false),
             new ItemDefinition("gcs", "GCS", 4),
             // Attest work priced for the engagement rather than for its first year. It is asked the signed
             // client-acceptance form the Audit department is, plus the client's fiscal year end and whether
@@ -290,7 +351,11 @@ public static class DefaultOptionSets
             // approval as client work. Carries no conditional detail: the audit and tax cards key off the
             // "audit" and "tax" codes specifically, so an Admin engagement asks for neither a signed CAF
             // nor a fiscal year end.
-            new ItemDefinition("admin", "Admin", 6),
+            //
+            // RETIRED for the same reason and in the same way as Audit above — hidden, not deleted. An
+            // engagement is a piece of CLIENT work, and the firm's own internal jobs stopped being booked
+            // through this setup; the ones already booked keep their department.
+            new ItemDefinition("admin", "Admin", 6, IsActive: false),
         // Everything conditional on the engagement setup keys off these codes by name — the signed CAF on
         // audit and assurance, the fiscal year end on tax, the purchase order on gcs, the billing pair on
         // cas, and the approval prerequisites behind all of them (RemsEngagementCodes). So the seeded six

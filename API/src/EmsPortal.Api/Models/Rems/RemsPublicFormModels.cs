@@ -71,6 +71,22 @@ public sealed class RemsFormPayloadV1
     public RemsAddressPayload? PhysicalAddress { get; set; }
     public RemsAddressPayload? MailingAddress { get; set; }
 
+    /// <summary>
+    /// The client said their post reaches them at the physical address. Read through
+    /// <see cref="EffectiveMailingAddress"/>, which is what everything downstream stages and validates.
+    /// <para>
+    /// A FLAG rather than an absent mailing address: "the same" is an answer, and one the client can
+    /// change later. The browser fills the mailing node with a copy on the way out as well, so a
+    /// submission is a complete record either way — this is what says the copy was the client's answer
+    /// and not two addresses that happen to match.
+    /// </para>
+    /// <para>
+    /// False on every payload written before the box existed, which is right: those forms required both
+    /// addresses, so whatever is in <see cref="MailingAddress"/> is what the client actually typed.
+    /// </para>
+    /// </summary>
+    public bool MailingSameAsPhysical { get; set; }
+
     // ---- Billing ----
 
     /// <summary>
@@ -119,8 +135,25 @@ public sealed class RemsFormPayloadV1
     public List<RemsRolePayload> AdditionalBillingContacts { get; set; } = new();
 
     // ---- Individual ----
+
+    /// <summary>
+    /// The other people on this client's return — a spouse, a child, anyone else the firm is preparing
+    /// for. Each carries how their return is filed and who is invoiced for it, which is what the retired
+    /// spouse fields below (and the retired <c>self</c> / <c>spouse</c> contact roles) never asked.
+    /// </summary>
+    public List<RemsAdditionalIndividualPayload> AdditionalIndividuals { get; set; } = new();
+
+    /// <summary>
+    /// The one spouse the form used to ask for in three plain boxes. RETIRED — see
+    /// <see cref="AdditionalIndividuals"/> — and read and round-tripped only, because a submission is the
+    /// immutable record of what the client sent.
+    /// </summary>
     public string? SpouseName { get; set; }
+
+    /// <inheritdoc cref="SpouseName"/>
     public string? SpousePhone { get; set; }
+
+    /// <inheritdoc cref="SpouseName"/>
     public string? SpouseEmail { get; set; }
 
     // ---- Business ----
@@ -161,6 +194,15 @@ public sealed class RemsFormPayloadV1
     /// <summary>The roles with the legacy keys folded in — always read the contacts through this.</summary>
     [JsonIgnore]
     public RemsRolesPayload EffectiveRoles => (Roles ?? new RemsRolesPayload()).Normalized();
+
+    /// <summary>
+    /// Where the client's post actually goes — the physical address when they said it is the same, and
+    /// the mailing node otherwise. Always read the mailing address through this: a client who ticked the
+    /// box has given us a mailing address, and a form that validated or staged the raw node would treat
+    /// them as having declined to.
+    /// </summary>
+    [JsonIgnore]
+    public RemsAddressPayload? EffectiveMailingAddress => MailingSameAsPhysical ? PhysicalAddress : MailingAddress;
 
     /// <summary>
     /// The billing addresses this payload actually carries, with the retired single
@@ -316,13 +358,14 @@ public sealed class RemsRolePayload
     }
 
     /// <summary>
-    /// The joined name with its generational particle in FRONT — "Jr. Jane Smith". What a materialised
+    /// The joined name with its generational particle AFTER it — "Jane Smith Jr.". What a materialised
     /// contact's <c>Person.DisplayName</c> is set from: DisplayName is the "as it reads" field, and it is
     /// what every REMS surface shows a contact by. The particle also travels separately into
     /// <c>Person.Suffix</c>, which is where it is EDITED; this is only how it reads.
     /// <para>
-    /// In front because that is the order the form asks in — the suffix box sits to the left of First
-    /// Name — and a screen whose job is to echo the answers back should not reorder them.
+    /// After, because that is where a generational particle is written, and it is the order the form asks
+    /// in — the suffix box sits to the right of Last Name — and a screen whose job is to echo the answers
+    /// back should not reorder them.
     /// </para>
     /// <para>
     /// The retired PREFIX is deliberately not in here. A Person holds one particle and it is the suffix,
@@ -346,7 +389,7 @@ public sealed class RemsRolePayload
             }
 
             var suffix = Suffix?.Trim();
-            return string.IsNullOrWhiteSpace(suffix) ? name : $"{suffix} {name}";
+            return string.IsNullOrWhiteSpace(suffix) ? name : $"{name} {suffix}";
         }
     }
 
@@ -463,6 +506,116 @@ public static class RemsNameSplit
     }
 }
 
+/// <summary>
+/// One of the other people on an individual client's return — a spouse, a child, anyone else the firm is
+/// preparing for.
+/// <para>
+/// The two answers that matter about them are how their return is FILED and who is INVOICED for it, and
+/// some of both are decided by what they are rather than by what they choose: a child files individually;
+/// a spouse on a joint return is billed to the primary client, and so is a minor child. Those rules are
+/// applied HERE, in the Effective* members, rather than trusted off the wire — the browser disables the
+/// controls and re-applies them on the way out, but a disabled control is a courtesy and this is the rule.
+/// </para>
+/// </summary>
+public sealed class RemsAdditionalIndividualPayload
+{
+    /// <summary>What they are to the client: <c>spouse</c>, <c>child</c> or <c>other</c>.</summary>
+    public const string TypeSpouse = "spouse";
+
+    /// <inheritdoc cref="TypeSpouse"/>
+    public const string TypeChild = "child";
+
+    /// <inheritdoc cref="TypeSpouse"/>
+    public const string TypeOther = "other";
+
+    /// <summary>How the return is filed: <c>joint</c> or <c>individual</c>.</summary>
+    public const string FilingJoint = "joint";
+
+    /// <inheritdoc cref="FilingJoint"/>
+    public const string FilingIndividual = "individual";
+
+    /// <summary>Who is invoiced: <c>primary</c> (the client) or <c>separate</c> (somebody named below).</summary>
+    public const string BillingPrimary = "primary";
+
+    /// <inheritdoc cref="BillingPrimary"/>
+    public const string BillingSeparate = "separate";
+
+    /// <summary>Stable client-supplied key tying this row to its payload node (never trusted as an id).</summary>
+    public string? SourceKey { get; set; }
+
+    public string? Type { get; set; }
+    public string? FilingType { get; set; }
+    public string? FirstName { get; set; }
+    public string? LastName { get; set; }
+    public string? Email { get; set; }
+    public string? Phone { get; set; }
+
+    /// <summary>Whether a child is still a minor. Null for anybody who is not a child — it is not asked.</summary>
+    public bool? IsMinor { get; set; }
+
+    public string? BillingPreference { get; set; }
+
+    /// <summary>Who to invoice instead of the client. Asked only where billing separately is open AND chosen.</summary>
+    public string? BillingFirstName { get; set; }
+
+    /// <inheritdoc cref="BillingFirstName"/>
+    public string? BillingLastName { get; set; }
+
+    /// <summary>True when anything was said about this person (a blank block is treated as absent).</summary>
+    [JsonIgnore]
+    public bool HasAny =>
+        !string.IsNullOrWhiteSpace(Type) || !string.IsNullOrWhiteSpace(FirstName)
+        || !string.IsNullOrWhiteSpace(LastName) || !string.IsNullOrWhiteSpace(Email)
+        || !string.IsNullOrWhiteSpace(Phone);
+
+    /// <summary>Their name, the two parts joined.</summary>
+    [JsonIgnore]
+    public string DisplayName => string.Join(
+        " ",
+        new[] { FirstName, LastName }.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p!.Trim()));
+
+    private string TypeCode => Type?.Trim().ToLowerInvariant() ?? string.Empty;
+
+    /// <summary>A child files individually, whatever the payload says.</summary>
+    [JsonIgnore]
+    public bool FilingLocked => TypeCode == TypeChild;
+
+    /// <summary>
+    /// A spouse on a JOINT return, and a minor child, are billed to the primary client whatever the
+    /// payload says. One return means one invoice, and it goes to whoever the return is filed under — so
+    /// a spouse who files individually has a return of their own, and who pays for it is a question again.
+    /// <para>
+    /// Both halves are read through the Effective* members rather than off the raw fields: a row with no
+    /// filing type is joint and a child with no answer to the minor question is a minor, which is what
+    /// the form defaults both to. Reading the raw values here would unlock separate billing for exactly
+    /// the rows the browser had locked.
+    /// </para>
+    /// </summary>
+    [JsonIgnore]
+    public bool BillingLocked =>
+        (TypeCode == TypeSpouse && EffectiveFilingType != FilingIndividual) || EffectiveIsMinor == true;
+
+    /// <summary>The filing type after the rules — the only one to store or show.</summary>
+    [JsonIgnore]
+    public string EffectiveFilingType => FilingLocked
+        ? FilingIndividual
+        : (string.IsNullOrWhiteSpace(FilingType) ? FilingJoint : FilingType.Trim().ToLowerInvariant());
+
+    /// <summary>The billing preference after the rules — the only one to store or show.</summary>
+    [JsonIgnore]
+    public string EffectiveBillingPreference => BillingLocked
+        ? BillingPrimary
+        : (string.IsNullOrWhiteSpace(BillingPreference) ? BillingPrimary : BillingPreference.Trim().ToLowerInvariant());
+
+    /// <summary>True where the form asks who to invoice instead of the client.</summary>
+    [JsonIgnore]
+    public bool AsksBillingName => !BillingLocked && EffectiveBillingPreference == BillingSeparate;
+
+    /// <summary>The minor answer after the rules: null for anybody who is not a child.</summary>
+    [JsonIgnore]
+    public bool? EffectiveIsMinor => TypeCode == TypeChild ? IsMinor ?? true : null;
+}
+
 /// <summary>A related / subsidiary entity node.</summary>
 public sealed class RemsRelatedEntityPayload
 {
@@ -560,7 +713,31 @@ public sealed record RemsReviewModel(
     IReadOnlyList<RemsReviewOtherEntity> OtherEntities,
     RemsReviewAddressGroup Address,
     IReadOnlyList<RemsReviewContactRow> AdditionalContacts,
-    RemsReviewBilling Billing);
+    RemsReviewBilling Billing,
+    /// <summary>
+    /// The other people on an individual's return, with the firm's rules already applied. Empty for every
+    /// other entity type, which is asked about contacts rather than about a family.
+    /// </summary>
+    IReadOnlyList<RemsReviewIndividual>? AdditionalIndividuals = null);
+
+/// <summary>
+/// One of the other people on an individual's return, as shown on review. Every value here is the
+/// EFFECTIVE one — a spouse reads "Billing to Primary" whatever the payload's own field says, because
+/// that is what will be recorded.
+/// </summary>
+public sealed record RemsReviewIndividual(
+    string? SourceKey,
+    string? Type,
+    string FilingType,
+    string? FirstName,
+    string? LastName,
+    string? Name,
+    string? Email,
+    string? Phone,
+    bool? IsMinor,
+    string BillingPreference,
+    string? BillingFirstName,
+    string? BillingLastName);
 
 /// <summary>
 /// The client themselves. <see cref="Email"/> is the locked request email; the two name parts are

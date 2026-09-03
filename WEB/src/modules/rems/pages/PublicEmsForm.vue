@@ -72,6 +72,7 @@
           v-model="payload" :industry-group="industryGroup" :errors="errors"
           :referral-sources="referralSources"
           @confirm-clear-entities="onConfirmClearEntities"
+          @confirm-clear-individuals="onConfirmClearIndividuals"
         />
 
         <!-- Remaining-required checklist (client-side gate for Review). -->
@@ -239,6 +240,17 @@ async function onConfirmClearEntities (applyClear) {
   if (ok) applyClear();
 }
 
+// The same bargain for the spouse / children card: answering "No" throws away everyone added to it.
+async function onConfirmClearIndividuals (applyClear) {
+  const ok = await confirm({
+    title: "Remove these people?",
+    message: "This will remove everyone you've added to this form.",
+    confirmLabel: "Remove",
+    type: "danger"
+  });
+  if (ok) applyClear();
+}
+
 // ---- Load ----
 function applySubmitted (res) {
   state.value = "Submitted";
@@ -377,8 +389,10 @@ onMounted(load);
 .pef {
   padding-bottom: 12px;
 }
+/* Trimmed with the cards below it: the intro is two lines, and 16px under it on a form this long is a
+   gap the client scrolls past rather than reads. */
 .pef-head {
-  margin-bottom: 16px;
+  margin-bottom: 10px;
 }
 .pef-card {
   border-radius: 12px;

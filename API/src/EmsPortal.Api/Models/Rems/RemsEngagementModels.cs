@@ -15,10 +15,12 @@ namespace EmsPortal.Api.Models.Rems;
 public sealed record RemsClientFormRow(
     Guid RemsId,
     string RemsNumber,
-    /// <summary>The client's name as it reads — the suffix in front of the requested name.</summary>
+    /// <summary>
+    /// The client's name as it reads — "Smith John Jr." for a person, the legal name for an organisation.
+    /// Surname first: a client list is scanned and sorted by family name.
+    /// </summary>
     string ClientName,
-    /// <summary>The two halves of that name, so the Client column can draw the particle in bold.</summary>
-    string RequestedClientName,
+    /// <summary>The generational particle, so the Client column can draw it in bold at the end of the name.</summary>
     string? ClientNameSuffix,
     string RequestStatus,
     bool HasForm,
@@ -162,7 +164,7 @@ public sealed record RemsEntityAddressView(Guid Id, string AddressType, RemsAddr
 
 /// <summary>
 /// An entity contact row (person resolved to name/email/phone). <paramref name="Name"/> is the person's
-/// DisplayName, which already reads with the particle in front; <paramref name="Suffix"/> repeats that
+/// DisplayName, which already reads with the particle after the name; <paramref name="Suffix"/> repeats that
 /// particle on its own so a surface can draw it in bold rather than hunt for it inside the name.
 /// </summary>
 public sealed record RemsEntityContactView(

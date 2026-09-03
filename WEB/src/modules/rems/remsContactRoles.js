@@ -52,15 +52,21 @@ export const ALL_ROLE_KEYS = [
 // its own asked the same question in a second place and left nothing saying which address the answer
 // belonged to. `billingContact` stays in ALL_ROLE_KEYS and in the labels above so a submission that
 // answered it still reads, and roleDefsFor's extraKeys is what puts it back on screen for those records.
+// An INDIVIDUAL is asked for none of them. "Self" was the client re-typing the name, email and phone the
+// first card had just asked them for, and "Spouse" asked for a name and an email where what the firm
+// needs to know about a second person on a return is how they file and who pays for it — which is what
+// the Spouse & More Individuals card asks, and which fits a spouse, children and anybody else. Both keys
+// stay in ALL_ROLE_KEYS and in the labels above so a submission that answered them still reads;
+// roleDefsFor's extraKeys is what puts them back on screen for those records.
 export const GROUP_ROLES = {
-  individual: ["self", "spouse"],
+  individual: [],
   business: ["primaryContact", "financialContact", "otherContact"],
   government: ["financeDirector", "otherContact"]
 };
 
 /// Which of them must be filled in. Mirrors RemsFormPayloadValidator.
 export const REQUIRED_ROLES = {
-  individual: ["self"],
+  individual: [],
   business: ["primaryContact", "financialContact"],
   government: ["financeDirector"]
 };
@@ -115,21 +121,21 @@ export const roleHasAny = hasAny;
  * Person.DisplayName is composed server-side (RemsRolePayload.NameWithSuffix) and is NOT this — a record
  * filed under "Jr. Jane Smith" is one nobody finds by surname.
  *
- * Both particles lead the name, in the order the form asks for them. RoleContactFields puts the suffix
- * box FIRST, before First Name and Last Name, so a client checking their answers here reads them in the
- * order they typed them — which is the whole premise of the review step. Rendering "Jane Smith Jr." meant
- * the one screen whose job is to echo the form back reordered it.
+ * The two particles sit at opposite ends, each where its own kind belongs: a courtesy title LEADS a name
+ * ("Mr. Jane Smith") and a generational suffix TRAILS it ("Jane Smith Jr."). That is also the order the
+ * form asks them in — RoleContactFields puts the suffix box after Last Name — so a client checking their
+ * answers here reads them in the order they typed them, which is the whole premise of the review step.
  *
- * Both ends are read because the two are not the same era. The intake form asks each contact for a
+ * Both are read because the two are not the same era. The intake form asks each contact for a
  * generational SUFFIX (Jr., Sr., III); it used to ask for a courtesy title instead, and a submission
- * saved under that form still carries one — so a contact answered before the change reads "Mr. Jane
- * Smith" and one answered after reads "Jr. Jane Smith", each as the client actually gave it. No record
- * carries both, so their order relative to each other never arises in practice.
+ * saved under that form still carries one. No record carries both, so their order relative to each other
+ * never arises in practice.
  */
 /**
  * The same two halves, unjoined, for a surface that RENDERS the name rather than needing a string —
- * AppNameWithSuffix draws the particle in bold, and cannot find it inside a joined name. The retired
- * courtesy prefix rides with the name: it is not the particle this is about, and no record carries both.
+ * AppNameWithSuffix draws the particle in bold after the name, and cannot find it inside a joined one.
+ * The retired courtesy prefix rides with the name: it leads a name rather than trailing it, so it is not
+ * the particle this is about, and no record carries both.
  */
 export const roleNameParts = (role) => ({
   name: [String(role?.prefix ?? "").trim(), roleDisplayName(role)].filter(Boolean).join(" "),
@@ -140,8 +146,8 @@ export const roleAddressedName = (role) => {
   const name = roleDisplayName(role);
   const prefix = String(role?.prefix ?? "").trim();
   const suffix = String(role?.suffix ?? "").trim();
-  // A particle with no name behind it is not a name — the caller renders the em dash for that instead.
-  return name ? [suffix, prefix, name].filter(Boolean).join(" ") : "";
+  // A particle with no name beside it is not a name — the caller renders the em dash for that instead.
+  return name ? [prefix, name, suffix].filter(Boolean).join(" ") : "";
 };
 
 /** Which role set an industry group is asked. The three business groups share one. */
@@ -178,13 +184,12 @@ export const answeredRoleKeys = (roles) =>
 export const CLIENT_NAME_SUFFIXES = NAME_SUFFIXES;
 
 /**
- * A client's name as it reads — the suffix in FRONT of the name ("Jr. John Smith"). Mirrors
+ * A client's name as it reads — the suffix AFTER the name ("John Smith Jr."). Mirrors
  * REMS.ClientDisplayName.
  *
- * In front, because that is the order the form asks in: the Suffix box sits to the LEFT of the name, and
- * every surface that shows a name echoes the order it was typed in. The contacts on the intake form have
- * always read this way (roleAddressedName); the client's own name reading the other way round was the one
- * place the platform disagreed with itself.
+ * After, because that is where a generational particle belongs and where the form asks for it: the Suffix
+ * box sits to the RIGHT of Last Name, and every surface that shows a name echoes the order it was typed
+ * in. The contacts on the intake form read the same way (roleAddressedName).
  */
 export const clientDisplayName = (name, suffix) =>
-  [String(suffix ?? "").trim(), String(name ?? "").trim()].filter(Boolean).join(" ");
+  [String(name ?? "").trim(), String(suffix ?? "").trim()].filter(Boolean).join(" ");

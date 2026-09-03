@@ -12,11 +12,13 @@ namespace EmsPortal.Api.Validators.Rems;
 /// form was built for. Returns a <see cref="ValidationResult"/> whose failures plug straight into
 /// <c>ApiResponseFactory.ValidationError</c>.
 /// <para>
-/// Required per group: Individual → a first and last name + <c>self</c>; Business → <c>ein</c> +
-/// <c>primaryContact</c>/<c>financialContact</c>; Government → <c>financeDirector</c>. The physical and
-/// mailing addresses are both required, as are each related entity's name and email address; a required
-/// role must carry a first name, a last name and a valid email. Billing addresses are optional in full,
-/// but one that has been started must carry a whole address, and a valid email where it gives one.
+/// Required per group: Individual → a first and last name (no contact roles at all); Business →
+/// <c>ein</c> + <c>primaryContact</c>/<c>financialContact</c>; Government → <c>financeDirector</c>. The
+/// physical address is always required and the mailing one unless the client said it is the same; a
+/// required role must carry a first name, a last name and a valid email. At least one billing block is
+/// required, and every block that carries anything must be whole — a name, a valid email address and a
+/// complete address. Related entities are asked of everyone EXCEPT an individual, and each one needs a
+/// name and an email address.
 /// </para>
 /// </summary>
 public sealed class RemsFormPayloadValidator
@@ -30,6 +32,13 @@ public sealed class RemsFormPayloadValidator
     /// Mirrors the browser's <c>MAX_BILLING_ADDRESSES</c>.
     /// </summary>
     public const int MaxBillingAddresses = 10;
+
+    /// <summary>
+    /// How many other people one individual client may declare on their return. The same kind of guard
+    /// <see cref="MaxBillingAddresses"/> is — against a stuck key, not against a real family. Mirrors the
+    /// browser's <c>MAX_ADDITIONAL_INDIVIDUALS</c>.
+    /// </summary>
+    public const int MaxAdditionalIndividuals = 10;
 
     // The business FAMILY: the kinds of business THF onboards are asked for exactly the same things, so
     // what separates them is what the client IS, not what the form asks.
@@ -85,23 +94,34 @@ public sealed class RemsFormPayloadValidator
             failures.Add(new ValidationFailure("clientName", "Client name is required."));
         }
 
-        // Both are required, unconditionally. The form offers a "copy from" button rather than a "same as"
-        // flag, so there is no flag to read and every client fills both in — which the browser enforces too.
+        // The physical address always. The mailing one only where the client said it differs — ticking
+        // "same as physical" IS giving us a mailing address, and EffectiveMailingAddress is the one node
+        // every reader downstream stages and shows.
         RequireAddress(failures, "physicalAddress", payload.PhysicalAddress);
-        RequireAddress(failures, "mailingAddress", payload.MailingAddress);
+        if (!payload.MailingSameAsPhysical)
+        {
+            RequireAddress(failures, "mailingAddress", payload.MailingAddress);
+        }
 
-        // Where invoices go, and who each one is addressed to. Every row is optional — a client who gives
-        // none is invoiced at their mailing address — but a row somebody has STARTED has to be finished:
-        // an invoice addressed to half an address reaches nobody. The addressee's NAME is not required
-        // even then, because plenty of clients are invoiced at a department rather than at a person.
+        // Billing: who each invoice is for, and where it goes. REQUIRED, and required in full — the firm
+        // bills somebody, and "whoever the post goes to, addressed to whoever is on the request" was a
+        // guess the form used to make on the client's behalf. A second block is the client's to add, and
+        // is held to exactly the same standard.
         //
-        // `billingEmail` — the retired two-box billing contact's address — is deliberately no longer
-        // checked. The form stopped asking for it, so a message about it would point at a box nobody can
-        // see, and the only payloads still carrying one are the record of a form that is gone.
+        // `billingEmail` — the retired two-box billing contact's address — is deliberately not checked.
+        // The form stopped asking for it, so a message about it would point at a box nobody can see, and
+        // the only payloads still carrying one are the record of a form that is gone.
         if (payload.BillingAddresses.Count > MaxBillingAddresses)
         {
             failures.Add(new ValidationFailure(
-                "billingAddresses", $"Give at most {MaxBillingAddresses} billing addresses."));
+                "billingAddresses", $"Give at most {MaxBillingAddresses} billing blocks."));
+        }
+
+        if (payload.EffectiveBillingAddresses.Count == 0)
+        {
+            failures.Add(new ValidationFailure(
+                "billingAddresses",
+                "Billing information is required — give a name, an email address and an address for the invoice."));
         }
 
         for (var i = 0; i < payload.BillingAddresses.Count; i++)
@@ -123,8 +143,31 @@ public sealed class RemsFormPayloadValidator
         // if/else rather than a switch: the business branch matches a FAMILY of codes, not one literal.
         if (industryGroup == Individual)
         {
-            RequireRole(failures, "roles.self", roles.Self);
-            OptionalRole(failures, "roles.spouse", roles.Spouse);
+            // No contact roles at all. "Self" was the client re-typing the name, email and phone the first
+            // card had just asked them for, and "Spouse" asked for a name where what the firm needs to
+            // know about a second person on a return is how it is filed and who pays for it — which the
+            // Spouse & More Individuals card asks, and which fits children too. A submission that carries
+            // either is still read, staged and shown; nothing on the form produces one any more.
+            //
+            // Everyone else on the return, with the type-driven rules the browser also enforces.
+            if (payload.AdditionalIndividuals.Count > MaxAdditionalIndividuals)
+            {
+                failures.Add(new ValidationFailure(
+                    "additionalIndividuals", $"Give at most {MaxAdditionalIndividuals} people here."));
+            }
+
+            for (var i = 0; i < payload.AdditionalIndividuals.Count; i++)
+            {
+                var individual = payload.AdditionalIndividuals[i];
+                // A block somebody opened and left empty is a change of mind, not an answer — the browser
+                // drops those on the way out, and one that arrives anyway is not worth nine complaints.
+                if (individual is not { HasAny: true })
+                {
+                    continue;
+                }
+
+                ValidateAdditionalIndividual(failures, $"additionalIndividuals[{i}]", individual);
+            }
         }
         else if (IsBusinessGroup(industryGroup))
         {
@@ -158,22 +201,29 @@ public sealed class RemsFormPayloadValidator
         // Each row is another of the client's businesses for the firm to set up separately, so it needs a
         // name to file it under and an email to reach it on — the request this row exists to prompt is
         // opened by emailing an intake form, so a row without an address becomes nothing. Phone optional.
-        for (var i = 0; i < payload.RelatedEntities.Count; i++)
+        //
+        // Not asked of an INDIVIDUAL, and so not checked for one: a person is not a holding structure, and
+        // the card is off their form. A payload that carries a row from before it was dropped is still
+        // read and still materialised — a complaint about it would point at a box nobody can see.
+        if (industryGroup != Individual)
         {
-            var related = payload.RelatedEntities[i];
-            RequireField(
-                failures, $"relatedEntities[{i}].fullName", related.FullName,
-                "A client / entity name is required for each additional entity.");
+            for (var i = 0; i < payload.RelatedEntities.Count; i++)
+            {
+                var related = payload.RelatedEntities[i];
+                RequireField(
+                    failures, $"relatedEntities[{i}].fullName", related.FullName,
+                    "A client / entity name is required for each additional entity.");
 
-            if (string.IsNullOrWhiteSpace(related.EmailAddress))
-            {
-                failures.Add(new ValidationFailure(
-                    $"relatedEntities[{i}].emailAddress", "An email address is required for each additional entity."));
-            }
-            else if (!IsEmail(related.EmailAddress))
-            {
-                failures.Add(new ValidationFailure(
-                    $"relatedEntities[{i}].emailAddress", "Email is not a valid email address."));
+                if (string.IsNullOrWhiteSpace(related.EmailAddress))
+                {
+                    failures.Add(new ValidationFailure(
+                        $"relatedEntities[{i}].emailAddress", "An email address is required for each additional entity."));
+                }
+                else if (!IsEmail(related.EmailAddress))
+                {
+                    failures.Add(new ValidationFailure(
+                        $"relatedEntities[{i}].emailAddress", "Email is not a valid email address."));
+                }
             }
         }
 
@@ -203,11 +253,14 @@ public sealed class RemsFormPayloadValidator
     }
 
     /// <summary>
-    /// A billing address the client has started. It is a place AND a person, and either half on its own
-    /// is a legitimate answer — an invoice can be addressed to "Accounts Payable" at a street, or emailed
-    /// to a named person with no street at all — so what is enforced is that whichever half they began is
-    /// complete: one postal line typed means the whole postal block. A row with nothing in it is not an
-    /// answer and never reaches here.
+    /// A billing block the client has started. It is a place AND a person, and the form asks for both:
+    /// an invoice needs somewhere to go and a name to be addressed to, and the two used to be optional
+    /// separately, which produced rows that were half an answer.
+    /// <para>
+    /// A block with nothing in it at all is not an answer and is skipped — the "at least one" rule above
+    /// is what catches a client who left every one of them blank, and complaining about nine fields on an
+    /// empty second block would bury it.
+    /// </para>
     /// </summary>
     private static void ValidateBillingAddress(
         List<ValidationFailure> failures, string prefix, RemsAddressPayload? address)
@@ -217,20 +270,71 @@ public sealed class RemsFormPayloadValidator
             return;
         }
 
-        if (address.HasAny)
-        {
-            RequireAddress(failures, prefix, address);
-        }
+        RequireAddress(failures, prefix, address);
 
-        if (!string.IsNullOrWhiteSpace(address.Email) && !IsEmail(address.Email))
+        RequireField(failures, $"{prefix}.firstName", address.FirstName, "First name is required.");
+        RequireField(failures, $"{prefix}.lastName", address.LastName, "Last name is required.");
+        RequireName(failures, $"{prefix}.firstName", address.FirstName, "First name");
+        RequireName(failures, $"{prefix}.lastName", address.LastName, "Last name");
+
+        if (string.IsNullOrWhiteSpace(address.Email))
+        {
+            failures.Add(new ValidationFailure($"{prefix}.email", "Email Address is required."));
+        }
+        else if (!IsEmail(address.Email))
+        {
+            failures.Add(new ValidationFailure($"{prefix}.email", "Email is not a valid email address."));
+        }
+    }
+
+    /// <summary>
+    /// One of the other people on an individual's return. Everything is required except the phone: the
+    /// type, the filing type, both names, a valid email address and the billing preference. Billing NAMES
+    /// are NOT required — the form stopped asking for them — but any that arrive are still shape-checked.
+    /// <para>
+    /// The TYPE is required because everything else about the row is read against it: it decides the
+    /// filing type, whether the minor question exists, and who is invoiced.
+    /// </para>
+    /// <para>
+    /// The filing type and the billing preference are checked on the RAW fields rather than through their
+    /// Effective* readings, which fall back to joint and to the primary client and so can never be blank.
+    /// Falling back is the right behaviour for materialising a row; it is the wrong behaviour for saying
+    /// whether the client answered, and this is the one place that question is being asked.
+    /// </para>
+    /// </summary>
+    private static void ValidateAdditionalIndividual(
+        List<ValidationFailure> failures, string prefix, RemsAdditionalIndividualPayload individual)
+    {
+        RequireField(failures, $"{prefix}.type", individual.Type, "A type is required (spouse, child or other).");
+        RequireField(
+            failures, $"{prefix}.filingType", individual.FilingType,
+            "A filing type is required (joint or individual).");
+        RequireField(failures, $"{prefix}.firstName", individual.FirstName, "First name is required.");
+        RequireField(failures, $"{prefix}.lastName", individual.LastName, "Last name is required.");
+        RequireName(failures, $"{prefix}.firstName", individual.FirstName, "First name");
+        RequireName(failures, $"{prefix}.lastName", individual.LastName, "Last name");
+        RequireField(
+            failures, $"{prefix}.billingPreference", individual.BillingPreference,
+            "A billing preference is required.");
+
+        if (string.IsNullOrWhiteSpace(individual.Email))
+        {
+            failures.Add(new ValidationFailure($"{prefix}.email", "Email Address is required."));
+        }
+        else if (!IsEmail(individual.Email))
         {
             failures.Add(new ValidationFailure($"{prefix}.email", "Email is not a valid email address."));
         }
 
-        // Whatever HAS been typed into the two name boxes has to read as a name. The addressee is never
-        // required, but it is printed on an invoice.
-        RequireName(failures, $"{prefix}.firstName", address.FirstName, "First name");
-        RequireName(failures, $"{prefix}.lastName", address.LastName, "Last name");
+        // Billing NAMES are no longer required, because the form no longer asks for them: the invoice for
+        // this person's return is addressed to this person, and asking the client to type their own
+        // child's name a second time to say so was asking them to repeat themselves.
+        //
+        // Still SHAPE-checked. The columns remain, older submissions carry values, and a client editing a
+        // draft raised before the change must not be able to save a phone number into a name box just
+        // because nothing insists the box is filled.
+        RequireName(failures, $"{prefix}.billingFirstName", individual.BillingFirstName, "Billing first name");
+        RequireName(failures, $"{prefix}.billingLastName", individual.BillingLastName, "Billing last name");
     }
 
     /// <summary>A required role must carry a first name, a last name and a valid email; the phone is optional.</summary>

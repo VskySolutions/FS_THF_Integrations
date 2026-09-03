@@ -70,16 +70,16 @@
         </q-td>
       </template>
       <template #body-cell-actions="cell">
-        <q-td :props="cell" class="text-right">
+        <q-td :props="cell">
           <q-btn flat round dense color="primary" icon="o_visibility" :to="{ name: 'option_set_detail', params: { id: cell.row.id } }">
             <q-tooltip>View / manage values</q-tooltip>
           </q-btn>
-          <q-btn v-if="cell.row.isEditable && canManage" flat round dense color="primary" icon="o_edit" @click="openEdit(cell.row)">
+          <q-btn v-if="cell.row.isEditable && canManage" type="a" flat round dense color="primary" icon="o_edit" @click="openEdit(cell.row)">
             <q-tooltip>Edit</q-tooltip>
           </q-btn>
           <!-- A standard list's VALUES are editable, but the list itself cannot be deleted: feature code
                references its key, and the seeder would recreate it on the next restart anyway. -->
-          <q-btn v-if="!cell.row.isSystem && canManage" flat round dense color="negative" icon="o_delete" @click="remove(cell.row)">
+          <q-btn v-if="!cell.row.isSystem && canManage" type="a" flat round dense color="negative" icon="o_delete" @click="remove(cell.row)">
             <q-tooltip>Delete</q-tooltip>
           </q-btn>
         </q-td>
@@ -151,7 +151,7 @@ const columns = [
   { name: "origin", label: "Type", field: "isSystem", align: "left", default: true },
   { name: "isActive", label: "Status", field: "isActive", align: "left", default: true },
   ...auditColumns(),
-  { name: "actions", label: "Actions", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "left" }
 ];
 
 const sortModeLabel = (mode) => ({

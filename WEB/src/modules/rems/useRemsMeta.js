@@ -73,6 +73,16 @@ export const REMS_BUSINESS_INDUSTRY_GROUPS = Object.freeze([
 
 export const isBusinessIndustryGroup = (group) => REMS_BUSINESS_INDUSTRY_GROUPS.includes(group);
 
+// The Entity Type code (REMS.IndustryGroup value) for a person rather than an organisation. It is the
+// one entity type asked "Spouse & More Individuals"; every other type is asked "Other Entities" instead.
+// Which means it is also what decides how the Related Entities list reads a request: an individual's
+// related clients are a FAMILY — a parent and the people on their return — and a company's are simply
+// its other entities, with no parent/child relationship captured anywhere.
+export const REMS_ENTITY_TYPE_INDIVIDUAL = "individual";
+
+/** Whether a request's entity type is the individual one — see REMS_ENTITY_TYPE_INDIVIDUAL. */
+export const isIndividualEntityType = (entityType) => entityType === REMS_ENTITY_TYPE_INDIVIDUAL;
+
 // ---- Which industries belong to which entity type ----
 //
 // Entity type and trade do not partition cleanly — a hospital is Health Care whether it is Commercial or
@@ -234,6 +244,13 @@ export function useRemsMeta () {
   const approvalStatusOption = (v) => optionFrom(options.approvalStatus, v);
   const engagementStatusOption = (v) => optionFrom(options.engagementStatus, v);
   const emailEventOption = (v) => optionFrom(options.emailEvent, v);
+  // How far one related client has got. Rendered as a badge AND offered as the choices behind it — the
+  // status moves only by hand, so the same option is what the row shows and what the dropdown sets.
+  const relatedEntityStatusOption = (v) => optionFrom(options.relatedEntityStatus, v);
+  // What kind of entity the client is. A badge as well as a word now: it is what decides which questions
+  // the client's intake asked, so on a list about what their intake produced it is a category worth
+  // seeing rather than reading. Six hues rather than a ramp — see DefaultOptionSets.
+  const industryGroupOption = (v) => optionFrom(options.industryGroup, v);
 
   // The label-only forms, for a table column's `field` (which sorts and searches on a string) and for the
   // few places a value is read as plain text rather than as a badge.
@@ -321,6 +338,10 @@ export function useRemsMeta () {
   // The approval-decision filter on the Approvals inbox, from the same list its badges are rendered from.
   const approvalStatusFilterOptions = computed(() => options.approvalStatus);
 
+  // The Related Entities list's status column: the same list drives the dropdown on every row and the
+  // filter in the drawer, so a firm that adds a fifth position can both set it and filter by it.
+  const relatedEntityStatusOptions = computed(() => options.relatedEntityStatus);
+
   return {
     typeLabel,
     typeHint,
@@ -343,6 +364,7 @@ export function useRemsMeta () {
     subIndustryOptions,
     statusFilterOptions,
     approvalStatusFilterOptions,
+    relatedEntityStatusOptions,
     // The badges: each hands back the whole option, for AppOptionBadge.
     requestStatusOption,
     formStatusOption,
@@ -352,6 +374,8 @@ export function useRemsMeta () {
     roundStatusOption,
     engagementStatusOption,
     emailEventOption,
+    relatedEntityStatusOption,
+    industryGroupOption,
     // …and the label-only forms, for a column's sort key or a line of plain text.
     requestStatusLabel,
     emsStateLabel,

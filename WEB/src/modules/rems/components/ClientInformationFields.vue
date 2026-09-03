@@ -1,72 +1,44 @@
 <template>
   <div>
-    <!-- Who they are and how to reach them: it is a single question, and the email is the address the
-         intake form is sent to rather than an afterthought below the name.
-         Four across on a desktop, two across on a tablet (the phone field splits into its own two), and
-         stacked on a phone — the sm step matters because without it a 700px window drops straight from
-         four columns to four full-width rows.
-         Once the client has answered, the page shares its width with their submitted form, and four
-         boxes across what is left of it are four cramped boxes. So in that state the name and its
-         suffix keep the first line and the two ways of reaching the client take the second — see
-         `compact` below. -->
+    <!-- ENTITY TYPE COMES FIRST, before the client is even named.
+         It is the question every other question here is asked in the light of: it decides which trades
+         the Industry list offers, which questions the client's own intake form will put to them, and —
+         for an individual — how the client's name is asked for at all. Asking it fourth meant filling in
+         a name and a trade and then discovering that answering this changed both.
+         Fixed once the intake form goes out, which is why it locks rather than disappears. -->
     <div class="row q-col-gutter-md">
-      <!-- The generational particle on the name — Jr., Sr., II, III, IV — in a box of its own, and in
-           front of the search box rather than after it. Two reasons it is separate: the search matches
-           THF's client records, and "John Smith Jr." finds nothing where "John Smith" finds the man; and
-           a Person is filed under a given name and a family name, neither of which "Jr." is. It is
-           appended to the name wherever the client is shown.
-           Free text with the five as suggestions: the list is what most clients need, not all any client
-           may have, and a suffix nobody thought to seed is not a reason to file somebody under the wrong
-           name. Locked with the rest of the client's identity once the intake form has gone out. -->
-      <app-text-field
-        v-model="model.clientNameSuffix" label="Suffix" :class="suffixCols"
-        placeholder="Jr." :readonly="readonly || clientLocked"
-        :error="suffixTooLong" error-message="A suffix is at most 16 characters."
-      >
-        <template #append>
-          <q-icon v-if="clientLocked" name="o_lock" size="18px" color="grey-6" />
-          <q-btn
-            v-else-if="!readonly" flat dense round size="sm" icon="o_arrow_drop_down" color="grey-7"
-            aria-label="Suffix suggestions"
-          >
-            <q-menu anchor="bottom end" self="top end" auto-close>
-              <q-list dense style="min-width: 150px;">
-                <q-item
-                  v-for="opt in SUFFIX_OPTIONS" :key="opt.value"
-                  clickable :active="model.clientNameSuffix === opt.value"
-                  active-class="bg-grey-2 text-primary"
-                  @click="model.clientNameSuffix = opt.value"
-                >
-                  <q-item-section>
-                    <q-item-label>{{ opt.label }}</q-item-label>
-                    <q-item-label caption>{{ opt.caption }}</q-item-label>
-                  </q-item-section>
-                </q-item>
-                <q-separator />
-                <q-item clickable :disable="!model.clientNameSuffix" @click="model.clientNameSuffix = ''">
-                  <q-item-section class="text-grey-7">No suffix</q-item-section>
-                </q-item>
-              </q-list>
-            </q-menu>
-          </q-btn>
-        </template>
-      </app-text-field>
+      <app-select
+        :model-value="industryGroup" :options="industryGroupOptions" label="Entity Type" required
+        class="col-12 col-sm-6 col-md-4" :readonly="setupReadonly || industryLocked" :clearable="false"
+        :hint="industryLocked ? 'Locked — the intake form has been sent.' : ''"
+        info="What kind of entity the client is. It is asked first because it decides the rest: which questions the client's intake form asks, which trades the Industry list offers, and how the client's name is captured. Fixed once the form goes out — and an Audit for a Government entity is a Government Audit, which asks for a contract number."
+        @update:model-value="onEntityTypeChosen"
+      />
 
-      <!-- The col cell and the field are separate elements on purpose: the results menu is `fit`ted to
+      <!-- THE CLIENT SITS BESIDE THE ENTITY TYPE, because the one on the left is what the one on the
+           right is FOR: it decides which clients the search offers, and — once nobody matches — whether
+           the name is asked for in one box or three. Read together they are a single question, "who is
+           this request for", so they are on a single line.
+           The col cell and the field are separate elements on purpose: the results menu is `fit`ted to
            its parent, and a parent carrying the grid gutter's padding would hang the menu 16px wide of
            the box it belongs to. -->
       <div :class="nameCols">
-        <!-- The search box IS the client-name field. Picking a result links this request to that THF
-             record; typing a name nobody matched files it as a brand-new client under exactly what was
-             typed. -->
+        <!-- THE SEARCH BOX IS THE WAY IN, whichever kind of client this turns out to be. Picking a result
+             links the request to that record; typing a name nobody matches files a brand-new client. The
+             list is narrowed to the kind this entity type can be filed under — see the lookup call.
+             What differs between the two kinds is only where the TYPED name lands. For a company it is
+             the name itself, and this box is the only one needed. For a person it is not a name at all
+             until it has been split, so the three boxes below open to ask for it properly. -->
         <div class="app-field">
           <app-field-label label="Client" required />
           <q-input
             ref="clientFieldRef"
             v-model="clientQuery"
             outlined dense hide-bottom-space
-            :readonly="readonly || clientLocked"
-            placeholder="Search name, email or phone…"
+            :readonly="readonly || clientLocked || !industryGroup"
+            :placeholder="industryGroup
+              ? 'Search name, email or phone…'
+              : 'Choose an Entity Type first — it decides how the client is named.'"
             autocomplete="off"
             aria-label="Client"
             :error="attempted && !model.clientName"
@@ -115,12 +87,21 @@
                 clickable :active="i === activeIndex" active-class="bg-grey-2 text-primary"
                 @mousedown.prevent @click="pickClient(client)"
               >
+                <!-- A company or a person, said in the one place the difference is not obvious from the
+                     name. The list is already narrowed to the kind this entity type can be filed under,
+                     so this confirms the narrowing rather than making a choice — which is exactly what it
+                     is for: a picker that has quietly excluded half the clients should show which half it
+                     kept. -->
+                <q-item-section avatar class="cif-pick__kind">
+                  <q-icon
+                    :name="client.isOrganisation ? 'o_apartment' : 'o_person'"
+                    size="18px" color="grey-7"
+                  />
+                </q-item-section>
                 <q-item-section>
-                  <!-- The name AS IT READS — the generational particle in front of it, in bold. The
-                       search matched the name alone (a record filed under "Smith Jr." is one nobody
-                       finds by surname), but two clients who differ only by that particle are two
-                       different people, and a list offering both of them as "John Smith" asks the
-                       partner to pick blind. -->
+                  <!-- The name AS IT READS — surname first, with the generational particle after it and in
+                       bold. Two clients who differ only by that particle are two different people, and a
+                       list offering both of them as "Smith John" asks the partner to pick blind. -->
                   <q-item-label>
                     <app-name-with-suffix :name="client.name" :suffix="client.suffix" />
                   </q-item-label>
@@ -131,17 +112,122 @@
               </q-item>
               <q-item v-if="!clientOptions.length">
                 <q-item-section class="text-grey-7">
-                  No match — “{{ clientQuery.trim() }}” will be filed as a brand-new client.
+                  No match — “{{ clientQuery.trim() }}” will be filed as a brand-new
+                  {{ lookupKindLabel }}.
                 </q-item-section>
               </q-item>
             </q-list>
           </q-menu>
         </div>
       </div>
+    </div>
+
+    <!-- What the client is called and how to reach them — the answers that follow from the pair above.
+         Three across on a desktop and stacked on a phone; once the client has answered, the page shares
+         its width with their submitted form and the row folds to two (see `compact`).
+         Every field here waits on the row above: the name parts open only when the search finds nobody,
+         and the suffix, email and phone wait until it is known WHO the client is at all. On a request
+         still being searched, this row is empty — which is the point. -->
+    <div class="row q-col-gutter-md">
+      <!-- The generational particle on the name — Jr., Sr., II, III, IV — in a box of its own, and AFTER
+           the search box rather than in front of it: that is where it is read ("John Smith Jr."). Two
+           reasons it is separate at all: the search matches THF's client records, and "John Smith Jr."
+           finds nothing where "John Smith" finds the man; and a Person is filed under a given name and a
+           family name, neither of which "Jr." is. It is appended to the name wherever the client is shown.
+           Free text with the five as suggestions: the list is what most clients need, not all any client
+           may have, and a suffix nobody thought to seed is not a reason to file somebody under the wrong
+           name. Locked with the rest of the client's identity once the intake form has gone out. -->
+      <!-- A NEW INDIVIDUAL, asked for their name in the parts a name has — open only once the search has
+           come back with nobody, which is the moment this stops being a search and starts being a new
+           client. Seeded from what was typed into the box above, as a suggestion to correct rather than a
+           guess to live with: the platform files a person under a given name and a family name, and
+           splitting one box on the first space makes "Van Der Berg" a surname of "Der Berg" behind a given
+           name of "Van". These two also decide the order every client list reads and sorts in
+           ("Smith John Jr."), so guessing at them was guessing at that too. -->
+      <template v-if="showIndividualNameFields">
+        <!-- READ-ONLY on a client picked out of the list, and typed only for a new one. Renaming somebody
+             THF already has is not this request's to do — the server fills blanks on a matched client but
+             never overwrites their name, so an edit here would look accepted and save nothing. -->
+        <app-text-field
+          v-model="model.clientFirstName" label="First Name" required
+          :class="namePartCols" :readonly="nameReadonly"
+          :rules="nameRules('First Name')"
+          :error="attempted && !model.clientFirstName?.trim()"
+          error-message="A first name is required."
+          @update:model-value="onNamePartTyped"
+        >
+          <template v-if="nameReadonly" #append>
+            <q-icon name="o_lock" size="18px" color="grey-6" class="rf-note">
+              <q-tooltip anchor="top right" self="bottom right" max-width="300px" :delay="200">
+                {{ nameReadonlyNote }}
+              </q-tooltip>
+            </q-icon>
+          </template>
+        </app-text-field>
+        <app-text-field
+          v-model="model.clientLastName" label="Last Name" required
+          :class="namePartCols" :readonly="nameReadonly"
+          :rules="nameRules('Last Name')"
+          :error="attempted && !model.clientLastName?.trim()"
+          error-message="A last name is required."
+          @update:model-value="onNamePartTyped"
+        >
+          <template v-if="nameReadonly" #append>
+            <q-icon name="o_lock" size="18px" color="grey-6" class="rf-note">
+              <q-tooltip anchor="top right" self="bottom right" max-width="300px" :delay="200">
+                {{ nameReadonlyNote }}
+              </q-tooltip>
+            </q-icon>
+          </template>
+        </app-text-field>
+      </template>
+
+      <!-- Only once the client is KNOWN to be a person. A generational particle belongs to a human name,
+           so a company is never asked for one — and neither is a request whose entity type has not been
+           answered yet, because until it is there is nothing to say this name will be a person's.
+           Positive test (`is an individual`) rather than a negative one (`is not a company`): the
+           negative reads as true while the answer is still blank, which is how this box came to be on
+           screen before anybody had said what kind of client it belonged to. -->
+      <app-text-field
+        v-if="isIndividualClient && clientIdentitySettled"
+        v-model="model.clientNameSuffix" label="Suffix" :class="suffixCols"
+        placeholder="Jr." :readonly="readonly || clientLocked"
+        :error="suffixTooLong" error-message="A suffix is at most 16 characters."
+      >
+        <template #append>
+          <q-icon v-if="clientLocked" name="o_lock" size="18px" color="grey-6" />
+          <q-btn
+            v-else-if="!readonly" flat dense round size="sm" icon="o_arrow_drop_down" color="grey-7"
+            aria-label="Suffix suggestions"
+          >
+            <q-menu anchor="bottom end" self="top end" auto-close>
+              <q-list dense style="min-width: 150px;">
+                <q-item
+                  v-for="opt in SUFFIX_OPTIONS" :key="opt.value"
+                  clickable :active="model.clientNameSuffix === opt.value"
+                  active-class="bg-grey-2 text-primary"
+                  @click="model.clientNameSuffix = opt.value"
+                >
+                  <q-item-section>
+                    <q-item-label>{{ opt.label }}</q-item-label>
+                    <q-item-label caption>{{ opt.caption }}</q-item-label>
+                  </q-item-section>
+                </q-item>
+                <q-separator />
+                <q-item clickable :disable="!model.clientNameSuffix" @click="model.clientNameSuffix = ''">
+                  <q-item-section class="text-grey-7">No suffix</q-item-section>
+                </q-item>
+              </q-list>
+            </q-menu>
+          </q-btn>
+        </template>
+      </app-text-field>
 
       <!-- Required, not "one of email or mobile": the intake form is emailed, so a request without an
-           address has nowhere to send the thing the whole request exists to collect. -->
+           address has nowhere to send the thing the whole request exists to collect.
+           Held back while an individual client is still being searched for — see clientIdentitySettled. -->
       <app-text-field
+        v-if="clientIdentitySettled"
         v-model="model.customerEmail" label="Client Email Address" type="email" required
         placeholder="jane@company.com" :class="contactCols"
         :readonly="readonly || clientLocked"
@@ -159,13 +245,22 @@
         </template>
       </app-text-field>
 
-      <!-- Country + number: one component, one cell of the row it is given. -->
+      <!-- Country + number: one component, one cell of the row it is given. Held back with the email
+           beside it while an individual client is still being searched for. -->
       <app-phone-input
+        v-if="clientIdentitySettled"
         v-model="model.customerMobileNumber" v-model:country="mobileCountry"
         label="Client Phone Number" :class="contactCols" :readonly="readonly || clientLocked"
       />
     </div>
 
+    <!-- How the referral relates to THF's records — DERIVED from what was done above, not asked before
+         it. Picking a client out of the list means THF already has them; a name nobody matched means they
+         are new. Both are answers the act of filling the box has already given, so this shows what was
+         concluded rather than putting the question a second time.
+         Still clickable, because a conclusion is not a lock: a partner who knows this is a second
+         engagement for a client whose record has not been found yet can say so, and `typeChosenByUser`
+         then keeps their answer from being overwritten by the next keystroke. -->
     <div id="rf-type-question" class="rf-question">How does this referral relate to THF's records?</div>
 
     <div class="rf-chips" role="radiogroup" aria-labelledby="rf-type-question">
@@ -188,31 +283,28 @@
       Choose how this referral relates to THF's records.
     </div>
 
-    <!-- What kind of entity the client is, the trade they are in, and who at THF owns the relationship.
-         None of the three is a contact detail, but all three are answers about THIS CLIENT, and two of
-         them are what the client's own intake form is minted from — the entity type decides what they are
-         asked, and the CSE is filed with it on the same record and by the same write. Asking them over on
-         the setup tab described one client in two places, and made an initiator open a second tab before
-         the form could be sent at all.
-         They obey the SETUP's edit right rather than this tab's: in the two rework states the setup is
+    <!-- The trade the client is in, and who at THF owns the relationship. Neither is a contact detail,
+         but both are answers about THIS CLIENT, and the CSE is filed with the entity type on the same
+         record and by the same write. Asking them over on the setup tab described one client in two
+         places, and made an initiator open a second tab before the form could be sent at all.
+         The entity type these two sit under is at the TOP of this tab rather than here — it is asked
+         before the client is named, because it decides how the naming itself is asked.
+         Both obey the SETUP's edit right rather than this tab's: in the two rework states the setup is
          back with the initiator while the client's details above are not theirs to change. -->
     <div class="row q-col-gutter-md q-mt-md">
-      <app-select
-        :model-value="industryGroup" :options="industryGroupOptions" label="Entity Type" required
-        class="col-12 col-sm-6 col-md-4" :readonly="setupReadonly || industryLocked" :clearable="false"
-        :hint="industryLocked ? 'Locked — the intake form has been sent.' : ''"
-        info="What kind of entity the client is. Decides which questions the client's intake form asks and which trades the Industry list beside it offers, so it is fixed once the form goes out — and an Audit for a Government entity is a Government Audit, which asks for a contract number."
-        @update:model-value="onEntityTypeChosen"
-      />
-      <!-- Optional, and narrowed by the entity type beside it — a Government entity is offered the three
+      <!-- REQUIRED, and narrowed by the entity type ABOVE it — a Government entity is offered the three
            kinds of government and nothing else. The two do NOT partition cleanly, which is why the map
            behind this (REMS_INDUSTRY_BY_ENTITY_TYPE) is overlapping sets rather than a tree: Health Care
-           and Educational Institutions each appear under two entity types. Still clearable — a client
-           whose trade is not on the list is better left blank than filed under a wrong one. -->
+           and Educational Institutions each appear under two entity types.
+           It was optional until now. The trade is how an engagement is classified and reported on, and a
+           client whose trade nobody recorded at intake is one nobody goes back and records it for — so
+           it is asked once, here, while somebody is looking at the client. -->
       <app-select
-        :model-value="subIndustry" :options="industryOptions" label="Industry"
+        :model-value="subIndustry" :options="industryOptions" label="Industry" required
         class="col-12 col-sm-6 col-md-4" :readonly="setupReadonly"
         :hint="industryHint" :info="industryInfo"
+        :error="attempted && !!industryGroup && !subIndustry"
+        error-message="Choose the trade this client is in."
         @update:model-value="onIndustryPicked"
       />
       <!-- The Client Service Executive. Scoped to the "CSE" role, so an empty picker means nobody holds
@@ -273,9 +365,11 @@ import { remsApi, mediaApi } from "services/api";
 import { useNotify } from "composables/useNotify";
 import {
   useRemsMeta, remsIndustryOptions, remsIndustryFitsEntityType,
-  REMS_EXISTING_CLIENT_TYPES, REMS_TYPE_BRAND_NEW_CLIENT, REMS_TYPE_EXISTING_CLIENT
+  REMS_EXISTING_CLIENT_TYPES, REMS_TYPE_BRAND_NEW_CLIENT, REMS_TYPE_EXISTING_CLIENT,
+  isIndividualEntityType
 } from "modules/rems/useRemsMeta";
 import { CLIENT_NAME_SUFFIXES } from "modules/rems/remsContactRoles";
+import { nameRules } from "utils/personName";
 import { dialFromIso, DEFAULT_COUNTRY_ISO } from "composables/useCountries";
 import {
   ATTACHMENT_ACCEPT, ATTACHMENT_HINT, MAX_ATTACHMENT_FILES, MAX_ATTACHMENT_TOTAL_MB, MAX_UPLOAD_MB
@@ -351,14 +445,20 @@ const { typeHint, industryGroupLabel, subIndustryLabel } = useRemsMeta();
 // for a form this size, and it keeps the parent's save path reading one object.
 const model = reactive(props.modelValue);
 
-// The top row's columns. Four across the full page; the suffix and the name, then the email and the
-// phone, once the page is shared with the client's answers. The suffix leads and is narrow — it is a
-// particle in front of a name, so it gets a particle's width and never a half-row of its own — and the
-// two share a line even on a phone, which is how the pair reads as one answer.
+// The top row's columns. Four across the full page; the name and its suffix, then the email and the
+// phone, once the page is shared with the client's answers. The suffix follows the name and is narrow —
+// it is a particle on the end of a name, so it gets a particle's width and never a half-row of its own —
+// and the two share a line even on a phone, which is how the pair reads as one answer.
+// The client search box, sharing the first row with the Entity Type that decides what it offers. Wider
+// than the select beside it: it holds a whole client name, and its results menu is fitted to its width.
 const nameCols = computed(() =>
-  props.compact ? "col-8 col-sm-9" : "col-8 col-sm-10 col-md-4");
+  props.compact ? "col-12 col-sm-6" : "col-12 col-sm-6 col-md-5");
 const suffixCols = computed(() =>
   props.compact ? "col-4 col-sm-3" : "col-4 col-sm-2 col-md-2");
+// The two halves of a new individual's name, side by side under the search box that opened them. They
+// share a line with each other on anything but a phone, because they are one answer asked in two parts.
+const namePartCols = computed(() =>
+  props.compact ? "col-6" : "col-6 col-sm-6 col-md-3");
 const contactCols = computed(() =>
   props.compact ? "col-12 col-sm-6" : "col-12 col-sm-6 col-md-3");
 
@@ -448,6 +548,19 @@ const industryHint = computed(() =>
 // any engagement whose stored industry predates this pairing it would clear a saved answer on load — and
 // the auto-save would then make that permanent. This only ever runs when a human opens the dropdown.
 const onEntityTypeChosen = (value) => {
+  // The CLIENT goes first, before the new entity type is announced. Changing between a person and a
+  // company changes what a client even is here: the picker offers the other kind, the name is asked for
+  // in one box instead of two, and a client already picked is one this request can no longer be filed
+  // under. Left standing, a linked individual would sit under an entity type whose picker would never
+  // have offered them — and would save that way.
+  //
+  // Only when the KIND changes. Commercial → Insurance is still a company, and the organisation picked
+  // under one is perfectly valid under the other; clearing it there would be throwing away a good answer
+  // to make a point.
+  const wasIndividual = isIndividualEntityType(props.industryGroup);
+  const willBeIndividual = isIndividualEntityType(value);
+  if (!!props.industryGroup && wasIndividual !== willBeIndividual) resetClient();
+
   emit("update:industryGroup", value);
   industryCleared.value = "";
   if (remsIndustryFitsEntityType(value, props.subIndustry)) return;
@@ -529,7 +642,12 @@ const runLookup = (term) => {
   lookupTimer = setTimeout(async () => {
     let items = [];
     try {
-      items = (await remsApi.clientLookup(term)) || [];
+      // Narrowed by the entity type answered above: a request for an Individual can only be filed under
+      // a person, and one for any other entity type only under a company, so the picker offers the kind
+      // this request can actually use rather than everybody. Before the entity type is answered it is
+      // sent as null and the picker offers both — which is the honest answer at that point, and better
+      // than an empty list the reader cannot explain.
+      items = (await remsApi.clientLookup(term, props.industryGroup || undefined)) || [];
     } catch {
       // A failed lookup reads as "no match": filing the client as new is the only thing an empty result
       // would have allowed anyway.
@@ -542,11 +660,25 @@ const runLookup = (term) => {
     clientSearched.value = true;
     clientMenu.value = clientFocused.value;
     linkExactMatchIfSettled();
+    // The search has come back. If nobody matched and this is an individual, the two name boxes have just
+    // opened — fill them from what was typed so the common case needs no retyping.
+    if (!linkedClient.value) seedNamePartsFromQuery();
   }, LOOKUP_DEBOUNCE_MS);
 };
 
+// Which kind of client this request can be filed under, in the words the empty result uses. An entity
+// type that has not been answered yet says the neutral thing rather than guessing at one of the two.
+const lookupKindLabel = computed(() => {
+  if (!props.industryGroup) return "client";
+  return isIndividualEntityType(props.industryGroup) ? "individual client" : "organisation";
+});
+
 const autoType = (code) => (props.typeOptions.some((o) => o.value === code) ? code : "");
 
+// The request's Type is DERIVED, not asked. Picking a client out of the list means THF already has them;
+// a name nobody matched means they are new. Both are answers the act of filling the box has already
+// given, so asking for them again would be asking somebody to say twice what they have just done.
+// `typeChosenByUser` still lets a deliberate override stand — the derivation is a default, not a lock.
 const syncTypeToClient = () => {
   if (linkedClient.value) {
     if (!REMS_EXISTING_CLIENT_TYPES.includes(model.type)) model.type = autoType(REMS_TYPE_EXISTING_CLIENT);
@@ -556,11 +688,122 @@ const syncTypeToClient = () => {
   model.type = model.clientName ? autoType(REMS_TYPE_BRAND_NEW_CLIENT) : "";
 };
 
+// ---- What the search box's text becomes ----
+// The box is the way in for both kinds of client. What differs is only where a TYPED name lands once the
+// search has come back with nobody:
+//   organisation → straight into CorporateName. A company's name is one string and this box holds it.
+//   individual   → nothing yet. A person is filed under a given name and a family name, so the two boxes
+//                  below open, seeded from what was typed, and THEY are the name.
+const isIndividualClient = computed(() => isIndividualEntityType(props.industryGroup));
+
+// A company has no generational particle, so the Suffix box is not offered for one — nor on the picker,
+// where an organisation result carries none to fill it with.
+const isOrganisationClient = computed(() => !!props.industryGroup && !isIndividualClient.value);
+
+// Open once the search has actually run and found nobody. Before that the reader is still searching, and
+// two empty name boxes under a search box they have not finished using is a form getting ahead of them.
+// The search has run for an individual and come back with nobody — the moment this stops being a search
+// and starts being a new client. Kept apart from `showIndividualNameFields` below because
+// `clientIdentitySettled` needs THIS one: the boxes are also shown for a client who was found, and
+// defining the two in terms of each other would be circular.
+const individualSearchExhausted = computed(() =>
+  isIndividualClient.value && !linkedClient.value && clientSearched.value && !!clientQuery.value.trim());
+
+// Whether we yet know WHO this client is — and therefore whether the fields that describe them are worth
+// putting on screen.
+//
+// While an individual is still being searched for, they are not. The suffix, the email and the phone all
+// belong to one particular person, and mid-search there is no particular person: pick a result and all
+// three arrive filled from that record; find nobody and they belong to a new client whose name has not
+// been settled yet. Asking for them in between invites somebody to type the contact details of a client
+// the next keystroke replaces.
+//
+// Written as a list of the cases where the answer IS known, never as "not one of the cases where it is
+// not". A negative test reads as true while the entity type is still blank, which is how these fields —
+// and the suffix box above them — came to be on screen before anybody had said what kind of client this
+// was, let alone who.
+const clientIdentitySettled = computed(() => {
+  // Nothing at all is known until the entity type is answered: it is what decides whether the box beside
+  // it is a name or a search, so before it there is not even a question on screen for these to follow.
+  if (!props.industryGroup) return false;
+  // A client picked out of the list — all three of these arrive filled from that record.
+  if (linkedClient.value) return true;
+  // An organisation: the box being typed into IS the name, so there is no searching-then-revealing phase
+  // to wait out.
+  if (isOrganisationClient.value) return true;
+  // An individual: known once the search has come back with nobody and the name boxes have opened.
+  return individualSearchExhausted.value;
+});
+
+// A person's name, in the two parts it is filed under — shown whenever the client is KNOWN and is a
+// person, whether that is because one was picked out of the list or because none was found.
+//
+// On a picked client they are read-only (see the fields themselves). They are there to show WHO was
+// picked: the request lists show the name surname-first, so without these the only place the parts are
+// visible is the record itself. Filled from that record by pickClient.
+const showIndividualNameFields = computed(() =>
+  isIndividualClient.value && clientIdentitySettled.value);
+
+// A matched client's name is theirs, not this request's. ResolveClientPersonAsync fills BLANKS on a
+// client somebody picked — an email, a phone, a missing particle — but never renames them, so an editable
+// name box here would take a change, look as though it had been accepted, and save nothing.
+const nameReadonly = computed(() => props.readonly || props.clientLocked || !!linkedClient.value);
+const nameReadonlyNote = computed(() => (props.clientLocked
+  ? "Locked — the intake form has been sent."
+  : "This is a client THF already has. Their name is edited on their own record, not here — clear the " +
+    "client above to file a new one instead."));
+
+// The composed name the rest of the platform identifies this request by, kept in step with whichever
+// boxes are on screen. It is NOT the surname-first reading the client lists sort by — the database
+// composes that one from the parts — this is the name as it is written.
+const composeClientName = () => {
+  model.clientName = isOrganisationClient.value
+    ? (model.clientCorporateName || "").trim()
+    : [model.clientFirstName, model.clientLastName]
+      .map((p) => (p || "").trim()).filter(Boolean).join(" ");
+  syncTypeToClient();
+};
+
+const onNamePartTyped = () => {
+  model.clientCorporateName = "";
+  composeClientName();
+};
+
+// A SUGGESTION, not a decision. What was typed into the search box is split on the first space to fill
+// the two name boxes the moment they open, so the common case — "John Smith" — needs no retyping, and the
+// uncommon one is corrected in boxes the reader can see rather than by a rule they cannot.
+// Only ever into empty boxes: a reader who has already corrected the split must not have it undone by the
+// next keystroke in the search box above.
+const seedNamePartsFromQuery = () => {
+  if (!isIndividualClient.value || linkedClient.value) return;
+  if (model.clientFirstName?.trim() || model.clientLastName?.trim()) return;
+  const term = (clientQuery.value || "").trim();
+  if (!term) return;
+  const cut = term.indexOf(" ");
+  model.clientFirstName = cut === -1 ? term : term.slice(0, cut);
+  model.clientLastName = cut === -1 ? "" : term.slice(cut + 1).trim();
+  composeClientName();
+};
+
 const onClientTyped = (val) => {
   const term = (val || "").trim();
-  model.clientName = term;
   if (linkedClient.value && term !== (linkedClient.value.name || "").trim()) detachClient();
-  syncTypeToClient();
+
+  if (isOrganisationClient.value) {
+    // A company's name is one string, and this box is it. Straight to CorporateName, which is also what
+    // types the client record as an organisation when it saves.
+    model.clientCorporateName = term;
+    model.clientFirstName = "";
+    model.clientLastName = "";
+  } else {
+    // A person's name is not settled by this box — the two below settle it. Typing here only re-opens the
+    // search, and clearing it clears the name that was being built from the boxes it seeded.
+    if (!term) {
+      model.clientFirstName = "";
+      model.clientLastName = "";
+    }
+  }
+  composeClientName();
   runLookup(term);
 };
 
@@ -594,10 +837,17 @@ const pickClient = (client) => {
   releaseAutofill();
   linkedClient.value = client;
   clientQuery.value = client.name || "";
-  model.clientName = clientQuery.value.trim();
   model.existingClientReferenceId = client.id;
+  // The name in PARTS, straight off their record — the lookup returns them for exactly this. Composing
+  // clientName from the parts rather than taking the search result's own string keeps one rule for how a
+  // name is built, whether it came from a picker or from two boxes: the picker's `name` is the
+  // surname-first READING, which is not what the request should be identified by.
+  model.clientFirstName = client.firstName || "";
+  model.clientLastName = client.lastName || "";
+  model.clientCorporateName = client.corporateName || "";
+  composeClientName();
   // The particle on THEIR name, brought across with the name it belongs to. Without it a request raised
-  // against that record reads "John Smith" everywhere beside a list that says "Jr. John Smith" — and
+  // against that record reads "John Smith" everywhere beside a list that says "John Smith Jr." — and
   // that particle is the only thing telling him apart from his father, who is also a client. Only into
   // an empty box, and released again if the client is taken back out, exactly as the email and phone
   // below are.
@@ -633,17 +883,32 @@ const detachClient = () => {
 // loaded with a saved request belong to the client that was just removed just as much as autofilled ones
 // do. A locked email is the exception: the form has already gone to that address, so it is not ours to
 // clear (the field is read-only for the same reason).
-const clearClient = () => {
+// Everything the client answer consists of, put back to nothing. Two callers: the ✕ on the search box,
+// and a change of entity type that makes the client on screen one this request can no longer be filed
+// under.
+const resetClient = () => {
   clientQuery.value = "";
   model.clientName = "";
+  // Every part of the name goes with it, not just the joined string — the parts are what the request is
+  // actually saved from now, so leaving them behind would file the cleared client anyway.
+  model.clientFirstName = "";
+  model.clientLastName = "";
+  model.clientCorporateName = "";
   // The suffix belongs to the name it was typed beside, so it goes with it. Left standing, the next
   // client typed into this box would inherit the last one's "Jr.".
   model.clientNameSuffix = "";
+  // A manual "brand-new / existing" override belonged to the client being cleared. Released, so the next
+  // one derives its own answer rather than inheriting a decision made about somebody else.
+  typeChosenByUser.value = false;
   runLookup("");
   detachClient();
   if (!props.clientLocked) model.customerEmail = "";
   model.customerMobileNumber = "";
   mobileCountry.value = DEFAULT_DIAL_CODE;
+};
+
+const clearClient = () => {
+  resetClient();
   clientFieldRef.value?.focus();
 };
 
@@ -667,10 +932,14 @@ const linkExactMatchIfSettled = () => {
   notify.info(`“${match.name}” is already a THF client — linked to their record.`);
 };
 
+// Overriding the conclusion above. Marking it chosen is what stops the next keystroke in the search box
+// from deriving it away again.
 const chooseType = (value) => {
   if (props.readonly) return;
   typeChosenByUser.value = true;
   model.type = value;
+  // Saying "brand-new" lets go of whoever was linked: the name on screen is about to be filed as a new
+  // client, and leaving a reference to somebody else's record behind it would file it against them.
   if (value === REMS_TYPE_BRAND_NEW_CLIENT && linkedClient.value) detachClient();
 };
 
@@ -756,12 +1025,24 @@ onBeforeUnmount(() => {
 .rf-chip__info { opacity: 0.5; transition: opacity 0.15s; }
 .rf-chip:hover .rf-chip__info,
 .rf-chip--on .rf-chip__info { opacity: 0.9; }
-.rf-chip:not(:disabled):hover { border-color: var(--teal-300); background: var(--teal-050); }
+/* HOVER IS FOR THE CHIPS THAT ARE NOT SELECTED, and the :not() saying so is load-bearing.
+   Without it this selector — three classes — outspecifies `.rf-chip--on:hover`, which is two, and wins.
+   It sets only a background, so a hovered SELECTED chip was repainted to near-white while its text stayed
+   white: a chip with nothing readable on it. */
+.rf-chip:not(:disabled):not(.rf-chip--on):hover {
+  border-color: var(--teal-300);
+  background: var(--teal-050);
+}
 .rf-chip:focus-visible { outline: 2px solid var(--teal-500); outline-offset: 2px; }
-.rf-chip--on,
-.rf-chip--on:hover {
+.rf-chip--on {
   background: var(--teal-900);
   border-color: var(--teal-900);
   color: var(--white);
+}
+/* The selected chip still answers the pointer — one step lighter along the same ramp, so it stays dark
+   enough for the white text it keeps. A hover that changes nothing reads as a control that is dead. */
+.rf-chip--on:not(:disabled):hover {
+  background: var(--teal-800);
+  border-color: var(--teal-800);
 }
 </style>

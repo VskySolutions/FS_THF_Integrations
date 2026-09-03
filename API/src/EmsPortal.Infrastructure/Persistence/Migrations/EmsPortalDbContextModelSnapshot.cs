@@ -1391,6 +1391,17 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
+                    b.Property<string>("ClientDisplayName")
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)")
+                        .HasComputedColumnSql("COALESCE(NULLIF(LTRIM(RTRIM(\n    CASE WHEN [PartyType] = 1 THEN ISNULL([CorporateName], N'')\n         ELSE ISNULL(NULLIF(LTRIM(RTRIM([LastName])), N''), N'')\n            + CASE WHEN NULLIF(LTRIM(RTRIM([FirstName])), N'') IS NULL THEN N''\n                   ELSE N' ' + LTRIM(RTRIM([FirstName])) END\n            + CASE WHEN NULLIF(LTRIM(RTRIM([Suffix])), N'') IS NULL THEN N''\n                   ELSE N' ' + LTRIM(RTRIM([Suffix])) END\n    END)), N''), [DisplayName])", true);
+
+                    b.Property<string>("CorporateName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.Property<string>("CountryCode")
                         .HasMaxLength(8)
                         .HasColumnType("nvarchar(8)");
@@ -1474,6 +1485,9 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<int>("PartyType")
+                        .HasColumnType("int");
+
                     b.Property<string>("PersonCode")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -1532,6 +1546,8 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId");
 
                     b.HasIndex("SourceEntityType", "SourceEntityId");
+
+                    b.HasIndex("TenantId", "PartyType", "LastName");
 
                     b.ToTable("Persons", (string)null);
                 });
@@ -1598,10 +1614,6 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("CSEId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("ClientNameSuffix")
-                        .HasMaxLength(16)
-                        .HasColumnType("nvarchar(16)");
-
                     b.Property<Guid?>("ClientPersonId")
                         .HasColumnType("uniqueidentifier");
 
@@ -1610,14 +1622,6 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTime>("CreatedOnUtc")
                         .HasColumnType("datetime2");
-
-                    b.Property<string>("CustomerEmail")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<string>("CustomerMobileNumber")
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
 
                     b.Property<bool>("Deleted")
                         .HasColumnType("bit");
@@ -1638,11 +1642,6 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("RequestedClientName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
 
                     b.Property<Guid>("StatusId")
                         .HasColumnType("uniqueidentifier");
@@ -1727,6 +1726,9 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("REMSId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("RelatedStatusId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("SourceKey")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -1745,6 +1747,8 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("REMSId");
 
+                    b.HasIndex("RelatedStatusId");
+
                     b.HasIndex("TenantId");
 
                     b.HasIndex("TenantId", "REMSId", "CreatedREMSId");
@@ -1754,6 +1758,115 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .HasFilter("[Deleted] = 0");
 
                     b.ToTable("REMSAdditionalEntity", (string)null);
+                });
+
+            modelBuilder.Entity("EmsPortal.Domain.Entities.REMSAdditionalIndividual", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BillingFirstName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("BillingLastName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("BillingPreference")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("Deleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("FilingType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("FirstName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool?>("IsMinor")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LastName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("PersonId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PhoneNumber")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid>("REMSEntityId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("REMSId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("RelatedStatusId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RelationType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PersonId");
+
+                    b.HasIndex("REMSEntityId");
+
+                    b.HasIndex("REMSId");
+
+                    b.HasIndex("RelatedStatusId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "REMSEntityId");
+
+                    b.HasIndex("TenantId", "REMSId", "SourceKey")
+                        .IsUnique()
+                        .HasFilter("[Deleted] = 0");
+
+                    b.ToTable("REMSAdditionalIndividual", (string)null);
                 });
 
             modelBuilder.Entity("EmsPortal.Domain.Entities.REMSApprovalChecklistItem", b =>
@@ -4271,11 +4384,58 @@ namespace EmsPortal.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("EmsPortal.Domain.Entities.OptionSetItem", "RelatedStatus")
+                        .WithMany()
+                        .HasForeignKey("RelatedStatusId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("EmsPortal.Domain.Entities.Tenant", null)
                         .WithMany()
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("RelatedStatus");
+
+                    b.Navigation("Rems");
+                });
+
+            modelBuilder.Entity("EmsPortal.Domain.Entities.REMSAdditionalIndividual", b =>
+                {
+                    b.HasOne("EmsPortal.Domain.Entities.Person", "Person")
+                        .WithMany()
+                        .HasForeignKey("PersonId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("EmsPortal.Domain.Entities.REMSEntity", "Entity")
+                        .WithMany()
+                        .HasForeignKey("REMSEntityId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("EmsPortal.Domain.Entities.REMS", "Rems")
+                        .WithMany()
+                        .HasForeignKey("REMSId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("EmsPortal.Domain.Entities.OptionSetItem", "RelatedStatus")
+                        .WithMany()
+                        .HasForeignKey("RelatedStatusId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("EmsPortal.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Entity");
+
+                    b.Navigation("Person");
+
+                    b.Navigation("RelatedStatus");
 
                     b.Navigation("Rems");
                 });

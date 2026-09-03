@@ -61,32 +61,25 @@
       </template>
 
       <template #body-cell-actions="cell">
-        <q-td :props="cell" class="text-right">
+        <q-td :props="cell">
           <q-btn flat round dense color="primary" icon="o_visibility" :to="{ name: 'permission_group_detail', params: { id: cell.row.id } }">
             <q-tooltip>View</q-tooltip>
           </q-btn>
-          <q-btn flat round dense icon="o_more_vert">
-            <q-menu auto-close>
-              <q-list style="min-width: 190px;">
-                <q-item clickable :to="{ name: 'permission_group_detail', params: { id: cell.row.id } }">
-                  <q-item-section avatar><q-icon name="o_visibility" /></q-item-section>
-                  <q-item-section>View</q-item-section>
-                </q-item>
-                <q-item clickable @click="openEdit(cell.row)">
-                  <q-item-section avatar><q-icon name="o_edit" /></q-item-section>
-                  <q-item-section>Edit</q-item-section>
-                </q-item>
-                <q-item clickable @click="toggleStatus(cell.row)">
-                  <q-item-section avatar><q-icon :name="cell.row.isActive ? 'o_toggle_off' : 'o_toggle_on'" /></q-item-section>
-                  <q-item-section>{{ cell.row.isActive ? "Deactivate" : "Activate" }}</q-item-section>
-                </q-item>
-                <q-separator />
-                <q-item clickable @click="removeGroup(cell.row)">
-                  <q-item-section avatar><q-icon name="o_delete" color="negative" /></q-item-section>
-                  <q-item-section class="text-negative">Delete</q-item-section>
-                </q-item>
-              </q-list>
-            </q-menu>
+          <!-- One button per action, all of them on the row. View is not repeated: it is already the
+               button beside this one. -->
+          <q-btn type="a" flat round dense color="primary" icon="o_edit" @click="openEdit(cell.row)">
+            <q-tooltip>Edit</q-tooltip>
+          </q-btn>
+          <q-btn
+            type="a" flat round dense
+            :color="cell.row.isActive ? 'grey-8' : 'positive'"
+            :icon="cell.row.isActive ? 'o_toggle_off' : 'o_toggle_on'"
+            @click="toggleStatus(cell.row)"
+          >
+            <q-tooltip>{{ cell.row.isActive ? "Deactivate" : "Activate" }}</q-tooltip>
+          </q-btn>
+          <q-btn type="a" flat round dense color="negative" icon="o_delete" @click="removeGroup(cell.row)">
+            <q-tooltip>Delete</q-tooltip>
           </q-btn>
         </q-td>
       </template>
@@ -191,7 +184,7 @@ const columns = computed(() => [
   { name: "category", label: "Category", field: "category", align: "left", default: false, filterOptions: CATEGORY_OPTIONS },
   ...(canChooseTenant.value ? [{ name: "tenantName", label: "Tenant", field: "tenantName", align: "left", sortable: true, default: true, filterable: false }] : []),
   ...auditColumns(),
-  { name: "actions", label: "Actions", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "left" }
 ]);
 
 const { rows, loading, totalRecords, selected, search, filterOpen, pagination, load, onRequest } = useListTable({

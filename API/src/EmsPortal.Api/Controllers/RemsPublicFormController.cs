@@ -387,6 +387,11 @@ public sealed class RemsPublicFormController : ControllerBase
             {
                 await _rems.AddAdditionalEntityAsync(additional, ct);
             }
+            // After the entity and the Persons above, both of which these rows point at.
+            foreach (var individual in graph.AdditionalIndividuals)
+            {
+                await _rems.AddAdditionalIndividualAsync(individual, ct);
+            }
             if (graph.GovernmentDetail is not null)
             {
                 await _engagements.AddGovernmentDetailAsync(graph.GovernmentDetail, ct);
@@ -474,10 +479,18 @@ public sealed class RemsPublicFormController : ControllerBase
         });
         StageEntityAddresses(
             graph, tenantId, mainEntityId,
-            payload.PhysicalAddress, payload.MailingAddress, payload.EffectiveBillingAddresses);
+            payload.PhysicalAddress, payload.EffectiveMailingAddress, payload.EffectiveBillingAddresses);
         StageRoleContacts(
             graph, tenantId, form.REMSId, form.IndustryGroup!.Value, mainEntityId, payload.Roles,
             payload.AdditionalBillingContacts);
+        // Everyone else on this client's return. Asked of an individual only, and staged for an individual
+        // only: a payload that carries them under another entity type is one whose type was changed after
+        // the client answered, and those answers stay in the submission rather than becoming rows against
+        // a business.
+        if (string.Equals(form.IndustryGroup!.Value, RemsFormPayloadValidator.Individual, StringComparison.Ordinal))
+        {
+            StageAdditionalIndividuals(graph, tenantId, form.REMSId, mainEntityId, payload.AdditionalIndividuals);
+        }
 
         // Guarded on the engagement existing: a request written before the setup moved to the front could
         // reach here without one, and a contract detail with nothing to hang off would fail the insert.
@@ -554,6 +567,79 @@ public sealed class RemsPublicFormController : ControllerBase
             var address = NewAddress(payload, addressType);
             graph.Addresses.Add(address);
             graph.EntityAddresses.Add(NewEntityAddress(tenantId, entityId, address.Id, remsType));
+        }
+    }
+
+    /// <summary>
+    /// Stages the other people on an individual client's return — a spouse, a child, anyone else the firm
+    /// is preparing for.
+    /// <para>
+    /// Each becomes a <see cref="Person"/> AND a <see cref="REMSAdditionalIndividual"/>. The Person is so
+    /// they are findable in the CRM like anybody else the platform captures; the row beside it is the
+    /// record of what was DECLARED — the relation, the filing type, who is invoiced — none of which is a
+    /// property of a person, and all of which must survive somebody editing that person afterwards.
+    /// </para>
+    /// <para>
+    /// Not <see cref="REMSEntityContact"/> rows: an entity holds at most one contact per role, and a
+    /// client with three children has three people of one kind.
+    /// </para>
+    /// <para>
+    /// Every value is the EFFECTIVE one, so what is stored is what the firm's rules say rather than
+    /// whatever reached the endpoint: a child files individually, and a spouse on a joint return is
+    /// billed to the primary client, however the payload was assembled.
+    /// </para>
+    /// </summary>
+    private static void StageAdditionalIndividuals(
+        SubmitGraph graph, Guid tenantId, Guid sourceRemsId, Guid entityId,
+        IReadOnlyList<RemsAdditionalIndividualPayload> individuals)
+    {
+        var usedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var fallbackIndex = 0;
+        foreach (var individual in individuals)
+        {
+            if (individual is not { HasAny: true })
+            {
+                continue;
+            }
+
+            var person = new Person
+            {
+                Id = Guid.NewGuid(),
+                PersonCode = "PER-" + Guid.NewGuid().ToString("N").ToUpperInvariant(),
+                TenantId = tenantId,
+                SourceEntityType = EntityType.Rems,
+                SourceEntityId = sourceRemsId,
+                FirstName = Clean(individual.FirstName) ?? string.Empty,
+                LastName = Clean(individual.LastName) ?? string.Empty,
+                DisplayName = Clean(individual.DisplayName) ?? string.Empty,
+                PrimaryEmail = Clean(individual.Email),
+                MobileNumber = Clean(individual.Phone),
+                IsActive = true,
+                LastProfileUpdatedOn = DateTime.UtcNow,
+            };
+            graph.Persons.Add(person);
+
+            graph.AdditionalIndividuals.Add(new REMSAdditionalIndividual
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                REMSId = sourceRemsId,
+                REMSEntityId = entityId,
+                PersonId = person.Id,
+                SourceKey = UniqueIndividualKey(individual.SourceKey, usedKeys, ref fallbackIndex),
+                RelationType = Clean(individual.Type) ?? string.Empty,
+                FilingType = individual.EffectiveFilingType,
+                FirstName = person.FirstName,
+                LastName = person.LastName,
+                Email = person.PrimaryEmail,
+                PhoneNumber = person.MobileNumber,
+                IsMinor = individual.EffectiveIsMinor,
+                BillingPreference = individual.EffectiveBillingPreference,
+                // Only where the form asked. A name left behind a control the rules had since disabled is
+                // an answer nobody gave.
+                BillingFirstName = individual.AsksBillingName ? Clean(individual.BillingFirstName) : null,
+                BillingLastName = individual.AsksBillingName ? Clean(individual.BillingLastName) : null,
+            });
         }
     }
 
@@ -660,6 +746,7 @@ public sealed class RemsPublicFormController : ControllerBase
         public List<REMSEntityAddress> EntityAddresses { get; } = new();
         public List<REMSEntityContact> Contacts { get; } = new();
         public List<REMSAdditionalEntity> AdditionalEntities { get; } = new();
+        public List<REMSAdditionalIndividual> AdditionalIndividuals { get; } = new();
         public REMSEngagementGovernmentDetail? GovernmentDetail { get; set; }
     }
 
@@ -763,11 +850,12 @@ public sealed class RemsPublicFormController : ControllerBase
                 Clean(r.SourceKey), Clean(r.FullName), Clean(r.EmailAddress), Clean(r.PhoneNumber)))
             .ToList();
 
-        // Every address is shown as given. The old "mailing differs" flag decided whether there was a
-        // mailing address at all; the client now copies one forward and edits it, so each stands alone —
-        // and billing is however many places the client named, each with its own addressee.
+        // Every address is shown as it will be recorded, which for the mailing one means the physical
+        // address wherever the client ticked "same as physical" — the flag decides which node is the
+        // answer, and review reports the answer rather than the box it came out of. Billing is however
+        // many places the client named, each with its own addressee.
         var address = new RemsReviewAddressGroup(
-            NonEmpty(payload.PhysicalAddress), NonEmpty(payload.MailingAddress),
+            NonEmpty(payload.PhysicalAddress), NonEmpty(payload.EffectiveMailingAddress),
             payload.EffectiveBillingAddresses);
 
         RemsReviewContactRow Row(RemsRolePayload role, string roleName, bool isRequired)
@@ -793,7 +881,22 @@ public sealed class RemsPublicFormController : ControllerBase
         var billing = new RemsReviewBilling(
             Clean(payload.BillingContactName), Clean(payload.BillingEmail), extraBilling);
 
-        return new RemsReviewModel(contact, contract, others, address, additionalContacts, billing);
+        // The other people on an individual's return, with the firm's rules already applied — review
+        // shows what will be recorded, not what the boxes happened to hold.
+        var individuals = string.Equals(industryGroup, RemsFormPayloadValidator.Individual, StringComparison.Ordinal)
+            ? payload.AdditionalIndividuals
+                .Where(x => x is { HasAny: true })
+                .Select(x => new RemsReviewIndividual(
+                    Clean(x.SourceKey), Clean(x.Type), x.EffectiveFilingType,
+                    Clean(x.FirstName), Clean(x.LastName), Clean(x.DisplayName),
+                    Clean(x.Email), Clean(x.Phone), x.EffectiveIsMinor, x.EffectiveBillingPreference,
+                    x.AsksBillingName ? Clean(x.BillingFirstName) : null,
+                    x.AsksBillingName ? Clean(x.BillingLastName) : null))
+                .ToList()
+            : new List<RemsReviewIndividual>();
+
+        return new RemsReviewModel(
+            contact, contract, others, address, additionalContacts, billing, individuals);
     }
 
     // -------------------- Helpers --------------------
@@ -819,12 +922,18 @@ public sealed class RemsPublicFormController : ControllerBase
     /// </summary>
     private static RemsPublicPrefill BuildPrefill(REMS rems)
     {
-        // Off the BARE name. The particle is prefilled into the form's own Suffix box beside it, so it is
-        // carried across without ever landing in a name column — "Jr." is neither a given name nor a
-        // family one. Splitting the DISPLAY name instead would now put it in the FIRST name box, since it
-        // leads the name rather than trailing it.
-        var name = rems.RequestedClientName?.Trim() ?? string.Empty;
-        var (first, last) = RemsNameSplit.Split(name);
+        // STRAIGHT OFF THE CLIENT'S OWN RECORD, no splitting. The first and last name are two columns on
+        // the client's Person now, so the guess this used to make — first word given, the rest family —
+        // is not needed and was never right for "Van Der Berg". The particle is prefilled into the form's
+        // own Suffix box beside them, so it is carried across without ever landing in a name column.
+        //
+        // An ORGANISATION has neither: its legal name goes in the name box whole.
+        var person = rems.ClientPerson;
+        var first = person?.IsOrganisation == true ? string.Empty : person?.FirstName ?? string.Empty;
+        var last = person?.IsOrganisation == true ? string.Empty : person?.LastName ?? string.Empty;
+        var name = person?.IsOrganisation == true
+            ? person.CorporateName?.Trim() ?? string.Empty
+            : string.Join(" ", new[] { first, last }.Where(p => p.Length > 0));
         return new RemsPublicPrefill(
             name, first, last, rems.ClientNameSuffix,
             rems.CustomerEmail ?? string.Empty, rems.CustomerMobileNumber);
@@ -882,6 +991,29 @@ public sealed class RemsPublicFormController : ControllerBase
             yield return (roles.OtherContact, nameof(RemsContactRole.OtherContact), false);
             yield return (roles.BillingContact, nameof(RemsContactRole.BillingContact), false);   // retired
         }
+    }
+
+    /// <summary>
+    /// A per-request-unique source key for a declared individual, on the same terms as
+    /// <see cref="UniqueEntityKey"/> — the unique index on (tenant, request, key) is what it protects, and
+    /// a duplicate key would fail the insert at the end of a submit that had already built everything else.
+    /// "main" is not reserved here: that name means something on an ENTITY and nothing on a person.
+    /// </summary>
+    private static string UniqueIndividualKey(string? supplied, HashSet<string> used, ref int fallbackIndex)
+    {
+        var candidate = supplied?.Trim();
+        if (string.IsNullOrEmpty(candidate) || used.Contains(candidate))
+        {
+            do
+            {
+                candidate = $"individual-{++fallbackIndex}";
+            }
+            while (used.Contains(candidate));
+        }
+
+        candidate = candidate.Length > 64 ? candidate[..64] : candidate;
+        used.Add(candidate);
+        return candidate;
     }
 
     /// <summary>A per-client-unique, non-"main" source key for a related entity; never trusts the client value blindly.</summary>

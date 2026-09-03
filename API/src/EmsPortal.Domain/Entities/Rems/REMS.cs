@@ -65,39 +65,41 @@ public class REMS : AuditableEntity
     /// </summary>
     public Guid? ClientPersonId { get; set; }
 
-    /// <summary>Name of the client as requested at intake, WITHOUT the generational suffix.</summary>
-    public string RequestedClientName { get; set; } = string.Empty;
+    // ---- The client's own details are the CLIENT PERSON's ----
+    //
+    // A request used to carry its own copy of the client's name, generational suffix, email and mobile,
+    // beside a ClientPersonId pointing at the Person record for the same client. Two places holding one
+    // fact is one too many: editing the person left the request saying something else, and the lists, the
+    // emails and the intake link each read whichever copy they happened to reach.
+    //
+    // The four below are now READ-THROUGHS onto that Person. They keep their old names deliberately, so
+    // every surface that already asks a request for its client's email still asks the same question and
+    // gets a better answer. What changed is that none of them can be written any more — the client is
+    // saved by writing the PERSON (RemsRequestsController.ResolveClientPersonAsync).
+    //
+    // ClientPerson is AutoInclude'd (see RemsConfiguration), so these are populated on every read of a
+    // request without any caller having to remember an Include.
 
     /// <summary>
-    /// The generational suffix on the client's name — Jr., Sr., II, III, IV — kept apart from the name
-    /// itself. Free text with those five offered as suggestions: the list is what most clients need, not
-    /// what any client may have, and a suffix nobody thought to seed is not a reason to file a client
-    /// under the wrong name.
-    /// <para>
-    /// Held separately rather than typed into the name box so that the two are separable afterwards: a
-    /// person record splits into first and last name, and "Jr." belongs to neither. <see
-    /// cref="ClientDisplayName"/> is what puts them back together for reading.
-    /// </para>
-    /// </summary>
-    public string? ClientNameSuffix { get; set; }
-
-    /// <summary>
-    /// The client's name as it reads — the suffix in FRONT of the requested name ("Jr. John Smith"). This
-    /// is what every list, notification and email shows; <see cref="RequestedClientName"/> on its own
-    /// would drop the suffix silently wherever it was used.
+    /// The client's name as it reads — "Smith John Jr." for a person, the legal name for an organisation.
+    /// Composed by the database on <see cref="Person.ClientDisplayName"/>, which is why every list,
+    /// notification and email says it the same way and SQL can sort and search on it.
     /// </summary>
     [NotMapped]
-    public string ClientDisplayName => Append(RequestedClientName?.Trim() ?? string.Empty);
+    public string ClientDisplayName => ClientPerson?.ClientDisplayName ?? string.Empty;
+
+    /// <summary>The generational particle on the client's name — Jr., Sr., II, III, IV — or null.</summary>
+    [NotMapped]
+    public string? ClientNameSuffix => ClientPerson?.Suffix;
 
     /// <summary>
-    /// Any name of this client, read as it should be — with the request's suffix in front of it.
+    /// Any name of this client, read as it should be — with the client's own suffix after it.
     /// <para>
     /// Needed because the client's name exists in two places once their intake form comes back: the name
-    /// the request was raised under (<see cref="RequestedClientName"/>) and the name the CLIENT typed,
-    /// which is what <c>REMSClient.Name</c> and the main <c>REMSEntity.Name</c> hold. The intake form
-    /// never asks for a suffix — it is the firm's own particle on the name, set at intake — so a surface
-    /// showing the client's own version was showing "John Smith" where every list beside it said
-    /// "Jr. John Smith".
+    /// on the client's Person record, and the name the CLIENT typed, which is what <c>REMSClient.Name</c>
+    /// and the main <c>REMSEntity.Name</c> hold. The intake form never asks for a suffix — it is the
+    /// firm's own particle on the name, set at intake — so a surface showing the client's own version was
+    /// showing "John Smith" where every list beside it said "John Smith Jr.".
     /// </para>
     /// <para>
     /// A blank name falls back to <see cref="ClientDisplayName"/>; a name that already carries the suffix
@@ -107,37 +109,29 @@ public class REMS : AuditableEntity
     public string WithClientSuffix(string? name)
     {
         var trimmed = name?.Trim() ?? string.Empty;
-        // Via Append rather than ClientDisplayName so the blank case cannot recurse — ClientDisplayName is
-        // itself Append(RequestedClientName), and RequestedClientName can be empty on an unsaved request.
-        return Append(trimmed.Length == 0 ? RequestedClientName?.Trim() ?? string.Empty : trimmed);
-    }
-
-    /// <summary>
-    /// The name with its suffix in front, applied once — a name that already leads with it is left alone.
-    /// <para>
-    /// In FRONT, not on the end. The form asks for the suffix first, in the box to the left of the name,
-    /// and every surface that shows a name echoes the order it was asked in — that is what the contacts
-    /// on the intake form have always done (see <c>RemsRolePayload.NameWithSuffix</c>), and the client's
-    /// own name reading the other way round was the one place the platform disagreed with itself. It also
-    /// puts the particle where a reader scanning a column of identical names actually looks.
-    /// </para>
-    /// </summary>
-    private string Append(string name)
-    {
-        var suffix = ClientNameSuffix?.Trim() ?? string.Empty;
-        if (name.Length == 0 || suffix.Length == 0 || name.StartsWith(suffix + " ", StringComparison.OrdinalIgnoreCase))
+        if (trimmed.Length == 0)
         {
-            return name;
+            return ClientDisplayName;
         }
 
-        return $"{suffix} {name}";
+        var suffix = ClientNameSuffix?.Trim() ?? string.Empty;
+        if (suffix.Length == 0 || trimmed.EndsWith(" " + suffix, StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmed;
+        }
+
+        // ON THE END, not in front. That is where a generational particle is written — "John Smith Jr." —
+        // and it is the order the form asks in too: the suffix box sits to the right of Last Name.
+        return $"{trimmed} {suffix}";
     }
 
     /// <summary>Customer email used to reach out; required together-or-with mobile at app level.</summary>
-    public string? CustomerEmail { get; set; }
+    [NotMapped]
+    public string? CustomerEmail => ClientPerson?.PrimaryEmail;
 
     /// <summary>Customer mobile number; required together-or-with email at app level.</summary>
-    public string? CustomerMobileNumber { get; set; }
+    [NotMapped]
+    public string? CustomerMobileNumber => ClientPerson?.MobileNumber;
 
     /// <summary>
     /// The shareholder or CSE this request was raised FOR, when a delegate raised it on their behalf.

@@ -32,12 +32,10 @@ internal sealed class RemsConfiguration : IEntityTypeConfiguration<REMS>
         // joined by primary key; a caller that genuinely wants neither can say IgnoreAutoIncludes().
         builder.Navigation(r => r.Type).AutoInclude();
         builder.Navigation(r => r.Status).AutoInclude();
-        builder.Property(r => r.RequestedClientName).IsRequired().HasMaxLength(200);
-        // Room for a written-out suffix ("Junior") as well as the abbreviations offered, and no more:
-        // this is a name particle, not a second name field.
-        builder.Property(r => r.ClientNameSuffix).HasMaxLength(16);
-        builder.Property(r => r.CustomerEmail).HasMaxLength(256);
-        builder.Property(r => r.CustomerMobileNumber).HasMaxLength(32);
+        // AND SO IS THE CLIENT, for exactly the same reason. The request's name, suffix, email and mobile
+        // are read-throughs onto this Person now (see REMS), so a query that forgot it would not fail at
+        // the query — it would hand every surface a blank client name and a null email much later.
+        builder.Navigation(r => r.ClientPerson).AutoInclude();
 
         builder.HasOne<Tenant>().WithMany().HasForeignKey(r => r.TenantId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(r => r.TenantId);
@@ -106,10 +104,62 @@ internal sealed class RemsAdditionalEntityConfiguration : IEntityTypeConfigurati
         // not a child of the request that revealed it — and modelling it as a relationship would invite
         // exactly the parent/child reads that decision rules out.
 
+        // The hand-set progress status. Restrict like every other option-set reference: a value rows are
+        // recorded against is not one to delete out from under them.
+        builder.HasOne(a => a.RelatedStatus).WithMany().HasForeignKey(a => a.RelatedStatusId)
+            .OnDelete(DeleteBehavior.Restrict);
+        // ALWAYS loaded, for the same reason REMS.Status is: the Related Entities list reads the CODE
+        // behind this on every row, and a query that forgot to Include it fails during serialisation
+        // rather than at the query. One row on a tiny table, joined by primary key.
+        builder.Navigation(a => a.RelatedStatus).AutoInclude();
+
         builder.HasIndex(a => new { a.TenantId, a.REMSId, a.SourceKey }).IsUnique().HasFilter("[Deleted] = 0");
 
         // "Which of this client's other businesses still need an EMS" — the read behind the list flag.
         builder.HasIndex(a => new { a.TenantId, a.REMSId, a.CreatedREMSId });
+    }
+}
+
+internal sealed class RemsAdditionalIndividualConfiguration : IEntityTypeConfiguration<REMSAdditionalIndividual>
+{
+    public void Configure(EntityTypeBuilder<REMSAdditionalIndividual> builder)
+    {
+        builder.ToTable("REMSAdditionalIndividual");
+        builder.HasKey(a => a.Id);
+
+        builder.Property(a => a.SourceKey).IsRequired().HasMaxLength(64);
+        // Codes, not display words — spouse / child / other, joint / individual, primary / separate.
+        builder.Property(a => a.RelationType).IsRequired().HasMaxLength(32);
+        builder.Property(a => a.FilingType).IsRequired().HasMaxLength(32);
+        builder.Property(a => a.BillingPreference).IsRequired().HasMaxLength(32);
+        builder.Property(a => a.FirstName).IsRequired().HasMaxLength(100);
+        builder.Property(a => a.LastName).IsRequired().HasMaxLength(100);
+        builder.Property(a => a.Email).HasMaxLength(256);
+        builder.Property(a => a.PhoneNumber).HasMaxLength(32);
+        builder.Property(a => a.BillingFirstName).HasMaxLength(100);
+        builder.Property(a => a.BillingLastName).HasMaxLength(100);
+
+        builder.HasOne<Tenant>().WithMany().HasForeignKey(a => a.TenantId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(a => a.TenantId);
+
+        // No inverse navigations: these rows are read through the request they were declared on, and a
+        // collection hanging off REMS would pull them into every graph traversal that saves one.
+        builder.HasOne(a => a.Rems).WithMany().HasForeignKey(a => a.REMSId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(a => a.Entity).WithMany().HasForeignKey(a => a.REMSEntityId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(a => a.Person).WithMany().HasForeignKey(a => a.PersonId).OnDelete(DeleteBehavior.Restrict);
+
+        // The hand-set progress status, exactly as on REMSAdditionalEntity — the Related Entities list
+        // shows both kinds of related client side by side and reads this on every row.
+        builder.HasOne(a => a.RelatedStatus).WithMany().HasForeignKey(a => a.RelatedStatusId)
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.Navigation(a => a.RelatedStatus).AutoInclude();
+
+        // One row per declared person per request. NOT keyed on the name: a client may genuinely have two
+        // children with the same first name, and the payload's own key is what identifies the block.
+        builder.HasIndex(a => new { a.TenantId, a.REMSId, a.SourceKey }).IsUnique().HasFilter("[Deleted] = 0");
+
+        // "Who else is on this entity's return" — the read every surface that shows them does.
+        builder.HasIndex(a => new { a.TenantId, a.REMSEntityId });
     }
 }
 

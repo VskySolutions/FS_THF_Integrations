@@ -20,27 +20,28 @@
         :label="required ? 'Required' : 'Optional'"
       />
     </div>
-    <div class="row q-col-gutter-md">
-      <!-- The generational particle on their name — Jr., Sr., III. Never required: most people have none,
-           and one guessed on their behalf is worse than none. In a box of its own because a Person is
-           filed under a given name and a family name, and "Jr." is neither — typed into the surname it
-           makes a contact nobody finds by searching for their name. -->
-      <app-name-suffix-field v-model="role.suffix" class="col-4 col-sm-2" />
+    <div class="row q-col-gutter-sm">
       <!-- Two boxes, because a contact becomes a Person and a Person is filed under a given name and a
            family name. One box asked the client to write a name and left the application guessing where
            to cut it — which put "Van Der Berg" in a first-name column often enough to matter. -->
       <!-- A contact becomes a Person record, so the two name boxes are held to what a name actually is:
            letters, and the hyphen / apostrophe / period that appear inside real ones. See utils/personName. -->
       <app-text-field
-        v-model="role.firstName" label="First Name" :required="required" class="col-8 col-sm-4"
+        v-model="role.firstName" label="First Name" :required="required" class="col-12 col-sm-6"
         :rules="nameRules('First Name')"
         :error="!!err('firstName')" :error-message="err('firstName')"
       />
       <app-text-field
-        v-model="role.lastName" label="Last Name" :required="required" class="col-12 col-sm-6"
+        v-model="role.lastName" label="Last Name" :required="required" class="col-8 col-sm-4"
         :rules="nameRules('Last Name')"
         :error="!!err('lastName')" :error-message="err('lastName')"
       />
+      <!-- The generational particle on their name — Jr., Sr., III. Never required: most people have none,
+           and one guessed on their behalf is worse than none. In a box of its own because a Person is
+           filed under a given name and a family name, and "Jr." is neither — typed into the surname it
+           makes a contact nobody finds by searching for their name. It sits AFTER the surname because
+           that is where it is read: "Jane Smith Jr.". -->
+      <app-name-suffix-field v-model="role.suffix" class="col-4 col-sm-2" />
       <app-text-field
         v-model="role.email" label="Email" type="email" :required="required" class="col-12 col-sm-6"
         :error="!!err('email')" :error-message="err('email')"
@@ -76,10 +77,12 @@ const err = (field) => (props.prefix ? props.errors[`${props.prefix}.${field}`] 
 </script>
 
 <style scoped>
+/* Padding and heading gap trimmed to match the rest of the intake form — several of these stack in one
+   card, so what each costs is paid for as many times as the group has contacts. */
 .role-block {
   border: 1px solid #e0e6ed;
   border-radius: 10px;
-  padding: 12px 14px;
+  padding: 10px 12px;
   background: #fff;
 }
 .role-block--required {
@@ -89,7 +92,7 @@ const err = (field) => (props.prefix ? props.errors[`${props.prefix}.${field}`] 
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 .role-block__title {
   font-size: 13px;

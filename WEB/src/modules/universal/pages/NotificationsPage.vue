@@ -73,16 +73,16 @@
       </template>
 
       <template #body-cell-actions="cell">
-        <q-td :props="cell" class="text-right">
+        <q-td :props="cell">
           <!-- Only offered where there is somewhere to go: a notification may carry no linked record. -->
           <q-btn
-            v-if="cell.row.entityType && cell.row.entityId"
+            v-if="cell.row.entityType && cell.row.entityId" type="a"
             flat round dense color="primary" icon="o_open_in_new" @click="open(cell.row)"
           >
             <q-tooltip>Open record</q-tooltip>
           </q-btn>
           <q-btn
-            v-if="!cell.row.isRead" flat round dense color="primary" icon="o_mark_email_read"
+            v-if="!cell.row.isRead" type="a" flat round dense color="primary" icon="o_mark_email_read"
             @click="markRead(cell.row)"
           >
             <q-tooltip>Mark read</q-tooltip>
@@ -148,7 +148,7 @@ const columns = computed(() => [
   { name: "notification", label: "Notification", field: "title", align: "left", default: true, filterable: false },
   { name: "createdOnUtc", label: "Received", field: "createdOnUtc", align: "left", sortable: true, default: true, filterable: false },
   { name: "status", label: "Status", field: "isRead", align: "left", default: true, filterOptions: READ_OPTIONS },
-  { name: "actions", label: "Actions", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "left" }
 ]);
 
 // Server filters with no column to hang off.

@@ -45,15 +45,17 @@
            seeing what a platform role grants is part of deciding who to give it to, changing it is a
            Super Admin's call — but who holds it in this tenant is still theirs to manage. -->
       <template #body-cell-actions="cell">
-        <q-td :props="cell" class="text-right">
+        <q-td :props="cell">
+          <!-- A LINK, not a click handler: the role detail is a place, so this renders as a real
+               <a href> and middle-click / "open in new tab" work on it. -->
           <q-btn
             flat round dense color="primary" :icon="cell.row.canManage ? 'o_edit' : 'o_visibility'"
-            @click="openRole(cell.row)"
+            :to="roleRoute(cell.row)"
           >
             <q-tooltip>{{ actionTooltip(cell.row) }}</q-tooltip>
           </q-btn>
           <q-btn
-            v-if="cell.row.canManage && !cell.row.isSystem" flat round dense color="negative"
+            v-if="cell.row.canManage && !cell.row.isSystem" type="a" flat round dense color="negative"
             icon="o_delete" @click="removeRole(cell.row)"
           >
             <q-tooltip>Delete</q-tooltip>
@@ -150,7 +152,7 @@ const columns = [
   },
   { name: "permissionCount", label: "Permissions", field: "permissionCount", align: "left", sortable: true, default: true, filterable: false },
   ...auditColumns(),
-  { name: "actions", label: "Actions", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "left" }
 ];
 
 const { rows, loading, search, pagination, load, onRequest } = useListTable({
@@ -190,7 +192,7 @@ const loadPermissions = async () => {
 // ---- Open ----
 // Editing a role happens on the role's own page. It is a record with permissions, composed groups and a
 // membership hanging off it — more than a drawer can hold, and worth a URL somebody can link to.
-const openRole = (row) => router.push({ name: "role_detail", params: { id: row.id } });
+const roleRoute = (row) => ({ name: "role_detail", params: { id: row.id } });
 
 const actionTooltip = (row) => (row.canManage ? "Open" : "View");
 

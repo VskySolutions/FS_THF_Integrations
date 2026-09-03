@@ -167,7 +167,7 @@
                     <div v-if="item.type === 'status'">
                       <app-option-badge :option="requestStatusOption(request)" />
                     </div>
-                    <!-- A row that names somebody: the particle in front and in bold, as everywhere else. -->
+                    <!-- A row that names somebody: the particle after the name and in bold, as everywhere else. -->
                     <div v-else-if="item.suffix !== undefined" class="rems-value">
                       <app-name-with-suffix :name="String(item.value ?? '')" :suffix="item.suffix" />
                     </div>
@@ -708,7 +708,7 @@ const requestRows = computed(() => {
   return [
     { label: "Request ID", value: r.remsNumber },
     // No Title row: a request has no title of its own any more — the client it is for is what names it.
-    { label: "Requested Client", value: r.requestedClientName, suffix: r.clientNameSuffix || "" },
+    { label: "Client", value: r.clientName, suffix: r.clientNameSuffix || "" },
     { label: "Type", value: typeLabel(r.type), hint: typeHint(r.type) },
     { label: "Request Status", type: "status" },
     { label: "Customer Email", value: text(r.customerEmail) },
@@ -887,7 +887,7 @@ const billingAddresses = computed(() =>
 
 // Who the invoice is addressed to, under the address it belongs to. The workspace address view carries
 // the addressee on the address itself, so this reads them off the same row; the name is handed over in
-// two halves so the particle can be drawn in front of it and in bold.
+// two halves so the particle can be drawn after it and in bold.
 const addressee = (address) => {
   const parts = addresseeParts(address);
   const reach = [address?.email, address?.phoneNumber].map((v) => String(v ?? "").trim()).filter(Boolean);
@@ -898,7 +898,7 @@ const addressee = (address) => {
 // A contact's DisplayName already reads with the particle on it. The particle is repeated on the row, so
 // it comes off again here and the two halves are drawn separately.
 //
-// Stripped from EITHER end: it leads the name on anything written since the order settled, and trails it
+// Stripped from EITHER end: it trails the name on anything written since the order settled, and leads it
 // on a contact materialised before that. Left on, an older record would render its particle twice.
 const nameWithoutSuffix = (contact) => {
   const name = String(contact?.name ?? "").trim();

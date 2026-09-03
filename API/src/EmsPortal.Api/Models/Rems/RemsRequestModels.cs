@@ -11,8 +11,27 @@ public sealed class CreateRemsRequestRequest
     /// <summary>Loose reference to an existing client (Person id) when the referral is for a client THF already has.</summary>
     public Guid? ExistingClientReferenceId { get; set; }
 
-    /// <summary>Client name at intake (required — filled from the selected person or free text).</summary>
+    /// <summary>
+    /// The client's name as one string. Still required — it is what a request is identified by — but for
+    /// an INDIVIDUAL it is now composed from the two boxes below rather than typed into one.
+    /// </summary>
     public string ClientName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The name in PARTS, for an individual client. The form asks for a first and a last name in two
+    /// boxes, so the split no longer has to be guessed — which it never got right for "Van Der Berg".
+    /// </summary>
+    public string? ClientFirstName { get; set; }
+
+    /// <inheritdoc cref="ClientFirstName"/>
+    public string? ClientLastName { get; set; }
+
+    /// <summary>
+    /// The legal name, for an ORGANISATION client — every entity type except Individual. Its presence is
+    /// what types the client's Person record as an organisation, and what puts the name somewhere other
+    /// than a first/last split that was never meant for a company.
+    /// </summary>
+    public string? ClientCorporateName { get; set; }
 
     /// <summary>
     /// The generational suffix on that name — Jr., Sr., II, III, IV — kept out of
@@ -54,6 +73,15 @@ public sealed class UpdateRemsRequestRequest
     public string? Description { get; set; }
     public string? Type { get; set; }
     public string? ClientName { get; set; }
+
+    /// <inheritdoc cref="CreateRemsRequestRequest.ClientFirstName"/>
+    public string? ClientFirstName { get; set; }
+
+    /// <inheritdoc cref="CreateRemsRequestRequest.ClientFirstName"/>
+    public string? ClientLastName { get; set; }
+
+    /// <inheritdoc cref="CreateRemsRequestRequest.ClientCorporateName"/>
+    public string? ClientCorporateName { get; set; }
 
     /// <summary>The client's generational suffix. Send <c>""</c> to clear it; omit it to leave it alone.</summary>
     public string? ClientNameSuffix { get; set; }
@@ -129,14 +157,12 @@ public sealed record RemsRowActions(
 public sealed record RemsRequestRow(
     Guid Id,
     string RemsNumber,
-    /// <summary>The client's name as it reads — the suffix in front of the requested name.</summary>
-    string ClientName,
     /// <summary>
-    /// The two halves of that name, so the Client column can draw the particle in bold and the name
-    /// beside it. <see cref="ClientName"/> stays the value the column SORTS and searches on; a joined
-    /// string is all that is useful for those, and all that a cell can render is the parts.
+    /// The client's name as it reads — "Smith John Jr." for a person, the legal name for an organisation.
+    /// Surname first: a client list is scanned and sorted by family name.
     /// </summary>
-    string RequestedClientName,
+    string ClientName,
+    /// <summary>The generational particle, so the Client column can draw it in bold at the end of the name.</summary>
     string? ClientNameSuffix,
     string Type,
     DateTime CreatedOnUtc,
@@ -171,14 +197,17 @@ public sealed record RemsRequestDetail(
     Guid Id,
     string RemsNumber,
     string? Description,
-    /// <summary>The client's name as it reads — the suffix in front of the requested name.</summary>
+    /// <summary>The client's name as it reads — the suffix after the requested name.</summary>
     string ClientName,
-    /// <summary>
-    /// The requested name WITHOUT the suffix, and the suffix itself. The form edits these two; every
-    /// other surface reads <see cref="ClientName"/>, which is the pair already joined.
-    /// </summary>
-    string RequestedClientName,
+    /// <summary>The generational particle, so a cell can draw it in bold at the end of the name.</summary>
     string? ClientNameSuffix,
+    /// <summary>
+    /// The name in PARTS, which is how the form asks for it: two boxes for an individual, one for an
+    /// organisation. <see cref="ClientName"/> is the composed reading of the same three, for display.
+    /// </summary>
+    string? ClientFirstName,
+    string? ClientLastName,
+    string? ClientCorporateName,
     string Type,
     string Status,
     string? CustomerEmail,
@@ -221,15 +250,62 @@ public sealed record RemsRequestDetail(
 /// than joined into it. The picker searches on the name, and a record filed as "John Smith Jr." is one
 /// nobody finds by typing "John Smith"; but two clients whose names differ only by that particle are two
 /// different people, and a list showing both as "John Smith" asks the caller to pick blind. So the name
-/// stays the name, and the picker draws the particle in front of it.
+/// stays the name, and the picker draws the particle after it.
 /// </para>
 /// </summary>
 public sealed record RemsClientLookupItem(
     Guid Id,
+    /// <summary>The name as it reads — "Smith John Jr." for a person, the legal name for an organisation.</summary>
     string Name,
     string? Email,
     string? Phone,
-    string? Suffix);
+    string? Suffix,
+    /// <summary>
+    /// The name in PARTS, so picking a result can fill the three boxes a person's name is asked in rather
+    /// than making the browser split a joined string and guess where the split was. Empty for an
+    /// organisation, which has neither.
+    /// </summary>
+    string FirstName,
+    string LastName,
+    /// <summary>The legal name, for an organisation. Null for a person.</summary>
+    string? CorporateName,
+    /// <summary>
+    /// Which of the two this is. The picker is already narrowed to one kind by the entity type, so this is
+    /// for the result ROW — a company and a person are worth telling apart on sight.
+    /// </summary>
+    bool IsOrganisation);
 
 /// <summary>An option in the assign-to-admin dropdown (WO-111).</summary>
 public sealed record RemsAdminOption(Guid Id, string Name, string? Email);
+
+/// <summary>
+/// The client's own details as a request submits them — the four things that used to be columns on
+/// <c>REMS</c> and now live on the client's <c>Person</c>.
+/// <para>
+/// It exists so <c>ResolveClientPersonAsync</c> can be handed what was SUBMITTED rather than reading it
+/// back off the request. The request's own name, suffix, email and mobile are read-throughs onto the very
+/// Person that method writes, so reading them there would be asking the answer to produce itself.
+/// </para>
+/// </summary>
+public sealed record ClientDetails(
+    string? Name,
+    string? Suffix,
+    string? Email,
+    string? Phone,
+    /// <summary>
+    /// The name in PARTS, for an individual client. The form asks for them in two boxes now, so the
+    /// first/last split no longer has to be guessed at — which it never got right for "Van Der Berg".
+    /// Null where the form sent only a joined name; <see cref="Name"/> is then split as before.
+    /// </summary>
+    string? FirstName = null,
+    string? LastName = null,
+    /// <summary>
+    /// The legal name, for an ORGANISATION client. Its presence is what says which kind this is: a
+    /// company has no first or last name to put in the two boxes above, and the person record it lands on
+    /// is typed <c>Organisation</c> because of this field and nothing else.
+    /// </summary>
+    string? CorporateName = null)
+{
+    /// <summary>Whether these details describe a company rather than a human.</summary>
+    public bool IsOrganisation => !string.IsNullOrWhiteSpace(CorporateName);
+}

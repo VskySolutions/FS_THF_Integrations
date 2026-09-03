@@ -60,7 +60,8 @@ internal sealed class PersonRepository : IPersonRepository
 
     public async Task<(IReadOnlyList<Person> Items, int Total)> ListAsync(
         string? search, Guid? tenantId, bool? isUser, bool? isActive, SortRequest sort, int page, int limit,
-        EntityType? sourceEntityType = null, CancellationToken cancellationToken = default)
+        EntityType? sourceEntityType = null, PartyType? partyType = null,
+        CancellationToken cancellationToken = default)
     {
         // Cross-tenant (Super Admin) reads pass an explicit tenant id and bypass the ambient filter;
         // everyone else gets the ambient-filtered set, pinned to their active tenant.
@@ -77,6 +78,12 @@ internal sealed class PersonRepository : IPersonRepository
                 p.FirstName.Contains(term) ||
                 p.LastName.Contains(term) ||
                 p.DisplayName.Contains(term) ||
+                // The organisation's legal name, and the client name as it READS — "Smith John Jr." —
+                // so a picker showing that string finds a row when somebody types what they can see.
+                // Without the first of these a company could only be found by whatever the first/last
+                // split had guessed at, which for an organisation is nothing at all.
+                (p.CorporateName != null && p.CorporateName.Contains(term)) ||
+                p.ClientDisplayName.Contains(term) ||
                 p.PersonCode.Contains(term) ||
                 (p.PrimaryEmail != null && p.PrimaryEmail.Contains(term)) ||
                 (p.MobileNumber != null && p.MobileNumber.Contains(term)));
@@ -93,6 +100,10 @@ internal sealed class PersonRepository : IPersonRepository
         if (sourceEntityType is { } source)
         {
             query = query.Where(p => p.SourceEntityType == source);
+        }
+        if (partyType is { } party)
+        {
+            query = query.Where(p => p.PartyType == party);
         }
 
         var total = await query.CountAsync(cancellationToken);

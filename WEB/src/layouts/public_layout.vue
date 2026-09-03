@@ -38,14 +38,16 @@
   height: 32px;
   margin-right: 12px;
 }
+/* The one page this layout carries is a long form, so the page gutter is kept modest — what is spent
+   here is spent before the client has answered anything. */
 .public-page {
   background: #f4f6fb;
-  padding: 24px 16px 48px;
+  padding: 16px 16px 28px;
 }
 /* A phone has no width to give away to a gutter: the form cards get it instead. */
 @media (max-width: 599px) {
   .public-page {
-    padding: 16px 10px 32px;
+    padding: 12px 10px 24px;
   }
 }
 .public-page__inner {

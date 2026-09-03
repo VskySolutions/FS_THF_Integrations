@@ -6,6 +6,7 @@ import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { usePins } from "composables/uf/usePins";
 import { useEntityMeta } from "composables/uf/useEntityMeta";
+import { ROW_COLOUR_PALETTE } from "composables/uf/useColourCodes";
 
 // Shared Universal Features per-record actions — pin, colour, reminder, copy permalink, export PDF.
 // Backs both the detail-header icon bar (EntityHeaderActions) and the list-row "more" menu
@@ -18,7 +19,9 @@ export function useEntityActions (entityType, entityId, label = "record", initia
   const { typeSlug } = useEntityMeta();
   const { pinned, busy, refresh: refreshPin, toggle: togglePin } = usePins(entityType, entityId, initialPinned);
 
-  const palette = ["#ef5350", "#ec407a", "#ab47bc", "#5c6bc0", "#42a5f5", "#26a69a", "#9ccc65", "#ffa726"];
+  // The platform's one palette — shared with the list-row marks (useColourCodes) so a colour picked on a
+  // record and a colour picked on its row are the same eight colours.
+  const palette = ROW_COLOUR_PALETTE;
   const currentColour = ref(null);
 
   const reminder = ref(null);

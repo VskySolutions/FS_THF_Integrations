@@ -554,7 +554,16 @@ export const remsApi = {
   remove: (id) => api.delete(`/api/rems/requests/${id}`).then(envelope),
   // Client picker: [{ id, name, email, phone, suffix }]. Any non-empty term searches; the server caps the
   // result set at 20. The suffix is beside the name, never joined into it — see RemsClientLookupItem.
-  clientLookup: (q) => api.get("/api/rems/clients/lookup", { params: { q } }).then(unwrap),
+  // Client picker: [{ id, name, email, phone, suffix, firstName, lastName, corporateName, isOrganisation }].
+  // `name` is the name as it READS — "Smith John Jr." for a person, the legal name for an organisation —
+  // and the parts beside it are what picking a result fills the form's own boxes from.
+  //
+  // `entityType` is the REMS.IndustryGroup code the request is being raised under, and it decides which
+  // KIND of client is offered: "individual" offers people, anything else offers organisations. Omit it
+  // before the entity type has been answered and the picker offers both, which is the honest answer at
+  // that point. Any non-empty term searches; the server caps the result set at 20.
+  clientLookup: (q, entityType) =>
+    api.get("/api/rems/clients/lookup", { params: { q, entityType } }).then(unwrap),
   // Users in the active tenant, by role: [{ id, name, email }].
   // Without `role`: Admin + Super Admin users. With `role`: the holders of that role — how the CSE /
   // Engagement Executive / Billing Manager pickers are scoped (see REMS_SEAT_ROLES). A role nobody holds
@@ -705,6 +714,33 @@ export const remsApi = {
   // regenerated (locked) approver list with engagementStatus now PendingApproval again.
   resubmitApproval: (engagementId) => api.post(`/api/rems/engagements/${engagementId}/approval/resubmit`).then(unwrap),
 
+  // ---- Related Entities ----
+  // Every submitted request whose client declared somebody ALONGSIDE themselves — the other people on an
+  // individual's return ("Spouse & More Individuals") and the other businesses every other entity type
+  // names ("Other Entities") — one row per REQUEST with its related clients nested.
+  //
+  // Open to every signed-in user and NOT narrowed to the caller's own requests, unlike every other REMS
+  // list: it is a shared tracking board.
+  //
+  // params: { page?, limit?, search?, entityType?, relatedStatus?, sortBy?, descending? } — search covers
+  // the REMS number, the client's name AND the related clients' names; entityType is a REMS.IndustryGroup
+  // code; relatedStatus is a REMS.RelatedEntityStatus code and matches a request holding at least one row
+  // at it. Server-side throughout. Returns the standard paginated envelope. Rows:
+  //   { remsId, remsNumber, clientName, clientNameSuffix, clientEmail, entityType,
+  //     requestStatus, submittedOnUtc, relatedCount,
+  //     parent: { name, suffix, jointWith: { name, relation } | null },
+  //     relatedClients: [{ kind, id, name, relation, email, phoneNumber, status, reference, createdRemsId }],
+  //     createdBy, createdOnUtc, updatedBy, updatedOnUtc }.
+  // `parent.jointWith` is a spouse filing JOINTLY — the same client, so they are named in the header
+  // rather than given a row. `reference` is the request a row produced, or a derived "REMS-1042-C1", and
+  // is null while the row is still Not Initiated and has produced nothing.
+  relatedEntities: (params) => api.get("/api/rems/related-entities", { params }).then(envelope),
+  // Move one related client along — the ONLY write on that list, and the only thing that changes a status:
+  // nothing in the workflow advances it. `kind` is the row's own ("individual" | "entity"), `status` a
+  // REMS.RelatedEntityStatus code. Returns the refreshed row (its reference appears with the status).
+  setRelatedEntityStatus: (kind, id, status) =>
+    api.put(`/api/rems/related-entities/${kind}/${id}/status`, { status }).then(unwrap),
+
   // ---- Approval inbox (WO-117 Part B / WO-114) — the caller's OWN approval tasks only ----
   // The caller's own approval tasks (pending + historical), newest round first. Paged and filtered
   // SERVER-side — params: { page?, limit?, search?, role?, status? }, where search covers the REMS number,
@@ -721,7 +757,7 @@ export const remsApi = {
   // material as the staff engagement workspace, since that is what is being signed off. Shape:
   //   { taskId, roundId, roundNumber, role, status, decidedOnUtc, rejectionReason, canDecide,
   //     checklist:[{ id, displayOrder, label, isCompleted, completedOnUtc }],
-  //     request:{ remsId, remsNumber, title, description, requestedClientName, type, status,
+  //     request:{ remsId, remsNumber, title, description, clientName, type, status,
   //       customerEmail, customerMobileNumber, industryGroup, emsFormState, clientSubmissionState,
   //       assignedAdmin, cse, requestedBy, createdOnUtc, files:[{ id, mediaId, fileName, mimeType, fileSize, url }] },
   //     engagement:{ engagementId, status, department, subServiceLine, subIndustry,

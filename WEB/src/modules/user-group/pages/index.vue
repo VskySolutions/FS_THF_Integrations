@@ -53,11 +53,11 @@
           </template>
 
           <template #body-cell-actions="cell">
-            <q-td :props="cell" class="text-right">
-              <q-btn flat round dense color="primary" icon="o_groups" @click="selectGroup(cell.row)">
+            <q-td :props="cell">
+              <q-btn type="a" flat round dense color="primary" icon="o_groups" @click="selectGroup(cell.row)">
                 <q-tooltip>View members</q-tooltip>
               </q-btn>
-              <q-btn flat round dense color="negative" icon="o_delete" @click="removeGroup(cell.row)">
+              <q-btn type="a" flat round dense color="negative" icon="o_delete" @click="removeGroup(cell.row)">
                 <q-tooltip>Delete</q-tooltip>
               </q-btn>
             </q-td>
@@ -115,8 +115,8 @@
             </q-td>
           </template>
           <template #body-cell-actions="cell">
-            <q-td :props="cell" class="text-right">
-              <q-btn flat round dense color="negative" icon="o_person_remove" @click="removeMember(cell.row)">
+            <q-td :props="cell">
+              <q-btn type="a" flat round dense color="negative" icon="o_person_remove" @click="removeMember(cell.row)">
                 <q-tooltip>Remove from group</q-tooltip>
               </q-btn>
             </q-td>
@@ -210,7 +210,7 @@ const columns = [
   { name: "description", label: "Description", field: (r) => stripHtml(r.description), align: "left" },
   { name: "memberCount", label: "Members", field: "memberCount", align: "left", sortable: true, default: true, filterable: false },
   ...auditColumns(),
-  { name: "actions", label: "Actions", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "left" }
 ];
 
 const memberColumns = [
@@ -219,7 +219,7 @@ const memberColumns = [
   { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true },
   { name: "addedBy", label: "Added By", field: "addedBy", align: "left", sortable: true, default: true },
   { name: "addedOnUtc", label: "Added On", field: (r) => fmt.formatDateTime(r.addedOnUtc), sort: (r) => r.addedOnUtc || "", align: "left", sortable: true, default: true },
-  { name: "actions", label: "Actions", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "left" }
 ];
 
 const { rows, loading, search, pagination, load, onRequest } = useListTable({

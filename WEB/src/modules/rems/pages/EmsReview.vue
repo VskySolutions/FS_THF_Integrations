@@ -27,6 +27,8 @@
       :total-records="totalRecords"
       :pagination="pagination"
       default-sort-by="updatedOnUtc"
+      :pinned-row-keys="pinnedRowKeys"
+      :row-colours="rowColours"
       @request="onRequest"
       @refresh="load"
     >
@@ -47,22 +49,25 @@
            client's own answers (the latter in a pane beside it). -->
       <template #body-cell-remsNumber="cell">
         <q-td :props="cell">
+          <!-- The pin the reader put on this row, beside the number rather than only on the button that
+               set it: the button is at the far right and the reason the row is at the top is here. -->
+          <entity-pinned-mark :pinned="isPinned(cell.row.remsId)" />
           <q-btn
             flat dense no-caps color="primary" class="text-weight-medium"
-            :label="cell.row.remsNumber" @click="openRequest(cell.row, 'view')"
+            :label="cell.row.remsNumber" :to="viewRoute(cell.row)"
           >
             <q-tooltip>Open the request</q-tooltip>
           </q-btn>
         </q-td>
       </template>
 
-      <!-- The particle in front of the name and heavier than it, even here where the whole name is
+      <!-- The particle after the name and heavier than it, even here where the whole name is
            already medium: it is what tells one "John Smith" row from the next. The column still SORTS
            and searches on `clientName`, which is the two joined. -->
       <template #body-cell-clientName="cell">
         <q-td :props="cell">
           <div class="text-weight-medium">
-            <app-name-with-suffix :name="cell.row.requestedClientName" :suffix="cell.row.clientNameSuffix" />
+            <app-name-with-suffix :name="cell.row.clientName" :suffix="cell.row.clientNameSuffix" />
           </div>
         </q-td>
       </template>
@@ -103,29 +108,33 @@
       </template>
 
       <template #body-cell-actions="cell">
-        <q-td :props="cell" class="text-right">
+        <q-td :props="cell">
           <!-- Claiming the request, and the first thing to do with one nobody holds — so it leads the row
-               rather than sitting behind the read actions. Filled, unlike everything beside it: on an
-               unclaimed row it is the only action that changes anything. -->
+               rather than sitting behind the read actions.
+               An icon like everything beside it. What used to set it apart was its weight — a filled
+               button among flat ones — and that is now carried by its COLOUR: amber, the same amber the
+               row's own "Waiting for pickup" badge is in, so the badge and the action that answers it
+               read as one thing. Its NAME leads the tooltip, because an icon on its own does not carry
+               one. -->
           <q-btn
-            v-if="cell.row.canPickUp"
-            unelevated dense no-caps color="amber-8" icon="o_pan_tool_alt" label="Pick up"
-            class="q-px-sm q-mr-xs" :loading="pickingUp === cell.row.remsId" @click.stop="pickUp(cell.row)"
+            v-if="cell.row.canPickUp" type="a"
+            flat round dense color="amber-8" icon="o_pan_tool_alt"
+            :loading="pickingUp === cell.row.remsId" @click.stop="pickUp(cell.row)"
           >
-            <q-tooltip>Take this request on — its engagement setup becomes yours to work</q-tooltip>
+            <q-tooltip>Pick up — take this request on, and its engagement setup becomes yours to work</q-tooltip>
           </q-btn>
 
           <!-- The undo of Pick up, on the row it was pressed on. Both are asked before they run, but a
                dialog only catches the misclick that is noticed — and until this button existed the way
                back from one that was not was to open the request and find Hand back in its header.
-               Outlined, and only on a request this caller actually holds: it is a correction, not a step
-               in the work. -->
+               Grey among the coloured ones, and only on a request this caller actually holds: it is a
+               correction, not a step in the work. -->
           <q-btn
-            v-if="cell.row.canHandBack"
-            outline dense no-caps color="grey-8" icon="o_undo" label="Hand back"
-            class="q-px-sm q-mr-xs" :loading="handingBack === cell.row.remsId" @click.stop="handBack(cell.row)"
+            v-if="cell.row.canHandBack" type="a"
+            flat round dense color="grey-8" icon="o_undo"
+            :loading="handingBack === cell.row.remsId" @click.stop="handBack(cell.row)"
           >
-            <q-tooltip>Put this back in the queue for another admin to pick up</q-tooltip>
+            <q-tooltip>Hand back — put this in the queue for another admin to pick up</q-tooltip>
           </q-btn>
 
           <!-- View and Edit are the same page in two modes. Separate actions because they are separate
@@ -135,14 +144,13 @@
                Neither waits on the client: the page opens on the intake the initiator filled in, and the
                client's answers land in it when they arrive. -->
           <q-btn
-            flat round dense color="primary" icon="o_visibility"
-            @click="openRequest(cell.row, 'view')"
+            flat round dense color="primary" icon="o_visibility" :to="viewRoute(cell.row)"
           >
             <q-tooltip>View</q-tooltip>
           </q-btn>
           <q-btn
-            flat round dense color="primary" icon="o_edit"
-            :disable="!!editBlocked(cell.row)" @click="openRequest(cell.row, 'edit')"
+            flat round dense color="primary" icon="o_edit" :to="editRoute(cell.row)"
+            :disable="!!editBlocked(cell.row)"
           >
             <q-tooltip>{{ editBlocked(cell.row) || "Edit" }}</q-tooltip>
           </q-btn>
@@ -150,14 +158,29 @@
                for one who still has not answered. Every row here has a form, so there is always a log to
                open — an empty one is itself the answer for a form nobody has sent yet. -->
           <q-btn
-            v-if="canReadEmailLog"
+            v-if="canReadEmailLog" type="a"
             flat round dense color="primary" icon="o_mark_email_read" @click.stop="openEmailLog(cell.row)"
           >
             <q-tooltip>Email log</q-tooltip>
           </q-btn>
-          <q-btn flat round dense color="primary" icon="o_forum" @click.stop="openConversation(cell.row)">
+          <q-btn type="a" flat round dense color="primary" icon="o_forum" @click.stop="openConversation(cell.row)">
             <q-tooltip>Conversation</q-tooltip>
           </q-btn>
+          <!-- The reader's own marks on this row, sitting with the actions rather than apart from them:
+               everything before them acts on the REQUEST, and these two are private to whoever is
+               looking. On a shared queue that distinction is the whole point —
+               "mine to come back to" is not the same as "assigned to me". -->
+          <entity-row-marks
+            v-if="canMarkRows"
+            :pinned="isPinned(cell.row.remsId)"
+            :colour="colourOf(cell.row.remsId)"
+            :palette="markPalette"
+            :limit-reached="pinLimitReached"
+            :limit="MAX_PINS_PER_TYPE"
+            :busy="markBusyId === cell.row.remsId"
+            @toggle-pin="togglePin(cell.row.remsId, cell.row.remsNumber)"
+            @set-colour="applyColour(cell.row.remsId, $event, cell.row.remsNumber)"
+          />
         </q-td>
       </template>
 
@@ -184,11 +207,11 @@
 <script setup>
 import { ref, computed, watch } from "vue";
 import { debounce } from "quasar";
-import { useRouter } from "vue-router";
-import { remsApi, getApiErrorMessage } from "services/api";
+import { remsApi, getApiErrorMessage, EntityType } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { useConfirm } from "composables/useConfirm";
 import { usePermissions, Permissions } from "composables/usePermissions";
+import { useRowPersonalisation, MAX_PINS_PER_TYPE } from "composables/uf/useRowPersonalisation";
 import { useListTable } from "composables/useListTable";
 import { useColumnFilters } from "composables/useColumnFilters";
 import { useDateFormat } from "composables/useDateFormat";
@@ -201,10 +224,11 @@ import AppNameWithSuffix from "components/common/AppNameWithSuffix.vue";
 import AppFilterDrawer from "components/common/AppFilterDrawer.vue";
 import AppColumnFilters from "components/common/AppColumnFilters.vue";
 import AppDataTable from "components/common/AppDataTable.vue";
+import EntityPinnedMark from "components/universal/EntityPinnedMark.vue";
+import EntityRowMarks from "components/universal/EntityRowMarks.vue";
 import ConversationDialog from "modules/rems/components/ConversationDialog.vue";
 import EmailLogDialog from "modules/rems/components/EmailLogDialog.vue";
 
-const router = useRouter();
 const notify = useNotify();
 const { confirm } = useConfirm();
 const fmt = useDateFormat();
@@ -214,10 +238,14 @@ const {
   requestStatusOption, submissionStateOption, statusFilterOptions, engagementOwnerDenial
 } = useRemsMeta();
 
-// The "Form" column is a boolean on the row, but the two states it stands for are values on
+// The "EMS State" column is a boolean on the row, but the two states it stands for are values on
 // REMS.ClientSubmissionState — so both the badge and the filter read their words from there rather than
 // carrying a pair of hardcoded strings. The filter VALUES stay "true" / "false": that is the server's
 // contract for this column, and a column filter's value is always a string.
+//
+// It is a NARROWER question than the column of the same name on My Requests, which reads REMS.FormStatus
+// and can say Not started or Sent. Nothing reaches this queue until its form has gone out, so the only
+// two answers left here are the two this list draws: still with the client, or back in hand.
 const submittedOption = (submitted) => submissionStateOption(submitted ? "Submitted" : "AwaitingCustomer");
 const submittedFilterOptions = computed(() => [
   { label: submittedOption(true).label, value: "true" },
@@ -245,7 +273,7 @@ const editBlocked = (row) => engagementOwnerDenial(row);
 const columns = computed(() => [
   { name: "remsNumber", label: "Request ID", field: "remsNumber", align: "left", sortable: true, default: true, filterable: false },
   { name: "clientName", label: "Client", field: "clientName", align: "left", sortable: true, default: true, filterable: false },
-  { name: "submitted", label: "Form", field: "submitted", align: "left", sortable: true, default: true, filterOptions: submittedFilterOptions.value },
+  { name: "submitted", label: "EMS State", field: "submitted", align: "left", sortable: true, default: true, filterOptions: submittedFilterOptions.value },
   // On by default now. It is where a row says "Waiting for pickup", which is the one thing an admin
   // opening this list is looking for.
   { name: "requestStatus", label: "Request Status", field: "requestStatus", align: "left", default: true, filterOptions: statusFilterOptions.value },
@@ -254,7 +282,7 @@ const columns = computed(() => [
   { name: "assignedAdmin", label: "Assigned Admin", field: (r) => r.assignedAdmin?.name || "Waiting for pickup", align: "left", default: true, filterable: false },
   { name: "cse", label: "CSE", field: (r) => r.cse?.name || "—", align: "left", default: true, filterable: false },
   ...auditColumns(),
-  { name: "actions", label: "Actions", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "left" }
 ]);
 
 // The quick filter. NOT part of the column filters below: those are the drawer's, each with a chip and a
@@ -288,6 +316,24 @@ const { rows, loading, totalRecords, search, filterOpen, pagination, load, onReq
 const { filters, filterableColumns, filterChips, removeFilter, clearFilters } = useColumnFilters(columns, rows, { server: true });
 const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);
 watch([search, filters, assignment], reload, { deep: true });
+
+// ---- The reader's own marks on these rows ----
+// A pin floats a row to the top of the page and a colour tints it, both stored against the USER — so on
+// a queue every admin shares, neither says anything to anybody else. Every caller here already holds
+// rems.engagements.manage; the check is on rems.requests.read, which is what the UF endpoints actually
+// gate on (UniversalFeatureEntityAccess), so the buttons appear exactly where they will work.
+const canMarkRows = computed(() => has(Permissions.RemsRequestsRead));
+
+const {
+  palette: markPalette, pinnedRowKeys, pinLimitReached, isPinned, togglePin,
+  colours: rowColours, colourOf, applyColour, busyId: markBusyId, sync: syncMarks
+} = useRowPersonalisation(EntityType.Rems);
+
+// After every load, never per row: the colours come back for the whole page in one read, and the pins
+// are the user's own small set, fetched once.
+watch(rows, (list) => {
+  if (canMarkRows.value) syncMarks(list.map((r) => r.remsId));
+});
 
 // ---- Picking a request up ----
 // The whole of the new assignment model from this list's side: nobody was named at intake, so a request
@@ -352,12 +398,16 @@ const handBack = async (row) => {
 // admin's send-back and route-for-approval actions on it. `mode` picks which of the two routes it lands
 // on — a record to read, or a form to change. Open whether or not the client has answered: the page shows
 // the intake either way, and the parts that need a submission are disabled on the page itself.
-const openRequest = (row, mode) => {
-  router.push({
-    name: mode === "edit" ? "rems_request_edit" : "rems_request",
-    params: { id: row.remsId }
-  });
-};
+// LINKS, not click handlers. View and Edit go to a known route, so they are written as routes and Quasar
+// renders each button as a real <a href> — which is what makes middle-click and "open in new tab" work,
+// and what lets an admin working a queue open three requests side by side instead of one at a time.
+// A router.push behind @click renders a <button> and none of that is possible.
+//
+// Everything else on the row stays a button, and correctly: Pick up, Hand back, the email log and the
+// conversation are actions and dialogs, not places. A disabled Edit also stays a button — Quasar drops
+// the anchor when a link is disabled, which is right, since a link that goes nowhere should not be one.
+const viewRoute = (row) => ({ name: "rems_request", params: { id: row.remsId } });
+const editRoute = (row) => ({ name: "rems_request_edit", params: { id: row.remsId } });
 
 // ---- Conversation ----
 // The REQUEST's thread, the same one every other REMS surface opens — so a message left here reaches the

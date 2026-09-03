@@ -10,9 +10,11 @@
     :selection="selectable ? 'multiple' : 'none'"
     :rows-per-page-options="rowsPerPageOptions"
     :sort-method="clientSort ? sortMethod : undefined"
+    :table-row-class-fn="rowClassFn"
+    :table-row-style-fn="rowStyleFn"
     flat
     bordered
-    :class="['app-data-table', { 'with-selection': selectable }]"
+    :class="['app-data-table', { 'with-selection': selectable, 'with-actions': hasActions }]"
     @request="onRequest"
   >
     <!-- Top bar: title, custom actions, column menu, refresh -->
@@ -114,7 +116,14 @@ const props = defineProps({
   clientSort: { type: Boolean, default: false },
   // Row-key values to float to the top of the current page (e.g. pinned records), kept above the
   // rest regardless of the active sort.
-  pinnedRowKeys: { type: Array, default: () => [] }
+  pinnedRowKeys: { type: Array, default: () => [] },
+  // Personal row tints as { [rowKey]: "#hex" } — a Universal Features colour code, private to the
+  // viewer. Drawn as a stripe down the row's left edge rather than as a filled background: a full tint
+  // fights the badges the row already carries, and it is a MARK, not a status.
+  //
+  // Here rather than in each list so a coloured row looks the same everywhere, the way the pinned rows
+  // above it already do.
+  rowColours: { type: Object, default: () => ({}) }
 });
 
 const emit = defineEmits(["request", "refresh", "update:pagination", "update:selected"]);
@@ -183,14 +192,33 @@ const sortMethod = (rows, sortBy, descending) => {
   return descending ? sorted.reverse() : sorted;
 };
 
+// Whether this list carries an actions column — it is what the nowrap rule in the stylesheet keys off.
+// Safe to address by POSITION there (last cell) because orderColumns always sinks "actions" last,
+// whatever order the reader has dragged the rest into.
+const hasActions = computed(() => props.columns.some((c) => c.name === "actions"));
+
+const pinnedSet = computed(() => new Set(props.pinnedRowKeys));
+
 // The rows as given, with pinned ones floated to the top.
 const displayedRows = computed(() => {
   if (!props.pinnedRowKeys.length) return props.rows;
-  const pinnedSet = new Set(props.pinnedRowKeys);
-  const isPinned = (row) => pinnedSet.has(row[props.rowKey]);
+  const isPinned = (row) => pinnedSet.value.has(row[props.rowKey]);
   const pinned = props.rows.filter(isPinned);
   return pinned.length ? [...pinned, ...props.rows.filter((row) => !isPinned(row))] : props.rows;
 });
+
+// ---- Personal row marks ----
+// A pinned row is tinted faintly and a coloured row gets a stripe down its left edge. The stripe is a
+// CSS custom property rather than a border on the <tr>: a table row is not a reliable box to paint —
+// borders and backgrounds on it collapse differently across browsers — so the value is set here and the
+// stylesheet draws it on the row's first CELL, which is.
+const rowClassFn = (row) =>
+  (pinnedSet.value.has(row?.[props.rowKey]) ? "app-data-table__row--pinned" : "");
+
+const rowStyleFn = (row) => {
+  const colour = props.rowColours?.[row?.[props.rowKey]];
+  return colour ? `--app-row-colour: ${colour}` : "";
+};
 
 const onRequest = (requestProps) => {
   const next = requestProps.pagination;
@@ -302,6 +330,28 @@ const forwardedSlots = computed(() =>
 .app-th {
   position: relative;
 }
+
+/* ---- Personal row marks (pin + colour) ----
+   Both are PRIVATE to the viewer, so both are drawn quietly: a pinned row is a shade warmer than its
+   neighbours, and a coloured one carries a stripe down its left edge. Neither may shout — the row's own
+   status badges are what the reader is scanning for, and a full-width tint would drown them. */
+.app-data-table :deep(tbody tr.app-data-table__row--pinned) {
+  background: #fbfaf5;
+}
+.app-data-table :deep(tbody tr td:first-child) {
+  position: relative;
+}
+/* On the first CELL rather than the row: a <tr> is not a reliable box to paint a border on. The colour
+   arrives as a custom property set per row (see rowStyleFn); with none set this paints nothing. */
+.app-data-table :deep(tbody tr td:first-child)::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--app-row-colour, transparent);
+}
 .app-th__resize {
   position: absolute;
   top: 0;
@@ -314,6 +364,32 @@ const forwardedSlots = computed(() =>
 .app-th__resize:hover {
   background: var(--q-primary);
   opacity: 0.4;
+}
+
+/* ---- The actions column is a row of controls, not prose ----
+   It never wraps. A list that has grown a sixth and seventh action — the personal pin and colour, an
+   Edit that only some rows offer — would otherwise fold onto a second line on a narrow window, and a
+   row whose height changes with how many actions it happens to carry is a row that reads as broken.
+   The column sizes itself to what it holds instead, and Quasar's own middle section scrolls sideways
+   if the whole table outgrows the window.
+   Addressed as the LAST cell, which is what the actions column always is — useColumnOrder sinks it
+   there whatever order the reader drags the other columns into.
+
+   ONE RULE FOR ANYTHING PUT IN AN ACTIONS CELL: it must be inline-level. `nowrap` governs inline
+   content only, so a single block-level box breaks the line whatever this says — which is exactly what
+   a <q-separator vertical> did, since QSeparator renders an <hr>. A q-btn is inline-flex and safe; a
+   div, an hr or a q-separator is not.
+
+   The children are middle-aligned rather than left on their baselines. Icon buttons and an inline-flex
+   group (the personal marks) compute baselines differently, so on a baseline they sit a pixel or two
+   apart — visible as a ragged row once there are six or seven of them. */
+.app-data-table.with-actions :deep(thead tr th:last-child),
+.app-data-table.with-actions :deep(tbody tr td:last-child) {
+  white-space: nowrap;
+  width: 1%;
+}
+.app-data-table.with-actions :deep(tbody tr td:last-child > *) {
+  vertical-align: middle;
 }
 
 /* Left-align the selection (checkbox) column header + body cells. */

@@ -45,11 +45,11 @@
         <q-separator />
         <q-card-section class="row q-col-gutter-md">
           <div class="col-12 section-subhead">Name</div>
-          <!-- The generational particle on your name. Stored apart from the name, which is what
-               everything files and searches you under. -->
+          <app-text-field v-model="form.firstName" label="First Name" class="col-12 col-sm-6" :rules="nameRules('First name')" />
+          <app-text-field v-model="form.lastName" label="Last Name" class="col-8 col-sm-4" :rules="nameRules('Last name')" />
+          <!-- The generational particle on your name, after the surname where it is read. Stored apart
+               from the name, which is what everything files and searches you under. -->
           <app-name-suffix-field v-model="form.suffix" class="col-4 col-sm-2" />
-          <app-text-field v-model="form.firstName" label="First Name" class="col-8 col-sm-4" :rules="nameRules('First name')" />
-          <app-text-field v-model="form.lastName" label="Last Name" class="col-12 col-sm-6" :rules="nameRules('Last name')" />
         </q-card-section>
       </q-card>
 

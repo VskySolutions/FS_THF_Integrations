@@ -27,9 +27,9 @@
         </q-td>
       </template>
       <template #body-cell-actions="cell">
-        <q-td :props="cell" class="text-right">
-          <q-btn flat round dense icon="o_edit" @click="openEdit(cell.row)" />
-          <q-btn flat round dense icon="o_delete" color="negative" @click="remove(cell.row)" />
+        <q-td :props="cell">
+          <q-btn type="a" flat round dense icon="o_edit" @click="openEdit(cell.row)" />
+          <q-btn type="a" flat round dense icon="o_delete" color="negative" @click="remove(cell.row)" />
         </q-td>
       </template>
     </app-data-table>
@@ -90,7 +90,7 @@ const columns = [
   { name: "category", label: "Category", field: "category", align: "left", sortable: true, default: true },
   { name: "usageCount", label: "Usage", field: "usageCount", align: "left", sortable: true, default: true },
   ...auditColumns(),
-  { name: "actions", label: "Actions", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "left" }
 ];
 
 const drawerOpen = ref(false);

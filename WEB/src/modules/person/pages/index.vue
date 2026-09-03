@@ -56,31 +56,29 @@
       </template>
 
       <template #body-cell-actions="cell">
-        <q-td :props="cell" class="text-right">
+        <q-td :props="cell">
           <q-btn flat round dense color="primary" icon="o_visibility" :to="{ name: 'person_detail', params: { id: cell.row.id } }">
             <q-tooltip>View / Edit</q-tooltip>
           </q-btn>
-          <q-btn v-if="canCreateUser || canDelete" flat round dense icon="o_more_vert">
-            <q-menu auto-close>
-              <q-list style="min-width: 190px;">
-                <q-item
-                  v-if="canCreateUser && !cell.row.isUser" clickable
-                  @click="convertToUser(cell.row)"
-                >
-                  <q-item-section avatar><q-icon name="o_person_add" /></q-item-section>
-                  <q-item-section>Convert to User</q-item-section>
-                </q-item>
-                <q-item v-else-if="cell.row.isUser" clickable disable>
-                  <q-item-section avatar><q-icon name="o_how_to_reg" /></q-item-section>
-                  <q-item-section>Already a user</q-item-section>
-                </q-item>
-                <q-separator v-if="canDelete" />
-                <q-item v-if="canDelete" clickable :disable="cell.row.isUser" @click="removePerson(cell.row)">
-                  <q-item-section avatar><q-icon name="o_delete" color="negative" /></q-item-section>
-                  <q-item-section class="text-negative">Delete</q-item-section>
-                </q-item>
-              </q-list>
-            </q-menu>
+          <!-- One button per action, all of them on the row. A person who is already a user keeps the
+               button, disabled and saying so: that they are one is worth reading off the row, and a
+               button that disappears leaves the reader wondering whether they may do it at all. -->
+          <q-btn
+            v-if="canCreateUser" type="a"
+            flat round dense
+            :color="cell.row.isUser ? 'grey-6' : 'primary'"
+            :icon="cell.row.isUser ? 'o_how_to_reg' : 'o_person_add'"
+            :disable="cell.row.isUser"
+            @click="convertToUser(cell.row)"
+          >
+            <q-tooltip>{{ cell.row.isUser ? "Already a user" : "Convert to User" }}</q-tooltip>
+          </q-btn>
+          <q-btn
+            v-if="canDelete" type="a"
+            flat round dense color="negative" icon="o_delete"
+            :disable="cell.row.isUser" @click="removePerson(cell.row)"
+          >
+            <q-tooltip>{{ cell.row.isUser ? "A person who is a user cannot be deleted" : "Delete" }}</q-tooltip>
           </q-btn>
         </q-td>
       </template>
@@ -169,7 +167,7 @@ const columns = computed(() => [
   // server-filtered on it), so it stays a plain column rather than claiming a server filter it lacks.
   { name: "sourceEntityType", label: "Source", field: (r) => sourceLabel(r.sourceEntityType), align: "left", default: true, filterable: false },
   ...auditColumns(),
-  { name: "actions", label: "Actions", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "left" }
 ]);
 
 const { rows, loading, totalRecords, selected, search, filterOpen, pagination, load, onRequest } = useListTable({

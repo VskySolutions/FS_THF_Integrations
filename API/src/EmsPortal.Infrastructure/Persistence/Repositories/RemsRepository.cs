@@ -52,10 +52,10 @@ internal sealed class RemsRepository : IRemsRepository
         var sorts = SortMap.For(withOptions, "updatedOnUtc")
             .Add("remsNumber", r => r.REMSNumber)
             .Add("type", r => r.Type!.Value, r => r.UpdatedOnUtc)
-            .Add("clientName", r => r.RequestedClientName, r => r.REMSNumber)
+            .Add("clientName", r => r.ClientPerson!.ClientDisplayName, r => r.REMSNumber)
             .Add("status", r => r.Status!.Value, r => r.UpdatedOnUtc)
-            .Add("customerEmail", r => r.CustomerEmail, r => r.REMSNumber)
-            .Add("customerMobileNumber", r => r.CustomerMobileNumber, r => r.REMSNumber)
+            .Add("customerEmail", r => r.ClientPerson!.PrimaryEmail, r => r.REMSNumber)
+            .Add("customerMobileNumber", r => r.ClientPerson!.MobileNumber, r => r.REMSNumber)
             .Add("createdOnUtc", r => r.CreatedOnUtc)
             .Add("updatedOnUtc", r => r.UpdatedOnUtc, r => r.CreatedOnUtc);
 
@@ -170,19 +170,20 @@ internal sealed class RemsRepository : IRemsRepository
         if (!string.IsNullOrWhiteSpace(options.ClientName))
         {
             var t = options.ClientName.Trim();
-            // Against the name WITH its suffix as well as without: the list shows "Jr. John Smith", so
-            // typing what is on the row has to find the row. (ClientDisplayName says the same thing but
-            // is [NotMapped] and cannot cross into SQL.)
+            // Against the client's name as the list SHOWS it — "Smith John Jr." — and against each half
+            // of it on its own, because a reader types whichever they have. Surname-first is how the row
+            // reads, but nobody searching for John Smith types "Smith John".
             query = query.Where(r =>
-                r.RequestedClientName.Contains(t)
-                || (r.ClientNameSuffix + " " + r.RequestedClientName).Contains(t));
+                r.ClientPerson!.ClientDisplayName.Contains(t)
+                || r.ClientPerson!.FirstName.Contains(t)
+                || r.ClientPerson!.LastName.Contains(t));
         }
         if (!string.IsNullOrWhiteSpace(options.Contact))
         {
             var t = options.Contact.Trim();
             query = query.Where(r =>
-                (r.CustomerEmail != null && r.CustomerEmail.Contains(t)) ||
-                (r.CustomerMobileNumber != null && r.CustomerMobileNumber.Contains(t)));
+                (r.ClientPerson!.PrimaryEmail != null && r.ClientPerson!.PrimaryEmail.Contains(t)) ||
+                (r.ClientPerson!.MobileNumber != null && r.ClientPerson!.MobileNumber.Contains(t)));
         }
         if (!string.IsNullOrWhiteSpace(options.Status))
         {
@@ -247,6 +248,17 @@ internal sealed class RemsRepository : IRemsRepository
     public async Task AddAdditionalEntityAsync(REMSAdditionalEntity additionalEntity, CancellationToken cancellationToken = default)
         => await _dbContext.RemsAdditionalEntities.AddAsync(additionalEntity, cancellationToken);
 
+    public async Task AddAdditionalIndividualAsync(
+        REMSAdditionalIndividual additionalIndividual, CancellationToken cancellationToken = default)
+        => await _dbContext.RemsAdditionalIndividuals.AddAsync(additionalIndividual, cancellationToken);
+
+    public async Task<IReadOnlyList<REMSAdditionalIndividual>> ListAdditionalIndividualsAsync(
+        Guid remsId, CancellationToken cancellationToken = default)
+        => await _dbContext.RemsAdditionalIndividuals
+            .Where(a => a.REMSId == remsId)
+            .OrderBy(a => a.CreatedOnUtc)
+            .ToListAsync(cancellationToken);
+
     public async Task<IReadOnlyList<REMSAdditionalEntity>> ListAdditionalEntitiesAsync(Guid remsId, CancellationToken cancellationToken = default)
         => await _dbContext.RemsAdditionalEntities
             .Where(a => a.REMSId == remsId)
@@ -255,6 +267,195 @@ internal sealed class RemsRepository : IRemsRepository
 
     public Task<REMSAdditionalEntity?> GetAdditionalEntityAsync(Guid id, CancellationToken cancellationToken = default)
         => _dbContext.RemsAdditionalEntities.FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
+
+    public Task<REMSAdditionalIndividual?> GetAdditionalIndividualAsync(Guid id, CancellationToken cancellationToken = default)
+        => _dbContext.RemsAdditionalIndividuals.FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
+
+    public void UpdateAdditionalIndividual(REMSAdditionalIndividual additionalIndividual)
+        => _dbContext.RemsAdditionalIndividuals.Update(additionalIndividual);
+
+    // ---- Related Entities (the parent/related-client list) ----
+
+    /// <summary>
+    /// A person whose return is filed WITH the client's is not a related client — they are the same
+    /// client, and the list says so in the parent's own header ("Sandra Kim + Daniel Kim (Spouse) — same
+    /// client, joint filing") rather than giving them a row and a status of their own.
+    /// <para>
+    /// Which is why this constant is applied to the COUNT and to the status filter but never to the
+    /// search: somebody typing a joint spouse's name is looking for the request they appear on, and that
+    /// request is on this list.
+    /// </para>
+    /// </summary>
+    private const string JointFiling = "joint";
+
+    public async Task<(IReadOnlyList<RemsRelatedEntityItem> Items, int Total)> ListRelatedEntitiesAsync(
+        RemsRelatedEntityQuery query, CancellationToken cancellationToken = default)
+    {
+        // Held as queryables rather than joined in: a request has many of each, so joining would multiply
+        // the parent rows and the count/filter clauses below are all EXISTS/COUNT questions anyway. Both
+        // carry the ambient tenant + soft-delete filters.
+        var individuals = _dbContext.RemsAdditionalIndividuals.AsQueryable();
+        var entities = _dbContext.RemsAdditionalEntities.AsQueryable();
+
+        // Every request that declared somebody alongside its client, joined to its form for the entity
+        // type and the submission date. Inner join, like EMS Review's: these rows are written by the
+        // public submit, so a request that has any of them necessarily has a form that was submitted.
+        var rows =
+            from r in _dbContext.Rems
+            join f in _dbContext.RemsForms on r.Id equals f.REMSId
+            where individuals.Any(a => a.REMSId == r.Id) || entities.Any(a => a.REMSId == r.Id)
+            select new { Rems = r, Form = f };
+
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var t = query.Search.Trim();
+            // The related clients' own names are searchable too — this list is READ by them ("which
+            // request was Falcon Logistics on?"), and the parent's name is often not what the reader has.
+            // Against the client's name as the list SHOWS it — "Smith John Jr." — and against each half
+            // of it on its own, because a reader types whichever they have.
+            rows = rows.Where(x =>
+                x.Rems.REMSNumber.Contains(t)
+                || x.Rems.ClientPerson!.ClientDisplayName.Contains(t)
+                || x.Rems.ClientPerson!.FirstName.Contains(t)
+                || x.Rems.ClientPerson!.LastName.Contains(t)
+                || individuals.Any(a => a.REMSId == x.Rems.Id && (a.FirstName + " " + a.LastName).Contains(t))
+                || entities.Any(a => a.REMSId == x.Rems.Id && a.FullName.Contains(t)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.EntityType))
+        {
+            var entityType = query.EntityType.Trim();
+            rows = rows.Where(x => x.Form.IndustryGroup!.Value == entityType);
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.RelatedStatus))
+        {
+            var status = query.RelatedStatus.Trim();
+            // A row nobody has answered for holds no status, and that IS "not initiated" — so the filter
+            // for that value has to reach the nulls as well, or it would return none of the rows the list
+            // actually shows it on.
+            var includeUnanswered = status == RemsRelatedEntityStatuses.NotInitiated;
+            rows = rows.Where(x =>
+                individuals.Any(a => a.REMSId == x.Rems.Id && a.FilingType != JointFiling
+                    && ((a.RelatedStatusId == null && includeUnanswered)
+                        || (a.RelatedStatus != null && a.RelatedStatus.Value == status)))
+                || entities.Any(a => a.REMSId == x.Rems.Id
+                    && ((a.RelatedStatusId == null && includeUnanswered)
+                        || (a.RelatedStatus != null && a.RelatedStatus.Value == status))));
+        }
+
+        // Counted AFTER the filters so the pager reflects the filtered set, not the whole list.
+        var total = await rows.CountAsync(cancellationToken);
+
+        // Ordered over the joined rows and over the WHOLE filtered set — that is what decides which rows
+        // page 1 holds. The default is the request's last touch, like every other REMS list. The nested
+        // Parent & Related Clients column is not orderable (it is a table, not a value); Related Clients
+        // is the count of it, which is.
+        var sorts = SortMap.For(rows, "updatedOnUtc")
+            .Add("remsNumber", x => x.Rems.REMSNumber)
+            .Add("clientName", x => x.Rems.ClientPerson!.ClientDisplayName, x => x.Rems.REMSNumber)
+            .Add("entityType", x => x.Form.IndustryGroup!.Value, x => x.Rems.REMSNumber)
+            .Add("submittedOnUtc", x => x.Form.SubmittedOnUtc, x => x.Rems.REMSNumber)
+            .Add(
+                "relatedCount",
+                x => individuals.Count(a => a.REMSId == x.Rems.Id && a.FilingType != JointFiling)
+                    + entities.Count(a => a.REMSId == x.Rems.Id),
+                x => x.Rems.REMSNumber)
+            .Add("createdOnUtc", x => x.Rems.CreatedOnUtc)
+            .Add("updatedOnUtc", x => x.Rems.UpdatedOnUtc, x => x.Rems.REMSNumber);
+
+        var items = await sorts.Apply(rows, query.Sort.SortBy, query.Sort.Descending)
+            .Skip((query.Page - 1) * query.Limit)
+            .Take(query.Limit)
+            .Select(x => new RemsRelatedEntityItem(
+                x.Rems.Id,
+                x.Rems.REMSNumber,
+                // The client's name as it reads — "Smith John Jr." for a person, the legal name for an
+                // organisation. Composed by the database on Persons.ClientDisplayName, so every list says
+                // it the same way and SQL can sort and search on it.
+                x.Rems.ClientPerson!.ClientDisplayName,
+                x.Rems.ClientPerson!.Suffix,
+                x.Rems.ClientPerson!.PrimaryEmail,
+                x.Form.IndustryGroup!.Value,
+                x.Rems.Status!.Value,
+                x.Rems.AdminAssignedToId,
+                x.Form.SubmittedOnUtc,
+                // The rows the nested table actually LISTS, which is why the joint filers are left out of
+                // it: they are shown as part of the parent, not under it.
+                individuals.Count(a => a.REMSId == x.Rems.Id && a.FilingType != JointFiling)
+                    + entities.Count(a => a.REMSId == x.Rems.Id),
+                x.Rems.CreatedById,
+                x.Rems.OnBehalfOfUserId,
+                x.Rems.CreatedOnUtc,
+                x.Rems.UpdatedById,
+                x.Rems.UpdatedOnUtc))
+            .ToListAsync(cancellationToken);
+
+        return (items, total);
+    }
+
+    public async Task<IReadOnlyList<RemsRelatedClientItem>> ListRelatedClientsAsync(
+        IReadOnlyCollection<Guid> remsIds, CancellationToken cancellationToken = default)
+    {
+        if (remsIds.Count == 0)
+        {
+            return Array.Empty<RemsRelatedClientItem>();
+        }
+
+        // Two reads rather than one UNION: the two tables share almost nothing but the parent they hang
+        // off, and a union would mean projecting each into the other's missing columns in SQL to satisfy
+        // a shape neither has. Two queries over one page of parents is the cheaper honesty.
+        var individuals = await _dbContext.RemsAdditionalIndividuals
+            .Where(a => remsIds.Contains(a.REMSId))
+            .Select(a => new RemsRelatedClientItem(
+                a.Id,
+                a.REMSId,
+                RemsRelatedClientKind.Individual,
+                a.FirstName + " " + a.LastName,
+                a.RelationType,
+                a.FilingType,
+                a.Email,
+                a.PhoneNumber,
+                // Resolved here rather than left null for the caller to interpret: "nobody has answered"
+                // and "somebody answered Not Initiated" are the same fact, and only one of them should
+                // reach a screen.
+                a.RelatedStatus == null ? RemsRelatedEntityStatuses.NotInitiated : a.RelatedStatus.Value,
+                // A person on somebody's return never gets a request of their own — that is the whole
+                // distinction between this table and the one below.
+                null,
+                a.CreatedOnUtc,
+                a.SourceKey))
+            .ToListAsync(cancellationToken);
+
+        var entities = await _dbContext.RemsAdditionalEntities
+            .Where(a => remsIds.Contains(a.REMSId))
+            .Select(a => new RemsRelatedClientItem(
+                a.Id,
+                a.REMSId,
+                RemsRelatedClientKind.Entity,
+                a.FullName,
+                // The intake form does not ask how another business relates to the client, and it does not
+                // ask how its return is filed — both questions are about people. Null rather than invented.
+                null,
+                null,
+                a.EmailAddress,
+                a.PhoneNumber,
+                a.RelatedStatus == null ? RemsRelatedEntityStatuses.NotInitiated : a.RelatedStatus.Value,
+                a.CreatedREMSId,
+                a.CreatedOnUtc,
+                a.SourceKey))
+            .ToListAsync(cancellationToken);
+
+        // Merged into ONE sequence per parent, in the order the client declared them: the two kinds can
+        // both appear under one request (an individual's submission from before "Other Entities" stopped
+        // being asked of them carries entities too), and the reference each row is numbered by counts
+        // across the whole nested table rather than per table.
+        return individuals
+            .Concat(entities)
+            .OrderBy(a => a.DeclaredOnUtc)
+            .ThenBy(a => a.SourceKey, StringComparer.Ordinal)
+            .ToList();
+    }
 
     public async Task<IReadOnlyDictionary<Guid, string>> GetNumbersAsync(
         IReadOnlyCollection<Guid> remsIds, CancellationToken cancellationToken = default)

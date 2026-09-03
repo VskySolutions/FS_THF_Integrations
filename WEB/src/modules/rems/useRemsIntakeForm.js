@@ -60,12 +60,21 @@ export const blankIntakePayload = () => reactive({
   referralSource: "",
   referralSourceDetail: "",
   physicalAddress: blankAddress(),
+  // Whether the mailing address IS the physical one. Ticked to start with, because for almost every
+  // client it is: the form asks for one address and offers a box to untick, rather than asking for the
+  // same address twice and offering a Copy button — which is what it did, and which meant the commonest
+  // answer on the form was the one that took the most typing.
+  //
+  // A FLAG rather than a blank mailing address: "same as physical" is an answer, and one the client can
+  // change later. On the way out the physical address is copied into the mailing one (see
+  // buildIntakePayload), so everything downstream still reads two whole addresses.
+  mailingSameAsPhysical: true,
   mailingAddress: blankAddress(),
   // Where invoices go, and who each one is addressed to — a LIST, because a client invoiced at two
   // places has two, and the form should not be the thing that decides they have one. Each row is a whole
   // address AND its addressee: "where does the invoice go?" and "who is it addressed to?" are one
   // question, and the answers used to live in two sections with nothing saying which belonged to which.
-  // Opens with one row ready to fill in — see openBillingAddresses.
+  // Opens with one row, which is required — see openBillingAddresses.
   billingAddresses: openBillingAddresses(null),
   // The retired billing CONTACT answers, kept in the shape and echoed back untouched. A submission is
   // the immutable record of what the client sent, and a form that no longer shows the box a thing was
@@ -80,6 +89,9 @@ export const blankIntakePayload = () => reactive({
   spouseName: "",
   spousePhone: "",
   spouseEmail: "",
+  // The other people on this individual's return — a spouse, a child, anybody else THF will be preparing
+  // for. Empty until the client answers "Yes" to the question above them.
+  additionalIndividuals: [],
   ein: "",
   contractStartDate: "",
   contractEndDate: "",
@@ -127,11 +139,9 @@ export const newBillingAddress = (stored = null) => ({
  * The billing rows a form OPENS with: whatever the stored payload carries, or one blank row where it
  * carries none.
  *
- * The section is optional and stays optional — a row nobody types into is dropped on the way out (see
- * buildIntakePayload) and never validated (see intakeIssues), so a client who ignores it is still
- * invoiced at their mailing address exactly as before. What the blank row changes is the reading: a
- * section whose only control is an "Add" button looks like an extra somebody else deals with, and the
- * billing address was the answer most often left off because of it. One open block asks the question.
+ * There is always at least one, because the section is REQUIRED now: the firm bills somebody, and
+ * "whoever the post goes to" was a guess the form used to make on the client's behalf. Further rows are
+ * the client's to add, for a client invoiced at more than one place.
  */
 const openBillingAddresses = (stored) => {
   const rows = billingAddressList(stored).map((a) => newBillingAddress(a));
@@ -176,6 +186,210 @@ export const newRelatedEntity = (index = 0) => ({
   fullName: "",
   emailAddress: "",
   phoneNumber: ""
+});
+
+// ---------------------------------------------------------------------------------------------------
+// Spouse & more individuals — the other people on this client's return.
+//
+// A separate question from the contact roles, and it replaced them for an individual: the intake form
+// used to ask an individual for a "Self" contact (their own name, email and phone, three boxes below the
+// ones that had just asked for exactly that) and a "Spouse" contact. Neither said what the firm actually
+// needs to know about the second person on a return — how they file, and who pays for it — and only one
+// spouse and no children fitted.
+//
+// The rules below are the firm's, not the form's: a child files individually; a spouse on a JOINT return
+// is billed to the primary client, and so is a minor child. They all come from the same place — one
+// return means one invoice, and it goes to whoever the return is filed under. A spouse who files
+// individually has a return of their own, so who pays for it is a question again.
+//
+// They are enforced here so the browser, the review step and the server all read one definition — the
+// boxes are disabled on screen as well, but a disabled box is a courtesy and not a rule.
+// ---------------------------------------------------------------------------------------------------
+
+/** What relation this person is to the client. */
+export const INDIVIDUAL_TYPES = [
+  { value: "spouse", label: "Spouse" },
+  { value: "child", label: "Child" },
+  { value: "other", label: "Other" }
+];
+
+/** How their return is filed. */
+export const INDIVIDUAL_FILING_TYPES = [
+  { value: "joint", label: "Joint" },
+  { value: "individual", label: "Individual" }
+];
+
+/** Who is invoiced for their return. */
+export const INDIVIDUAL_BILLING_PREFERENCES = [
+  { value: "primary", label: "Bill To Primary" },
+  { value: "separate", label: "Bill Separately" }
+];
+
+/**
+ * How many extra individuals one client may declare. The same kind of guard MAX_BILLING_ADDRESSES is —
+ * against a stuck key, not against a real family. Mirrors the server's
+ * RemsFormPayloadValidator.MaxAdditionalIndividuals.
+ */
+export const MAX_ADDITIONAL_INDIVIDUALS = 10;
+
+/** A child's filing type is not a choice: a child files individually. */
+export const individualFilingLocked = (row) => row?.type === "child";
+
+/** "Is this child a minor?" — asked of a child and of nobody else. */
+export const individualAsksMinor = (row) => row?.type === "child";
+
+/**
+ * Whose billing preference is decided for them: a spouse on a JOINT return, and a child who is still a
+ * minor. Everybody else may be billed separately.
+ *
+ * A spouse is only locked while the return is joint, because that is where the lock comes from: one
+ * return, one invoice, and it goes to the primary client. A spouse who files individually has a return
+ * of their own, and a return of their own can be billed to whoever pays for it.
+ */
+// `!== "individual"` rather than `=== "joint"`: joint is the default a row opens with, and a row seeded
+// from a payload that predates the filing question carries none at all. Both are joint, and the server
+// reads them the same way (RemsAdditionalIndividualPayload.EffectiveFilingType).
+export const individualBillingLocked = (row) =>
+  (row?.type === "spouse" && row?.filingType !== "individual") ||
+  (row?.type === "child" && row?.isMinor === true);
+
+/**
+ * Whether this row CARRIES a separate-billing name — no longer whether one is asked for.
+ *
+ * The form used to open a Billing First Name / Billing Last Name pair as soon as "Bill Separately" was
+ * chosen. It does not any more: the answer is the person the row is already about, and asking a client
+ * to type their own child's name a second time to address that child's invoice was asking them to repeat
+ * themselves. The two columns stay, so a submission that answered them still reads back complete — which
+ * is what this predicate is for now, and why it also tests that something was actually written.
+ */
+export const individualHasBillingName = (row) =>
+  !individualBillingLocked(row) && row?.billingPreference === "separate" &&
+  !!(s(row?.billingFirstName).trim() || s(row?.billingLastName).trim());
+
+/**
+ * Force the firm's rules onto a row, in place. Called when the Type or the minor answer changes and again
+ * on the way out, so a row cannot carry an answer the form would not have let anybody give — a client who
+ * chose "Bill Separately" and then changed the type to Spouse must not leave a separate-billing row
+ * behind the now-disabled control.
+ */
+export function applyIndividualRules (row) {
+  if (row.type === "child") {
+    row.filingType = "individual";
+    // Defaults to a minor. It is the commoner case for a child whose return is prepared alongside a
+    // parent's, and it is the safer default: it bills the primary client rather than inventing a
+    // separate payer nobody named.
+    if (typeof row.isMinor !== "boolean") row.isMinor = true;
+  } else {
+    row.isMinor = null;
+  }
+  if (individualBillingLocked(row)) row.billingPreference = "primary";
+  // The pair is no longer asked for at all. Cleared wherever separate billing is not both open and
+  // chosen, so a row that picked one up from an older draft does not carry it behind a question that is
+  // no longer put.
+  if (individualBillingLocked(row) || row.billingPreference !== "separate") {
+    row.billingFirstName = "";
+    row.billingLastName = "";
+  }
+  return row;
+}
+
+let additionalIndividualSeq = 0;
+
+/**
+ * A fresh individual — Type unanswered, filed jointly and billed to the primary until told otherwise.
+ *
+ * `lastName` is seeded from the CLIENT's own surname, because the people added here are a spouse and
+ * children and they nearly always share it. A prefill, not a mirror: it is filled once when the block is
+ * added and is the client's to overwrite, exactly as the address copy buttons work — a stepchild or an
+ * "Other" who kept their own name types theirs over it, and correcting the client's own surname later
+ * does not reach in and rewrite a name somebody has already given us.
+ */
+export const newAdditionalIndividual = (lastName = "") => ({
+  sourceKey: `individual-${Date.now()}-${++additionalIndividualSeq}`,
+  type: "",
+  filingType: "joint",
+  firstName: "",
+  lastName: s(lastName).trim(),
+  email: "",
+  phone: "",
+  isMinor: null,
+  billingPreference: "primary",
+  billingFirstName: "",
+  billingLastName: ""
+});
+
+/** One read off a stored payload, with the rules re-applied — an older row may predate one of them. */
+const makeAdditionalIndividual = (row, i) => applyIndividualRules({
+  sourceKey: row?.sourceKey || `individual-${Date.now()}-${i}`,
+  type: s(row?.type),
+  filingType: s(row?.filingType) || "joint",
+  firstName: s(row?.firstName),
+  lastName: s(row?.lastName),
+  email: s(row?.email),
+  phone: s(row?.phone),
+  isMinor: typeof row?.isMinor === "boolean" ? row.isMinor : null,
+  billingPreference: s(row?.billingPreference) || "primary",
+  billingFirstName: s(row?.billingFirstName),
+  billingLastName: s(row?.billingLastName)
+});
+
+/** Whether a row carries anything — what decides if clearing them all needs confirming. */
+export const additionalIndividualHasData = (row) =>
+  filled(row?.type) || filled(row?.firstName) || filled(row?.lastName) ||
+  filled(row?.email) || filled(row?.phone);
+
+/**
+ * What to call one of these people on a checklist, a review card or a validation message: the name they
+ * gave, falling back to their relation and their position. "Individual 2" is a complaint a client has to
+ * count blocks to act on; "Jane Smith" is one they can.
+ */
+export const individualLabel = (row, i = 0) => {
+  const name = [row?.firstName, row?.lastName].map((v) => s(v).trim()).filter(Boolean).join(" ");
+  if (name) return name;
+  const type = INDIVIDUAL_TYPES.find((o) => o.value === row?.type)?.label;
+  return type ? `${type} ${i + 1}` : `Individual ${i + 1}`;
+};
+
+// The stored code read back as the word the client chose. Falls back to the code itself: a payload
+// written under a value this list no longer offers should still say what was answered.
+const optionLabel = (list, value) => {
+  const v = s(value).trim();
+  if (!v) return "—";
+  return list.find((o) => o.value === v)?.label || v;
+};
+
+/**
+ * One additional individual as a read-only CARD. Here rather than in either surface that renders it,
+ * because BOTH do: the client's review step and the staff panel show one submission, and a second copy of
+ * this is how the two come to describe it differently.
+ *
+ * The shape is a card, not a list of label/value rows, and that is the point. Seven labelled rows apiece
+ * turned a family of four into four tall blocks stacked down the page, and the labels — "Type", "Filing
+ * Type", "Billing Preference" — cost more height than the answers and told a reader nothing they could
+ * not read off the answer itself: nobody needs "Filing Type: Joint" to understand "Joint".
+ *
+ * So it comes back as four short lines that tile several to a row:
+ *   name + what they are · how to reach them · how they file and who pays · who else pays, where anybody
+ * does. Every one of them is a sentence a reader takes in at a glance rather than a table they scan.
+ */
+export const individualSummary = (row, i = 0) => ({
+  key: row?.sourceKey || `individual-${i}`,
+  name: individualLabel(row, i),
+  // Their relation, drawn as a badge beside the name rather than as a labelled row: it is a category, and
+  // a category is what a badge is for.
+  type: optionLabel(INDIVIDUAL_TYPES, row?.type),
+  email: s(row?.email).trim(),
+  phone: s(row?.phone).trim(),
+  // The two answers the firm acts on, plus the minor flag where it was asked — one line, because they are
+  // read together ("Joint, billed to the primary") and separately mean less.
+  filing: optionLabel(INDIVIDUAL_FILING_TYPES, row?.filingType),
+  minor: individualAsksMinor(row) ? (row?.isMinor === true ? "Minor" : "Not a minor") : "",
+  billing: optionLabel(INDIVIDUAL_BILLING_PREFERENCES, row?.billingPreference),
+  // Only on a submission that actually carried one — the form stopped asking, but a form answered before
+  // it stopped still reads back complete.
+  billedTo: individualHasBillingName(row)
+    ? [row?.billingFirstName, row?.billingLastName].map((v) => s(v).trim()).filter(Boolean).join(" ")
+    : ""
 });
 
 // A retired billing contact read back off a stored payload. Nothing on the form produces one any more —
@@ -229,6 +443,14 @@ export function seedIntakePayload (payload, stored, prefill = null) {
 
   payload.physicalAddress = toAddress(d.physicalAddress);
   payload.mailingAddress = toAddress(d.mailingAddress);
+  // The flag where the payload carries one; otherwise inferred from what is in it. A draft or submission
+  // written before the box existed gave two addresses because the form demanded two, so one that HAS a
+  // mailing address re-opens with the box unticked and that address on screen — reading the flag as
+  // "false by default" would be right for those and wrong for nothing, but a payload with no mailing
+  // address at all is better served by the ticked default a new form gets.
+  payload.mailingSameAsPhysical = typeof d.mailingSameAsPhysical === "boolean"
+    ? d.mailingSameAsPhysical
+    : !addressHasAny(payload.mailingAddress);
   // The list, with the single billing address a payload written before it carries folded in as the first
   // row — the same courtesy normalizeRoles does for the renamed contact roles. A payload holding both
   // keeps the list: it was written later, by a form that offered the single box nowhere. A payload with
@@ -241,6 +463,7 @@ export function seedIntakePayload (payload, stored, prefill = null) {
   ALL_ROLE_KEYS.forEach((k) => fillRole(payload.roles[k], storedRoles[k]));
   payload.additionalBillingContacts = (d.additionalBillingContacts || []).map((r) => newBillingContact(r));
 
+  payload.additionalIndividuals = (d.additionalIndividuals || []).map(makeAdditionalIndividual);
   payload.relatedEntities = (d.relatedEntities || []).map(makeEntity);
 }
 
@@ -298,7 +521,13 @@ export function buildIntakePayload (payload, industryGroup) {
     referralSource: s(payload.referralSource),
     referralSourceDetail: s(payload.referralSourceDetail),
     physicalAddress: fromAddress(payload.physicalAddress),
-    mailingAddress: fromAddress(payload.mailingAddress),
+    // The flag travels AND the address is copied. Downstream — the review step, the staff panel, the
+    // materialised REMSEntityAddress rows — reads two whole addresses and always has, and a client who
+    // says "same as physical" has told us their mailing address rather than declined to give one. The
+    // flag comes too so that re-opening the form shows the box the way they left it.
+    mailingSameAsPhysical: !!payload.mailingSameAsPhysical,
+    mailingAddress: fromAddress(
+      payload.mailingSameAsPhysical ? payload.physicalAddress : payload.mailingAddress),
     // Blank rows are dropped rather than sent: adding a block and leaving it empty is somebody changing
     // their mind, not an answer, and it would otherwise become a placeless, nameless billing address on
     // the entity.
@@ -312,6 +541,27 @@ export function buildIntakePayload (payload, industryGroup) {
     spouseName: s(payload.spouseName),
     spousePhone: s(payload.spousePhone),
     spouseEmail: s(payload.spouseEmail),
+    // The other people on this return. Blank rows are dropped for the reason blank billing rows are —
+    // a block somebody opened and thought better of is a change of mind, not an answer — and the firm's
+    // rules are applied once more on the way out, so what is stored can never disagree with them.
+    additionalIndividuals: (payload.additionalIndividuals || [])
+      .filter(additionalIndividualHasData)
+      .map((row) => {
+        const out = applyIndividualRules({ ...row });
+        return {
+          sourceKey: s(out.sourceKey),
+          type: s(out.type),
+          filingType: s(out.filingType),
+          firstName: s(out.firstName),
+          lastName: s(out.lastName),
+          email: s(out.email),
+          phone: s(out.phone),
+          isMinor: typeof out.isMinor === "boolean" ? out.isMinor : null,
+          billingPreference: s(out.billingPreference),
+          billingFirstName: s(out.billingFirstName),
+          billingLastName: s(out.billingLastName)
+        };
+      }),
     ein: s(payload.ein),
     contractStartDate: dateOrNull(payload.contractStartDate),
     contractEndDate: dateOrNull(payload.contractEndDate),
@@ -364,22 +614,66 @@ export function intakeIssues (payload, industryGroup) {
 
   const addressIssue = "needs country, state, city, address line 1 and zip code.";
   if (!addressComplete(payload.physicalAddress)) out.push(`Physical address ${addressIssue}`);
-  // Both are required: there is no "same as" flag deciding whether a mailing address exists, only a copy
-  // button that fills it in for you.
-  if (!addressComplete(payload.mailingAddress)) out.push(`Mailing address ${addressIssue}`);
-  // Every billing address is optional — a client who gives none is invoiced at their mailing address —
-  // but a row somebody has STARTED has to be finished, exactly as an optional contact is. Either half of
-  // the row is a real answer on its own: an invoice can go to a street with no name on it, or by email to
-  // a named person with no street at all. So what is checked is that whichever half they began is whole.
-  // The addressee's name is never required: plenty of clients are invoiced at a department.
-  (payload.billingAddresses || []).forEach((row, i) => {
+  // Only when the client has said it differs. Ticked — which is how the form opens — the mailing address
+  // IS the physical one, and buildIntakePayload sends it as such.
+  if (!payload.mailingSameAsPhysical && !addressComplete(payload.mailingAddress)) {
+    out.push(`Mailing address ${addressIssue}`);
+  }
+  // Billing is now a whole answer in its own right, not an optional extra: where the invoice goes, and
+  // who it is addressed to, in one block. At least one is required — the firm bills somebody, and
+  // "whoever the post goes to" was a guess the form was making on the client's behalf.
+  //
+  // A SECOND block is optional, but a second block somebody has started has to be finished for exactly
+  // the same reason the first does: half an invoice address reaches nobody.
+  const billing = payload.billingAddresses || [];
+  const started = billing.filter(addressHasAnyContent);
+  if (!started.length) {
+    out.push("Billing information is required — give a name, an email and an address for the invoice.");
+  }
+  billing.forEach((row, i) => {
     if (!addressHasAnyContent(row)) return;
-    const label = (payload.billingAddresses.length > 1) ? `Billing address ${i + 1}` : "Billing address";
-    if (addressHasAny(row) && !addressComplete(row)) out.push(`${label} ${addressIssue}`);
-    if (filled(row.email) && !emailOk(row.email)) out.push(`${label} has an invalid email address.`);
+    const label = (billing.length > 1) ? `Billing information ${i + 1}` : "Billing information";
+    if (!filled(row.firstName)) out.push(`${label} needs a first name.`);
+    if (!filled(row.lastName)) out.push(`${label} needs a last name.`);
+    if (!filled(row.email)) {
+      out.push(`${label} needs an email address.`);
+    } else if (!emailOk(row.email)) {
+      out.push(`${label} has an invalid email address.`);
+    }
+    if (!addressComplete(row)) out.push(`${label} ${addressIssue}`);
     pushIf(out, nameIssue(row.firstName, `${label} first name`));
     pushIf(out, nameIssue(row.lastName, `${label} last name`));
   });
+
+  // The other people on an individual's return. Asked of nobody else, so checked for nobody else — a
+  // request whose entity type was changed afterwards must not be blocked on a card its form never showed.
+  if (individual) {
+    (payload.additionalIndividuals || []).forEach((row, i) => {
+      if (!additionalIndividualHasData(row)) return;
+      const label = individualLabel(row, i);
+      if (!filled(row.type)) out.push(`${label} needs a type — spouse, child or someone else.`);
+      if (!filled(row.filingType)) out.push(`${label} needs a filing type.`);
+      if (!filled(row.firstName)) out.push(`${label} needs a first name.`);
+      if (!filled(row.lastName)) out.push(`${label} needs a last name.`);
+      pushIf(out, nameIssue(row.firstName, `${label} first name`));
+      pushIf(out, nameIssue(row.lastName, `${label} last name`));
+      // Required, and required to be an address rather than merely present: the phone beside it stays
+      // optional, as it is on every contact on this form.
+      if (!filled(row.email)) {
+        out.push(`${label} needs an email address.`);
+      } else if (!emailOk(row.email)) {
+        out.push(`${label} has an invalid email address.`);
+      }
+      // Both of these open with an answer and are never cleared by the form, so this fires only for a
+      // payload assembled somewhere else. It is here because the server checks the same two.
+      if (!filled(row.billingPreference)) out.push(`${label} needs a billing preference.`);
+      // No billing NAME is required any more — the form stopped asking for one, so a complete row can no
+      // longer be missing it. A payload that carries a pair from before is still checked for SHAPE, so a
+      // bad value cannot ride in on an old draft.
+      pushIf(out, nameIssue(row.billingFirstName, `${label} billing first name`));
+      pushIf(out, nameIssue(row.billingLastName, `${label} billing last name`));
+    });
+  }
 
   if (isBusinessIndustryGroup(industryGroup) && !filled(payload.ein)) {
     out.push("EIN is required for a business.");
@@ -402,14 +696,20 @@ export function intakeIssues (payload, industryGroup) {
   // one would point at a box nobody can see; they are echoed back exactly as they arrived.
 
   // Name and email both required — the phone stays optional, as on every contact on this form.
-  payload.relatedEntities.forEach((e, i) => {
-    if (!filled(e.fullName)) out.push(`Entity #${i + 1} needs a client / entity name.`);
-    if (!filled(e.emailAddress)) {
-      out.push(`Entity #${i + 1} needs an email address.`);
-    } else if (!emailOk(e.emailAddress)) {
-      out.push(`Entity #${i + 1} has an invalid email address.`);
-    }
-  });
+  //
+  // Not asked of an individual, so not checked for one: the card is not on their form, and a draft that
+  // carries a row from before it was dropped must not block a client on a box they cannot see. The rows
+  // are still echoed back and still materialise.
+  if (!individual) {
+    payload.relatedEntities.forEach((e, i) => {
+      if (!filled(e.fullName)) out.push(`Entity #${i + 1} needs a client / entity name.`);
+      if (!filled(e.emailAddress)) {
+        out.push(`Entity #${i + 1} needs an email address.`);
+      } else if (!emailOk(e.emailAddress)) {
+        out.push(`Entity #${i + 1} has an invalid email address.`);
+      }
+    });
+  }
 
   return out;
 }

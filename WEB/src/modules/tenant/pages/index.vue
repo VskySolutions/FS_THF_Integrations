@@ -54,32 +54,25 @@
       </template>
 
       <template #body-cell-actions="cell">
-        <q-td :props="cell" class="text-right">
+        <q-td :props="cell">
           <q-btn flat round dense color="primary" icon="o_visibility" :to="{ name: 'tenant_detail', params: { id: cell.row.tenantId } }">
             <q-tooltip>View / Manage</q-tooltip>
           </q-btn>
-          <q-btn flat round dense icon="o_more_vert">
-            <q-menu auto-close>
-              <q-list style="min-width: 160px;">
-                <q-item clickable @click="openEdit(cell.row)">
-                  <q-item-section avatar><q-icon name="o_edit" /></q-item-section>
-                  <q-item-section>Edit</q-item-section>
-                </q-item>
-                <q-item v-if="cell.row.status !== 'Active'" clickable @click="setStatus(cell.row, true)">
-                  <q-item-section avatar><q-icon name="o_check_circle" /></q-item-section>
-                  <q-item-section>Activate</q-item-section>
-                </q-item>
-                <q-item v-if="cell.row.status === 'Active'" clickable @click="setStatus(cell.row, false)">
-                  <q-item-section avatar><q-icon name="o_block" /></q-item-section>
-                  <q-item-section>Deactivate</q-item-section>
-                </q-item>
-                <q-separator />
-                <q-item clickable class="text-negative" @click="archive(cell.row)">
-                  <q-item-section avatar><q-icon name="o_archive" color="negative" /></q-item-section>
-                  <q-item-section>Archive</q-item-section>
-                </q-item>
-              </q-list>
-            </q-menu>
+          <!-- One button per action, all of them on the row. Activate and Deactivate are two states of
+               one action, so they are one button that says which way it will go. -->
+          <q-btn type="a" flat round dense color="primary" icon="o_edit" @click="openEdit(cell.row)">
+            <q-tooltip>Edit</q-tooltip>
+          </q-btn>
+          <q-btn
+            type="a" flat round dense
+            :color="cell.row.status === 'Active' ? 'grey-8' : 'positive'"
+            :icon="cell.row.status === 'Active' ? 'o_block' : 'o_check_circle'"
+            @click="setStatus(cell.row, cell.row.status !== 'Active')"
+          >
+            <q-tooltip>{{ cell.row.status === "Active" ? "Deactivate" : "Activate" }}</q-tooltip>
+          </q-btn>
+          <q-btn type="a" flat round dense color="negative" icon="o_archive" @click="archive(cell.row)">
+            <q-tooltip>Archive</q-tooltip>
           </q-btn>
         </q-td>
       </template>
@@ -165,7 +158,7 @@ const columns = [
   { name: "status", label: "Status", field: "status", align: "left", sortable: true, default: true },
   { name: "timeZoneId", label: "Time Zone", field: "timeZoneId", align: "left", sortable: true },
   ...auditColumns(),
-  { name: "actions", label: "Actions", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "left" }
 ];
 
 const filters = reactive({ status: null, includeArchived: false });

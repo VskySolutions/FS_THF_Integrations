@@ -55,12 +55,12 @@
            APPROVED and the tooltip gives the tally. Before this, the only status on the row was the
            reader's own task, which flipped to Approved the moment they signed and left them reading their
            own signature as the request's outcome. -->
-      <!-- The particle in front of the name and in bold: on an approver's inbox the name is how a request
+      <!-- The particle after the name and in bold: on an approver's inbox the name is how a request
            is recognised, and two clients called John Smith differ by nothing else. The column still SORTS
            and searches on `clientName`, which is the two joined. -->
       <template #body-cell-client="cell">
         <q-td :props="cell">
-          <app-name-with-suffix :name="cell.row.clientNameWithoutSuffix" :suffix="cell.row.clientNameSuffix" />
+          <app-name-with-suffix :name="cell.row.clientName" :suffix="cell.row.clientNameSuffix" />
         </q-td>
       </template>
 
@@ -103,11 +103,14 @@
       </template>
 
       <template #body-cell-actions="cell">
-        <q-td :props="cell" class="text-right">
-          <q-btn flat round dense color="primary" icon="o_visibility" @click.stop="openTask(cell.row)">
+        <q-td :props="cell">
+          <!-- A LINK, not a click handler: the task is a place, so the button is written as a route and
+               renders as a real <a href> — which is what makes middle-click and "open in new tab" work.
+               The row click beside it still calls the same route the only way a row can. -->
+          <q-btn flat round dense color="primary" icon="o_visibility" :to="taskRoute(cell.row)">
             <q-tooltip>Open for review</q-tooltip>
           </q-btn>
-          <q-btn flat round dense color="primary" icon="o_forum" @click.stop="openConversation(cell.row)">
+          <q-btn type="a" flat round dense color="primary" icon="o_forum" @click.stop="openConversation(cell.row)">
             <q-tooltip>Conversation</q-tooltip>
           </q-btn>
         </q-td>
@@ -211,7 +214,7 @@ const columns = [
   // stopped carrying an entity name to put here, and the column had been rendering "—" on every row.
   { name: "decidedOnUtc", label: "Decided", field: (r) => (r.decidedOnUtc ? fmt.formatDateTime(r.decidedOnUtc) : "—"), align: "left", sortable: true, default: false, filterable: false },
   ...auditColumns(),
-  { name: "actions", label: "Actions", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "left" }
 ];
 
 // Paged and filtered SERVER-side, like every other REMS list: loading an approver's whole history and
@@ -246,7 +249,9 @@ const progressHint = (row) => {
   return parts.join(" · ");
 };
 
-const openTask = (row) => router.push({ name: "rems_approval_task", params: { taskId: row.taskId } });
+const taskRoute = (row) => ({ name: "rems_approval_task", params: { taskId: row.taskId } });
+// Still a push for the ROW click, which has nowhere to hang an href.
+const openTask = (row) => router.push(taskRoute(row));
 
 // ---- Conversation ----
 // The REQUEST's thread, the same one the task detail shows under the checklist — so an approver can raise

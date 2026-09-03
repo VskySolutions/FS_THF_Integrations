@@ -27,9 +27,15 @@ public interface IPersonRepository
     /// predate provenance tracking.
     /// </para>
     /// </summary>
+    /// <param name="partyType">
+    /// Narrows to people or to organisations. The REMS client picker's whole use for it: a request for an
+    /// Individual must offer individuals, and a request for any other entity type must offer companies —
+    /// offering the wrong kind is offering somebody a client they cannot file the request under.
+    /// </param>
     Task<(IReadOnlyList<Person> Items, int Total)> ListAsync(
         string? search, Guid? tenantId, bool? isUser, bool? isActive, SortRequest sort, int page, int limit,
-        EntityType? sourceEntityType = null, CancellationToken cancellationToken = default);
+        EntityType? sourceEntityType = null, PartyType? partyType = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// The client already holding this email address, if any. An email reaches one inbox, so two client

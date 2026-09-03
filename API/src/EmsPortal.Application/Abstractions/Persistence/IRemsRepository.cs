@@ -108,6 +108,121 @@ public sealed record RemsFormStateInfo(
     /// </summary>
     string? InviteCode);
 
+/// <summary>Which table a related client came out of — the two are read together and written apart.</summary>
+public enum RemsRelatedClientKind
+{
+    /// <summary>
+    /// Another person on an individual client's return, from the intake form's "Spouse &amp; More
+    /// Individuals" card (<see cref="REMSAdditionalIndividual"/>).
+    /// </summary>
+    Individual = 0,
+
+    /// <summary>
+    /// Another business the client named on the intake form's "Other Entities" card
+    /// (<see cref="REMSAdditionalEntity"/>). Asked of every entity type except Individual.
+    /// </summary>
+    Entity = 1,
+}
+
+/// <summary>
+/// The Related Entities list query: every submitted request whose client declared somebody ALONGSIDE
+/// themselves, one row per request with its related clients hanging off it.
+/// <para>
+/// The two sources are the two cards the intake form asks that on — "Spouse &amp; More Individuals" for
+/// an individual client, "Other Entities" for every other entity type. A request qualifies by having at
+/// least one row in either; because both are written only on submit, that is also what makes this a list
+/// of submitted requests without asking about the form at all.
+/// </para>
+/// </summary>
+public sealed record RemsRelatedEntityQuery(
+    /// <summary>Quick search over the REMS number, the client's name, and the related clients' names.</summary>
+    string? Search,
+    /// <summary>Option-set CODE (REMS.IndustryGroup), matched exactly — what kind of entity the client is.</summary>
+    string? EntityType,
+    /// <summary>
+    /// Option-set CODE (REMS.RelatedEntityStatus). Narrows to requests with AT LEAST ONE related client at
+    /// that status, which is what the column shows — a request is not at a single status, its rows are.
+    /// Filtering on <c>not_initiated</c> also matches rows nobody has answered for, since a null status
+    /// reads as exactly that.
+    /// </summary>
+    string? RelatedStatus,
+    SortRequest Sort,
+    int Page,
+    int Limit);
+
+/// <summary>
+/// One Related Entities row: the PARENT request, plus the count of related clients declared on it. The
+/// related clients themselves come back separately (<see cref="IRemsRepository.ListRelatedClientsAsync"/>),
+/// one read for the whole page rather than one per row.
+/// </summary>
+public sealed record RemsRelatedEntityItem(
+    Guid RemsId,
+    string RemsNumber,
+    /// <summary>
+    /// The client's name as it reads — "Smith John Jr." for a person, the legal name for an organisation.
+    /// Composed by the database on <c>Persons.ClientDisplayName</c>, so every list says it the same way.
+    /// </summary>
+    string ClientName,
+    /// <summary>The generational particle, so the Client column can draw it in bold at the end of the name.</summary>
+    string? ClientNameSuffix,
+    string? ClientEmail,
+    /// <summary>What kind of entity the client is (REMS.IndustryGroup code), off the request's form.</summary>
+    string? EntityType,
+    /// <summary>Where the request itself has got to (REMS.Status code) — context, not this list's subject.</summary>
+    string RequestStatus,
+    /// <summary>
+    /// The admin holding the request, or null while nobody has picked it up. Carried only so the request's
+    /// status badge can say "Waiting for pickup" where that is what it means — the refinement every other
+    /// REMS surface applies, and a list that skipped it would say something different about the same row.
+    /// </summary>
+    Guid? AdminAssignedToId,
+    /// <summary>When the client sent their intake form back. Never null in practice: no submission, no rows.</summary>
+    DateTime? SubmittedOnUtc,
+    int RelatedCount,
+    Guid? CreatedById,
+    /// <summary>
+    /// The principal a delegate raised this FOR, when one did. Carried for the same reason
+    /// <see cref="CreatedById"/> is: together they are "whose request this is", which is half of whether
+    /// the caller may edit it (RemsRequestsController.IsMine).
+    /// </summary>
+    Guid? OnBehalfOfUserId,
+    DateTime CreatedOnUtc,
+    Guid? UpdatedById,
+    DateTime UpdatedOnUtc);
+
+/// <summary>
+/// One related client, from either source table, in the shape the list draws them in.
+/// <para>
+/// The fields that only one kind carries are null on the other, and deliberately so rather than being
+/// split into two records: the list shows both kinds in one nested table, and a reader is looking at
+/// "who else is on this client" rather than at which table a row came from. What an individual has that
+/// an entity does not is a RELATION (spouse / child / other) and a FILING TYPE; what an entity has that
+/// an individual does not is the follow-up REQUEST it produced — an entity gets its own REMS, a person
+/// on a return does not.
+/// </para>
+/// </summary>
+public sealed record RemsRelatedClientItem(
+    Guid Id,
+    Guid RemsId,
+    RemsRelatedClientKind Kind,
+    string Name,
+    /// <summary>What they are to the client — <c>spouse</c>, <c>child</c>, <c>other</c>. Individuals only.</summary>
+    string? Relation,
+    /// <summary>How their return is filed — <c>joint</c> or <c>individual</c>. Individuals only.</summary>
+    string? FilingType,
+    string? Email,
+    string? PhoneNumber,
+    /// <summary>
+    /// The hand-set progress code (REMS.RelatedEntityStatus), already resolved: a row nobody has answered
+    /// for comes back as <c>not_initiated</c> rather than as null, because that is what it means.
+    /// </summary>
+    string Status,
+    /// <summary>The follow-up request raised from this row, or null. Entities only.</summary>
+    Guid? CreatedRemsId,
+    /// <summary>Stable ordering within its parent — the client declared them in this order.</summary>
+    DateTime DeclaredOnUtc,
+    string SourceKey);
+
 /// <summary>
 /// Data access for the REMS request aggregate root and its file links (WO-110). Tenant isolation is
 /// applied by the DbContext global query filter; the number-generation helpers deliberately bypass it
@@ -158,12 +273,42 @@ public interface IRemsRepository
     Task AddAdditionalEntityAsync(REMSAdditionalEntity additionalEntity, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Stage another PERSON on an individual client's return — a spouse, a child, anyone else the firm is
+    /// preparing for. Not an entity and not a contact: see <see cref="REMSAdditionalIndividual"/>.
+    /// </summary>
+    Task AddAdditionalIndividualAsync(
+        REMSAdditionalIndividual additionalIndividual, CancellationToken cancellationToken = default);
+
+    /// <summary>Everyone else on a request's return, in the order the client declared them.</summary>
+    Task<IReadOnlyList<REMSAdditionalIndividual>> ListAdditionalIndividualsAsync(
+        Guid remsId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// The other businesses declared on a request's intake, newest last. Backs the follow-up flag on the
     /// Partner/CSE list — rows with no <c>CreatedREMSId</c> are the ones still needing an EMS.
     /// </summary>
     Task<IReadOnlyList<REMSAdditionalEntity>> ListAdditionalEntitiesAsync(Guid remsId, CancellationToken cancellationToken = default);
 
     Task<REMSAdditionalEntity?> GetAdditionalEntityAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>One declared person, TRACKED — for setting the hand-managed status on the Related Entities list.</summary>
+    Task<REMSAdditionalIndividual?> GetAdditionalIndividualAsync(Guid id, CancellationToken cancellationToken = default);
+
+    void UpdateAdditionalIndividual(REMSAdditionalIndividual additionalIndividual);
+
+    /// <summary>
+    /// The paginated Related Entities list: every request whose client declared other people or other
+    /// businesses at intake, one row per REQUEST. Tenant-scoped by the ambient query filter.
+    /// </summary>
+    Task<(IReadOnlyList<RemsRelatedEntityItem> Items, int Total)> ListRelatedEntitiesAsync(
+        RemsRelatedEntityQuery query, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Every related client declared on the given requests, both kinds together, ordered as the client
+    /// declared them. One read for a whole page of parents rather than one per row.
+    /// </summary>
+    Task<IReadOnlyList<RemsRelatedClientItem>> ListRelatedClientsAsync(
+        IReadOnlyCollection<Guid> remsIds, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// REMS numbers for the given ids, keyed by id. Lets an additional-entity row link to the request it

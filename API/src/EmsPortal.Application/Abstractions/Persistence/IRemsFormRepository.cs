@@ -77,10 +77,12 @@ public sealed record RemsInboxItem(
 public sealed record RemsClientFormItem(
     Guid RemsId,
     string RemsNumber,
-    /// <summary>The client's name as it reads — the suffix in front of the requested name.</summary>
+    /// <summary>
+    /// The client's name as it reads — "Smith John Jr." for a person, the legal name for an organisation.
+    /// Composed by the database on <c>Persons.ClientDisplayName</c>, so every list says it the same way.
+    /// </summary>
     string ClientName,
-    /// <summary>The two halves of that name, so the Client column can draw the particle in bold.</summary>
-    string RequestedClientName,
+    /// <summary>The generational particle, so the Client column can draw it in bold at the end of the name.</summary>
     string? ClientNameSuffix,
     string RequestStatus,
     bool Submitted,

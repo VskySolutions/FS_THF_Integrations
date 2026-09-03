@@ -13,14 +13,10 @@
 
     <div class="section-subhead">Name</div>
     <div class="row q-col-gutter-md q-mb-md">
-      <!-- The generational particle on their name — Jr., Sr., III. It is not part of the name the person
-           is filed under, which is why it is its own box rather than something typed into the surname:
-           "Smith Jr." in that box is somebody nobody finds by searching for their name. -->
-      <app-name-suffix-field v-model="form.suffix" class="col-4 col-sm-2" :disable="disable" />
       <!-- Held to what a name is — letters, and the hyphen / apostrophe / period that appear inside real
            ones. See utils/personName, which the server's PersonNames mirrors. -->
       <app-text-field
-        v-model="form.firstName" label="First Name *" class="col-8 col-sm-4"
+        v-model="form.firstName" label="First Name *" class="col-12 col-sm-6"
         :disable="disable" :rules="nameRules('First name', { required: true })"
       />
       <app-text-field
@@ -28,9 +24,14 @@
         :disable="disable" :rules="nameRules('Middle name')"
       />
       <app-text-field
-        v-model="form.lastName" label="Last Name *" class="col-12 col-sm-6"
+        v-model="form.lastName" label="Last Name *" class="col-8 col-sm-4"
         :disable="disable" :rules="nameRules('Last name', { required: true })"
       />
+      <!-- The generational particle on their name — Jr., Sr., III. It is not part of the name the person
+           is filed under, which is why it is its own box rather than something typed into the surname:
+           "Smith Jr." in that box is somebody nobody finds by searching for their name. It sits after the
+           surname, which is where it is read. -->
+      <app-name-suffix-field v-model="form.suffix" class="col-4 col-sm-2" :disable="disable" />
       <app-text-field
         v-model="form.preferredName" label="Preferred Name" class="col-12 col-sm-6"
         :disable="disable" :rules="nameRules('Preferred name')"

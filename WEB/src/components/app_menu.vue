@@ -118,13 +118,18 @@ const sections = [
     key: "rems",
     label: "REMS",
     icon: "o_business_center",
-    // Three lists, one per role. There is no separate pool or inbox: the initiator fills the whole request
-    // and sends the intake link themselves, so the admins have one review queue between them.
+    // Three lists, one per role, plus the shared Related Entities board. There is no separate pool or
+    // inbox: the initiator fills the whole request and sends the intake link themselves, so the admins
+    // have one review queue between them.
     items: [
       // Open to everyone, like Approvals: the list shows the requests you raised or are named on, so a
       // user with no REMS work sees an empty list rather than a menu that hides the page from them.
       { label: "My Requests", icon: "o_space_dashboard", to: "/rems/partner", permissions: null },
       { label: "EMS Review", icon: "o_fact_check", to: "/rems/ems-review", permissions: [Permissions.RemsEngagementsManage] },
+      // Open to everyone too, and for a different reason from the two above: this list is not scoped to
+      // the caller's own work at all. It is the firm's shared board of the clients a client brought with
+      // them, and the status on each row is kept by whoever is chasing it.
+      { label: "Related Entities", icon: "o_account_tree", to: "/rems/related-entities", permissions: null },
       { label: "Approvals", icon: "o_approval", to: "/rems/approvals", permissions: null }
     ]
   },

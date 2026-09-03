@@ -68,10 +68,9 @@ public sealed record RemsApprovalTaskRow(
     Guid EngagementId,
     Guid RemsId,
     string RemsNumber,
-    /// <summary>The client's name as it reads — the suffix in front of the name they gave on intake.</summary>
+    /// <summary>The client's name as it reads — the suffix after the name they gave on intake.</summary>
     string ClientName,
-    /// <summary>The two halves of that name, so the Client column can draw the particle in bold.</summary>
-    string ClientNameWithoutSuffix,
+    /// <summary>The generational particle, so the cell can draw it in bold at the end of that name.</summary>
     string? ClientNameSuffix,
     /// <summary>
     /// The request's Client Service Executive. An approver deciding on a round needs to know who to ask
@@ -130,9 +129,11 @@ public sealed record RemsApprovalRequestView(
     Guid RemsId,
     string RemsNumber,
     string? Description,
-    /// <summary>The name the request was raised under, WITHOUT the particle.</summary>
-    string RequestedClientName,
-    /// <summary>The particle, so the packet can draw it in front of that name and in bold.</summary>
+    /// <summary>
+    /// The client's name as it reads — "Smith John Jr." for a person, the legal name for an organisation.
+    /// </summary>
+    string ClientName,
+    /// <summary>The particle, so the packet can draw it in bold at the end of that name.</summary>
     string? ClientNameSuffix,
     string Type,
     string Status,

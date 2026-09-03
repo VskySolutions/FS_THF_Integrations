@@ -82,30 +82,29 @@
         </template>
 
         <template #body-cell-actions="cell">
-          <q-td :props="cell" class="text-right">
+          <q-td :props="cell">
             <q-btn
               flat round dense color="primary" icon="o_visibility"
               :to="{ name: 'user_detail', params: { id: cell.row.userId } }"
             >
               <q-tooltip>View / Manage</q-tooltip>
             </q-btn>
-            <q-btn v-if="canWriteUsers || canResetPassword" flat round dense icon="o_more_vert">
-              <q-menu auto-close>
-                <q-list style="min-width: 170px;">
-                  <q-item v-if="canWriteUsers && !cell.row.isActive" clickable @click="setUserStatus(cell.row, true)">
-                    <q-item-section avatar><q-icon name="o_check_circle" /></q-item-section>
-                    <q-item-section>Activate</q-item-section>
-                  </q-item>
-                  <q-item v-if="canWriteUsers && cell.row.isActive" clickable @click="setUserStatus(cell.row, false)">
-                    <q-item-section avatar><q-icon name="o_block" /></q-item-section>
-                    <q-item-section>Deactivate</q-item-section>
-                  </q-item>
-                  <q-item v-if="canResetPassword" clickable @click="resetUserPassword(cell.row)">
-                    <q-item-section avatar><q-icon name="o_lock_reset" /></q-item-section>
-                    <q-item-section>Reset Password</q-item-section>
-                  </q-item>
-                </q-list>
-              </q-menu>
+            <!-- One button per action, all of them on the row. Activate and Deactivate are two states of
+                 one action, so they are one button that says which way it will go. -->
+            <q-btn
+              v-if="canWriteUsers" type="a"
+              flat round dense
+              :color="cell.row.isActive ? 'grey-8' : 'positive'"
+              :icon="cell.row.isActive ? 'o_block' : 'o_check_circle'"
+              @click="setUserStatus(cell.row, !cell.row.isActive)"
+            >
+              <q-tooltip>{{ cell.row.isActive ? "Deactivate" : "Activate" }}</q-tooltip>
+            </q-btn>
+            <q-btn
+              v-if="canResetPassword" type="a"
+              flat round dense color="primary" icon="o_lock_reset" @click="resetUserPassword(cell.row)"
+            >
+              <q-tooltip>Reset Password</q-tooltip>
             </q-btn>
           </q-td>
         </template>
@@ -275,7 +274,7 @@ const userColumns = [
   { name: "roles", label: "Role", field: (r) => (r.roles || []).join(", "), align: "left", sortable: false, default: true },
   { name: "isActive", label: "Status", field: "isActive", align: "left", sortable: true, default: true },
   ...auditColumns(),
-  { name: "actions", label: "Actions", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "left" }
 ];
 
 const {

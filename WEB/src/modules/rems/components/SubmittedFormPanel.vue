@@ -37,9 +37,10 @@
       </q-banner>
 
       <!-- Grouped in the order the client was asked, so the admin reads the answers as they were given:
-           Contact · Addresses & Billing · Contract Details · Contacts · Other Entities. Plain read-only
-           text (AC-REMS-013.2). A group of retired billing answers slots in after the addresses on the
-           submissions old enough to carry them, and is absent on every other. -->
+           Contact · Physical & Mailing Addresses · Billing Information · Spouse & More Individuals ·
+           Contract Details · Contacts · Other Entities. Plain read-only text (AC-REMS-013.2). A group of
+           retired billing answers slots in after the billing one on the submissions old enough to carry
+           them, and is absent on every other. -->
       <div v-for="g in groups" :key="g.title" class="submitted-group">
         <div class="submitted-group__title">
           <q-icon :name="g.icon" size="18px" class="q-mr-xs" />{{ g.title }}
@@ -63,6 +64,28 @@
           <div v-else class="text-grey-6">No contacts provided.</div>
         </div>
 
+        <!-- The other people on this return, several to a row and four short lines each. Mirrors the
+             client's review step exactly, which is the point of this panel: the admin reads what the
+             client read. -->
+        <div v-else-if="g.kind === 'individuals'" class="submitted-people__grid">
+          <div v-for="p in g.rows" :key="p.key" class="submitted-person">
+            <div class="person-head">
+              <span class="rems-value text-weight-medium person-head__name">{{ p.name }}</span>
+              <q-badge
+                v-if="p.type" :label="p.type" color="blue-grey-1" text-color="blue-grey-8"
+                class="person-head__type"
+              />
+            </div>
+            <div class="text-caption text-grey-7 ellipsis">
+              {{ p.email || "no email" }}<template v-if="p.phone"> · {{ p.phone }}</template>
+            </div>
+            <div class="text-caption text-grey-8">
+              {{ p.filing }}<template v-if="p.minor"> · {{ p.minor }}</template> · {{ p.billing }}
+            </div>
+            <div v-if="p.billedTo" class="text-caption text-grey-7 ellipsis">Billed to {{ p.billedTo }}</div>
+          </div>
+        </div>
+
         <div v-else-if="g.kind === 'entities'">
           <div v-if="g.rows.length" class="column q-gutter-sm">
             <q-card v-for="(e, i) in g.rows" :key="e.key || i" flat bordered class="q-pa-sm entity-card">
@@ -73,7 +96,7 @@
               </div>
             </q-card>
           </div>
-          <div v-else class="text-grey-6">No other entities provided.</div>
+          <div v-else class="text-grey-6">{{ g.emptyText || "No other entities provided." }}</div>
         </div>
 
         <!-- People belonging to a FIELDS group — the addressees, under the addresses they are the other
@@ -111,6 +134,7 @@ import { addressText, billingAddressList, addresseeParts } from "modules/rems/re
 import {
   answeredRoleKeys, groupKey, normalizeRoles, roleDefsFor, roleHasAny, roleNameParts
 } from "modules/rems/remsContactRoles";
+import { additionalIndividualHasData, individualSummary } from "modules/rems/useRemsIntakeForm";
 import AppNameWithSuffix from "components/common/AppNameWithSuffix.vue";
 
 const props = defineProps({
@@ -136,7 +160,7 @@ const val = (v) => (v == null || String(v).trim() === "" ? "—" : v);
 
 // The client's name, whichever shape the payload is in: the two parts a person gave, or the single entity
 // name a company gave. Older payloads carry only `clientName`. Kept as two halves so the heading can draw
-// the particle in front and in bold, like every other REMS surface.
+// the particle after the name and in bold, like every other REMS surface.
 //
 // The suffix comes off the REQUEST rather than the payload — the client's own answer carries theirs, but
 // the firm's particle is the one every other surface shows them by. The First Name and Last Name ROWS
@@ -163,9 +187,9 @@ const groups = computed(() => {
   // Contact — the name as the client was asked for it.
   const contact = isIndividual.value
     ? [
-      { label: "Suffix", value: val(p.clientSuffix) },
       { label: "First Name", value: val(p.clientFirstName ?? p.clientName) },
-      { label: "Last Name", value: val(p.clientLastName) }
+      { label: "Last Name", value: val(p.clientLastName) },
+      { label: "Suffix", value: val(p.clientSuffix) }
     ]
     : [{ label: "Client/Entity Name", value: val(p.clientName) }];
   contact.push(
@@ -193,34 +217,53 @@ const groups = computed(() => {
   // them sections apart is what made checking either of them awkward. Billing is a LIST: a client
   // invoiced at two offices gives two, each with its own addressee.
   const roles = normalizeRoles(p.roles);
+  // Addresses. Where the client said their post goes to the physical address, that is what the panel
+  // says: the payload carries the copy, and printing the identical address twice reads as two answers an
+  // admin has to compare against each other.
+  const addressRows = [{ label: "Physical Address", value: addressText(p.physicalAddress) }];
+  addressRows.push({
+    label: "Mailing Address",
+    value: p.mailingSameAsPhysical ? "Same as physical address" : addressText(p.mailingAddress)
+  });
+  result.push({ title: "Physical & Mailing Addresses", icon: "o_place", kind: "fields", rows: addressRows });
+
+  // Billing — its own group, because it is its own answer: who each invoice is for, and where it goes.
+  // The addressees are rendered as PEOPLE, one block each with the email and phone beneath the name,
+  // rather than three label/value rows apiece: flattened into a grid, a second one became fields called
+  // "Billing Information 2 Email" and "Billing Information 2 Phone", and an admin checking who to invoice
+  // had to count rows to work out where one person ended. The client's review step shows the same shape,
+  // which is the point of this panel mirroring it.
   const billing = billingAddressList(p);
-  // Numbered only where they gave more than one — a "1" over a lone address answers a question nobody
+  // Numbered only where they gave more than one — a "1" over a lone block answers a question nobody
   // asked — and in the order they gave them.
-  const billingLabel = (i) => (billing.length > 1 ? `Billing Address ${i + 1}` : "Billing Address");
-  const addressRows = [
-    { label: "Physical Address", value: addressText(p.physicalAddress) },
-    { label: "Mailing Address", value: addressText(p.mailingAddress) }
-  ];
-  // A dash rather than nothing: giving no billing address IS what the client answered, and it means the
-  // invoices go to the mailing address.
-  if (!billing.length) addressRows.push({ label: "Billing Address", value: "—" });
-  billing.forEach((b, i) => addressRows.push({ label: billingLabel(i), value: addressText(b) }));
-  // The addressees, rendered as PEOPLE — one block each, the name with the email and phone beneath it —
-  // rather than three label/value rows apiece. Flattened into the address grid, a second one became
-  // fields called "Billing Address 2 Email" and "Billing Address 2 Phone" sitting beside "Mailing
-  // Address", and an admin checking who to invoice had to count rows to work out where one person ended.
-  // The client's review step shows the same shape, which is the point of this panel mirroring it.
+  const billingLabel = (i) => (billing.length > 1 ? `Billing Information ${i + 1}` : "Billing Information");
   const billingPeople = billing
     .map((b, i) => ({ role: billingLabel(i), ...addresseeParts(b), email: b?.email, phone: b?.phone }))
     .filter((person) => person.name || person.email || person.phone);
   result.push({
-    title: "Addresses & Billing",
-    icon: "o_place",
+    title: "Billing Information",
+    icon: "o_receipt_long",
     kind: "fields",
-    rows: addressRows,
+    // A dash rather than nothing on a submission that carries none: billing is required now, so an empty
+    // one is an older form, and saying so beats an absent heading.
+    rows: billing.length
+      ? billing.map((b, i) => ({ label: billingLabel(i), value: addressText(b) }))
+      : [{ label: "Billing Information", value: "—" }],
     people: billingPeople,
     peopleTitle: "Invoices addressed to"
   });
+
+  // Spouse & more individuals — everyone else on this return, with how each one files and who pays for
+  // them. Absent on a submission that named nobody, and on every submission sent before the card existed.
+  const individuals = (p.additionalIndividuals || []).filter(additionalIndividualHasData);
+  if (individuals.length) {
+    result.push({
+      title: "Spouse & More Individuals",
+      icon: "o_family_restroom",
+      kind: "individuals",
+      rows: individuals.map(individualSummary)
+    });
+  }
 
   // The billing answers a submission gave under questions the form no longer asks: the two plain boxes
   // that preceded the billing-contact block, and the extra billing contacts that preceded the
@@ -278,9 +321,15 @@ const groups = computed(() => {
       email: roles[def.key]?.email,
       phone: roles[def.key]?.phone
     }));
-  result.push({ title: "Contacts", icon: "o_groups", kind: "contacts", rows: contactRows });
+  // Absent where the group is asked for none and the submission carries none — an individual, whose own
+  // details are the Contact group and whose family has a group of its own.
+  if (contactRows.length || roleDefsFor(key).length) {
+    result.push({ title: "Contacts", icon: "o_groups", kind: "contacts", rows: contactRows });
+  }
 
   // Other Entities — a contact each, not a second set of business details. Each becomes its own EMS.
+  // Absent for an individual, who is not asked, unless their submission carries one from before the card
+  // was dropped: this panel reports what was in the envelope.
   const entities = (p.relatedEntities || [])
     .filter((e) => [e.fullName, e.emailAddress, e.phoneNumber].some((x) => x && String(x).trim()))
     .map((e, i) => {
@@ -289,7 +338,9 @@ const groups = computed(() => {
       if (e.phoneNumber) rows.push({ label: "Phone Number", value: e.phoneNumber });
       return { key: e.sourceKey || `entity-${i}`, name: e.fullName, rows };
     });
-  result.push({ title: "Other Entities", icon: "o_apartment", kind: "entities", rows: entities });
+  if (!isIndividual.value || entities.length) {
+    result.push({ title: "Other Entities", icon: "o_apartment", kind: "entities", rows: entities });
+  }
 
   return result;
 });
@@ -368,5 +419,29 @@ defineExpose({ reload: load });
   border-radius: 8px;
   padding: 8px 10px;
   background: #fbfcfd;
+}
+/* The name and what the person IS, on one line. The name takes the room and truncates; the badge keeps
+   its width, because "Spouse" cut to "Spo…" is the one word on the card that cannot be guessed from the
+   rest of it. */
+.person-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+/* Truncated here rather than with the `ellipsis` utility: .rems-value sets white-space: pre-wrap at the
+   same specificity, so whichever stylesheet loaded last would decide whether a long name wraps the card
+   to two lines. Said explicitly, it cannot. */
+.person-head__name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.person-head__type {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 </style>

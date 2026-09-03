@@ -47,7 +47,12 @@ const SET_KEYS = {
   subServiceLine: "REMS.SubServiceLine",
   subIndustry: "REMS.SubIndustry",
   billingPeriod: "REMS.BillingPeriod",
-  personnelLevel: "REMS.PersonnelLevel"
+  personnelLevel: "REMS.PersonnelLevel",
+  // How far a client's RELATED client has got, on the Related Entities list. The only list here that is
+  // both a badge AND a picker on the same control: the status is set by hand, so the list is offered and
+  // rendered in the same place. Open rather than closed — nothing branches on the set of values — so a
+  // firm that adds a fifth position sees it in the dropdown without anything here changing.
+  relatedEntityStatus: "REMS.RelatedEntityStatus"
 };
 
 // Module-level and shared: these lists are per-tenant and change rarely, so resolving them once beats

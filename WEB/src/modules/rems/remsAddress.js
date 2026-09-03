@@ -120,13 +120,13 @@ const addressHasContact = (a) => [a?.firstName, a?.lastName, a?.email, a?.phone]
 export const addressHasAnyContent = (a) => addressHasAny(a) || addressHasContact(a);
 
 /**
- * The addressee as they are addressed — the two name parts joined, with the particle in FRONT, the order
- * the form asks them in. Serves the canonical and the wire shape alike: those five field names are the
- * same on both sides.
+ * The addressee as they are addressed — the two name parts joined, with the particle AFTER them, the
+ * order the form asks them in. Serves the canonical and the wire shape alike: those five field names are
+ * the same on both sides.
  */
 /**
  * The same two halves, unjoined, for a surface that RENDERS the addressee rather than needing a string —
- * AppNameWithSuffix draws the particle in bold, and cannot find it inside a joined name.
+ * AppNameWithSuffix draws the particle in bold after the name, and cannot find it inside a joined one.
  */
 export const addresseeParts = (a) => {
   const name = [a?.firstName, a?.lastName].map((v) => String(v ?? "").trim()).filter(Boolean).join(" ");
@@ -137,7 +137,7 @@ export const addresseeName = (a) => {
   const name = [a?.firstName, a?.lastName].map((v) => String(v ?? "").trim()).filter(Boolean).join(" ");
   if (!name) return "";
   const suffix = String(a?.suffix ?? "").trim();
-  return suffix ? `${suffix} ${name}` : name;
+  return suffix ? `${name} ${suffix}` : name;
 };
 
 /** A complete address: everything except line 2. */

@@ -53,28 +53,20 @@
       </template>
 
       <template #body-cell-actions="cell">
-        <q-td :props="cell" class="text-right">
-          <q-btn flat round dense color="primary" icon="o_edit" @click="openEdit(cell.row)">
+        <q-td :props="cell">
+          <q-btn type="a" flat round dense color="primary" icon="o_edit" @click="openEdit(cell.row)">
             <q-tooltip>Edit</q-tooltip>
           </q-btn>
-          <q-btn flat round dense icon="o_more_vert">
-            <q-menu auto-close>
-              <q-list style="min-width: 180px;">
-                <q-item clickable @click="openEdit(cell.row)">
-                  <q-item-section avatar><q-icon name="o_edit" /></q-item-section>
-                  <q-item-section>Edit</q-item-section>
-                </q-item>
-                <q-item clickable @click="previewRow(cell.row)">
-                  <q-item-section avatar><q-icon name="o_visibility" /></q-item-section>
-                  <q-item-section>Preview</q-item-section>
-                </q-item>
-                <q-separator v-if="canReset(cell.row)" />
-                <q-item v-if="canReset(cell.row)" clickable @click="resetRow(cell.row)">
-                  <q-item-section avatar><q-icon name="o_restart_alt" color="negative" /></q-item-section>
-                  <q-item-section class="text-negative">Reset to default</q-item-section>
-                </q-item>
-              </q-list>
-            </q-menu>
+          <!-- One button per action, all of them on the row. Edit is not repeated: it is already the
+               button beside this one. -->
+          <q-btn type="a" flat round dense color="primary" icon="o_visibility" @click="previewRow(cell.row)">
+            <q-tooltip>Preview</q-tooltip>
+          </q-btn>
+          <q-btn
+            v-if="canReset(cell.row)" type="a"
+            flat round dense color="negative" icon="o_restart_alt" @click="resetRow(cell.row)"
+          >
+            <q-tooltip>Reset to default</q-tooltip>
           </q-btn>
         </q-td>
       </template>
@@ -146,7 +138,7 @@ const columns = [
   // Blank on a template nobody has overridden — its content is still the built-in definition in code,
   // so there is no edit and nobody to attribute it to.
   ...auditColumns(),
-  { name: "actions", label: "Actions", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "left" }
 ];
 
 const { rows, loading, pagination, load, onRequest } = useListTable({

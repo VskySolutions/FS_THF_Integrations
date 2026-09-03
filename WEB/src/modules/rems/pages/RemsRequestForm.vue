@@ -383,6 +383,17 @@
                   <approval-history :engagement-id="engagement.id" class="q-mt-md" />
                 </template>
               </q-tab-panel>
+
+              <!-- ---------- Activity ---------- -->
+              <!-- What has HAPPENED to this request, as against the four tabs before it, which are what it
+                   SAYS. Tags sit at the top of it rather than in the header: they are the firm's own
+                   filing marks on the record — shared, unlike the personal colour a reader can put on its
+                   row in a list — and they belong beside the trail they help somebody find later. -->
+              <q-tab-panel v-if="remsId" name="activity">
+                <entity-tags-panel :entity-type="EntityType.Rems" :entity-id="remsId" class="q-mb-md" />
+                <q-separator class="q-mb-md" />
+                <entity-activity-timeline :entity-type="EntityType.Rems" :entity-id="remsId" />
+              </q-tab-panel>
             </q-tab-panels>
           </q-card>
         </div>
@@ -439,7 +450,7 @@
 // per-record locks could not express.
 import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } from "vue";
 import { useRoute, useRouter, onBeforeRouteLeave } from "vue-router";
-import { remsApi, getApiErrorMessage, webUrl } from "services/api";
+import { remsApi, getApiErrorMessage, webUrl, EntityType } from "services/api";
 import { useNotify } from "composables/useNotify";
 import { formatDateOnly } from "composables/useDateFormat";
 import { useConfirm } from "composables/useConfirm";
@@ -455,6 +466,8 @@ import { useAuthStore } from "stores/auth";
 import AppDetailHeader from "components/common/AppDetailHeader.vue";
 import AppOptionBadge from "components/common/AppOptionBadge.vue";
 import AppRecordAudit from "components/common/AppRecordAudit.vue";
+import EntityTagsPanel from "components/universal/EntityTagsPanel.vue";
+import EntityActivityTimeline from "components/universal/EntityActivityTimeline.vue";
 import ActingAsBanner from "modules/rems/components/ActingAsBanner.vue";
 import DetailGrid from "modules/rems/components/DetailGrid.vue";
 import ClientInformationFields from "modules/rems/components/ClientInformationFields.vue";
@@ -532,7 +545,13 @@ const reminderOpen = ref(false);
 const sendBackOpen = ref(false);
 
 const blankClient = () => ({
+  // The name as one string — composed from the parts below for an individual, and the legal name itself
+  // for an organisation. It is what the request is identified by everywhere it is not being edited.
   clientName: "",
+  // The name in PARTS, which is how the form asks for it: two boxes for a person, one for a company.
+  clientFirstName: "",
+  clientLastName: "",
+  clientCorporateName: "",
   // The generational suffix, kept apart from the name — see ClientInformationFields for why.
   clientNameSuffix: "",
   customerEmail: "",
@@ -796,12 +815,17 @@ const commissionAllocated = computed(() => commissionTotal.value === 100);
 
 const readyToSend = computed(() =>
   !!clientForm.customerEmail?.trim() && !!setupForm.cseUserId && !!setupForm.industryGroup &&
-  commissionAllocated.value);
+  !!setupForm.subIndustry && commissionAllocated.value);
 const sendBlockedReason = computed(() => {
   if (!clientForm.customerEmail?.trim()) return "The client has no email address to send the form to.";
   if (!setupForm.cseUserId) return "Choose a CSE first — it is on the Client Information tab.";
   if (!setupForm.industryGroup) {
     return "Choose an entity type on the Client Information tab — it decides what the client is asked.";
+  }
+  // Required now, where it used to be optional. It is how the engagement is classified and reported on,
+  // and a client whose trade nobody recorded at intake is one nobody goes back and records it for.
+  if (!setupForm.subIndustry) {
+    return "Choose an industry on the Client Information tab — the Entity Type beside it narrows the list.";
   }
   if (!commissionAllocated.value) {
     // Naming nobody is its own sentence. "Totals 0% — the recipients must add up to 100%" points at
@@ -954,7 +978,10 @@ const TABS = [
   { name: "setup", label: "Engagement Setup", icon: "o_work" },
   { name: "marketing", label: "Marketing", icon: "o_campaign" },
   { name: "commission", label: "Commission", icon: "o_payments" },
-  { name: "approval", label: "Approval", icon: "o_approval" }
+  { name: "approval", label: "Approval", icon: "o_approval" },
+  // Last, because it is the only tab that is not part of filling the request in: it is the record's own
+  // trail, and its tags.
+  { name: "activity", label: "Activity", icon: "o_history" }
 ];
 
 const tabs = computed(() => {
@@ -963,7 +990,9 @@ const tabs = computed(() => {
     setup: true,
     marketing: !!setupEngagement.value,
     commission: !!setupEngagement.value,
-    approval: showApprovalTab.value
+    approval: showApprovalTab.value,
+    // There is no trail before there is a record. A request being composed has neither.
+    activity: !isNew.value
   };
   return TABS.filter((t) => shown[t.name]).map((t) => ({
     ...t,
@@ -1048,7 +1077,7 @@ const commissionLabels = computed(() =>
     .map((s) => `${s.employee?.name || nameOf(cseOptions.value, s.employeeId)} — ${s.percentage}%`));
 
 const clientRows = computed(() => [
-  // Read as one name, the particle in front of it — the pair is edited as two boxes because they are two
+  // Read as one name, the particle after it — the pair is edited as two boxes because they are two
   // different things to store, not because they are two things about the client.
   { label: "Client", value: clientForm.clientName, suffix: clientForm.clientNameSuffix || "" },
   { label: "Client Email Address", value: clientForm.customerEmail },
@@ -1175,9 +1204,12 @@ const loadPickers = async () => {
 let pendingSetupPick = null;
 
 const seedForms = (detail, ws) => {
-  // requestedClientName, not clientName: the latter is the pair already joined, and seeding it into the
-  // search box would put "John Smith Jr." into a field that looks its clients up by name.
-  clientForm.clientName = detail.requestedClientName ?? detail.clientName ?? "";
+  // The composed name — "Smith John Jr." for a person, the legal name for an organisation. The form
+  // splits it back into its parts for an individual; for an organisation it is the name whole.
+  clientForm.clientName = detail.clientName ?? "";
+  clientForm.clientFirstName = detail.clientFirstName || "";
+  clientForm.clientLastName = detail.clientLastName || "";
+  clientForm.clientCorporateName = detail.clientCorporateName || "";
   clientForm.clientNameSuffix = detail.clientNameSuffix || "";
   clientForm.customerEmail = detail.customerEmail || "";
   clientForm.customerMobileNumber = detail.customerMobileNumber || "";
@@ -1235,8 +1267,12 @@ const clientProblem = () => {
 const clientPayload = () => ({
   type: clientForm.type,
   clientName: clientForm.clientName,
-  // "" rather than null, deliberately: the endpoint reads an omitted field as "leave it alone", so a
-  // suffix taken back off would otherwise stay on the record.
+  // The PARTS, so the server does not have to guess where a name splits. "" rather than null on all of
+  // them, for the same reason the suffix is: the endpoint reads an omitted field as "leave it alone", so
+  // a value taken back off would otherwise stay on the record.
+  clientFirstName: clientForm.clientFirstName || "",
+  clientLastName: clientForm.clientLastName || "",
+  clientCorporateName: clientForm.clientCorporateName || "",
   clientNameSuffix: clientForm.clientNameSuffix || "",
   customerEmail: clientForm.customerEmail || null,
   customerMobileNumber: clientForm.customerMobileNumber || null,

@@ -26,6 +26,13 @@ public static class RemsOptionSetKeys
     public const string BillingPeriod = "REMS.BillingPeriod";
     public const string PersonnelLevel = "REMS.PersonnelLevel";
 
+    /// <summary>
+    /// How far a client's RELATED client has got — the status on every row of the Related Entities list.
+    /// Set by hand; the server writes only the <c>not_initiated</c> default. See
+    /// <c>RemsRelatedEntityStatuses</c>.
+    /// </summary>
+    public const string RelatedEntityStatus = "REMS.RelatedEntityStatus";
+
     /// <summary>Referenced by item ID already — the grouped marketing list and the tax-form checklist.</summary>
     public const string MarketingMethods = "REMSMarketing_MarketingMethods.MarketingMethodId";
     public const string TaxForm = "REMS.TaxForm";

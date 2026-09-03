@@ -1,11 +1,11 @@
 <template>
-  <div class="row q-col-gutter-md">
+  <div class="row" :class="`q-col-gutter-${gutter}`">
     <!-- The standard address block, in the standard order: Country → State → City → Address Line 1 →
          Address Line 2 → Zip. Everything except Address Line 2 is mandatory whenever the surrounding
          form marks the block `required`. -->
     <app-select
       v-model="address.countryCode" :options="countryOptions" :label="label('Country')" :required="required"
-      use-input class="col-12 col-sm-4" :dense="dense" :disable="disable" :readonly="readonly"
+      use-input :class="col('country')" :dense="dense" :disable="disable" :readonly="readonly"
       :rules="rulesFor('Country is required')"
       :error="!!errorFor('countryCode')" :error-message="errorFor('countryCode')"
       @update:model-value="onCountryChange"
@@ -15,7 +15,7 @@
          doesn't (a country with no states, a state with no cities), so nobody is blocked by a data gap. -->
     <app-select
       v-if="stateMode !== 'text'" v-model="address.stateCode" :options="stateOptions"
-      :label="label('State / Province')" :required="required" use-input class="col-12 col-sm-4"
+      :label="label('State / Province')" :required="required" use-input :class="col('state')"
       :dense="dense" :readonly="readonly" :disable="disable || stateMode === 'pending'"
       :rules="rulesFor('State / Province is required')"
       :error="!!errorFor('stateName')" :error-message="errorFor('stateName')"
@@ -23,39 +23,39 @@
     />
     <app-text-field
       v-else v-model="address.stateName" :label="label('State / Province')" :required="required"
-      class="col-12 col-sm-4" :dense="dense" :disable="disable" :readonly="readonly"
+      :class="col('state')" :dense="dense" :disable="disable" :readonly="readonly"
       :rules="rulesFor('State / Province is required')"
       :error="!!errorFor('stateName')" :error-message="errorFor('stateName')"
     />
 
     <app-select
       v-if="cityMode !== 'text'" v-model="address.cityName" :options="cityOptions"
-      :label="label('City')" :required="required" use-input class="col-12 col-sm-4"
+      :label="label('City')" :required="required" use-input :class="col('city')"
       :dense="dense" :readonly="readonly" :disable="disable || cityMode === 'pending'"
       :rules="rulesFor('City is required')"
       :error="!!errorFor('cityName')" :error-message="errorFor('cityName')"
     />
     <app-text-field
       v-else v-model="address.cityName" :label="label('City')" :required="required"
-      class="col-12 col-sm-4" :dense="dense" :disable="disable" :readonly="readonly"
+      :class="col('city')" :dense="dense" :disable="disable" :readonly="readonly"
       :rules="rulesFor('City is required')"
       :error="!!errorFor('cityName')" :error-message="errorFor('cityName')"
     />
 
     <app-text-field
       v-model="address.addressLine1" :label="label('Address Line 1')" :required="required"
-      class="col-12 col-sm-8" :dense="dense" :disable="disable" :readonly="readonly"
+      :class="col('addressLine1')" :dense="dense" :disable="disable" :readonly="readonly"
       :rules="rulesFor('Address Line 1 is required')"
       :error="!!errorFor('addressLine1')" :error-message="errorFor('addressLine1')"
     />
     <app-text-field
-      v-model="address.addressLine2" label="Address Line 2" class="col-12 col-sm-4"
+      v-model="address.addressLine2" label="Address Line 2" :class="col('addressLine2')"
       :dense="dense" :disable="disable" :readonly="readonly"
       :error="!!errorFor('addressLine2')" :error-message="errorFor('addressLine2')"
     />
 
     <app-text-field
-      v-model="address.postalCode" :label="label('Zip Code')" :required="required" class="col-12 col-sm-4"
+      v-model="address.postalCode" :label="label('Zip Code')" :required="required" :class="col('postalCode')"
       :dense="dense" :disable="disable" :readonly="readonly"
       :rules="rulesFor('Zip Code is required')"
       :error="!!postalMessage" :error-message="postalMessage" @blur="validatePostal"
@@ -66,36 +66,37 @@
          section of its own: "where does the invoice go?" and "who is it addressed to?" are one question,
          and a client with three places to invoice has three answers to it. Split across two sections
          there was nothing saying which name belonged to which address.
-         Never required. An invoice addressed to "Accounts Payable" at a street is a perfectly ordinary
-         answer, and so is an email address with no name in front of it. -->
+
+         `contactFirst` puts these boxes BEFORE the postal ones through the flex row's own ordering rather
+         than by repeating the markup — the fields are direct children of one flex row, so an order class
+         moves the whole block and leaves both orders reading from one copy. A form that leads with the
+         person is asking "who is the invoice for, and where does it go?", which is the order those two
+         are answered in. -->
     <template v-if="contact">
-      <div class="col-12 section-subhead">{{ contactLabel }}</div>
-      <!-- The generational particle, in a box of its own for the reason it always is: a record is filed
-           under a given name and a family name, and "Jr." is neither. -->
-      <app-name-suffix-field
-        v-model="address.suffix" class="col-4 col-sm-2" :readonly="readonly" :disable="disable"
-      />
+      <!-- Only where the host names the block. Three boxes called First Name, Last Name and Email Address
+           inside a card called Billing Information do not need a heading telling them what they are. -->
+      <div v-if="contactLabel" class="col-12 section-subhead" :class="contactOrder">{{ contactLabel }}</div>
       <app-text-field
-        v-model="address.firstName" label="First Name" class="col-8 col-sm-4"
-        :dense="dense" :disable="disable" :readonly="readonly" :rules="nameRules('First Name')"
+        v-model="address.firstName" :label="contactLabelFor('First Name')" :required="contactRequired"
+        :class="[col('firstName'), contactOrder]"
+        :dense="dense" :disable="disable" :readonly="readonly"
+        :rules="nameRules('First Name', { required: contactRequired })"
         :error="!!errorFor('firstName')" :error-message="errorFor('firstName')"
       />
       <app-text-field
-        v-model="address.lastName" label="Last Name" class="col-12 col-sm-6"
-        :dense="dense" :disable="disable" :readonly="readonly" :rules="nameRules('Last Name')"
+        v-model="address.lastName" :label="contactLabelFor('Last Name')" :required="contactRequired"
+        :class="[col('lastName'), contactOrder]"
+        :dense="dense" :disable="disable" :readonly="readonly"
+        :rules="nameRules('Last Name', { required: contactRequired })"
         :error="!!errorFor('lastName')" :error-message="errorFor('lastName')"
       />
       <app-text-field
-        v-model="address.email" label="Email" type="email" class="col-12 col-sm-6"
+        v-model="address.email" :label="contactLabelFor('Email Address')" type="email"
+        :required="contactRequired" :class="[col('email'), contactOrder]"
         :dense="dense" :disable="disable" :readonly="readonly"
+        :rules="contactRequired ? [requiredRule('Email Address is required')] : []"
         :error="!!errorFor('email')" :error-message="errorFor('email')"
       />
-      <div class="col-12 col-sm-6">
-        <app-phone-input
-          v-model="address.phone" label="Phone Number" :dense="dense" :disable="disable" :readonly="readonly"
-        />
-        <div v-if="errorFor('phone')" class="text-negative text-caption q-mt-xs">{{ errorFor('phone') }}</div>
-      </div>
     </template>
 
     <!-- Opt-in extras kept for the records that already capture them (profile / person). Not part of the
@@ -118,7 +119,10 @@
 // person APIs use:
 //   { countryCode, countryName, stateCode, stateName, cityName, addressLine1, addressLine2, postalCode,
 //     landmark, buildingName, floorNumber, unitNumber,    // the four above only with `extended`
-//     suffix, firstName, lastName, email, phone }         // the addressee, only with `contact`
+//     firstName, lastName, email }                        // the addressee, only with `contact`
+// `suffix` and `phone` are in the stored shape and are round-tripped, but no form asks for them any more:
+// an invoice is addressed to a name and reached at an email, and the two extra boxes were the two nobody
+// filled in.
 // countryName / stateName are kept in sync from the selected ISO codes so callers can persist names.
 // Callers on a different wire shape (REMS stores a frozen legacy shape) map at their own boundary.
 //
@@ -132,8 +136,6 @@ import { orderedCountries, countryOption, countryNameFromIso } from "composables
 import { nameRules } from "utils/personName";
 import AppSelect from "components/common/AppSelect.vue";
 import AppTextField from "components/common/AppTextField.vue";
-import AppNameSuffixField from "components/common/AppNameSuffixField.vue";
-import AppPhoneInput from "components/common/AppPhoneInput.vue";
 
 const address = defineModel({ type: Object, required: true });
 
@@ -146,16 +148,52 @@ const props = defineProps({
   required: { type: Boolean, default: false },
   // Also capture Landmark / Building / Floor / Unit.
   extended: { type: Boolean, default: false },
-  // Also capture the addressee — suffix, first name, last name, email, phone. Off by default: an address
-  // is a place, and only a form that genuinely asks "and who is it addressed to?" wants these.
+  // Also capture the addressee — first name, last name, email. Off by default: an address is a place, and
+  // only a form that genuinely asks "and who is it addressed to?" wants these.
   contact: { type: Boolean, default: false },
   // The heading over that block. A prop because what the person AT the address is called depends on the
-  // form asking — "Addressed to" on an invoice, something else elsewhere.
+  // form asking — "Addressed to" on an invoice, something else elsewhere. Empty renders no heading at
+  // all, for a card whose own title already says whose address this is.
   contactLabel: { type: String, default: "Addressed to" },
+  // Ask the addressee BEFORE the place. For a form whose question is "who is this invoice for, and where
+  // does it go?" rather than "where is this address, and who is at it?".
+  contactFirst: { type: Boolean, default: false },
+  // The addressee's three boxes are mandatory. Separate from `required`, which is about the postal lines:
+  // an entity's own address is required with no addressee at all, and a billing block is the other way
+  // round only in the sense that it needs both.
+  contactRequired: { type: Boolean, default: false },
+  // Grid widths, per field, keyed by the canonical field names above — the one thing a host may change
+  // about this field-set's LAYOUT. Anything not named keeps the default below.
+  //
+  // A prop rather than nine, and a prop rather than a fixed grid, because the same nine boxes are asked
+  // in two shapes: an address on its own, where the street line wants the room; and a billing block,
+  // whose widths are specified box by box so the addressee shares a line with the name it belongs to.
+  cols: { type: Object, default: () => ({}) },
+  // The space between the boxes — a Quasar gutter size (xs / sm / md / lg / xl). A form that asks for one
+  // address can afford the standard md; a form that asks for three of them, one per card, is long enough
+  // that the gutters are what a client reads as "this is taking forever", so it asks for sm.
+  gutter: { type: String, default: "md" },
   // Server-side messages for THIS address, keyed by the canonical field names above. A host whose API
   // reports them under other names re-keys first (see modules/rems/remsAddress).
   errors: { type: Object, default: () => ({}) }
 });
+
+// What each box is worth on the grid when the host says nothing. Every one of them starts at col-12, so
+// a phone gets one box per line whatever the host asks for above it — the breakpoint classes take over
+// from sm, which is where there is room for two.
+const DEFAULT_COLS = {
+  country: "col-12 col-sm-4",
+  state: "col-12 col-sm-4",
+  city: "col-12 col-sm-4",
+  addressLine1: "col-12 col-sm-8",
+  addressLine2: "col-12 col-sm-4",
+  postalCode: "col-12 col-sm-4",
+  firstName: "col-12 col-sm-6",
+  lastName: "col-12 col-sm-6",
+  email: "col-12 col-sm-6"
+};
+
+const col = (field) => props.cols[field] || DEFAULT_COLS[field];
 
 // The full lists for each level. AppSelect narrows them as the user types, so these stay complete —
 // which also means "no options" always genuinely means the dataset has none, never a filtering hiccup.
@@ -176,6 +214,12 @@ const cityMode = computed(() => {
 
 // ---- Labels, rules and messages ----
 const label = (text) => (props.required ? `${text} *` : text);
+const contactLabelFor = (text) => (props.contactRequired ? `${text} *` : text);
+
+// The addressee's own boxes, moved ahead of the postal ones by the flex row rather than by a second copy
+// of the markup. Everything else in the row keeps the default order, so within each group the source
+// order still decides.
+const contactOrder = computed(() => (props.contactFirst ? "app-address__contact-first" : ""));
 
 // Rules are what a q-form validates; the same requirement is enforced for hosts without one by validate().
 const requiredRule = (message) => (v) => (!!v && String(v).trim().length > 0) || message;
@@ -264,10 +308,22 @@ const REQUIRED_FIELDS = [
   ["postalCode", "Zip Code is required"]
 ];
 
+// The addressee's three, checked the same way when the host says they are mandatory.
+const REQUIRED_CONTACT_FIELDS = [
+  ["firstName", "First Name is required"],
+  ["lastName", "Last Name is required"],
+  ["email", "Email Address is required"]
+];
+
 const validate = () => {
   clearLocalErrors();
   if (props.required) {
     REQUIRED_FIELDS.forEach(([field, message]) => {
+      if (!String(address.value[field] ?? "").trim()) localErrors[field] = message;
+    });
+  }
+  if (props.contact && props.contactRequired) {
+    REQUIRED_CONTACT_FIELDS.forEach(([field, message]) => {
       if (!String(address.value[field] ?? "").trim()) localErrors[field] = message;
     });
   }
@@ -279,4 +335,10 @@ defineExpose({ validate });
 </script>
 
 <style scoped>
+/* The addressee ahead of the place. `order` on flex children rather than a second copy of the block:
+   every field in this component is a direct child of one wrapping flex row, so one class moves the whole
+   addressee group and both orders keep reading from a single set of markup. */
+.app-address__contact-first {
+  order: -1;
+}
 </style>

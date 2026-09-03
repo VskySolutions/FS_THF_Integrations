@@ -42,6 +42,21 @@ public class REMSAdditionalEntity : AuditableEntity
     /// </summary>
     public Guid? CreatedREMSId { get; set; }
 
+    /// <summary>
+    /// How far this related client has got, as a foreign key to the <c>REMS.RelatedEntityStatus</c>
+    /// option-set item. Null until somebody sets it, which reads as
+    /// <see cref="RemsRelatedEntityStatuses.NotInitiated"/> — see that class for why it is set by hand and
+    /// never by the workflow.
+    /// <para>
+    /// Deliberately NOT derived from <see cref="CreatedREMSId"/> beside it, though the two are about the
+    /// same thing. That column records one specific act — somebody pressed Create EMS from this row — and
+    /// a firm that raises the follow-up request any other way, or that is chasing the client for documents
+    /// before raising anything at all, has a position to report that the column cannot express.
+    /// </para>
+    /// </summary>
+    public Guid? RelatedStatusId { get; set; }
+
     // ---- Navigations ----
     public REMS? Rems { get; set; }
+    public OptionSetItem? RelatedStatus { get; set; }
 }

@@ -103,6 +103,7 @@ public class EmsPortalDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<REMS> Rems => Set<REMS>();
     public DbSet<REMSFiles> RemsFiles => Set<REMSFiles>();
     public DbSet<REMSAdditionalEntity> RemsAdditionalEntities => Set<REMSAdditionalEntity>();
+    public DbSet<REMSAdditionalIndividual> RemsAdditionalIndividuals => Set<REMSAdditionalIndividual>();
     public DbSet<REMSSendBack> RemsSendBacks => Set<REMSSendBack>();
     public DbSet<REMSDelegation> RemsDelegations => Set<REMSDelegation>();
     public DbSet<REMSForm> RemsForms => Set<REMSForm>();

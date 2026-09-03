@@ -73,12 +73,13 @@ internal sealed class RemsFormRepository : IRemsFormRepository
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
             var t = query.Search.Trim();
-            // Against the name WITH its suffix as well as without: the list shows "Jr. John Smith", so
-            // typing what is on the row has to find the row.
+            // Against the client's name as the list SHOWS it — "Smith John Jr." — and against each half
+            // of it on its own, because a reader types whichever they have.
             rows = rows.Where(x =>
                 x.Rems.REMSNumber.Contains(t)
-                || x.Rems.RequestedClientName.Contains(t)
-                || (x.Rems.ClientNameSuffix + " " + x.Rems.RequestedClientName).Contains(t));
+                || x.Rems.ClientPerson!.ClientDisplayName.Contains(t)
+                || x.Rems.ClientPerson!.FirstName.Contains(t)
+                || x.Rems.ClientPerson!.LastName.Contains(t));
         }
         if (query.Submitted is { } submitted)
         {
@@ -102,7 +103,7 @@ internal sealed class RemsFormRepository : IRemsFormRepository
         // afterwards, so neither is a column to order on.
         var sorts = SortMap.For(rows, "updatedOnUtc")
             .Add("remsNumber", x => x.Rems.REMSNumber)
-            .Add("clientName", x => x.Rems.RequestedClientName, x => x.Rems.REMSNumber)
+            .Add("clientName", x => x.Rems.ClientPerson!.ClientDisplayName, x => x.Rems.REMSNumber)
             .Add("submitted", x => x.Form.Status == RemsFormStatus.Submitted || x.Form.SubmittedOnUtc != null, x => x.Rems.UpdatedOnUtc)
             .Add("requestStatus", x => x.Rems.Status!.Value, x => x.Rems.UpdatedOnUtc)
             .Add("submittedOnUtc", x => x.Form.SubmittedOnUtc, x => x.Rems.REMSNumber)
@@ -115,15 +116,12 @@ internal sealed class RemsFormRepository : IRemsFormRepository
             .Select(x => new RemsClientFormItem(
                 x.Rems.Id,
                 x.Rems.REMSNumber,
-                // The name with its suffix in front. REMS.ClientDisplayName says exactly this, but it is
-                // [NotMapped] and cannot cross into SQL, so the join is written out here — a row that
-                // dropped the suffix would show a different client name from the request it opens. The
-                // two halves follow, for the cell that draws the particle in bold.
-                x.Rems.ClientNameSuffix == null || x.Rems.ClientNameSuffix == ""
-                    ? x.Rems.RequestedClientName
-                    : x.Rems.ClientNameSuffix + " " + x.Rems.RequestedClientName,
-                x.Rems.RequestedClientName,
-                x.Rems.ClientNameSuffix,
+                // The client's name as it reads — "Smith John Jr." for a person, the legal name for an
+                // organisation. Composed by the database on Persons.ClientDisplayName, so every list says it
+                // the same way and SQL can sort and search on it. The particle follows, for the cell that
+                // draws it in bold at the end of the name.
+                x.Rems.ClientPerson!.ClientDisplayName,
+                x.Rems.ClientPerson!.Suffix,
                 x.Rems.Status!.Value,
                 x.Form.Status == RemsFormStatus.Submitted || x.Form.SubmittedOnUtc != null,
                 x.Form.SubmittedOnUtc,
@@ -242,8 +240,9 @@ internal sealed class RemsFormRepository : IRemsFormRepository
             var t = query.Search.Trim();
             forms = forms.Where(f =>
                 f.Rems!.REMSNumber.Contains(t)
-                || f.Rems!.RequestedClientName.Contains(t)
-                || (f.Rems!.ClientNameSuffix + " " + f.Rems!.RequestedClientName).Contains(t));
+                || f.Rems!.ClientPerson!.ClientDisplayName.Contains(t)
+                || f.Rems!.ClientPerson!.FirstName.Contains(t)
+                || f.Rems!.ClientPerson!.LastName.Contains(t));
         }
         if (!string.IsNullOrWhiteSpace(query.RequestStatus))
         {
@@ -268,11 +267,8 @@ internal sealed class RemsFormRepository : IRemsFormRepository
             {
                 f.REMSId,
                 f.Rems!.REMSNumber,
-                // The name with its suffix in front — REMS.ClientDisplayName written out, since
-                // [NotMapped] cannot cross into SQL.
-                ClientName = f.Rems!.ClientNameSuffix == null || f.Rems!.ClientNameSuffix == ""
-                    ? f.Rems!.RequestedClientName
-                    : f.Rems!.ClientNameSuffix + " " + f.Rems!.RequestedClientName,
+                // The client's name as it reads, composed by the database on Persons.ClientDisplayName.
+                ClientName = f.Rems!.ClientPerson!.ClientDisplayName,
                 EngagementType = f.Rems!.Type!.Value,
                 RequestStatus = f.Rems!.Status!.Value,
                 f.Status,

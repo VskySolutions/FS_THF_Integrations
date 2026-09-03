@@ -62,33 +62,26 @@
       </template>
 
       <template #body-cell-actions="cell">
-        <q-td :props="cell" class="text-right">
-          <q-btn flat round dense color="primary" icon="o_edit" @click="openEdit(cell.row)">
+        <q-td :props="cell">
+          <q-btn type="a" flat round dense color="primary" icon="o_edit" @click="openEdit(cell.row)">
             <q-tooltip>Edit</q-tooltip>
           </q-btn>
-          <q-btn flat round dense icon="o_more_vert">
-            <q-menu auto-close>
-              <q-list style="min-width: 190px;">
-                <q-item clickable @click="openEdit(cell.row)">
-                  <q-item-section avatar><q-icon name="o_edit" /></q-item-section>
-                  <q-item-section>Edit</q-item-section>
-                </q-item>
-                <q-item v-if="!cell.row.isActive" clickable @click="setActive(cell.row)">
-                  <q-item-section avatar><q-icon name="o_check_circle" /></q-item-section>
-                  <q-item-section>Set as Active</q-item-section>
-                </q-item>
-                <q-item clickable @click="openTest(cell.row)">
-                  <q-item-section avatar><q-icon name="o_send" /></q-item-section>
-                  <q-item-section>Send Test Email</q-item-section>
-                </q-item>
-                <q-separator />
-                <q-item clickable :disable="cell.row.isActive" @click="deleteAccount(cell.row)">
-                  <q-item-section avatar><q-icon name="o_delete" :color="cell.row.isActive ? 'grey-5' : 'negative'" /></q-item-section>
-                  <q-item-section :class="cell.row.isActive ? 'text-grey-5' : 'text-negative'">Delete</q-item-section>
-                  <q-tooltip v-if="cell.row.isActive">The active account cannot be deleted.</q-tooltip>
-                </q-item>
-              </q-list>
-            </q-menu>
+          <!-- One button per action, all of them on the row. Edit is not repeated: it is already the
+               button beside this one. -->
+          <q-btn
+            v-if="!cell.row.isActive" type="a"
+            flat round dense color="positive" icon="o_check_circle" @click="setActive(cell.row)"
+          >
+            <q-tooltip>Set as Active</q-tooltip>
+          </q-btn>
+          <q-btn type="a" flat round dense color="primary" icon="o_send" @click="openTest(cell.row)">
+            <q-tooltip>Send Test Email</q-tooltip>
+          </q-btn>
+          <q-btn
+            type="a" flat round dense color="negative" icon="o_delete"
+            :disable="cell.row.isActive" @click="deleteAccount(cell.row)"
+          >
+            <q-tooltip>{{ cell.row.isActive ? "The active account cannot be deleted." : "Delete" }}</q-tooltip>
           </q-btn>
         </q-td>
       </template>
@@ -166,7 +159,7 @@ const columns = [
   // visible, the created pair a click away in the Columns menu. The API names the actors *ByName here,
   // hence the overrides.
   ...auditColumns({ overrides: { createdBy: "createdByName", updatedBy: "updatedByName" } }),
-  { name: "actions", label: "Actions", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "left" }
 ];
 
 const { rows, loading, totalRecords, selected, search, filterOpen, pagination, load, onRequest } = useListTable({

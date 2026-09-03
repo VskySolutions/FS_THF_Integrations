@@ -44,6 +44,7 @@
             :referral-sources="referralSourceOptions"
             email-hint="Locked — the intake form was sent to this address"
             @confirm-clear-entities="onConfirmClearEntities"
+            @confirm-clear-individuals="onConfirmClearIndividuals"
           />
 
           <!-- The same completeness gate the client's own Review button uses. A corrected form still has
@@ -187,6 +188,17 @@ async function onConfirmClearEntities (applyClear) {
   if (ok) applyClear();
 }
 
+// The same bargain for the spouse / children card: answering "No" throws away everyone recorded on it.
+async function onConfirmClearIndividuals (applyClear) {
+  const ok = await confirm({
+    title: "Remove these people?",
+    message: "This will remove every additional individual recorded on this form.",
+    confirmLabel: "Remove",
+    type: "danger"
+  });
+  if (ok) applyClear();
+}
+
 async function save () {
   if (issues.value.length) return;
   saving.value = true;
@@ -234,6 +246,9 @@ async function save () {
   flex: 1 1 auto;
   overflow-y: auto;
   background: #f4f6fb;
+  /* Less than a card section's default, to match the density of the field-set inside it — this pane is
+     the same long form the client fills in, and it scrolls inside a fixed-height dialog. */
+  padding: 12px;
 }
 .esf__note {
   background: #eef3fb;

@@ -45,6 +45,8 @@
       :total-records="totalRecords"
       :pagination="pagination"
       default-sort-by="updatedOnUtc"
+      :pinned-row-keys="pinnedRowKeys"
+      :row-colours="rowColours"
       @request="onRequest"
       @refresh="load"
     >
@@ -63,12 +65,21 @@
         />
       </template>
 
-      <!-- The particle in front of the name and in bold: a column of "John Smith" rows is told apart by
+      <!-- The pin the reader put on this row, beside the number rather than only on the button that set
+           it: the button is at the far right and the reason the row is at the top is here. -->
+      <template #body-cell-remsNumber="cell">
+        <q-td :props="cell">
+          <entity-pinned-mark :pinned="isPinned(cell.row.id)" />
+          {{ cell.row.remsNumber }}
+        </q-td>
+      </template>
+
+      <!-- The particle after the name and in bold: a column of "John Smith" rows is told apart by
            the "Jr." and the "III" alone. The column still SORTS and searches on `clientName`, which is
            the two joined. -->
       <template #body-cell-clientName="cell">
         <q-td :props="cell">
-          <app-name-with-suffix :name="cell.row.requestedClientName" :suffix="cell.row.clientNameSuffix" />
+          <app-name-with-suffix :name="cell.row.clientName" :suffix="cell.row.clientNameSuffix" />
         </q-td>
       </template>
 
@@ -98,7 +109,7 @@
       </template>
 
       <template #body-cell-actions="cell">
-        <q-td :props="cell" class="text-right">
+        <q-td :props="cell">
           <!-- View and Edit are the same page in two modes. Separate actions because they are separate
                intentions: reading a request should never put a form on screen. -->
           <q-btn flat round dense color="primary" icon="o_visibility" :to="viewRoute(cell.row)">
@@ -114,14 +125,28 @@
                Only once something has actually gone out: before the intake link is sent there is no
                history to read and nobody to remind. -->
           <q-btn
-            v-if="canReadEmailLog && emsFormActivity(cell.row)"
+            v-if="canReadEmailLog && emsFormActivity(cell.row)" type="a"
             flat round dense color="primary" icon="o_mark_email_read" @click="openEmailLog(cell.row)"
           >
             <q-tooltip>Email log</q-tooltip>
           </q-btn>
-          <q-btn flat round dense color="primary" icon="o_forum" @click="openConversation(cell.row)">
+          <q-btn type="a" flat round dense color="primary" icon="o_forum" @click="openConversation(cell.row)">
             <q-tooltip>Conversation</q-tooltip>
           </q-btn>
+          <!-- The reader's own marks on this row, sitting with the actions rather than apart from them:
+               everything before them acts on the REQUEST, and these two are private to whoever is
+               looking. -->
+          <entity-row-marks
+            v-if="canMarkRows"
+            :pinned="isPinned(cell.row.id)"
+            :colour="colourOf(cell.row.id)"
+            :palette="markPalette"
+            :limit-reached="pinLimitReached"
+            :limit="MAX_PINS_PER_TYPE"
+            :busy="markBusyId === cell.row.id"
+            @toggle-pin="togglePin(cell.row.id, cell.row.remsNumber)"
+            @set-colour="applyColour(cell.row.id, $event, cell.row.remsNumber)"
+          />
         </q-td>
       </template>
 
@@ -164,6 +189,7 @@ import { useColumnFilters } from "composables/useColumnFilters";
 import { useDeletedRecords } from "composables/useDeletedRecords";
 import { useDateFormat } from "composables/useDateFormat";
 import { useAuditColumns } from "composables/useAuditColumns";
+import { useRowPersonalisation, MAX_PINS_PER_TYPE } from "composables/uf/useRowPersonalisation";
 import { useRemsMeta } from "modules/rems/useRemsMeta";
 import { REMS_STATUS } from "modules/rems/remsStatus";
 
@@ -177,6 +203,8 @@ import AppTextField from "components/common/AppTextField.vue";
 import AppDateField from "components/common/AppDateField.vue";
 import AppDataTable from "components/common/AppDataTable.vue";
 import DeletedRecordsPanel from "components/universal/DeletedRecordsPanel.vue";
+import EntityPinnedMark from "components/universal/EntityPinnedMark.vue";
+import EntityRowMarks from "components/universal/EntityRowMarks.vue";
 import ConversationDialog from "modules/rems/components/ConversationDialog.vue";
 import EmailLogDialog from "modules/rems/components/EmailLogDialog.vue";
 
@@ -267,7 +295,7 @@ const columns = computed(() => [
   // All four from the shared set: Updated By / Updated On visible and last, the created pair a click
   // away. None is filterable — the created range is the From/To pair in the drawer, not a text box.
   ...auditColumns(),
-  { name: "actions", label: "Actions", field: "actions", align: "right" }
+  { name: "actions", label: "Actions", field: "actions", align: "left" }
 ]);
 
 // Server filters with no column to hang off. Kept in one reactive object so the chips, the reset and
@@ -327,6 +355,25 @@ const onClearFilters = () => {
 
 const reload = debounce(() => { pagination.value.page = 1; load(); }, 300);
 watch([search, filters, extras, ownership], reload, { deep: true });
+
+// ---- The reader's own marks on these rows ----
+// A pin floats a row to the top of the page and a colour tints it, both stored against the USER, so
+// neither is visible to anybody else — which is what makes them safe on a list an admin can widen to the
+// whole tenant. Offered only to a caller who may read REMS requests, which is what the UF endpoints gate
+// on (UniversalFeatureEntityAccess maps EntityType.Rems to rems.requests.read); this page itself is open
+// to everyone, so without the check some readers would be handed two buttons that 403.
+const canMarkRows = computed(() => has(Permissions.RemsRequestsRead));
+
+const {
+  palette: markPalette, pinnedRowKeys, pinLimitReached, isPinned, togglePin,
+  colours: rowColours, colourOf, applyColour, busyId: markBusyId, sync: syncMarks
+} = useRowPersonalisation(EntityType.Rems);
+
+// After every load, never per row: the colours come back for the whole page in one read, and the pins
+// are the user's own small set, fetched once.
+watch(rows, (list) => {
+  if (canMarkRows.value) syncMarks(list.map((r) => r.id));
+});
 
 // Straight to the form. A partner's request IS the form — there is no separate detail screen worth
 // landing on first now that client details and engagement setup live on one page. The mode decides
